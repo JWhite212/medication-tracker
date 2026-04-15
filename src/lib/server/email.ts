@@ -1,7 +1,9 @@
 import { Resend } from "resend";
 import { env } from "$env/dynamic/private";
 
-const resend = new Resend(env.RESEND_API_KEY);
+function getResend() {
+  return new Resend(env.RESEND_API_KEY);
+}
 
 export async function sendVerificationEmail(
   email: string,
@@ -9,7 +11,7 @@ export async function sendVerificationEmail(
   baseUrl: string,
 ) {
   const verifyUrl = `${baseUrl}/auth/verify?token=${token}`;
-  await resend.emails.send({
+  await getResend().emails.send({
     from: "MedTracker <noreply@yourdomain.com>",
     to: email,
     subject: "Verify your email",
@@ -24,7 +26,7 @@ export async function sendPasswordResetEmail(
   baseUrl: string,
 ) {
   const resetUrl = `${baseUrl}/auth/reset-password?token=${token}`;
-  await resend.emails.send({
+  await getResend().emails.send({
     from: "MedTracker <noreply@yourdomain.com>",
     to: email,
     subject: "Reset your password",
@@ -38,7 +40,7 @@ export async function sendReminderEmail(
   medicationName: string,
   lastTaken: string,
 ) {
-  await resend.emails.send({
+  await getResend().emails.send({
     from: "MedTracker <noreply@yourdomain.com>",
     to: email,
     subject: `Reminder: ${medicationName}`,

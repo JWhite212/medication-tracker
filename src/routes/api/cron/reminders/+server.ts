@@ -1,14 +1,22 @@
 import { json, error } from "@sveltejs/kit";
 import { env } from "$env/dynamic/private";
+import { timingSafeEqual } from "crypto";
 import { lt } from "drizzle-orm";
 import { checkOverdueMedications } from "$lib/server/reminders";
 import { db } from "$lib/server/db";
 import { passwordResetTokens, rateLimits } from "$lib/server/db/schema";
 import type { RequestHandler } from "./$types";
 
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
 export const GET: RequestHandler = async ({ request }) => {
-  const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${env.CRON_SECRET}`) {
+  const cronSecret = env.CRON_SECRET;
+  if (!cronSecret) error(500, "CRON_SECRET not configured");
+  const authHeader = request.headers.get("authorization") ?? "";
+  if (!safeCompare(authHeader, `Bearer ${cronSecret}`)) {
     error(401, "Unauthorized");
   }
   await checkOverdueMedications();

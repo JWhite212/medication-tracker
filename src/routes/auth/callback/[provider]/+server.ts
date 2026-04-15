@@ -63,35 +63,46 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   const code = url.searchParams.get("code");
 
   if (!code) {
+    const state = crypto.randomUUID();
+    const cookieOpts = {
+      path: "/",
+      httpOnly: true,
+      secure: true,
+      maxAge: 600,
+      sameSite: "lax" as const,
+    };
+
     if (provider === "google") {
       const google = getGoogle();
       if (!google) error(503, "OAuth not configured");
       const codeVerifier = crypto.randomUUID();
       const scopes = ["openid", "email", "profile"];
       const authUrl = google.createAuthorizationURL(
-        crypto.randomUUID(),
+        state,
         codeVerifier,
         scopes,
       );
-      cookies.set("google_code_verifier", codeVerifier, {
-        path: "/",
-        httpOnly: true,
-        secure: true,
-        maxAge: 600,
-        sameSite: "lax",
-      });
+      cookies.set("google_code_verifier", codeVerifier, cookieOpts);
+      cookies.set("oauth_state", state, cookieOpts);
       redirect(302, authUrl.toString());
     }
     if (provider === "github") {
       const github = getGitHub();
       if (!github) error(503, "OAuth not configured");
-      const authUrl = github.createAuthorizationURL(crypto.randomUUID(), [
-        "user:email",
-      ]);
+      const authUrl = github.createAuthorizationURL(state, ["user:email"]);
+      cookies.set("oauth_state", state, cookieOpts);
       redirect(302, authUrl.toString());
     }
     error(400, "Unsupported provider");
   }
+
+  // Verify OAuth state to prevent CSRF
+  const storedState = cookies.get("oauth_state");
+  const returnedState = url.searchParams.get("state");
+  if (!storedState || storedState !== returnedState) {
+    error(400, "Invalid OAuth state");
+  }
+  cookies.delete("oauth_state", { path: "/" });
 
   let oauthUser: OAuthUserInfo;
   if (provider === "google") {

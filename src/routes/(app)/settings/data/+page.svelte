@@ -6,6 +6,7 @@
   let { data, form } = $props();
   let showDeleteConfirm = $state(false);
   let deleteConfirmText = $state('');
+  let deletePassword = $state('');
 </script>
 
 <svelte:head>
@@ -75,10 +76,19 @@
   <p class="mb-4 text-sm text-text-secondary">
     Type <strong>DELETE</strong> to confirm. All your medications, dose history, and settings will be permanently removed.
   </p>
+  {#if form?.deleteError}
+    <p class="mb-3 rounded-lg bg-danger/10 px-4 py-2 text-sm text-danger">{form.deleteError}</p>
+  {/if}
   <input
     type="text"
     bind:value={deleteConfirmText}
     placeholder="Type DELETE"
+    class="mb-3 w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary focus:border-danger focus:outline-none focus:ring-1 focus:ring-danger"
+  />
+  <input
+    type="password"
+    bind:value={deletePassword}
+    placeholder="Enter your password"
     class="mb-4 w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary focus:border-danger focus:outline-none focus:ring-1 focus:ring-danger"
   />
   <div class="flex gap-3">
@@ -90,9 +100,10 @@
       Cancel
     </button>
     <form method="POST" action="?/deleteAccount" use:enhance class="flex-1">
+      <input type="hidden" name="password" value={deletePassword} />
       <button
         type="submit"
-        disabled={deleteConfirmText !== 'DELETE'}
+        disabled={deleteConfirmText !== 'DELETE' || !deletePassword}
         class="w-full rounded-lg bg-danger px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
       >
         Delete Permanently

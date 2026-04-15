@@ -1,5 +1,5 @@
 import { fail } from "@sveltejs/kit";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { users, sessions } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
@@ -60,8 +60,18 @@ export const actions: Actions = {
     const formData = await request.formData();
     const sessionId = formData.get("sessionId") as string;
     if (sessionId && sessionId !== locals.session!.id) {
-      await lucia.invalidateSession(sessionId);
-      await logAudit(locals.user!.id, "session", sessionId, "delete");
+      // Verify the target session belongs to the current user
+      const [targetSession] = await db
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(
+          and(eq(sessions.id, sessionId), eq(sessions.userId, locals.user!.id)),
+        )
+        .limit(1);
+      if (targetSession) {
+        await lucia.invalidateSession(sessionId);
+        await logAudit(locals.user!.id, "session", sessionId, "delete");
+      }
     }
     return { sessionRevoked: true };
   },

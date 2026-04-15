@@ -9,6 +9,7 @@ import {
 import { dataSchema } from "$lib/utils/validation";
 import { logAudit, computeChanges } from "$lib/server/audit";
 import { lucia } from "$lib/server/auth/lucia";
+import { verifyPassword } from "$lib/server/auth/password";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -42,8 +43,30 @@ export const actions: Actions = {
     return { success: true };
   },
 
-  deleteAccount: async ({ locals, cookies }) => {
+  deleteAccount: async ({ request, locals, cookies }) => {
     const userId = locals.user!.id;
+    const formData = await request.formData();
+    const password = String(formData.get("password") ?? "");
+
+    if (!password) {
+      return fail(400, {
+        deleteError: "Password is required to delete your account.",
+      });
+    }
+
+    const [user] = await db
+      .select({ passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (
+      !user?.passwordHash ||
+      !(await verifyPassword(user.passwordHash, password))
+    ) {
+      return fail(400, { deleteError: "Incorrect password." });
+    }
+
     await logAudit(userId, "user", userId, "delete");
     await lucia.invalidateUserSessions(userId);
     await db.delete(users).where(eq(users.id, userId));

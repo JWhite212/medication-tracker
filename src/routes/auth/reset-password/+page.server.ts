@@ -1,5 +1,6 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { createId } from "@paralleldrive/cuid2";
+import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { db } from "$lib/server/db";
 import { users, passwordResetTokens } from "$lib/server/db/schema";
 import { sendPasswordResetEmail } from "$lib/server/email";
@@ -24,7 +25,19 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ request, url }) => {
+  default: async ({ request, url, getClientAddress }) => {
+    const ip = getClientAddress();
+    const { allowed, retryAfterMs } = await checkRateLimit(
+      `reset:${ip}`,
+      3,
+      15 * 60 * 1000,
+    );
+    if (!allowed) {
+      return fail(429, {
+        error: `Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
+      });
+    }
+
     const formData = await request.formData();
     const email = String(formData.get("email") ?? "")
       .trim()

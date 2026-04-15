@@ -4,9 +4,8 @@ import { doseLogs, medications } from "$lib/server/db/schema";
 
 const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
 
-function safeTz(timezone: string): ReturnType<typeof sql.raw> {
-  const tz = validTimezones.has(timezone) ? timezone : "UTC";
-  return sql.raw(`'${tz}'`);
+function safeTz(timezone: string): string {
+  return validTimezones.has(timezone) ? timezone : "UTC";
 }
 
 export function calculateStreak(

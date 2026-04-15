@@ -1,6 +1,11 @@
 import { sql, eq, and, isNotNull } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { medications, doseLogs, users } from "$lib/server/db/schema";
+import {
+  medications,
+  doseLogs,
+  users,
+  userPreferences,
+} from "$lib/server/db/schema";
 import { sendReminderEmail } from "./email";
 import { formatTimeSince } from "$lib/utils/time";
 
@@ -15,10 +20,12 @@ export async function checkOverdueMedications() {
     })
     .from(medications)
     .innerJoin(users, eq(medications.userId, users.id))
+    .innerJoin(userPreferences, eq(users.id, userPreferences.userId))
     .where(
       and(
         eq(medications.isArchived, false),
         isNotNull(medications.scheduleIntervalHours),
+        eq(userPreferences.emailReminders, true),
       ),
     );
 

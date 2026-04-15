@@ -8,6 +8,17 @@ const config = {
       $components: "src/lib/components",
       $server: "src/lib/server",
     },
+    csp: {
+      directives: {
+        "default-src": ["self"],
+        "script-src": ["self"],
+        "style-src": ["self", "unsafe-inline"],
+        "img-src": ["self", "data:", "https:"],
+        "connect-src": ["self"],
+        "font-src": ["self"],
+        "frame-src": ["none"],
+      },
+    },
   },
 };
 export default config;

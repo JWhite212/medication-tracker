@@ -8,6 +8,25 @@ import { users } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import type { Actions, PageServerLoad } from "./$types";
 
+async function isPasswordBreached(password: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+  const prefix = hashHex.slice(0, 5);
+  const suffix = hashHex.slice(5);
+
+  const response = await fetch(
+    `https://api.pwnedpasswords.com/range/${prefix}`,
+  );
+  const text = await response.text();
+  return text.split("\n").some((line) => line.startsWith(suffix));
+}
+
 export const load: PageServerLoad = async ({ locals }) => {
   if (locals.user) redirect(302, "/dashboard");
 };
@@ -26,6 +45,18 @@ export const actions: Actions = {
     }
 
     const { email, password, name } = parsed.data;
+
+    if (await isPasswordBreached(password)) {
+      return fail(400, {
+        errors: {
+          password: [
+            "This password has appeared in a data breach. Please choose a different one.",
+          ],
+        },
+        email,
+        name,
+      });
+    }
 
     const existing = await db
       .select({ id: users.id })

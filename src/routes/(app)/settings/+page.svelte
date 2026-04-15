@@ -71,7 +71,7 @@
       </a>
 
       <a
-        href="/export/pdf"
+        href="/api/export"
         class="flex items-center justify-between rounded-lg border border-glass-border px-4 py-3 transition-colors hover:bg-surface-raised"
       >
         <div>

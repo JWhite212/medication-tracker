@@ -1,4 +1,3 @@
-import PDFDocument from "pdfkit";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
@@ -10,6 +9,8 @@ export async function generateReport(
   from: Date,
   to: Date,
 ): Promise<Buffer> {
+  const { default: PDFDocument } = await import("pdfkit");
+
   const doses = await db
     .select({
       takenAt: doseLogs.takenAt,

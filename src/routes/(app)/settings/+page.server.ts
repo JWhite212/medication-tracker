@@ -38,6 +38,10 @@ export const actions: Actions = {
         "update",
         changes,
       );
-    return { success: true };
+    return {
+      success: true,
+      name: parsed.data.name,
+      timezone: parsed.data.timezone,
+    };
   },
 };

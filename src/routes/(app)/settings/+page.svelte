@@ -26,7 +26,7 @@
       <Input
         label="Display Name"
         name="name"
-        value={data.user.name}
+        value={form?.name ?? data.user.name}
         required
         error={form?.errors?.name?.[0] ?? ''}
       />
@@ -39,7 +39,7 @@
           class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         >
           {#each timezones as tz}
-            <option value={tz} selected={tz === data.user.timezone}>{tz}</option>
+            <option value={tz} selected={tz === (form?.timezone ?? data.user.timezone)}>{tz}</option>
           {/each}
         </select>
         {#if form?.errors?.timezone?.[0]}

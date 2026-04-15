@@ -3,7 +3,7 @@ import { desc, eq, and, gte, lte } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { doseEditSchema } from "$lib/utils/validation";
-import { updateDose } from "$lib/server/doses";
+import { updateDose, deleteDose } from "$lib/server/doses";
 import { parseDateTimeLocal } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -22,44 +22,47 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
   if (from) conditions.push(gte(doseLogs.takenAt, new Date(from)));
   if (to) conditions.push(lte(doseLogs.takenAt, new Date(to)));
 
-  const rows = await db
-    .select({
-      id: doseLogs.id,
-      userId: doseLogs.userId,
-      medicationId: doseLogs.medicationId,
-      quantity: doseLogs.quantity,
-      takenAt: doseLogs.takenAt,
-      loggedAt: doseLogs.loggedAt,
-      notes: doseLogs.notes,
-      medication: {
+  const [rows, meds] = await Promise.all([
+    db
+      .select({
+        id: doseLogs.id,
+        userId: doseLogs.userId,
+        medicationId: doseLogs.medicationId,
+        quantity: doseLogs.quantity,
+        takenAt: doseLogs.takenAt,
+        loggedAt: doseLogs.loggedAt,
+        notes: doseLogs.notes,
+        medication: {
+          name: medications.name,
+          dosageAmount: medications.dosageAmount,
+          dosageUnit: medications.dosageUnit,
+          form: medications.form,
+          colour: medications.colour,
+          colourSecondary: medications.colourSecondary,
+          pattern: medications.pattern,
+        },
+      })
+      .from(doseLogs)
+      .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
+      .where(and(...conditions))
+      .orderBy(desc(doseLogs.takenAt))
+      .limit(limit + 1)
+      .offset(offset),
+    db
+      .select({
+        id: medications.id,
         name: medications.name,
-        dosageAmount: medications.dosageAmount,
-        dosageUnit: medications.dosageUnit,
-        form: medications.form,
         colour: medications.colour,
-        colourSecondary: medications.colourSecondary,
-        pattern: medications.pattern,
-      },
-    })
-    .from(doseLogs)
-    .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
-    .where(and(...conditions))
-    .orderBy(desc(doseLogs.takenAt))
-    .limit(limit + 1)
-    .offset(offset);
+      })
+      .from(medications)
+      .where(
+        and(eq(medications.userId, userId), eq(medications.isArchived, false)),
+      )
+      .orderBy(medications.name),
+  ]);
 
   const hasMore = rows.length > limit;
   const doses = rows.slice(0, limit);
-
-  const meds = await db
-    .select({
-      id: medications.id,
-      name: medications.name,
-      colour: medications.colour,
-    })
-    .from(medications)
-    .where(eq(medications.userId, userId))
-    .orderBy(medications.name);
 
   return {
     doses,
@@ -84,6 +87,14 @@ export const actions: Actions = {
       quantity,
       notes,
     });
+    return { success: true };
+  },
+  deleteDose: async ({ request, locals }) => {
+    const formData = await request.formData();
+    const doseId = formData.get("doseId") as string;
+    if (!doseId) return fail(400, { error: "Missing dose ID" });
+    const deleted = await deleteDose(locals.user!.id, doseId);
+    if (!deleted) return fail(404, { error: "Dose not found" });
     return { success: true };
   },
 };

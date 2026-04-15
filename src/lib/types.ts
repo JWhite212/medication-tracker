@@ -30,6 +30,12 @@ export type UserPreferences = InferSelectModel<typeof userPreferences>;
 export type DoseLogWithMedication = DoseLog & {
   medication: Pick<
     Medication,
-    "name" | "dosageAmount" | "dosageUnit" | "form" | "colour"
+    | "name"
+    | "dosageAmount"
+    | "dosageUnit"
+    | "form"
+    | "colour"
+    | "colourSecondary"
+    | "pattern"
   >;
 };

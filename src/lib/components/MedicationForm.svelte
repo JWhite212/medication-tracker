@@ -2,6 +2,8 @@
   import { enhance } from '$app/forms';
   import type { Medication } from '$lib/types';
   import Input from '$lib/components/ui/Input.svelte';
+  import Tooltip from '$lib/components/ui/Tooltip.svelte';
+  import { getMedicationBackground, PATTERN_OPTIONS } from '$lib/utils/medication-style';
 
   let {
     medication = undefined,
@@ -20,6 +22,14 @@
 
   let selectedColour = $state(
     formValues['colour'] ?? medication?.colour ?? '#6366f1'
+  );
+
+  let selectedColourSecondary = $state<string | null>(
+    formValues['colourSecondary'] ?? medication?.colourSecondary ?? null
+  );
+  let showSecondary = $state(selectedColourSecondary !== null);
+  let selectedPattern = $state(
+    formValues['pattern'] ?? medication?.pattern ?? 'solid'
   );
 
   let loading = $state(false);
@@ -122,24 +132,97 @@
   </div>
 
   <div>
-    <p class="mb-2 block text-sm font-medium">Colour</p>
-    <div class="flex flex-wrap gap-2">
-      {#each presetColours as colour}
-        <button
-          type="button"
-          onclick={() => (selectedColour = colour)}
-          class="h-8 w-8 rounded-full transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 {selectedColour === colour ? 'ring-2 ring-accent ring-offset-2 scale-110' : ''}"
-          style="background-color: {colour}"
-          aria-label="Select colour {colour}"
-        ></button>
-      {/each}
+    <p class="mb-2 block text-sm font-medium">
+      Colour & Pattern
+      <Tooltip text="Choose how this medication appears across the app — on cards, pills, and timeline entries." />
+    </p>
+
+    <!-- Primary colour row -->
+    <div class="mb-2">
+      {#if showSecondary}<span class="mb-1 block text-xs text-text-muted">Primary</span>{/if}
+      <div class="flex flex-wrap items-center gap-2">
+        {#each presetColours as colour}
+          <button
+            type="button"
+            onclick={() => (selectedColour = colour)}
+            class="h-8 w-8 rounded-full transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 {selectedColour === colour ? 'ring-2 ring-accent ring-offset-2 scale-110' : ''}"
+            style="background-color: {colour}"
+            aria-label="Select primary colour {colour}"
+          ></button>
+        {/each}
+        {#if !showSecondary}
+          <button
+            type="button"
+            onclick={() => { showSecondary = true; selectedColourSecondary = presetColours[2]; }}
+            class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed border-white/30 text-white/40 text-lg transition-colors hover:border-white/50 hover:text-white/60"
+            aria-label="Add secondary colour"
+          >+</button>
+        {/if}
+      </div>
     </div>
+
+    <!-- Secondary colour row (visible when + clicked) -->
+    {#if showSecondary}
+      <div class="mb-3">
+        <span class="mb-1 block text-xs text-text-muted">Secondary</span>
+        <div class="flex flex-wrap items-center gap-2">
+          {#each presetColours as colour}
+            <button
+              type="button"
+              onclick={() => (selectedColourSecondary = colour)}
+              class="h-8 w-8 rounded-full transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 {selectedColourSecondary === colour ? 'ring-2 ring-accent ring-offset-2 scale-110' : ''}"
+              style="background-color: {colour}"
+              aria-label="Select secondary colour {colour}"
+            ></button>
+          {/each}
+          <button
+            type="button"
+            onclick={() => { showSecondary = false; selectedColourSecondary = null; selectedPattern = 'solid'; }}
+            class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed border-danger/50 text-danger/70 text-sm transition-colors hover:border-danger hover:text-danger"
+            aria-label="Remove secondary colour"
+          >&times;</button>
+        </div>
+      </div>
+
+      <!-- Pattern grid -->
+      <div class="mb-3">
+        <span class="mb-1 block text-xs text-text-muted">Pattern</span>
+        <div class="flex flex-wrap gap-2">
+          {#each PATTERN_OPTIONS as pat}
+            <button
+              type="button"
+              onclick={() => (selectedPattern = pat.id)}
+              class="h-11 w-11 rounded-lg border-2 transition-transform hover:scale-105 {selectedPattern === pat.id ? 'border-white scale-105' : 'border-transparent'}"
+              style="background: {getMedicationBackground(selectedColour, selectedColourSecondary, pat.id)}"
+              aria-label="Select {pat.name} pattern"
+              title={pat.name}
+            ></button>
+          {/each}
+        </div>
+      </div>
+
+      <!-- Live preview -->
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-text-muted">Preview</span>
+        <div class="h-10 w-10 rounded-lg" style="background: {getMedicationBackground(selectedColour, selectedColourSecondary, selectedPattern)}"></div>
+        <div class="h-3 w-3 rounded-full" style="background: {getMedicationBackground(selectedColour, selectedColourSecondary, selectedPattern, true)}"></div>
+        <div class="flex h-8 items-center rounded-full px-4 text-xs font-medium text-white" style="background: {getMedicationBackground(selectedColour, selectedColourSecondary, selectedPattern)}">
+          Sample Pill
+        </div>
+      </div>
+    {/if}
+
     <input type="hidden" name="colour" value={selectedColour} />
+    <input type="hidden" name="colourSecondary" value={selectedColourSecondary ?? ''} />
+    <input type="hidden" name="pattern" value={selectedPattern} />
     {#if errors['colour']?.[0]}<p class="mt-1 text-sm text-danger">{errors['colour'][0]}</p>{/if}
   </div>
 
   <div>
-    <label class="mb-1 block text-sm font-medium">Schedule Type</label>
+    <label class="mb-1 block text-sm font-medium">
+      Schedule Type
+      <Tooltip text="Scheduled medications have a regular interval (e.g. every 8 hours). As-needed (PRN) medications are taken only when required and won't count toward adherence." />
+    </label>
     <div class="flex gap-3">
       <button
         type="button"
@@ -160,33 +243,54 @@
   </div>
 
   {#if scheduleType === 'scheduled'}
-    <Input
-      label="Schedule Interval (hours)"
-      name="scheduleIntervalHours"
-      type="number"
-      value={formValues['scheduleIntervalHours'] ?? (medication?.scheduleIntervalHours ?? '')}
-      error={errors['scheduleIntervalHours']?.[0] ?? ''}
-      placeholder="e.g. 8"
-    />
+    <div>
+      <label for="scheduleIntervalHours" class="mb-1 block text-sm font-medium">
+        Schedule Interval (hours)
+        <Tooltip text="How many hours between doses. Used to calculate adherence and send overdue reminders." />
+      </label>
+      <input
+        id="scheduleIntervalHours"
+        name="scheduleIntervalHours"
+        type="number"
+        value={formValues['scheduleIntervalHours'] ?? (medication?.scheduleIntervalHours ?? '')}
+        placeholder="e.g. 8"
+        class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+      />
+      {#if errors['scheduleIntervalHours']?.[0]}<p class="mt-1 text-sm text-danger">{errors['scheduleIntervalHours'][0]}</p>{/if}
+    </div>
   {/if}
 
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-    <Input
-      label="Inventory Count"
-      name="inventoryCount"
-      type="number"
-      value={formValues['inventoryCount'] ?? (medication?.inventoryCount?.toString() ?? '')}
-      error={errors['inventoryCount']?.[0] ?? ''}
-      placeholder="e.g. 30"
-    />
-    <Input
-      label="Low Stock Alert Threshold"
-      name="inventoryAlertThreshold"
-      type="number"
-      value={formValues['inventoryAlertThreshold'] ?? (medication?.inventoryAlertThreshold?.toString() ?? '')}
-      error={errors['inventoryAlertThreshold']?.[0] ?? ''}
-      placeholder="e.g. 7"
-    />
+    <div>
+      <label for="inventoryCount" class="mb-1 block text-sm font-medium">
+        Inventory Count
+        <Tooltip text="Track how many doses you have left. Automatically decreases when you log a dose." />
+      </label>
+      <input
+        id="inventoryCount"
+        name="inventoryCount"
+        type="number"
+        value={formValues['inventoryCount'] ?? (medication?.inventoryCount?.toString() ?? '')}
+        placeholder="e.g. 30"
+        class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+      />
+      {#if errors['inventoryCount']?.[0]}<p class="mt-1 text-sm text-danger">{errors['inventoryCount'][0]}</p>{/if}
+    </div>
+    <div>
+      <label for="inventoryAlertThreshold" class="mb-1 block text-sm font-medium">
+        Low Stock Alert Threshold
+        <Tooltip text="You'll see a warning when your remaining inventory drops to this number." />
+      </label>
+      <input
+        id="inventoryAlertThreshold"
+        name="inventoryAlertThreshold"
+        type="number"
+        value={formValues['inventoryAlertThreshold'] ?? (medication?.inventoryAlertThreshold?.toString() ?? '')}
+        placeholder="e.g. 7"
+        class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+      />
+      {#if errors['inventoryAlertThreshold']?.[0]}<p class="mt-1 text-sm text-danger">{errors['inventoryAlertThreshold'][0]}</p>{/if}
+    </div>
   </div>
 
   <div>

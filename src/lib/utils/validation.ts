@@ -29,6 +29,23 @@ export const medicationSchema = z.object({
   ]),
   category: z.enum(["prescription", "otc", "supplement"]),
   colour: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex colour"),
+  colourSecondary: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional()
+    .or(z.literal("")),
+  pattern: z
+    .enum([
+      "solid",
+      "split",
+      "gradient",
+      "stripes",
+      "h-stripes",
+      "dots",
+      "checkerboard",
+      "radial",
+    ])
+    .default("solid"),
   scheduleType: z.enum(["scheduled", "as_needed"]).default("scheduled"),
   notes: z.string().max(1000).optional(),
   scheduleIntervalHours: z
@@ -53,9 +70,13 @@ export const doseEditSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
+
 export const settingsSchema = z.object({
   name: z.string().min(1).max(100),
-  timezone: z.string().min(1),
+  timezone: z
+    .string()
+    .refine((tz) => validTimezones.has(tz), "Invalid timezone"),
 });
 
 export const passwordChangeSchema = z

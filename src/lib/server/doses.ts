@@ -27,6 +27,8 @@ export async function getTodaysDoses(
         dosageUnit: medications.dosageUnit,
         form: medications.form,
         colour: medications.colour,
+        colourSecondary: medications.colourSecondary,
+        pattern: medications.pattern,
       },
     })
     .from(doseLogs)
@@ -69,6 +71,7 @@ export async function logDose(
     .where(
       and(
         eq(medications.id, medicationId),
+        eq(medications.userId, userId),
         isNotNull(medications.inventoryCount),
       ),
     );
@@ -95,6 +98,7 @@ export async function deleteDose(userId: string, doseId: string) {
     .where(
       and(
         eq(medications.id, dose.medicationId),
+        eq(medications.userId, userId),
         isNotNull(medications.inventoryCount),
       ),
     );
@@ -131,6 +135,7 @@ export async function updateDose(
       .where(
         and(
           eq(medications.id, existing.medicationId),
+          eq(medications.userId, userId),
           isNotNull(medications.inventoryCount),
         ),
       );

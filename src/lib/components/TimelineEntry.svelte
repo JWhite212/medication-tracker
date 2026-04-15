@@ -4,6 +4,7 @@
   import { formatTime } from '$lib/utils/time';
   import { showToast } from '$components/ui/Toast.svelte';
   import type { DoseLogWithMedication } from '$lib/types';
+  import { getMedicationBackground } from '$lib/utils/medication-style';
 
   let { dose, timezone, onedit }: { dose: DoseLogWithMedication; timezone: string; onedit?: (dose: DoseLogWithMedication) => void } = $props();
 
@@ -14,7 +15,7 @@
   role="listitem"
   onclick={() => onedit?.(dose)}
 >
-  <div class="h-3 w-3 shrink-0 rounded-full" style="background-color: {dose.medication.colour}"></div>
+  <div class="h-3 w-3 shrink-0 rounded-full" style="background: {getMedicationBackground(dose.medication.colour, dose.medication.colourSecondary, dose.medication.pattern, true)}"></div>
 
   <div class="min-w-0 flex-1">
     <p class="font-medium">

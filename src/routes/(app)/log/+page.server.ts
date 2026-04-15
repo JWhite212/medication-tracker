@@ -37,6 +37,8 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
         dosageUnit: medications.dosageUnit,
         form: medications.form,
         colour: medications.colour,
+        colourSecondary: medications.colourSecondary,
+        pattern: medications.pattern,
       },
     })
     .from(doseLogs)

@@ -61,6 +61,8 @@ export const medications = pgTable(
     form: text("form").notNull(),
     category: text("category").notNull(),
     colour: text("colour").notNull(),
+    colourSecondary: text("colour_secondary"),
+    pattern: text("pattern").notNull().default("solid"),
     notes: text("notes"),
     scheduleType: text("schedule_type").notNull().default("scheduled"),
     scheduleIntervalHours: numeric("schedule_interval_hours"),

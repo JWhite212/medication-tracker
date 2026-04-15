@@ -2,6 +2,7 @@
   import { enhance } from '$app/forms';
   import type { Medication } from '$lib/types';
   import { showToast } from '$components/ui/Toast.svelte';
+  import { getMedicationBackground } from '$lib/utils/medication-style';
 
   let { medications }: { medications: Medication[] } = $props();
 
@@ -32,7 +33,7 @@
 
       <div
         class="flex items-center rounded-full text-sm font-medium text-white overflow-hidden"
-        style="background-color: {med.colour}"
+        style="background: {getMedicationBackground(med.colour, med.colourSecondary, med.pattern)}"
       >
         <!-- Minus button (only visible when qty > 1) -->
         {#if getQty(med.id) > 1}

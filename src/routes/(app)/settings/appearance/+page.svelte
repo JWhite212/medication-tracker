@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import GlassCard from '$lib/components/ui/GlassCard.svelte';
+  import Tooltip from '$lib/components/ui/Tooltip.svelte';
 
   let { data, form } = $props();
 
@@ -70,7 +71,10 @@
       </div>
 
       <div>
-        <label for="uiDensity" class="mb-1 block text-sm font-medium">Display Density</label>
+        <label for="uiDensity" class="mb-1 block text-sm font-medium">
+          Display Density
+          <Tooltip text="Compact mode reduces spacing throughout the app to show more content on screen." />
+        </label>
         <select
           id="uiDensity"
           name="uiDensity"
@@ -89,7 +93,10 @@
           checked={data.preferences.reducedMotion}
           class="h-4 w-4 rounded border-glass-border bg-surface-raised text-accent focus:ring-accent"
         />
-        <label for="reducedMotion" class="text-sm font-medium">Reduce motion</label>
+        <label for="reducedMotion" class="text-sm font-medium">
+          Reduce motion
+          <Tooltip text="Disables animations and transitions for accessibility or personal preference." />
+        </label>
       </div>
 
       <button

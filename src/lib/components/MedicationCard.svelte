@@ -1,11 +1,12 @@
 <script lang="ts">
   import type { Medication } from '$lib/types';
+  import { getMedicationBackground } from '$lib/utils/medication-style';
   let { medication }: { medication: Medication } = $props();
 </script>
 
 <a href="/medications/{medication.id}"
   class="flex items-center gap-4 rounded-xl border border-glass-border bg-glass p-4 backdrop-blur-xl transition-colors hover:bg-glass-hover">
-  <div class="h-10 w-10 rounded-lg" style="background-color: {medication.colour}"></div>
+  <div class="h-10 w-10 rounded-lg" style="background: {getMedicationBackground(medication.colour, medication.colourSecondary, medication.pattern)}"></div>
   <div class="min-w-0 flex-1">
     <p class="font-medium">{medication.name}</p>
     <p class="text-sm text-text-secondary">

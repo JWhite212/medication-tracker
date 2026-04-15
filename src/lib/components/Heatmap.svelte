@@ -4,7 +4,7 @@
   const DAYS = 90;
 
   const lookup = $derived(new Map(data.map((d) => [d.date, d.count])));
-  const maxCount = $derived(data.length > 0 ? Math.max(...data.map((d) => d.count)) : 1);
+  const maxCount = $derived(data.reduce((m, d) => d.count > m ? d.count : m, 1));
 
   const weeks = $derived.by(() => {
     const today = new Date();

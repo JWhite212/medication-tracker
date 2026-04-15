@@ -89,21 +89,22 @@ export async function deleteDose(userId: string, doseId: string) {
 
   if (!dose) return false;
 
-  // Atomic inventory restore
-  await db
-    .update(medications)
-    .set({
-      inventoryCount: sql`${medications.inventoryCount} + ${dose.quantity}`,
-    })
-    .where(
-      and(
-        eq(medications.id, dose.medicationId),
-        eq(medications.userId, userId),
-        isNotNull(medications.inventoryCount),
+  // Inventory restore + delete in parallel
+  await Promise.all([
+    db
+      .update(medications)
+      .set({
+        inventoryCount: sql`${medications.inventoryCount} + ${dose.quantity}`,
+      })
+      .where(
+        and(
+          eq(medications.id, dose.medicationId),
+          eq(medications.userId, userId),
+          isNotNull(medications.inventoryCount),
+        ),
       ),
-    );
-
-  await db.delete(doseLogs).where(eq(doseLogs.id, doseId));
+    db.delete(doseLogs).where(eq(doseLogs.id, doseId)),
+  ]);
   await logAudit(userId, "dose_log", doseId, "delete");
   return true;
 }
@@ -121,27 +122,8 @@ export async function updateDose(
 
   if (!existing) return null;
 
-  // Atomic inventory adjustment if quantity changed
-  if (
-    updates.quantity !== undefined &&
-    updates.quantity !== existing.quantity
-  ) {
-    const diff = updates.quantity - existing.quantity;
-    await db
-      .update(medications)
-      .set({
-        inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${diff})`,
-      })
-      .where(
-        and(
-          eq(medications.id, existing.medicationId),
-          eq(medications.userId, userId),
-          isNotNull(medications.inventoryCount),
-        ),
-      );
-  }
-
-  const [updated] = await db
+  // Inventory adjustment + dose update in parallel
+  const doseUpdatePromise = db
     .update(doseLogs)
     .set({
       ...(updates.takenAt && { takenAt: updates.takenAt }),
@@ -150,6 +132,30 @@ export async function updateDose(
     })
     .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
     .returning();
+
+  const parallel: Promise<unknown>[] = [doseUpdatePromise];
+  if (
+    updates.quantity !== undefined &&
+    updates.quantity !== existing.quantity
+  ) {
+    const diff = updates.quantity - existing.quantity;
+    parallel.push(
+      db
+        .update(medications)
+        .set({
+          inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${diff})`,
+        })
+        .where(
+          and(
+            eq(medications.id, existing.medicationId),
+            eq(medications.userId, userId),
+            isNotNull(medications.inventoryCount),
+          ),
+        ),
+    );
+  }
+  await Promise.all(parallel);
+  const [updated] = await doseUpdatePromise;
 
   const changes = computeChanges(existing, updated);
   if (changes) await logAudit(userId, "dose_log", doseId, "update", changes);

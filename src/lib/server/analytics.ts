@@ -1,6 +1,7 @@
 import { eq, and, gte, sql, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
+import { startOfDay } from "$lib/utils/time";
 
 const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
 
@@ -42,7 +43,7 @@ export async function getDailyDoseCounts(
   days: number,
   timezone: string = "UTC",
 ) {
-  const since = new Date(Date.now() - days * 86400000);
+  const since = startOfDay(new Date(Date.now() - days * 86400000), timezone);
   return db
     .select({
       date: sql<string>`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`,
@@ -98,7 +99,7 @@ export async function getHourlyDistribution(
   days: number,
   timezone: string = "UTC",
 ) {
-  const since = new Date(Date.now() - days * 86400000);
+  const since = startOfDay(new Date(Date.now() - days * 86400000), timezone);
   return db
     .select({
       hour: sql<number>`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})::int`,

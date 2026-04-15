@@ -4,6 +4,15 @@
 	import AdherenceChart from '$components/AdherenceChart.svelte';
 
 	let { data } = $props();
+
+	const avgAdherence = $derived(
+		data.medStats.length > 0
+			? Math.round(data.medStats.reduce((a: number, s: { adherence: number }) => a + s.adherence, 0) / data.medStats.length)
+			: 0
+	);
+	const totalDoses = $derived(
+		data.dailyCounts.reduce((a: number, d: { count: number }) => a + d.count, 0)
+	);
 </script>
 
 <svelte:head>
@@ -20,20 +29,13 @@
 		</GlassCard>
 		<GlassCard class="text-center">
 			<p class="text-3xl font-bold text-success">
-				{data.medStats.length > 0
-					? Math.round(
-							data.medStats.reduce(
-								(a: number, s: { adherence: number }) => a + s.adherence,
-								0
-							) / data.medStats.length
-						)
-					: 0}%
+				{avgAdherence}%
 			</p>
 			<p class="mt-1 text-sm text-text-secondary">Avg Adherence</p>
 		</GlassCard>
 		<GlassCard class="text-center">
 			<p class="text-3xl font-bold text-warning">
-				{data.dailyCounts.reduce((a: number, d: { count: number }) => a + d.count, 0)}
+				{totalDoses}
 			</p>
 			<p class="mt-1 text-sm text-text-secondary">Doses (90 days)</p>
 		</GlassCard>

@@ -5,6 +5,17 @@
 
   let { data, children } = $props();
   let sidebarOpen = $state(false);
+
+  function accentFg(hex: string): string {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.55 ? '#111111' : '#ffffff';
+  }
+
+  const accentColor = $derived(data.preferences.accentColor);
+  const accentFgColor = $derived(accentFg(accentColor));
 </script>
 
 <!-- Mobile header (below md) -->
@@ -30,7 +41,8 @@
 
 <div
   class="flex h-screen overflow-hidden"
-  style:--color-accent={data.preferences.accentColor}
+  style:--color-accent={accentColor}
+  style:--color-accent-fg={accentFgColor}
   data-density={data.preferences.uiDensity}
 >
   <!-- Desktop sidebar (md+) -->

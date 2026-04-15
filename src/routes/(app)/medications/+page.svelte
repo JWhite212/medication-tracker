@@ -9,7 +9,7 @@
     <h1 class="text-2xl font-bold">Medications</h1>
     <a
       href="/medications/new"
-      class="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+      class="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90"
     >+ Add Medication</a>
   </div>
 

@@ -308,7 +308,7 @@
   <button
     type="submit"
     disabled={loading}
-    class="w-full rounded-lg bg-accent px-4 py-2.5 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+    class="w-full rounded-lg bg-accent px-4 py-2.5 font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
   >
     {loading ? 'Saving...' : medication ? 'Update Medication' : 'Add Medication'}
   </button>

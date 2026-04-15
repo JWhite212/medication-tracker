@@ -15,7 +15,7 @@
 
 <aside class="flex h-screen w-64 flex-col border-r border-glass-border bg-surface-raised">
   <a href="/dashboard" class="flex items-center gap-3 border-b border-glass-border p-5 transition-colors hover:bg-glass-hover">
-    <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">M</div>
+    <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-sm font-bold text-accent-fg">M</div>
     <span class="text-lg font-semibold">MedTracker</span>
   </a>
   <nav class="flex-1 space-y-1 p-3">

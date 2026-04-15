@@ -40,7 +40,7 @@
 
       <button
         type="submit"
-        class="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+        class="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90"
       >
         Save Format
       </button>

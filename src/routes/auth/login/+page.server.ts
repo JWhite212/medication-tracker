@@ -7,6 +7,7 @@ import { users } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { hasOAuthProviders } from "$lib/server/auth/oauth";
+import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -17,7 +18,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 export const actions: Actions = {
   default: async ({ request, cookies, getClientAddress }) => {
     const ip = getClientAddress();
-    const { allowed, retryAfterMs } = checkRateLimit(`login:${ip}`);
+    const { allowed, retryAfterMs } = await checkRateLimit(`login:${ip}`);
     if (!allowed) {
       return fail(429, {
         errors: {
@@ -55,6 +56,7 @@ export const actions: Actions = {
 
     const validPassword = await verifyPassword(user.passwordHash, password);
     if (!validPassword) {
+      await logAudit(user.id, "session", "n/a", "failed_login");
       return fail(400, {
         errors: { form: ["Invalid email or password"] },
         email,
@@ -68,6 +70,7 @@ export const actions: Actions = {
       ...sessionCookie.attributes,
     });
 
+    await logAudit(user.id, "session", session.id, "create");
     redirect(302, "/dashboard");
   },
 };

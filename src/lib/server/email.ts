@@ -12,7 +12,7 @@ export async function sendVerificationEmail(
 ) {
   const verifyUrl = `${baseUrl}/auth/verify?token=${token}`;
   await getResend().emails.send({
-    from: "MedTracker <noreply@yourdomain.com>",
+    from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
     to: email,
     subject: "Verify your email",
     html: `<p>Click <a href="${verifyUrl}">here</a> to verify your email address.</p>
@@ -27,7 +27,7 @@ export async function sendPasswordResetEmail(
 ) {
   const resetUrl = `${baseUrl}/auth/reset-password?token=${token}`;
   await getResend().emails.send({
-    from: "MedTracker <noreply@yourdomain.com>",
+    from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
     to: email,
     subject: "Reset your password",
     html: `<p>Click <a href="${resetUrl}">here</a> to reset your password.</p>
@@ -41,7 +41,7 @@ export async function sendReminderEmail(
   lastTaken: string,
 ) {
   await getResend().emails.send({
-    from: "MedTracker <noreply@yourdomain.com>",
+    from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
     to: email,
     subject: `Reminder: ${medicationName}`,
     html: `<p>You haven't taken <strong>${medicationName}</strong> since ${lastTaken}.</p>

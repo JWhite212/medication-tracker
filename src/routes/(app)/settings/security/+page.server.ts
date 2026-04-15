@@ -5,6 +5,7 @@ import { users, sessions } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
 import { passwordChangeSchema } from "$lib/utils/validation";
 import { hashPassword, verifyPassword } from "$lib/server/auth/password";
+import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -52,17 +53,21 @@ export const actions: Actions = {
       .update(users)
       .set({ passwordHash: newHash, updatedAt: new Date() })
       .where(eq(users.id, locals.user!.id));
+    await logAudit(locals.user!.id, "user", locals.user!.id, "update");
     return { passwordSuccess: true };
   },
   revokeSession: async ({ request, locals }) => {
     const formData = await request.formData();
     const sessionId = formData.get("sessionId") as string;
-    if (sessionId && sessionId !== locals.session!.id)
+    if (sessionId && sessionId !== locals.session!.id) {
       await lucia.invalidateSession(sessionId);
+      await logAudit(locals.user!.id, "session", sessionId, "delete");
+    }
     return { sessionRevoked: true };
   },
   logout: async ({ locals, cookies }) => {
     if (locals.session) {
+      await logAudit(locals.user!.id, "session", locals.session.id, "delete");
       await lucia.invalidateSession(locals.session.id);
       const sessionCookie = lucia.createBlankSessionCookie();
       cookies.set(sessionCookie.name, sessionCookie.value, {

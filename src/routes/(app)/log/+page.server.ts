@@ -6,10 +6,11 @@ import { doseEditSchema } from "$lib/utils/validation";
 import { updateDose } from "$lib/server/doses";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url, parent }) => {
   const userId = locals.user!.id;
+  const { preferences } = await parent();
   const page = Number(url.searchParams.get("page") ?? "1");
-  const limit = 20;
+  const limit = preferences.doseLogPageSize;
   const offset = (page - 1) * limit;
   const medFilter = url.searchParams.get("medication");
   const from = url.searchParams.get("from");

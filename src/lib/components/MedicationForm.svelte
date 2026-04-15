@@ -23,6 +23,9 @@
   );
 
   let loading = $state(false);
+  let scheduleType = $state(
+    formValues['scheduleType'] ?? medication?.scheduleType ?? 'scheduled'
+  );
 
   const formOptions = [
     { value: 'tablet', label: 'Tablet' },
@@ -65,7 +68,7 @@
     placeholder="e.g. Aspirin"
   />
 
-  <div class="grid grid-cols-2 gap-4">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <Input
       label="Dosage Amount"
       name="dosageAmount"
@@ -135,16 +138,39 @@
     {#if errors['colour']?.[0]}<p class="mt-1 text-sm text-danger">{errors['colour'][0]}</p>{/if}
   </div>
 
-  <Input
-    label="Schedule Interval (hours)"
-    name="scheduleIntervalHours"
-    type="number"
-    value={formValues['scheduleIntervalHours'] ?? (medication?.scheduleIntervalHours ?? '')}
-    error={errors['scheduleIntervalHours']?.[0] ?? ''}
-    placeholder="e.g. 8"
-  />
+  <div>
+    <label class="mb-1 block text-sm font-medium">Schedule Type</label>
+    <div class="flex gap-3">
+      <button
+        type="button"
+        onclick={() => (scheduleType = 'scheduled')}
+        class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {scheduleType === 'scheduled' ? 'border-accent bg-accent/15 text-accent' : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
+      >
+        Scheduled
+      </button>
+      <button
+        type="button"
+        onclick={() => (scheduleType = 'as_needed')}
+        class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {scheduleType === 'as_needed' ? 'border-accent bg-accent/15 text-accent' : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
+      >
+        As Needed (PRN)
+      </button>
+    </div>
+    <input type="hidden" name="scheduleType" value={scheduleType} />
+  </div>
 
-  <div class="grid grid-cols-2 gap-4">
+  {#if scheduleType === 'scheduled'}
+    <Input
+      label="Schedule Interval (hours)"
+      name="scheduleIntervalHours"
+      type="number"
+      value={formValues['scheduleIntervalHours'] ?? (medication?.scheduleIntervalHours ?? '')}
+      error={errors['scheduleIntervalHours']?.[0] ?? ''}
+      placeholder="e.g. 8"
+    />
+  {/if}
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <Input
       label="Inventory Count"
       name="inventoryCount"

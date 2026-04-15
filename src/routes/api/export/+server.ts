@@ -1,5 +1,7 @@
 import { error } from "@sveltejs/kit";
 import { generateReport } from "$lib/server/export-pdf";
+import { generateCsvReport } from "$lib/server/export-csv";
+import { getOrCreatePreferences } from "$lib/server/preferences";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -9,6 +11,36 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   const to = url.searchParams.get("to");
   const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 86400000);
   const toDate = to ? new Date(to) : new Date();
+
+  if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+    error(400, "Invalid date format");
+  }
+  if (fromDate >= toDate) {
+    error(400, "'from' must be before 'to'");
+  }
+  if (toDate.getTime() - fromDate.getTime() > 366 * 86400000) {
+    error(400, "Date range must not exceed 1 year");
+  }
+
+  const preferences = await getOrCreatePreferences(locals.user.id);
+  const format =
+    url.searchParams.get("format") ?? preferences.exportFormat ?? "pdf";
+  const dateStr = fromDate.toISOString().split("T")[0];
+
+  if (format === "csv") {
+    const csv = await generateCsvReport(
+      locals.user.id,
+      locals.user.timezone,
+      fromDate,
+      toDate,
+    );
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv",
+        "Content-Disposition": `attachment; filename="medtracker-report-${dateStr}.csv"`,
+      },
+    });
+  }
 
   const pdf = await generateReport(
     locals.user.id,
@@ -20,7 +52,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   return new Response(pdf, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="medtracker-report-${fromDate.toISOString().split("T")[0]}.pdf"`,
+      "Content-Disposition": `attachment; filename="medtracker-report-${dateStr}.pdf"`,
     },
   });
 };

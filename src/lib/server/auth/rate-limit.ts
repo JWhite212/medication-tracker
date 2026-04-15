@@ -1,26 +1,36 @@
-const attempts = new Map<string, { count: number; resetAt: number }>();
+import { sql } from "drizzle-orm";
+import { db } from "$lib/server/db";
+import { rateLimits } from "$lib/server/db/schema";
 
-export function checkRateLimit(
+export async function checkRateLimit(
   key: string,
   maxAttempts: number = 5,
   windowMs: number = 15 * 60 * 1000,
-): { allowed: boolean; retryAfterMs: number } {
-  const now = Date.now();
-  const record = attempts.get(key);
+): Promise<{ allowed: boolean; retryAfterMs: number }> {
+  const windowEnd = new Date(Date.now() + windowMs);
 
-  if (!record || now > record.resetAt) {
-    attempts.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true, retryAfterMs: 0 };
-  }
+  const [row] = await db
+    .insert(rateLimits)
+    .values({ key, count: 1, resetAt: windowEnd })
+    .onConflictDoUpdate({
+      target: rateLimits.key,
+      set: {
+        count: sql`CASE
+          WHEN ${rateLimits.resetAt} < NOW() THEN 1
+          ELSE ${rateLimits.count} + 1
+        END`,
+        resetAt: sql`CASE
+          WHEN ${rateLimits.resetAt} < NOW() THEN ${windowEnd}
+          ELSE ${rateLimits.resetAt}
+        END`,
+      },
+    })
+    .returning();
 
-  if (record.count >= maxAttempts) {
-    return { allowed: false, retryAfterMs: record.resetAt - now };
-  }
-
-  record.count++;
-  return { allowed: true, retryAfterMs: 0 };
+  const retryAfterMs = Math.max(0, row.resetAt.getTime() - Date.now());
+  return { allowed: row.count <= maxAttempts, retryAfterMs };
 }
 
-export function resetRateLimit(key: string): void {
-  attempts.delete(key);
+export async function resetRateLimit(key: string): Promise<void> {
+  await db.delete(rateLimits).where(sql`${rateLimits.key} = ${key}`);
 }

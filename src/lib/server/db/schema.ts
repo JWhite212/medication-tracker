@@ -62,6 +62,7 @@ export const medications = pgTable(
     category: text("category").notNull(),
     colour: text("colour").notNull(),
     notes: text("notes"),
+    scheduleType: text("schedule_type").notNull().default("scheduled"),
     scheduleIntervalHours: numeric("schedule_interval_hours"),
     inventoryCount: integer("inventory_count"),
     inventoryAlertThreshold: integer("inventory_alert_threshold"),
@@ -121,6 +122,31 @@ export const auditLogs = pgTable(
     index("audit_logs_user_created_idx").on(table.userId, table.createdAt),
   ],
 );
+
+export const userPreferences = pgTable("user_preferences", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  accentColor: text("accent_color").notNull().default("#6366f1"),
+  dateFormat: text("date_format").notNull().default("DD/MM/YYYY"),
+  timeFormat: text("time_format").notNull().default("12h"),
+  uiDensity: text("ui_density").notNull().default("comfortable"),
+  reducedMotion: boolean("reduced_motion").notNull().default(false),
+  emailReminders: boolean("email_reminders").notNull().default(true),
+  lowInventoryAlerts: boolean("low_inventory_alerts").notNull().default(true),
+  doseLogPageSize: integer("dose_log_page_size").notNull().default(20),
+  heatmapPeriod: integer("heatmap_period").notNull().default(90),
+  exportFormat: text("export_format").notNull().default("pdf"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(1),
+  resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
+});
 
 export const passwordResetTokens = pgTable("password_reset_tokens", {
   id: text("id").primaryKey(),

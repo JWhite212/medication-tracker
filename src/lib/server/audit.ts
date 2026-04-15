@@ -19,7 +19,7 @@ export async function logAudit(
   userId: string,
   entityType: string,
   entityId: string,
-  action: "create" | "update" | "delete",
+  action: "create" | "update" | "delete" | "failed_login",
   changes?: Record<string, { from: unknown; to: unknown }> | null,
 ) {
   await db

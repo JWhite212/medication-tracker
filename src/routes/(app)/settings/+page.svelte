@@ -12,7 +12,7 @@
   <title>Settings — MedTracker</title>
 </svelte:head>
 
-<div class="mx-auto max-w-2xl space-y-6">
+<div class="mx-auto w-full max-w-2xl space-y-6">
   <h1 class="text-2xl font-bold">Settings</h1>
 
   <GlassCard>
@@ -71,12 +71,34 @@
       </a>
 
       <a
-        href="/api/export"
+        href="/settings/appearance"
         class="flex items-center justify-between rounded-lg border border-glass-border px-4 py-3 transition-colors hover:bg-surface-raised"
       >
         <div>
-          <p class="font-medium">Export Data</p>
-          <p class="text-sm text-text-muted">Download your medication history as PDF</p>
+          <p class="font-medium">Appearance</p>
+          <p class="text-sm text-text-muted">Colours, date format, and display density</p>
+        </div>
+        <span class="text-text-muted">›</span>
+      </a>
+
+      <a
+        href="/settings/notifications"
+        class="flex items-center justify-between rounded-lg border border-glass-border px-4 py-3 transition-colors hover:bg-surface-raised"
+      >
+        <div>
+          <p class="font-medium">Notifications</p>
+          <p class="text-sm text-text-muted">Email reminders and alerts</p>
+        </div>
+        <span class="text-text-muted">›</span>
+      </a>
+
+      <a
+        href="/settings/data"
+        class="flex items-center justify-between rounded-lg border border-glass-border px-4 py-3 transition-colors hover:bg-surface-raised"
+      >
+        <div>
+          <p class="font-medium">Data Management</p>
+          <p class="text-sm text-text-muted">Export, import, and account deletion</p>
         </div>
         <span class="text-text-muted">›</span>
       </a>

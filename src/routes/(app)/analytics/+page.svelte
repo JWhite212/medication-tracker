@@ -13,7 +13,7 @@
 <div class="mx-auto max-w-3xl space-y-6">
 	<h1 class="text-2xl font-bold">Analytics</h1>
 
-	<div class="grid grid-cols-2 gap-4 md:grid-cols-3">
+	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:gap-4">
 		<GlassCard class="text-center">
 			<p class="text-3xl font-bold text-accent">{data.streak}</p>
 			<p class="mt-1 text-sm text-text-secondary">Day Streak</p>
@@ -55,7 +55,7 @@
 
 	<GlassCard>
 		<h2 class="mb-4 text-lg font-semibold">Time of Day Distribution</h2>
-		<div class="flex h-32 items-end gap-1">
+		<div class="overflow-x-auto"><div class="flex h-32 items-end gap-1" style="min-width: 28rem">
 			{#each Array.from({ length: 24 }, (_, i) => i) as hour}
 				{@const count = data.hourly.find((h: { hour: number }) => h.hour === hour)?.count ?? 0}
 				{@const maxH = Math.max(...data.hourly.map((h: { count: number }) => h.count), 1)}
@@ -69,6 +69,6 @@
 					{/if}
 				</div>
 			{/each}
-		</div>
+		</div></div>
 	</GlassCard>
 </div>

@@ -6,7 +6,7 @@
   const lookup = $derived(new Map(data.map((d) => [d.date, d.count])));
   const maxCount = $derived(data.length > 0 ? Math.max(...data.map((d) => d.count)) : 1);
 
-  const weeks = $derived(() => {
+  const weeks = $derived.by(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const startDay = new Date(today.getTime() - (DAYS - 1) * 86400000);
@@ -49,7 +49,7 @@
 
 <div class="relative overflow-x-auto">
   <div class="flex gap-[1px]">
-    {#each weeks() as week}
+    {#each weeks as week}
       <div class="flex flex-col gap-[1px]">
         {#each Array(7) as _, rowIdx}
           {@const cell = week.find((c) => c.row === rowIdx)}
@@ -71,7 +71,7 @@
 
   {#if tooltip}
     <div
-      class="pointer-events-none fixed z-50 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow"
+      class="pointer-events-none fixed z-30 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow"
       style="left: {tooltip.x}px; top: {tooltip.y}px;"
     >
       {tooltip.text}

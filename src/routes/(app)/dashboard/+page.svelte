@@ -17,7 +17,7 @@
 
 <Toast />
 
-<div class="mx-auto max-w-2xl space-y-6">
+<div class="mx-auto w-full max-w-2xl space-y-6">
   <h1 class="text-2xl font-bold">Dashboard</h1>
 
   <SummaryStrip doseCount={data.doses.length} />

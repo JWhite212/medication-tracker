@@ -29,6 +29,7 @@ export const medicationSchema = z.object({
   ]),
   category: z.enum(["prescription", "otc", "supplement"]),
   colour: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex colour"),
+  scheduleType: z.enum(["scheduled", "as_needed"]).default("scheduled"),
   notes: z.string().max(1000).optional(),
   scheduleIntervalHours: z
     .string()
@@ -67,6 +68,34 @@ export const passwordChangeSchema = z
     message: "Passwords do not match",
     path: ["confirmPassword"],
   });
+
+export const appearanceSchema = z.object({
+  accentColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex colour"),
+  dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]),
+  timeFormat: z.enum(["12h", "24h"]),
+  uiDensity: z.enum(["comfortable", "compact"]),
+  reducedMotion: z
+    .string()
+    .optional()
+    .transform((v) => v === "on"),
+});
+
+export const notificationSchema = z.object({
+  emailReminders: z
+    .string()
+    .optional()
+    .transform((v) => v === "on"),
+  lowInventoryAlerts: z
+    .string()
+    .optional()
+    .transform((v) => v === "on"),
+});
+
+export const dataSchema = z.object({
+  exportFormat: z.enum(["pdf", "csv"]),
+});
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

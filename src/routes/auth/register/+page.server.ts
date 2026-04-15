@@ -6,6 +6,7 @@ import { lucia } from "$lib/server/auth/lucia";
 import { db } from "$lib/server/db";
 import { users } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
+import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
 async function isPasswordBreached(password: string): Promise<boolean> {
@@ -79,6 +80,8 @@ export const actions: Actions = {
       name,
       passwordHash,
     });
+
+    await logAudit(userId, "user", userId, "create");
 
     const session = await lucia.createSession(userId, {});
     const sessionCookie = lucia.createSessionCookie(session.id);

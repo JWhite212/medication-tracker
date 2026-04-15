@@ -11,7 +11,7 @@
   function setQty(medId: string, val: number) { quantities[medId] = Math.max(1, Math.min(10, val)); }
 </script>
 
-<div class="flex flex-wrap gap-2">
+<div class="flex flex-wrap gap-2 sm:gap-3">
   {#each medications as med}
     <form
       method="POST"

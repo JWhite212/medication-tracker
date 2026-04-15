@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and, gte, desc } from "drizzle-orm";
+import { eq, and, gte, desc, sql, isNotNull } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
@@ -60,21 +60,18 @@ export async function logDose(
     })
     .returning();
 
-  // Decrement inventory
-  const [med] = await db
-    .select({ inventoryCount: medications.inventoryCount })
-    .from(medications)
-    .where(eq(medications.id, medicationId))
-    .limit(1);
-
-  if (med?.inventoryCount !== null) {
-    await db
-      .update(medications)
-      .set({
-        inventoryCount: Math.max(0, (med.inventoryCount ?? 0) - quantity),
-      })
-      .where(eq(medications.id, medicationId));
-  }
+  // Atomic inventory decrement
+  await db
+    .update(medications)
+    .set({
+      inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${quantity})`,
+    })
+    .where(
+      and(
+        eq(medications.id, medicationId),
+        isNotNull(medications.inventoryCount),
+      ),
+    );
 
   await logAudit(userId, "dose_log", id, "create");
   return dose;
@@ -89,19 +86,18 @@ export async function deleteDose(userId: string, doseId: string) {
 
   if (!dose) return false;
 
-  // Restore inventory
-  const [med] = await db
-    .select({ inventoryCount: medications.inventoryCount })
-    .from(medications)
-    .where(eq(medications.id, dose.medicationId))
-    .limit(1);
-
-  if (med?.inventoryCount !== null) {
-    await db
-      .update(medications)
-      .set({ inventoryCount: (med.inventoryCount ?? 0) + dose.quantity })
-      .where(eq(medications.id, dose.medicationId));
-  }
+  // Atomic inventory restore
+  await db
+    .update(medications)
+    .set({
+      inventoryCount: sql`${medications.inventoryCount} + ${dose.quantity}`,
+    })
+    .where(
+      and(
+        eq(medications.id, dose.medicationId),
+        isNotNull(medications.inventoryCount),
+      ),
+    );
 
   await db.delete(doseLogs).where(eq(doseLogs.id, doseId));
   await logAudit(userId, "dose_log", doseId, "delete");
@@ -121,24 +117,23 @@ export async function updateDose(
 
   if (!existing) return null;
 
-  // Adjust inventory if quantity changed
+  // Atomic inventory adjustment if quantity changed
   if (
     updates.quantity !== undefined &&
     updates.quantity !== existing.quantity
   ) {
     const diff = updates.quantity - existing.quantity;
-    const [med] = await db
-      .select({ inventoryCount: medications.inventoryCount })
-      .from(medications)
-      .where(eq(medications.id, existing.medicationId))
-      .limit(1);
-
-    if (med?.inventoryCount !== null) {
-      await db
-        .update(medications)
-        .set({ inventoryCount: Math.max(0, (med.inventoryCount ?? 0) - diff) })
-        .where(eq(medications.id, existing.medicationId));
-    }
+    await db
+      .update(medications)
+      .set({
+        inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${diff})`,
+      })
+      .where(
+        and(
+          eq(medications.id, existing.medicationId),
+          isNotNull(medications.inventoryCount),
+        ),
+      );
   }
 
   const [updated] = await db

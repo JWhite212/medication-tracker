@@ -3,7 +3,7 @@
 </svelte:head>
 
 <div class="flex min-h-screen flex-col">
-  <header class="flex items-center justify-between border-b border-glass-border px-6 py-4">
+  <header class="flex items-center justify-between border-b border-glass-border px-4 py-4 sm:px-6">
     <div class="flex items-center gap-3">
       <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">M</div>
       <span class="text-lg font-semibold">MedTracker</span>
@@ -14,8 +14,8 @@
     </div>
   </header>
 
-  <main class="flex flex-1 flex-col items-center justify-center px-6 text-center">
-    <h1 class="max-w-2xl text-5xl font-bold leading-tight tracking-tight">
+  <main class="flex flex-1 flex-col items-center justify-center px-4 text-center sm:px-6">
+    <h1 class="max-w-2xl text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
       Track your medications
       <span class="text-accent">effortlessly</span>
     </h1>
@@ -29,7 +29,7 @@
       </a>
     </div>
 
-    <div class="mt-16 grid max-w-3xl grid-cols-3 gap-8 text-center">
+    <div class="mt-16 grid max-w-3xl grid-cols-1 gap-6 text-center sm:grid-cols-3 sm:gap-8">
       <div>
         <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-xl">⏱</div>
         <h3 class="font-semibold">Live Timers</h3>

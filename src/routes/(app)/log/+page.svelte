@@ -21,12 +21,12 @@
   <title>Dose History — MedTracker</title>
 </svelte:head>
 
-<div class="mx-auto max-w-2xl space-y-6">
+<div class="mx-auto w-full max-w-2xl space-y-6">
   <h1 class="text-2xl font-bold">Dose History</h1>
 
-  <div class="flex flex-wrap gap-3 rounded-xl border border-glass-border bg-glass p-4 backdrop-blur-xl">
+  <div class="flex flex-col gap-2 rounded-xl border border-glass-border bg-glass p-4 backdrop-blur-xl sm:flex-row sm:flex-wrap sm:gap-3">
     <select
-      class="rounded-lg border border-glass-border bg-surface-raised px-3 py-2 text-sm text-text-primary"
+      class="w-full rounded-lg border border-glass-border bg-surface-raised px-3 py-2 text-sm text-text-primary sm:w-auto"
       onchange={(e) => updateFilter('medication', e.currentTarget.value)}
     >
       <option value="">All medications</option>
@@ -34,10 +34,10 @@
         <option value={med.id} selected={med.id === data.filters.medication}>{med.name}</option>
       {/each}
     </select>
-    <input type="date" class="rounded-lg border border-glass-border bg-surface-raised px-3 py-2 text-sm text-text-primary"
+    <input type="date" class="w-full rounded-lg border border-glass-border bg-surface-raised px-3 py-2 text-sm text-text-primary sm:w-auto"
       value={data.filters.from ?? ''} onchange={(e) => updateFilter('from', e.currentTarget.value)} />
     <span class="self-center text-text-muted">to</span>
-    <input type="date" class="rounded-lg border border-glass-border bg-surface-raised px-3 py-2 text-sm text-text-primary"
+    <input type="date" class="w-full rounded-lg border border-glass-border bg-surface-raised px-3 py-2 text-sm text-text-primary sm:w-auto"
       value={data.filters.to ?? ''} onchange={(e) => updateFilter('to', e.currentTarget.value)} />
   </div>
 

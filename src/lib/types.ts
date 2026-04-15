@@ -5,6 +5,7 @@ import type {
   doseLogs,
   auditLogs,
   sessions,
+  userPreferences,
 } from "$lib/server/db/schema";
 
 export type User = InferSelectModel<typeof users>;
@@ -23,6 +24,8 @@ export type SessionUser = Pick<
   | "twoFactorEnabled"
   | "emailVerified"
 >;
+
+export type UserPreferences = InferSelectModel<typeof userPreferences>;
 
 export type DoseLogWithMedication = DoseLog & {
   medication: Pick<

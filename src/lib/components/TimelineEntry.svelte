@@ -6,15 +6,13 @@
   import type { DoseLogWithMedication } from '$lib/types';
 
   let { dose, timezone, onedit }: { dose: DoseLogWithMedication; timezone: string; onedit?: (dose: DoseLogWithMedication) => void } = $props();
-  let showActions = $state(false);
+
 </script>
 
 <div
-  class="flex items-center gap-4 rounded-lg border border-glass-border bg-glass p-4 backdrop-blur-xl transition-colors hover:bg-glass-hover {onedit ? 'cursor-pointer' : ''}"
+  class="group flex items-center gap-4 rounded-lg border border-glass-border bg-glass p-4 backdrop-blur-xl transition-colors hover:bg-glass-hover {onedit ? 'cursor-pointer' : ''}"
   role="listitem"
   onclick={() => onedit?.(dose)}
-  onmouseenter={() => (showActions = true)}
-  onmouseleave={() => (showActions = false)}
 >
   <div class="h-3 w-3 shrink-0 rounded-full" style="background-color: {dose.medication.colour}"></div>
 
@@ -35,8 +33,7 @@
     </span>
   </div>
 
-  {#if showActions}
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
       {#if onedit}
         <button
           type="button"
@@ -64,5 +61,4 @@
         </button>
       </form>
     </div>
-  {/if}
 </div>

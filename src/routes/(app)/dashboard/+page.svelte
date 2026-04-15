@@ -3,8 +3,12 @@
   import QuickLogBar from '$components/QuickLogBar.svelte';
   import TimelineEntry from '$components/TimelineEntry.svelte';
   import Toast from '$components/ui/Toast.svelte';
+  import Modal from '$components/ui/Modal.svelte';
+  import DoseEditForm from '$components/DoseEditForm.svelte';
+  import type { DoseLogWithMedication } from '$lib/types';
 
   let { data } = $props();
+  let editingDose = $state<DoseLogWithMedication | null>(null);
 </script>
 
 <svelte:head>
@@ -32,9 +36,15 @@
     {:else}
       <div class="space-y-2" role="list" aria-label="Today's doses">
         {#each data.doses as dose (dose.id)}
-          <TimelineEntry {dose} timezone={data.timezone} />
+          <TimelineEntry {dose} timezone={data.timezone} onedit={(d) => (editingDose = d)} />
         {/each}
       </div>
     {/if}
   </section>
 </div>
+
+<Modal open={editingDose !== null} onclose={() => (editingDose = null)}>
+  {#if editingDose}
+    <DoseEditForm dose={editingDose} onclose={() => (editingDose = null)} />
+  {/if}
+</Modal>

@@ -45,6 +45,13 @@ export const doseLogSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+export const doseEditSchema = z.object({
+  doseId: z.string().min(1),
+  takenAt: z.string().min(1),
+  quantity: z.coerce.number().int().min(1).max(10),
+  notes: z.string().max(500).optional(),
+});
+
 export const settingsSchema = z.object({
   name: z.string().min(1).max(100),
   timezone: z.string().min(1),

@@ -5,13 +5,14 @@
   import { showToast } from '$components/ui/Toast.svelte';
   import type { DoseLogWithMedication } from '$lib/types';
 
-  let { dose, timezone }: { dose: DoseLogWithMedication; timezone: string } = $props();
+  let { dose, timezone, onedit }: { dose: DoseLogWithMedication; timezone: string; onedit?: (dose: DoseLogWithMedication) => void } = $props();
   let showActions = $state(false);
 </script>
 
 <div
-  class="flex items-center gap-4 rounded-lg border border-glass-border bg-glass p-4 backdrop-blur-xl transition-colors hover:bg-glass-hover"
+  class="flex items-center gap-4 rounded-lg border border-glass-border bg-glass p-4 backdrop-blur-xl transition-colors hover:bg-glass-hover {onedit ? 'cursor-pointer' : ''}"
   role="listitem"
+  onclick={() => onedit?.(dose)}
   onmouseenter={() => (showActions = true)}
   onmouseleave={() => (showActions = false)}
 >
@@ -35,16 +36,33 @@
   </div>
 
   {#if showActions}
-    <form method="POST" action="?/deleteDose" use:enhance={() => {
-      return async ({ result, update }) => {
-        if (result.type === 'success') showToast('Dose removed', 'success');
-        await update();
-      };
-    }}>
-      <input type="hidden" name="doseId" value={dose.id} />
-      <button type="submit" class="text-xs text-text-muted hover:text-danger" aria-label="Delete dose">
-        &times;
-      </button>
-    </form>
+    <div class="flex items-center gap-2">
+      {#if onedit}
+        <button
+          type="button"
+          onclick={(e) => { e.stopPropagation(); onedit?.(dose); }}
+          class="text-xs text-text-muted hover:text-accent"
+          aria-label="Edit dose"
+        >
+          ✎
+        </button>
+      {/if}
+      <form method="POST" action="?/deleteDose" use:enhance={() => {
+        return async ({ result, update }) => {
+          if (result.type === 'success') showToast('Dose removed', 'success');
+          await update();
+        };
+      }}>
+        <input type="hidden" name="doseId" value={dose.id} />
+        <button
+          type="submit"
+          onclick={(e) => e.stopPropagation()}
+          class="text-xs text-text-muted hover:text-danger"
+          aria-label="Delete dose"
+        >
+          &times;
+        </button>
+      </form>
+    </div>
   {/if}
 </div>

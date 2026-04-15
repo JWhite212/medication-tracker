@@ -1,8 +1,12 @@
 <script lang="ts">
   import TimelineEntry from '$components/TimelineEntry.svelte';
+  import Modal from '$components/ui/Modal.svelte';
+  import DoseEditForm from '$components/DoseEditForm.svelte';
   import { goto } from '$app/navigation';
+  import type { DoseLogWithMedication } from '$lib/types';
 
   let { data } = $props();
+  let editingDose = $state<DoseLogWithMedication | null>(null);
 
   function updateFilter(key: string, value: string) {
     const url = new URL(window.location.href);
@@ -44,7 +48,7 @@
   {:else}
     <div class="space-y-2" role="list">
       {#each data.doses as dose (dose.id)}
-        <TimelineEntry {dose} timezone={data.timezone} />
+        <TimelineEntry {dose} timezone={data.timezone} onedit={(d) => (editingDose = d)} />
       {/each}
     </div>
   {/if}
@@ -58,3 +62,9 @@
     {/if}
   </div>
 </div>
+
+<Modal open={editingDose !== null} onclose={() => (editingDose = null)}>
+  {#if editingDose}
+    <DoseEditForm dose={editingDose} onclose={() => (editingDose = null)} />
+  {/if}
+</Modal>

@@ -1,7 +1,10 @@
+import { fail } from "@sveltejs/kit";
 import { desc, eq, and, gte, lte } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
-import type { PageServerLoad } from "./$types";
+import { doseEditSchema } from "$lib/utils/validation";
+import { updateDose } from "$lib/server/doses";
+import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals, url }) => {
   const userId = locals.user!.id;
@@ -62,4 +65,21 @@ export const load: PageServerLoad = async ({ locals, url }) => {
     filters: { medication: medFilter, from, to },
     timezone: locals.user!.timezone,
   };
+};
+
+export const actions: Actions = {
+  editDose: async ({ request, locals }) => {
+    const formData = Object.fromEntries(await request.formData());
+    const parsed = doseEditSchema.safeParse(formData);
+    if (!parsed.success)
+      return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
+
+    const { doseId, takenAt, quantity, notes } = parsed.data;
+    await updateDose(locals.user!.id, doseId, {
+      takenAt: new Date(takenAt),
+      quantity,
+      notes,
+    });
+    return { success: true };
+  },
 };

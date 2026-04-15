@@ -1,7 +1,12 @@
 import { fail } from "@sveltejs/kit";
 import { getActiveMedications } from "$lib/server/medications";
-import { getTodaysDoses, logDose, deleteDose } from "$lib/server/doses";
-import { doseLogSchema } from "$lib/utils/validation";
+import {
+  getTodaysDoses,
+  logDose,
+  deleteDose,
+  updateDose,
+} from "$lib/server/doses";
+import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -39,6 +44,20 @@ export const actions: Actions = {
 
     if (!doseId) return fail(400, { error: "Missing dose ID" });
     await deleteDose(locals.user!.id, doseId);
+    return { success: true };
+  },
+  editDose: async ({ request, locals }) => {
+    const formData = Object.fromEntries(await request.formData());
+    const parsed = doseEditSchema.safeParse(formData);
+    if (!parsed.success)
+      return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
+
+    const { doseId, takenAt, quantity, notes } = parsed.data;
+    await updateDose(locals.user!.id, doseId, {
+      takenAt: new Date(takenAt),
+      quantity,
+      notes,
+    });
     return { success: true };
   },
 };

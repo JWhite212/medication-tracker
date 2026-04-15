@@ -2,6 +2,13 @@ import { eq, and, gte, sql, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 
+const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
+
+function safeTz(timezone: string): ReturnType<typeof sql.raw> {
+  const tz = validTimezones.has(timezone) ? timezone : "UTC";
+  return sql.raw(`'${tz}'`);
+}
+
 export function calculateStreak(
   sortedDates: string[],
   timezone: string = "UTC",
@@ -38,13 +45,15 @@ export async function getDailyDoseCounts(
   const since = new Date(Date.now() - days * 86400000);
   return db
     .select({
-      date: sql<string>`date(${doseLogs.takenAt} AT TIME ZONE ${timezone})`,
+      date: sql<string>`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`,
       count: sql<number>`count(*)::int`,
     })
     .from(doseLogs)
     .where(and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, since)))
-    .groupBy(sql`date(${doseLogs.takenAt} AT TIME ZONE ${timezone})`)
-    .orderBy(desc(sql`date(${doseLogs.takenAt} AT TIME ZONE ${timezone})`));
+    .groupBy(sql`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`)
+    .orderBy(
+      desc(sql`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`),
+    );
 }
 
 export async function getPerMedicationStats(userId: string, days: number) {
@@ -92,15 +101,15 @@ export async function getHourlyDistribution(
   const since = new Date(Date.now() - days * 86400000);
   return db
     .select({
-      hour: sql<number>`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${timezone})::int`,
+      hour: sql<number>`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})::int`,
       count: sql<number>`count(*)::int`,
     })
     .from(doseLogs)
     .where(and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, since)))
     .groupBy(
-      sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${timezone})`,
+      sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`,
     )
     .orderBy(
-      sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${timezone})`,
+      sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`,
     );
 }

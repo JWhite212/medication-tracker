@@ -4,6 +4,7 @@ import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { doseEditSchema } from "$lib/utils/validation";
 import { updateDose } from "$lib/server/doses";
+import { parseDateTimeLocal } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals, url, parent }) => {
@@ -77,7 +78,7 @@ export const actions: Actions = {
 
     const { doseId, takenAt, quantity, notes } = parsed.data;
     await updateDose(locals.user!.id, doseId, {
-      takenAt: new Date(takenAt),
+      takenAt: parseDateTimeLocal(takenAt, locals.user!.timezone),
       quantity,
       notes,
     });

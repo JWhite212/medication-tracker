@@ -7,6 +7,7 @@ import {
   updateDose,
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
+import { parseDateTimeLocal } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -54,7 +55,7 @@ export const actions: Actions = {
 
     const { doseId, takenAt, quantity, notes } = parsed.data;
     await updateDose(locals.user!.id, doseId, {
-      takenAt: new Date(takenAt),
+      takenAt: parseDateTimeLocal(takenAt, locals.user!.timezone),
       quantity,
       notes,
     });

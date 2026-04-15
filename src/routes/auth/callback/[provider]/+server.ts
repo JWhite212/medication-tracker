@@ -1,5 +1,5 @@
 import { redirect, error } from "@sveltejs/kit";
-import { google, github } from "$lib/server/auth/oauth";
+import { getGoogle, getGitHub } from "$lib/server/auth/oauth";
 import { lucia } from "$lib/server/auth/lucia";
 import { db } from "$lib/server/db";
 import { users, oauthAccounts } from "$lib/server/db/schema";
@@ -18,6 +18,8 @@ async function getGoogleUser(
   code: string,
   codeVerifier: string,
 ): Promise<OAuthUserInfo> {
+  const google = getGoogle();
+  if (!google) error(503, "OAuth not configured");
   const tokens = await google.validateAuthorizationCode(code, codeVerifier);
   const response = await fetch(
     "https://openidconnect.googleapis.com/v1/userinfo",
@@ -35,6 +37,8 @@ async function getGoogleUser(
 }
 
 async function getGitHubUser(code: string): Promise<OAuthUserInfo> {
+  const github = getGitHub();
+  if (!github) error(503, "OAuth not configured");
   const tokens = await github.validateAuthorizationCode(code);
   const response = await fetch("https://api.github.com/user", {
     headers: { Authorization: `Bearer ${tokens.accessToken()}` },
@@ -60,6 +64,8 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
 
   if (!code) {
     if (provider === "google") {
+      const google = getGoogle();
+      if (!google) error(503, "OAuth not configured");
       const codeVerifier = crypto.randomUUID();
       const scopes = ["openid", "email", "profile"];
       const authUrl = google.createAuthorizationURL(
@@ -77,6 +83,8 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       redirect(302, authUrl.toString());
     }
     if (provider === "github") {
+      const github = getGitHub();
+      if (!github) error(503, "OAuth not configured");
       const authUrl = github.createAuthorizationURL(crypto.randomUUID(), [
         "user:email",
       ]);
@@ -133,15 +141,13 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       .where(eq(users.id, userId));
   } else {
     userId = createId();
-    await db
-      .insert(users)
-      .values({
-        id: userId,
-        email: oauthUser.email,
-        name: oauthUser.name,
-        avatarUrl: oauthUser.avatarUrl,
-        emailVerified: true,
-      });
+    await db.insert(users).values({
+      id: userId,
+      email: oauthUser.email,
+      name: oauthUser.name,
+      avatarUrl: oauthUser.avatarUrl,
+      emailVerified: true,
+    });
   }
 
   await db

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 
-	let { form } = $props();
+	let { form, data } = $props();
 	let loading = $state(false);
 </script>
 
@@ -70,6 +70,7 @@
 			</button>
 		</form>
 
+		{#if data.hasOAuth}
 		<div class="mt-6 flex items-center gap-3">
 			<div class="h-px flex-1 bg-glass-border"></div>
 			<span class="text-xs text-text-muted">OR</span>
@@ -87,6 +88,7 @@
 				>Continue with GitHub</a
 			>
 		</div>
+		{/if}
 
 		<p class="mt-6 text-center text-sm text-text-secondary">
 			Don't have an account?

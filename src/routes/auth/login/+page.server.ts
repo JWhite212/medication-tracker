@@ -6,10 +6,12 @@ import { db } from "$lib/server/db";
 import { users } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { hasOAuthProviders } from "$lib/server/auth/oauth";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
   if (locals.user) redirect(302, "/dashboard");
+  return { hasOAuth: hasOAuthProviders() };
 };
 
 export const actions: Actions = {

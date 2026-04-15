@@ -59,5 +59,22 @@ export function startOfDay(date: Date, timezone: string): Date {
     day: "2-digit",
   });
   const dateStr = formatter.format(date);
-  return new Date(`${dateStr}T00:00:00.000Z`);
+  // Binary search for the UTC instant that corresponds to local midnight
+  // Start with UTC midnight as an estimate, then adjust using the offset
+  const guess = new Date(`${dateStr}T12:00:00.000Z`);
+  const offsetParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hour12: false,
+  }).formatToParts(guess);
+  const lh = Number(offsetParts.find((p) => p.type === "hour")?.value ?? 0);
+  const lm = Number(offsetParts.find((p) => p.type === "minute")?.value ?? 0);
+  const ls = Number(offsetParts.find((p) => p.type === "second")?.value ?? 0);
+  const localMs = (lh * 3600 + lm * 60 + ls) * 1000;
+  return new Date(guess.getTime() - localMs);
 }

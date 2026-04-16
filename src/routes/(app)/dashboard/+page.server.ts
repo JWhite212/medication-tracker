@@ -5,18 +5,44 @@ import {
   logDose,
   deleteDose,
   updateDose,
+  getLastDosePerMedication,
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
-import { parseDateTimeLocal } from "$lib/utils/time";
+import { parseDateTimeLocal, computeTimingStatus } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
+import type { MedicationTimingStatus } from "$lib/types";
 
 export const load: PageServerLoad = async ({ locals }) => {
   const user = locals.user!;
-  const [medications, doses] = await Promise.all([
+  const [medications, doses, lastDoses] = await Promise.all([
     getActiveMedications(user.id),
     getTodaysDoses(user.id, user.timezone),
+    getLastDosePerMedication(user.id),
   ]);
-  return { medications, doses, timezone: user.timezone };
+
+  const lastDoseMap = new Map(
+    lastDoses.map((d) => [d.medicationId, d.lastTakenAt]),
+  );
+
+  const now = new Date();
+  const timingStatus: MedicationTimingStatus[] = medications
+    .filter(
+      (m) =>
+        m.scheduleType === "scheduled" &&
+        m.scheduleIntervalHours !== null &&
+        m.scheduleIntervalHours !== undefined,
+    )
+    .map((m) => {
+      const lastTakenAt = lastDoseMap.get(m.id) ?? null;
+      const { status, minutesUntilDue } = computeTimingStatus(
+        Number(m.scheduleIntervalHours),
+        lastTakenAt,
+        now,
+      );
+      return { medicationId: m.id, status, minutesUntilDue, lastTakenAt };
+    });
+
+  return { medications, doses, timezone: user.timezone, timingStatus };
 };
 
 export const actions: Actions = {
@@ -28,13 +54,14 @@ export const actions: Actions = {
       return fail(400, { errors: parsed.error.flatten().fieldErrors });
     }
 
-    const { medicationId, quantity, takenAt, notes } = parsed.data;
+    const { medicationId, quantity, takenAt, notes, sideEffects } = parsed.data;
     await logDose(
       locals.user!.id,
       medicationId,
       quantity,
       takenAt ? new Date(takenAt) : undefined,
       notes,
+      sideEffects,
     );
 
     return { success: true };
@@ -53,11 +80,12 @@ export const actions: Actions = {
     if (!parsed.success)
       return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
 
-    const { doseId, takenAt, quantity, notes } = parsed.data;
+    const { doseId, takenAt, quantity, notes, sideEffects } = parsed.data;
     await updateDose(locals.user!.id, doseId, {
       takenAt: parseDateTimeLocal(takenAt, locals.user!.timezone),
       quantity,
       notes,
+      sideEffects: sideEffects ?? null,
     });
     return { success: true };
   },

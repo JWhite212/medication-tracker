@@ -2,12 +2,14 @@ import { fail } from "@sveltejs/kit";
 import { getActiveMedications } from "$lib/server/medications";
 import {
   getTodaysDoses,
+  getLastDosePerMedication,
   logDose,
   deleteDose,
   updateDose,
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
-import { parseDateTimeLocal } from "$lib/utils/time";
+import { parseDateTimeLocal, startOfDay } from "$lib/utils/time";
+import { computeScheduleSlots } from "$lib/utils/schedule";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -16,7 +18,32 @@ export const load: PageServerLoad = async ({ locals }) => {
     getActiveMedications(user.id),
     getTodaysDoses(user.id, user.timezone),
   ]);
-  return { medications, doses, timezone: user.timezone };
+
+  // Compute schedule slots for the My Day timeline
+  const scheduledMedIds = medications
+    .filter((m) => m.scheduleType === "scheduled" && m.scheduleIntervalHours)
+    .map((m) => m.id);
+
+  const lastDoseByMedication =
+    scheduledMedIds.length > 0
+      ? await getLastDosePerMedication(user.id, scheduledMedIds)
+      : {};
+
+  const now = new Date();
+  const dayStart = startOfDay(now, user.timezone);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+  const scheduleSlots = computeScheduleSlots(
+    medications,
+    doses,
+    lastDoseByMedication,
+    dayStart,
+    dayEnd,
+    user.timezone,
+    now,
+  );
+
+  return { medications, doses, scheduleSlots, timezone: user.timezone };
 };
 
 export const actions: Actions = {

@@ -39,6 +39,37 @@ export async function getTodaysDoses(
   return rows;
 }
 
+/**
+ * For each medication ID provided, fetch the most recent dose.
+ * Returns a map of medicationId -> takenAt Date.
+ */
+export async function getLastDosePerMedication(
+  userId: string,
+  medicationIds: string[],
+): Promise<Record<string, Date>> {
+  if (medicationIds.length === 0) return {};
+
+  const results = await Promise.all(
+    medicationIds.map(async (medId) => {
+      const [row] = await db
+        .select({ takenAt: doseLogs.takenAt })
+        .from(doseLogs)
+        .where(
+          and(eq(doseLogs.userId, userId), eq(doseLogs.medicationId, medId)),
+        )
+        .orderBy(desc(doseLogs.takenAt))
+        .limit(1);
+      return { medId, takenAt: row?.takenAt ?? null };
+    }),
+  );
+
+  const map: Record<string, Date> = {};
+  for (const { medId, takenAt } of results) {
+    if (takenAt) map[medId] = new Date(takenAt);
+  }
+  return map;
+}
+
 export async function logDose(
   userId: string,
   medicationId: string,

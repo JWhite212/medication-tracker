@@ -8,9 +8,14 @@
   let { medications, timingStatus = [] }: { medications: Medication[]; timingStatus?: MedicationTimingStatus[] } = $props();
 
   let quantities: Record<string, number> = $state({});
+  let flashingMeds: Record<string, boolean> = $state({});
 
   function getQty(medId: string) { return quantities[medId] ?? 1; }
   function setQty(medId: string, val: number) { quantities[medId] = Math.max(1, Math.min(10, val)); }
+  function triggerFlash(medId: string) {
+    flashingMeds[medId] = true;
+    setTimeout(() => { flashingMeds[medId] = false; }, 700);
+  }
 
   const timingMap = $derived(new Map(timingStatus.map((t) => [t.medicationId, t])));
 </script>
@@ -27,6 +32,7 @@
             const qty = getQty(med.id);
             const label = qty > 1 ? `${med.name} ×${qty} logged` : `${med.name} logged`;
             showToast(label, 'success');
+            triggerFlash(med.id);
           }
           await update();
         };
@@ -37,7 +43,7 @@
 
       <div class="flex flex-col items-center gap-1">
         <div
-          class="flex items-center rounded-full text-sm font-medium text-white overflow-hidden"
+          class="flex items-center rounded-full text-sm font-medium text-white overflow-hidden {flashingMeds[med.id] ? 'animate-success-flash' : ''}"
           style="background: {getMedicationBackground(med.colour, med.colourSecondary, med.pattern)}"
         >
           <!-- Minus button (only visible when qty > 1) -->

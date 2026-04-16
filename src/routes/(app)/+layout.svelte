@@ -1,6 +1,7 @@
 <script lang="ts">
   import Sidebar from '$components/Sidebar.svelte';
   import MobileHeader from '$components/MobileHeader.svelte';
+  import KeyboardShortcuts from '$components/KeyboardShortcuts.svelte';
   import type { SessionUser } from '$lib/types';
 
   let { data, children } = $props();
@@ -33,6 +34,7 @@
   style:--color-accent={accentColor}
   style:--color-accent-fg={accentFgColor}
   data-density={data.preferences.uiDensity}
+  data-reduced-motion={data.preferences.reducedMotion ? 'true' : 'false'}
 >
   <!-- Mobile header (below md) -->
   <div class="md:hidden">
@@ -65,4 +67,6 @@
       {@render children()}
     </main>
   </div>
+
+  <KeyboardShortcuts />
 </div>

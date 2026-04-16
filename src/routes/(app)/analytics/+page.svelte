@@ -45,11 +45,11 @@
 	</div>
 
 	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:gap-4">
-		<GlassCard class="text-center">
+		<GlassCard class="text-center animate-fade-in-up" style="animation-delay: 0ms">
 			<p class="text-3xl font-bold text-accent">{data.streak}</p>
 			<p class="mt-1 text-sm text-text-secondary">Day Streak</p>
 		</GlassCard>
-		<GlassCard class="text-center">
+		<GlassCard class="text-center animate-fade-in-up" style="animation-delay: 80ms">
 			<p class="text-3xl font-bold text-success">
 				{data.avgAdherence}%
 			</p>
@@ -62,7 +62,7 @@
 				{/if}
 			</div>
 		</GlassCard>
-		<GlassCard class="text-center">
+		<GlassCard class="text-center animate-fade-in-up" style="animation-delay: 160ms">
 			<p class="text-3xl font-bold text-warning">
 				{data.totalDoses}
 			</p>

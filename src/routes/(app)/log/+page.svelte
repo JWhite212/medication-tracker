@@ -15,6 +15,41 @@
     url.searchParams.set('page', '1');
     goto(url.toString(), { invalidateAll: true });
   }
+
+  function formatDateKey(date: Date, tz: string): string {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  }
+
+  function formatDateLabel(dateKey: string, todayKey: string, yesterdayKey: string): string {
+    if (dateKey === todayKey) return 'Today';
+    if (dateKey === yesterdayKey) return 'Yesterday';
+
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(date);
+  }
+
+  const groupedDoses = $derived.by(() => {
+    const now = new Date();
+    const todayKey = formatDateKey(now, data.timezone);
+    const yesterdayKey = formatDateKey(new Date(now.getTime() - 86400000), data.timezone);
+    const groups: Array<{ dateKey: string; label: string; doses: typeof data.doses }> = [];
+    const map = new Map<string, typeof data.doses>();
+    for (const dose of data.doses) {
+      const key = formatDateKey(new Date(dose.takenAt), data.timezone);
+      const existing = map.get(key);
+      if (existing) {
+        existing.push(dose);
+      } else {
+        const arr = [dose];
+        map.set(key, arr);
+      }
+    }
+    for (const [dateKey, doses] of map) {
+      groups.push({ dateKey, label: formatDateLabel(dateKey, todayKey, yesterdayKey), doses });
+    }
+    return groups;
+  });
 </script>
 
 <svelte:head>
@@ -46,9 +81,16 @@
       <p class="text-text-secondary">No doses found for these filters</p>
     </div>
   {:else}
-    <div class="space-y-2" role="list">
-      {#each data.doses as dose (dose.id)}
-        <TimelineEntry {dose} timezone={data.timezone} onedit={(d) => (editingDose = d)} />
+    <div role="list">
+      {#each groupedDoses as group (group.dateKey)}
+        <div class="sticky top-0 z-10 -mx-1 px-1 py-2 bg-surface/80 backdrop-blur-sm">
+          <h3 class="text-sm font-medium text-text-secondary">{group.label}</h3>
+        </div>
+        <div class="space-y-2 pb-4">
+          {#each group.doses as dose (dose.id)}
+            <TimelineEntry {dose} timezone={data.timezone} onedit={(d) => (editingDose = d)} />
+          {/each}
+        </div>
       {/each}
     </div>
   {/if}

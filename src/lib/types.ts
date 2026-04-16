@@ -27,6 +27,11 @@ export type SessionUser = Pick<
 
 export type UserPreferences = InferSelectModel<typeof userPreferences>;
 
+export type SideEffect = {
+  name: string;
+  severity: "mild" | "moderate" | "severe";
+};
+
 export type DoseLogWithMedication = DoseLog & {
   medication: Pick<
     Medication,

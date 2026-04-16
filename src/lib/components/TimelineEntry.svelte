@@ -11,28 +11,29 @@
 </script>
 
 <div
-  class="group flex items-center gap-4 rounded-lg border border-glass-border bg-glass p-4 backdrop-blur-xl transition-colors hover:bg-glass-hover {onedit ? 'cursor-pointer' : ''}"
+  class="group rounded-lg border border-glass-border bg-glass p-4 backdrop-blur-xl transition-colors hover:bg-glass-hover {onedit ? 'cursor-pointer' : ''}"
   role="listitem"
   onclick={() => onedit?.(dose)}
 >
-  <div class="h-3 w-3 shrink-0 rounded-full" style="background: {getMedicationBackground(dose.medication.colour, dose.medication.colourSecondary, dose.medication.pattern, true)}"></div>
+  <div class="flex items-center gap-4">
+    <div class="h-3 w-3 shrink-0 rounded-full" style="background: {getMedicationBackground(dose.medication.colour, dose.medication.colourSecondary, dose.medication.pattern, true)}"></div>
 
-  <div class="min-w-0 flex-1">
-    <p class="font-medium">
-      {dose.medication.name}
-      <span class="text-sm text-text-secondary">
-        {dose.medication.dosageAmount}{dose.medication.dosageUnit}
-        {#if dose.quantity > 1}&times; {dose.quantity}{/if}
+    <div class="min-w-0 flex-1">
+      <p class="font-medium">
+        {dose.medication.name}
+        <span class="text-sm text-text-secondary">
+          {dose.medication.dosageAmount}{dose.medication.dosageUnit}
+          {#if dose.quantity > 1}&times; {dose.quantity}{/if}
+        </span>
+      </p>
+    </div>
+
+    <div class="flex items-center gap-4 text-sm">
+      <span class="text-text-secondary">{formatTime(new Date(dose.takenAt), timezone)}</span>
+      <span class="font-medium text-accent">
+        <TimeSince date={new Date(dose.takenAt)} />
       </span>
-    </p>
-  </div>
-
-  <div class="flex items-center gap-4 text-sm">
-    <span class="text-text-secondary">{formatTime(new Date(dose.takenAt), timezone)}</span>
-    <span class="font-medium text-accent">
-      <TimeSince date={new Date(dose.takenAt)} />
-    </span>
-  </div>
+    </div>
 
     <div class="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
       {#if onedit}
@@ -62,4 +63,21 @@
         </button>
       </form>
     </div>
+  </div>
+
+  {#if dose.sideEffects && dose.sideEffects.length > 0}
+    <div class="mt-2 flex flex-wrap gap-1.5 pl-7">
+      {#each dose.sideEffects as effect}
+        <span
+          class="rounded-full px-2 py-0.5 text-xs font-medium {effect.severity === 'severe'
+            ? 'bg-danger/15 text-danger'
+            : effect.severity === 'moderate'
+              ? 'bg-warning/15 text-warning'
+              : 'bg-text-secondary/15 text-text-secondary'}"
+        >
+          {effect.name}
+        </span>
+      {/each}
+    </div>
+  {/if}
 </div>

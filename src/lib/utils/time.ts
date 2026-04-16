@@ -51,6 +51,18 @@ export function parseDateTimeLocal(
   return new Date(asUtc.getTime() - offsetMs);
 }
 
+/**
+ * Calculate the number of days until a medication refill is needed.
+ * Returns null if inventory is not tracked or consumption is zero.
+ */
+export function calculateDaysUntilRefill(
+  inventoryCount: number | null,
+  avgDailyConsumption: number,
+): number | null {
+  if (inventoryCount === null || avgDailyConsumption <= 0) return null;
+  return Math.floor(inventoryCount / avgDailyConsumption);
+}
+
 export function startOfDay(date: Date, timezone: string): Date {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,

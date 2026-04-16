@@ -39,3 +39,10 @@ export type DoseLogWithMedication = DoseLog & {
     | "pattern"
   >;
 };
+
+export type MedicationWithStats = Medication & {
+  lastTakenAt: Date | null;
+  weeklyDoseCount: number;
+  avgDailyConsumption: number;
+  daysUntilRefill: number | null;
+};

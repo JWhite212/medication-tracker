@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { formatTimeSince, formatTime, startOfDay } from "$lib/utils/time";
+import {
+  formatTimeSince,
+  formatTime,
+  startOfDay,
+  calculateDaysUntilRefill,
+} from "$lib/utils/time";
 
 describe("formatTimeSince", () => {
   beforeEach(() => {
@@ -55,5 +60,31 @@ describe("startOfDay", () => {
   it("returns midnight in given timezone", () => {
     const result = startOfDay(new Date("2026-04-15T14:30:00Z"), "UTC");
     expect(result.toISOString()).toBe("2026-04-15T00:00:00.000Z");
+  });
+});
+
+describe("calculateDaysUntilRefill", () => {
+  it("calculates days from inventory and average consumption", () => {
+    expect(calculateDaysUntilRefill(60, 2)).toBe(30);
+  });
+
+  it("floors partial days", () => {
+    expect(calculateDaysUntilRefill(10, 3)).toBe(3);
+  });
+
+  it("returns null when inventory is null", () => {
+    expect(calculateDaysUntilRefill(null, 2)).toBeNull();
+  });
+
+  it("returns null when consumption is zero", () => {
+    expect(calculateDaysUntilRefill(30, 0)).toBeNull();
+  });
+
+  it("returns null when consumption is negative", () => {
+    expect(calculateDaysUntilRefill(30, -1)).toBeNull();
+  });
+
+  it("returns 0 when inventory is less than daily consumption", () => {
+    expect(calculateDaysUntilRefill(1, 5)).toBe(0);
   });
 });

@@ -1,10 +1,10 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and, gte, desc, sql, isNotNull } from "drizzle-orm";
+import { eq, and, gte, desc, sql, isNotNull, max } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
 import { startOfDay } from "$lib/utils/time";
-import type { DoseLogWithMedication } from "$lib/types";
+import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 
 export async function getTodaysDoses(
   userId: string,
@@ -21,6 +21,7 @@ export async function getTodaysDoses(
       takenAt: doseLogs.takenAt,
       loggedAt: doseLogs.loggedAt,
       notes: doseLogs.notes,
+      sideEffects: doseLogs.sideEffects,
       medication: {
         name: medications.name,
         dosageAmount: medications.dosageAmount,
@@ -39,43 +40,13 @@ export async function getTodaysDoses(
   return rows;
 }
 
-/**
- * For each medication ID provided, fetch the most recent dose.
- * Returns a map of medicationId -> takenAt Date.
- */
-export async function getLastDosePerMedication(
-  userId: string,
-  medicationIds: string[],
-): Promise<Record<string, Date>> {
-  if (medicationIds.length === 0) return {};
-
-  const results = await Promise.all(
-    medicationIds.map(async (medId) => {
-      const [row] = await db
-        .select({ takenAt: doseLogs.takenAt })
-        .from(doseLogs)
-        .where(
-          and(eq(doseLogs.userId, userId), eq(doseLogs.medicationId, medId)),
-        )
-        .orderBy(desc(doseLogs.takenAt))
-        .limit(1);
-      return { medId, takenAt: row?.takenAt ?? null };
-    }),
-  );
-
-  const map: Record<string, Date> = {};
-  for (const { medId, takenAt } of results) {
-    if (takenAt) map[medId] = new Date(takenAt);
-  }
-  return map;
-}
-
 export async function logDose(
   userId: string,
   medicationId: string,
   quantity: number,
   takenAt?: Date,
   notes?: string,
+  sideEffects?: SideEffect[],
 ) {
   const id = createId();
   const now = new Date();
@@ -90,6 +61,7 @@ export async function logDose(
       takenAt: takenAt ?? now,
       loggedAt: now,
       notes: notes ?? null,
+      sideEffects: sideEffects ?? null,
     })
     .returning();
 
@@ -143,7 +115,12 @@ export async function deleteDose(userId: string, doseId: string) {
 export async function updateDose(
   userId: string,
   doseId: string,
-  updates: { takenAt?: Date; quantity?: number; notes?: string },
+  updates: {
+    takenAt?: Date;
+    quantity?: number;
+    notes?: string;
+    sideEffects?: SideEffect[] | null;
+  },
 ) {
   const [existing] = await db
     .select()
@@ -160,6 +137,9 @@ export async function updateDose(
       ...(updates.takenAt && { takenAt: updates.takenAt }),
       ...(updates.quantity && { quantity: updates.quantity }),
       ...(updates.notes !== undefined && { notes: updates.notes || null }),
+      ...(updates.sideEffects !== undefined && {
+        sideEffects: updates.sideEffects ?? null,
+      }),
     })
     .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
     .returning();
@@ -191,4 +171,24 @@ export async function updateDose(
   const changes = computeChanges(existing, updated);
   if (changes) await logAudit(userId, "dose_log", doseId, "update", changes);
   return updated;
+}
+
+export async function getLastDosePerMedication(
+  userId: string,
+): Promise<Array<{ medicationId: string; lastTakenAt: Date }>> {
+  const rows = await db
+    .select({
+      medicationId: doseLogs.medicationId,
+      lastTakenAt: max(doseLogs.takenAt),
+    })
+    .from(doseLogs)
+    .where(eq(doseLogs.userId, userId))
+    .groupBy(doseLogs.medicationId);
+
+  return rows
+    .filter((r) => r.lastTakenAt !== null)
+    .map((r) => ({
+      medicationId: r.medicationId,
+      lastTakenAt: new Date(r.lastTakenAt!),
+    }));
 }

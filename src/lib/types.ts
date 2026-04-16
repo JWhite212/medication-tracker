@@ -27,6 +27,11 @@ export type SessionUser = Pick<
 
 export type UserPreferences = InferSelectModel<typeof userPreferences>;
 
+export type SideEffect = {
+  name: string;
+  severity: "mild" | "moderate" | "severe";
+};
+
 export type DoseLogWithMedication = DoseLog & {
   medication: Pick<
     Medication,
@@ -38,4 +43,16 @@ export type DoseLogWithMedication = DoseLog & {
     | "colourSecondary"
     | "pattern"
   >;
+};
+
+export type MedicationWithStats = Medication & {
+  lastTakenAt: Date | null;
+  weeklyDoseCount: number;
+  avgDailyConsumption: number;
+  daysUntilRefill: number | null;
+export type MedicationTimingStatus = {
+  medicationId: string;
+  status: "ok" | "due_soon" | "due_now" | "overdue";
+  minutesUntilDue: number; // negative if overdue
+  lastTakenAt: Date | null;
 };

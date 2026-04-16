@@ -1,9 +1,11 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql, max, count } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { medications } from "$lib/server/db/schema";
+import { medications, doseLogs } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
 import type { MedicationInput } from "$lib/utils/validation";
+import type { MedicationWithStats } from "$lib/types";
+import { calculateDaysUntilRefill } from "$lib/utils/time";
 
 export async function getActiveMedications(userId: string) {
   return db
@@ -13,6 +15,56 @@ export async function getActiveMedications(userId: string) {
       and(eq(medications.userId, userId), eq(medications.isArchived, false)),
     )
     .orderBy(medications.sortOrder);
+}
+
+export async function getMedicationsWithStats(
+  userId: string,
+): Promise<MedicationWithStats[]> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const meds = await getActiveMedications(userId);
+  if (meds.length === 0) return [];
+
+  // Aggregate dose stats per medication in a single query
+  const stats = await db
+    .select({
+      medicationId: doseLogs.medicationId,
+      lastTakenAt: max(doseLogs.takenAt),
+      weeklyDoseCount: count(
+        sql`CASE WHEN ${doseLogs.takenAt} >= ${sevenDaysAgo} THEN 1 END`,
+      ),
+      thirtyDayDoseCount: count(
+        sql`CASE WHEN ${doseLogs.takenAt} >= ${thirtyDaysAgo} THEN 1 END`,
+      ),
+    })
+    .from(doseLogs)
+    .where(eq(doseLogs.userId, userId))
+    .groupBy(doseLogs.medicationId);
+
+  const statsMap = new Map(
+    stats.map((s) => [
+      s.medicationId,
+      {
+        lastTakenAt: s.lastTakenAt ? new Date(s.lastTakenAt) : null,
+        weeklyDoseCount: Number(s.weeklyDoseCount),
+        avgDailyConsumption: Number(s.thirtyDayDoseCount) / 30,
+      },
+    ]),
+  );
+
+  return meds.map((med) => {
+    const s = statsMap.get(med.id);
+    const avgDaily = s?.avgDailyConsumption ?? 0;
+
+    return {
+      ...med,
+      lastTakenAt: s?.lastTakenAt ?? null,
+      weeklyDoseCount: s?.weeklyDoseCount ?? 0,
+      avgDailyConsumption: avgDaily,
+      daysUntilRefill: calculateDaysUntilRefill(med.inventoryCount, avgDaily),
+    };
+  });
 }
 
 export async function getMedicationById(userId: string, id: string) {

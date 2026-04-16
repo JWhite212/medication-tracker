@@ -45,6 +45,11 @@ export type DoseLogWithMedication = DoseLog & {
   >;
 };
 
+export type MedicationWithStats = Medication & {
+  lastTakenAt: Date | null;
+  weeklyDoseCount: number;
+  avgDailyConsumption: number;
+  daysUntilRefill: number | null;
 export type MedicationTimingStatus = {
   medicationId: string;
   status: "ok" | "due_soon" | "due_now" | "overdue";

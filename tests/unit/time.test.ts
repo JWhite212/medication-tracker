@@ -3,6 +3,7 @@ import {
   formatTimeSince,
   formatTime,
   startOfDay,
+  calculateDaysUntilRefill,
   formatDueIn,
   computeTimingStatus,
 } from "$lib/utils/time";
@@ -64,6 +65,29 @@ describe("startOfDay", () => {
   });
 });
 
+describe("calculateDaysUntilRefill", () => {
+  it("calculates days from inventory and average consumption", () => {
+    expect(calculateDaysUntilRefill(60, 2)).toBe(30);
+  });
+
+  it("floors partial days", () => {
+    expect(calculateDaysUntilRefill(10, 3)).toBe(3);
+  });
+
+  it("returns null when inventory is null", () => {
+    expect(calculateDaysUntilRefill(null, 2)).toBeNull();
+  });
+
+  it("returns null when consumption is zero", () => {
+    expect(calculateDaysUntilRefill(30, 0)).toBeNull();
+  });
+
+  it("returns null when consumption is negative", () => {
+    expect(calculateDaysUntilRefill(30, -1)).toBeNull();
+  });
+
+  it("returns 0 when inventory is less than daily consumption", () => {
+    expect(calculateDaysUntilRefill(1, 5)).toBe(0);
 describe("formatDueIn", () => {
   it("returns 'Due now' for near-zero milliseconds", () => {
     expect(formatDueIn(0)).toBe("Due now");

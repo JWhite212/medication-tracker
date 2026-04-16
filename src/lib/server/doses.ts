@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and, gte, desc, sql, isNotNull } from "drizzle-orm";
+import { eq, and, gte, desc, sql, isNotNull, max } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
@@ -160,4 +160,24 @@ export async function updateDose(
   const changes = computeChanges(existing, updated);
   if (changes) await logAudit(userId, "dose_log", doseId, "update", changes);
   return updated;
+}
+
+export async function getLastDosePerMedication(
+  userId: string,
+): Promise<Array<{ medicationId: string; lastTakenAt: Date }>> {
+  const rows = await db
+    .select({
+      medicationId: doseLogs.medicationId,
+      lastTakenAt: max(doseLogs.takenAt),
+    })
+    .from(doseLogs)
+    .where(eq(doseLogs.userId, userId))
+    .groupBy(doseLogs.medicationId);
+
+  return rows
+    .filter((r) => r.lastTakenAt !== null)
+    .map((r) => ({
+      medicationId: r.medicationId,
+      lastTakenAt: new Date(r.lastTakenAt!),
+    }));
 }

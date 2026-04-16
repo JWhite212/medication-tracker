@@ -39,3 +39,10 @@ export type DoseLogWithMedication = DoseLog & {
     | "pattern"
   >;
 };
+
+export type MedicationTimingStatus = {
+  medicationId: string;
+  status: "ok" | "due_soon" | "due_now" | "overdue";
+  minutesUntilDue: number; // negative if overdue
+  lastTakenAt: Date | null;
+};

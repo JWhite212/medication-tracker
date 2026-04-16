@@ -7,6 +7,7 @@
 
 <svelte:head>
 	<title>Sign In — MedTracker</title>
+	<meta name="description" content="Sign in to MedTracker to log doses, view live medication timers, and track your adherence." />
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">

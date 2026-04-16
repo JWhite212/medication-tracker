@@ -4,6 +4,10 @@
   let { data } = $props();
 </script>
 
+<svelte:head>
+  <title>Medications — MedTracker</title>
+</svelte:head>
+
 <div class="space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-bold">Medications</h1>

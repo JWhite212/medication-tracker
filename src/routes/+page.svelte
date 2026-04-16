@@ -1,5 +1,10 @@
 <svelte:head>
   <title>MedTracker — Personal Medication Tracker</title>
+  <meta name="description" content="Log doses with a single tap, see live timers for every medication, track adherence streaks, and export your history. Free, secure, and open source." />
+  <meta property="og:title" content="MedTracker — Personal Medication Tracker" />
+  <meta property="og:description" content="Log doses with a single tap, see live timers, track adherence streaks. Beautiful, fast, and secure." />
+  <meta property="og:url" content="https://medication-tracker-jw.vercel.app" />
+  <link rel="canonical" href="https://medication-tracker-jw.vercel.app" />
 </svelte:head>
 
 <div class="flex min-h-screen flex-col">

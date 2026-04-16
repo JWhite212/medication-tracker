@@ -7,6 +7,7 @@
 
 <svelte:head>
   <title>Sign Up — MedTracker</title>
+  <meta name="description" content="Create a free MedTracker account to start tracking medications, logging doses, and monitoring adherence." />
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">

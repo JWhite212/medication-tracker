@@ -25,6 +25,10 @@
   const accentFgColor = $derived(accentFg(accentColor));
 </script>
 
+<svelte:head>
+  <meta name="robots" content="noindex, nofollow" />
+</svelte:head>
+
 <div
   style:--color-accent={accentColor}
   style:--color-accent-fg={accentFgColor}

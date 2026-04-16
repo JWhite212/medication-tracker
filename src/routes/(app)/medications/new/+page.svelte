@@ -5,6 +5,10 @@
   let { form } = $props();
 </script>
 
+<svelte:head>
+  <title>Add Medication — MedTracker</title>
+</svelte:head>
+
 <div class="mx-auto max-w-2xl space-y-6">
   <h1 class="text-2xl font-bold">Add Medication</h1>
 

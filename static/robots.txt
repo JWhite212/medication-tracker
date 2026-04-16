@@ -1,3 +1,15 @@
-# allow crawling everything by default
 User-agent: *
-Disallow:
+Allow: /
+Allow: /auth/login
+Allow: /auth/register
+
+Disallow: /dashboard
+Disallow: /medications
+Disallow: /log
+Disallow: /analytics
+Disallow: /settings
+Disallow: /api/
+Disallow: /auth/callback
+Disallow: /auth/reset-password/confirm
+
+Sitemap: https://medication-tracker-jw.vercel.app/sitemap.xml

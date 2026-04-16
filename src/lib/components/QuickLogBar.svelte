@@ -7,9 +7,14 @@
   let { medications }: { medications: Medication[] } = $props();
 
   let quantities: Record<string, number> = $state({});
+  let flashingMeds: Record<string, boolean> = $state({});
 
   function getQty(medId: string) { return quantities[medId] ?? 1; }
   function setQty(medId: string, val: number) { quantities[medId] = Math.max(1, Math.min(10, val)); }
+  function triggerFlash(medId: string) {
+    flashingMeds[medId] = true;
+    setTimeout(() => { flashingMeds[medId] = false; }, 700);
+  }
 </script>
 
 <div class="flex flex-wrap gap-2 sm:gap-3">
@@ -23,6 +28,7 @@
             const qty = getQty(med.id);
             const label = qty > 1 ? `${med.name} ×${qty} logged` : `${med.name} logged`;
             showToast(label, 'success');
+            triggerFlash(med.id);
           }
           await update();
         };
@@ -32,7 +38,7 @@
       <input type="hidden" name="quantity" value={getQty(med.id)} />
 
       <div
-        class="flex items-center rounded-full text-sm font-medium text-white overflow-hidden"
+        class="flex items-center rounded-full text-sm font-medium text-white overflow-hidden {flashingMeds[med.id] ? 'animate-success-flash' : ''}"
         style="background: {getMedicationBackground(med.colour, med.colourSecondary, med.pattern)}"
       >
         <!-- Minus button (only visible when qty > 1) -->

@@ -49,13 +49,14 @@
 
 <div class="relative overflow-x-auto">
   <div class="flex gap-[1px]">
-    {#each weeks as week}
+    {#each weeks as week, weekIdx}
       <div class="flex flex-col gap-[1px]">
         {#each Array(7) as _, rowIdx}
           {@const cell = week.find((c) => c.row === rowIdx)}
           {#if cell}
             <div
-              class="h-[11px] w-[11px] cursor-default rounded-[2px] transition-opacity hover:opacity-80 {intensity(cell.count)}"
+              class="h-[11px] w-[11px] cursor-default rounded-[2px] transition-opacity hover:opacity-80 animate-fade-in {intensity(cell.count)}"
+              style="animation-delay: {weekIdx * 15}ms"
               role="img"
               aria-label="{cell.date}: {cell.count} doses"
               onmouseenter={(e) => showTooltip(e, cell.date, cell.count)}

@@ -61,6 +61,9 @@ export function calculateDaysUntilRefill(
 ): number | null {
   if (inventoryCount === null || avgDailyConsumption <= 0) return null;
   return Math.floor(inventoryCount / avgDailyConsumption);
+}
+
+/**
  * Format a duration in milliseconds as a human-readable "due in" string.
  * Positive ms = time until due. Negative ms = overdue. Near-zero = "Due now".
  */

@@ -1,5 +1,6 @@
 <script lang="ts">
   import SummaryStrip from '$components/SummaryStrip.svelte';
+  import MyDayTimeline from '$components/MyDayTimeline.svelte';
   import QuickLogBar from '$components/QuickLogBar.svelte';
   import TimelineEntry from '$components/TimelineEntry.svelte';
   import OnboardingWelcome from '$components/OnboardingWelcome.svelte';
@@ -67,6 +68,8 @@
   <h1 class="text-2xl font-bold">Dashboard</h1>
 
   <SummaryStrip doseCount={data.doses.length} {overdueCount} />
+
+  <MyDayTimeline scheduleSlots={data.scheduleSlots} timezone={data.timezone} />
 
   <section>
     <h2 class="mb-3 text-sm font-medium uppercase tracking-wider text-text-muted">Quick Log</h2>

@@ -88,6 +88,9 @@ describe("calculateDaysUntilRefill", () => {
 
   it("returns 0 when inventory is less than daily consumption", () => {
     expect(calculateDaysUntilRefill(1, 5)).toBe(0);
+  });
+});
+
 describe("formatDueIn", () => {
   it("returns 'Due now' for near-zero milliseconds", () => {
     expect(formatDueIn(0)).toBe("Due now");

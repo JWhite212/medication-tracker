@@ -51,6 +51,81 @@ export function parseDateTimeLocal(
   return new Date(asUtc.getTime() - offsetMs);
 }
 
+/**
+ * Calculate the number of days until a medication refill is needed.
+ * Returns null if inventory is not tracked or consumption is zero.
+ */
+export function calculateDaysUntilRefill(
+  inventoryCount: number | null,
+  avgDailyConsumption: number,
+): number | null {
+  if (inventoryCount === null || avgDailyConsumption <= 0) return null;
+  return Math.floor(inventoryCount / avgDailyConsumption);
+}
+
+/**
+ * Format a duration in milliseconds as a human-readable "due in" string.
+ * Positive ms = time until due. Negative ms = overdue. Near-zero = "Due now".
+ */
+export function formatDueIn(ms: number): string {
+  const absMins = Math.floor(Math.abs(ms) / 60_000);
+  if (absMins < 1) return "Due now";
+
+  const hours = Math.floor(absMins / 60);
+  const mins = absMins % 60;
+
+  let label: string;
+  if (hours > 0 && mins > 0) {
+    label = `${hours}h ${mins}m`;
+  } else if (hours > 0) {
+    label = `${hours}h`;
+  } else {
+    label = `${mins}m`;
+  }
+
+  return ms > 0 ? `Due in ${label}` : `Overdue ${label}`;
+}
+
+/**
+ * Compute the timing status for a scheduled medication.
+ * @param intervalHours - the schedule interval in hours
+ * @param lastTakenAt   - when the medication was last taken (or null if never)
+ * @param now           - current timestamp (for testability)
+ * @returns status and minutesUntilDue (negative if overdue)
+ */
+export function computeTimingStatus(
+  intervalHours: number,
+  lastTakenAt: Date | null,
+  now: Date = new Date(),
+): {
+  status: "ok" | "due_soon" | "due_now" | "overdue";
+  minutesUntilDue: number;
+} {
+  if (!lastTakenAt) {
+    // Never taken — treat as overdue
+    return { status: "overdue", minutesUntilDue: -1 };
+  }
+
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  const nextDueAt = lastTakenAt.getTime() + intervalMs;
+  const msUntilDue = nextDueAt - now.getTime();
+  const minutesUntilDue = Math.round(msUntilDue / 60_000);
+
+  // Thresholds: overdue if past due, due_now if within 1 min, due_soon if within 1 hour
+  if (msUntilDue <= -60_000) {
+    return { status: "overdue", minutesUntilDue };
+  }
+  if (msUntilDue <= 60_000) {
+    // Within +-1 minute of due time
+    return { status: "due_now", minutesUntilDue };
+  }
+  if (msUntilDue <= 60 * 60_000) {
+    // Within 1 hour
+    return { status: "due_soon", minutesUntilDue };
+  }
+  return { status: "ok", minutesUntilDue };
+}
+
 export function startOfDay(date: Date, timezone: string): Date {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,

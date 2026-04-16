@@ -1,0 +1,1 @@
+ALTER TABLE "dose_logs" ADD COLUMN "side_effects" jsonb;

@@ -1,7 +1,7 @@
 <script lang="ts">
-  let { data }: { data: { date: string; count: number }[] } = $props();
+  let { data, days = 90 }: { data: { date: string; count: number }[]; days?: number } = $props();
 
-  const DAYS = 90;
+  const DAYS = $derived(days);
 
   const lookup = $derived(new Map(data.map((d) => [d.date, d.count])));
   const maxCount = $derived(data.reduce((m, d) => d.count > m ? d.count : m, 1));

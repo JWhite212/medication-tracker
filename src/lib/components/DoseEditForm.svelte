@@ -1,10 +1,12 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { showToast } from '$components/ui/Toast.svelte';
-  import type { DoseLogWithMedication } from '$lib/types';
+  import SideEffectPicker from '$components/SideEffectPicker.svelte';
+  import type { DoseLogWithMedication, SideEffect } from '$lib/types';
 
   let { dose, onclose }: { dose: DoseLogWithMedication; onclose: () => void } = $props();
   let loading = $state(false);
+  let sideEffects = $state<SideEffect[]>(dose.sideEffects ?? []);
 
   // Format date for datetime-local input (YYYY-MM-DDTHH:mm)
   function toDateTimeLocal(date: Date): string {
@@ -72,6 +74,9 @@
       placeholder="Optional notes..."
     >{dose.notes ?? ''}</textarea>
   </div>
+
+  <SideEffectPicker value={sideEffects} onchange={(effects) => (sideEffects = effects)} />
+  <input type="hidden" name="sideEffects" value={sideEffects.length > 0 ? JSON.stringify(sideEffects) : ''} />
 
   <div class="flex gap-3">
     <button

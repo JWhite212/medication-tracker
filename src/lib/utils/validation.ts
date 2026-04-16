@@ -56,11 +56,35 @@ export const medicationSchema = z.object({
   inventoryAlertThreshold: z.coerce.number().int().min(0).optional(),
 });
 
+const sideEffectsField = z
+  .string()
+  .optional()
+  .transform((val) => {
+    if (!val) return undefined;
+    try {
+      return JSON.parse(val) as Array<{ name: string; severity: string }>;
+    } catch {
+      return undefined;
+    }
+  })
+  .pipe(
+    z
+      .array(
+        z.object({
+          name: z.string().min(1).max(100),
+          severity: z.enum(["mild", "moderate", "severe"]),
+        }),
+      )
+      .max(20)
+      .optional(),
+  );
+
 export const doseLogSchema = z.object({
   medicationId: z.string().min(1),
   quantity: z.coerce.number().int().min(1).default(1),
   takenAt: z.string().datetime().optional(),
   notes: z.string().max(500).optional(),
+  sideEffects: sideEffectsField,
 });
 
 export const doseEditSchema = z.object({
@@ -68,6 +92,7 @@ export const doseEditSchema = z.object({
   takenAt: z.string().min(1),
   quantity: z.coerce.number().int().min(1).max(10),
   notes: z.string().max(500).optional(),
+  sideEffects: sideEffectsField,
 });
 
 const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));

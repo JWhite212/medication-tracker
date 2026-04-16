@@ -4,7 +4,7 @@ import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
 import { startOfDay } from "$lib/utils/time";
-import type { DoseLogWithMedication } from "$lib/types";
+import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 
 export async function getTodaysDoses(
   userId: string,
@@ -21,6 +21,7 @@ export async function getTodaysDoses(
       takenAt: doseLogs.takenAt,
       loggedAt: doseLogs.loggedAt,
       notes: doseLogs.notes,
+      sideEffects: doseLogs.sideEffects,
       medication: {
         name: medications.name,
         dosageAmount: medications.dosageAmount,
@@ -45,6 +46,7 @@ export async function logDose(
   quantity: number,
   takenAt?: Date,
   notes?: string,
+  sideEffects?: SideEffect[],
 ) {
   const id = createId();
   const now = new Date();
@@ -59,6 +61,7 @@ export async function logDose(
       takenAt: takenAt ?? now,
       loggedAt: now,
       notes: notes ?? null,
+      sideEffects: sideEffects ?? null,
     })
     .returning();
 
@@ -112,7 +115,12 @@ export async function deleteDose(userId: string, doseId: string) {
 export async function updateDose(
   userId: string,
   doseId: string,
-  updates: { takenAt?: Date; quantity?: number; notes?: string },
+  updates: {
+    takenAt?: Date;
+    quantity?: number;
+    notes?: string;
+    sideEffects?: SideEffect[] | null;
+  },
 ) {
   const [existing] = await db
     .select()
@@ -129,6 +137,9 @@ export async function updateDose(
       ...(updates.takenAt && { takenAt: updates.takenAt }),
       ...(updates.quantity && { quantity: updates.quantity }),
       ...(updates.notes !== undefined && { notes: updates.notes || null }),
+      ...(updates.sideEffects !== undefined && {
+        sideEffects: updates.sideEffects ?? null,
+      }),
     })
     .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
     .returning();

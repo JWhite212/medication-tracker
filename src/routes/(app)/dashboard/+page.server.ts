@@ -54,13 +54,14 @@ export const actions: Actions = {
       return fail(400, { errors: parsed.error.flatten().fieldErrors });
     }
 
-    const { medicationId, quantity, takenAt, notes } = parsed.data;
+    const { medicationId, quantity, takenAt, notes, sideEffects } = parsed.data;
     await logDose(
       locals.user!.id,
       medicationId,
       quantity,
       takenAt ? new Date(takenAt) : undefined,
       notes,
+      sideEffects,
     );
 
     return { success: true };
@@ -79,11 +80,12 @@ export const actions: Actions = {
     if (!parsed.success)
       return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
 
-    const { doseId, takenAt, quantity, notes } = parsed.data;
+    const { doseId, takenAt, quantity, notes, sideEffects } = parsed.data;
     await updateDose(locals.user!.id, doseId, {
       takenAt: parseDateTimeLocal(takenAt, locals.user!.timezone),
       quantity,
       notes,
+      sideEffects: sideEffects ?? null,
     });
     return { success: true };
   },

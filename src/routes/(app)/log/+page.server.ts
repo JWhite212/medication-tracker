@@ -32,6 +32,7 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
         takenAt: doseLogs.takenAt,
         loggedAt: doseLogs.loggedAt,
         notes: doseLogs.notes,
+        sideEffects: doseLogs.sideEffects,
         medication: {
           name: medications.name,
           dosageAmount: medications.dosageAmount,
@@ -81,11 +82,12 @@ export const actions: Actions = {
     if (!parsed.success)
       return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
 
-    const { doseId, takenAt, quantity, notes } = parsed.data;
+    const { doseId, takenAt, quantity, notes, sideEffects } = parsed.data;
     await updateDose(locals.user!.id, doseId, {
       takenAt: parseDateTimeLocal(takenAt, locals.user!.timezone),
       quantity,
       notes,
+      sideEffects: sideEffects ?? null,
     });
     return { success: true };
   },

@@ -102,6 +102,10 @@ export const doseLogs = pgTable(
       .notNull()
       .defaultNow(),
     notes: text("notes"),
+    sideEffects:
+      jsonb("side_effects").$type<
+        Array<{ name: string; severity: "mild" | "moderate" | "severe" }>
+      >(),
   },
   (table) => [
     index("dose_logs_user_taken_idx").on(table.userId, table.takenAt),

@@ -5,11 +5,12 @@ import {
 } from "$lib/server/preferences";
 import { notificationSchema } from "$lib/utils/validation";
 import { logAudit, computeChanges } from "$lib/server/audit";
+import { getVapidPublicKey } from "$lib/server/push";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
   const prefs = await getOrCreatePreferences(locals.user!.id);
-  return { preferences: prefs };
+  return { preferences: prefs, vapidPublicKey: getVapidPublicKey() };
 };
 
 export const actions: Actions = {

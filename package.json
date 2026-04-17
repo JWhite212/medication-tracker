@@ -20,9 +20,11 @@
 		"@tailwindcss/vite": "^4.2.2",
 		"@testing-library/svelte": "^5.3.1",
 		"@types/pdfkit": "^0.17.5",
+		"@types/web-push": "^3.6.4",
 		"drizzle-kit": "^0.31.10",
 		"jsdom": "^29.0.2",
 		"playwright": "^1.59.1",
+		"sharp": "^0.34.5",
 		"svelte": "^5.55.2",
 		"svelte-check": "^4.4.6",
 		"tailwindcss": "^4.2.2",
@@ -42,6 +44,7 @@
 		"lucia": "^3.2.2",
 		"pdfkit": "^0.18.0",
 		"resend": "^6.11.0",
+		"web-push": "^3.6.7",
 		"zod": "^4.3.6"
 	}
 }

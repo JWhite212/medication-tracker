@@ -143,6 +143,28 @@ export const dataSchema = z.object({
   exportFormat: z.enum(["pdf", "csv"]),
 });
 
+const ALLOWED_PUSH_ORIGINS = [
+  "https://fcm.googleapis.com",
+  "https://updates.push.services.mozilla.com",
+  "https://notify.windows.com",
+  "https://web.push.apple.com",
+];
+
+export const pushSubscriptionSchema = z.object({
+  endpoint: z
+    .string()
+    .url()
+    .max(2048)
+    .refine(
+      (url) => ALLOWED_PUSH_ORIGINS.some((origin) => url.startsWith(origin)),
+      { message: "Endpoint must be a recognized push service" },
+    ),
+  keys: z.object({
+    p256dh: z.string().min(1).max(256),
+    auth: z.string().min(1).max(64),
+  }),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type MedicationInput = z.infer<typeof medicationSchema>;

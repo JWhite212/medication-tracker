@@ -9,7 +9,7 @@
   --color-surface-overlay: #1a1a25;
   --color-text-primary: #f0f0f5;
   --color-text-secondary: #8888a0;
-  --color-text-muted: #55556a;
+  --color-text-muted: #71718a;
   --color-accent: #6366f1;
   --color-accent-hover: #818cf8;
   --color-accent-fg: #ffffff;
@@ -121,4 +121,14 @@
 [data-reduced-motion="true"] *::after {
   animation-duration: 0.01ms !important;
   transition-duration: 0.01ms !important;
+}
+
+/* High contrast: system preference */
+@media (prefers-contrast: more) {
+  :root {
+    --color-text-muted: #9090a8;
+    --color-text-secondary: #a0a0b8;
+    --color-glass-border: rgba(255, 255, 255, 0.24);
+    --color-accent: #818cf8;
+  }
 }

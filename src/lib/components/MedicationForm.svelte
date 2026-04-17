@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import { tick } from 'svelte';
   import type { Medication } from '$lib/types';
   import Input from '$lib/components/ui/Input.svelte';
   import Tooltip from '$lib/components/ui/Tooltip.svelte';
@@ -16,8 +17,10 @@
   } = $props();
 
   const presetColours = [
-    '#6366f1', '#8b5cf6', '#a855f7', '#ec4899', '#ef4444',
-    '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#64748b'
+    '#6366f1', '#8b5cf6', '#a855f7', '#ec4899', '#f43f5e',
+    '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981',
+    '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#64748b',
+    '#ffffff'
   ];
 
   let selectedColour = $state(
@@ -62,9 +65,15 @@
   action={medication ? '?/update' : undefined}
   use:enhance={() => {
     loading = true;
-    return async ({ update }) => {
+    return async ({ result, update }) => {
       await update();
       loading = false;
+      if (result.type === 'failure') {
+        tick().then(() => {
+          const firstInvalid = document.querySelector<HTMLElement>('[aria-invalid="true"]');
+          firstInvalid?.focus();
+        });
+      }
     };
   }}
   class="space-y-5"
@@ -131,11 +140,11 @@
     {#if errors['category']?.[0]}<p class="mt-1 text-sm text-danger">{errors['category'][0]}</p>{/if}
   </div>
 
-  <div>
-    <p class="mb-2 block text-sm font-medium">
+  <fieldset class="border-0 p-0 m-0 space-y-0">
+    <legend class="mb-2 block text-sm font-medium">
       Colour & Pattern
       <Tooltip text="Choose how this medication appears across the app — on cards, pills, and timeline entries." />
-    </p>
+    </legend>
 
     <!-- Primary colour row -->
     <div class="mb-2">
@@ -216,7 +225,7 @@
     <input type="hidden" name="colourSecondary" value={selectedColourSecondary ?? ''} />
     <input type="hidden" name="pattern" value={selectedPattern} />
     {#if errors['colour']?.[0]}<p class="mt-1 text-sm text-danger">{errors['colour'][0]}</p>{/if}
-  </div>
+  </fieldset>
 
   <div>
     <label class="mb-1 block text-sm font-medium">

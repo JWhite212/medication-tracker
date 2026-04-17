@@ -43,12 +43,18 @@
 
   <!-- Mobile sidebar overlay -->
   {#if sidebarOpen}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="fixed inset-0 z-30 md:hidden" onkeydown={(e) => e.key === 'Escape' && (sidebarOpen = false)}>
+    <div
+      class="fixed inset-0 z-30 md:hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Navigation menu"
+      tabindex="-1"
+      onkeydown={(e) => e.key === 'Escape' && (sidebarOpen = false)}
+    >
       <button
         type="button"
         class="absolute inset-0 bg-black/60"
-        aria-label="Close sidebar"
+        aria-label="Close navigation"
         onclick={() => (sidebarOpen = false)}
       ></button>
       <div class="relative h-full w-64 transform transition-transform duration-200">

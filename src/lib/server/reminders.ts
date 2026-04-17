@@ -7,6 +7,7 @@ import {
   userPreferences,
 } from "$lib/server/db/schema";
 import { sendReminderEmail } from "./email";
+import { sendPushNotification } from "./push";
 import { formatTimeSince } from "$lib/utils/time";
 
 export async function checkOverdueMedications() {
@@ -46,6 +47,17 @@ export async function checkOverdueMedications() {
         med.medicationName,
         formatTimeSince(new Date(lastDose.takenAt)),
       );
+
+      try {
+        await sendPushNotification(med.userId, {
+          title: `${med.medicationName} overdue`,
+          body: `Last taken ${formatTimeSince(new Date(lastDose.takenAt))} ago`,
+          url: "/dashboard",
+          tag: `overdue-${med.medicationId}`,
+        });
+      } catch {
+        // Push failure should not block email sending
+      }
     }
   }
 }

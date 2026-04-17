@@ -25,7 +25,7 @@
         class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors {active ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-glass-hover hover:text-text-primary'}"
         aria-current={active ? 'page' : undefined}
         onclick={() => mobile && onclose?.()}>
-        <span class="flex h-5 w-5 shrink-0 items-center justify-center">{@html item.icon}</span>
+        <span class="flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">{@html item.icon}</span>
         {item.label}
       </a>
     {/each}

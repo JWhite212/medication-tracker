@@ -95,14 +95,17 @@
     </div>
   {/if}
 
-  <div class="flex justify-between">
+  <nav aria-label="Dose history pagination" class="flex items-center justify-between">
     {#if data.page > 1}
-      <a href="?page={data.page - 1}" class="rounded-lg border border-glass-border px-4 py-2 text-sm hover:bg-glass-hover">Previous</a>
+      <a href="?page={data.page - 1}" rel="prev" aria-label="Go to previous page"
+        class="rounded-lg border border-glass-border px-4 py-2 text-sm hover:bg-glass-hover">Previous</a>
     {:else}<div></div>{/if}
+    <span class="text-sm text-text-secondary" aria-current="page">Page {data.page}</span>
     {#if data.hasMore}
-      <a href="?page={data.page + 1}" class="rounded-lg border border-glass-border px-4 py-2 text-sm hover:bg-glass-hover">Next</a>
-    {/if}
-  </div>
+      <a href="?page={data.page + 1}" rel="next" aria-label="Go to next page"
+        class="rounded-lg border border-glass-border px-4 py-2 text-sm hover:bg-glass-hover">Next</a>
+    {:else}<div></div>{/if}
+  </nav>
 </div>
 
 <Modal open={editingDose !== null} onclose={() => (editingDose = null)}>

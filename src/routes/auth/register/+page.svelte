@@ -33,7 +33,7 @@
           class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           placeholder="Your name" />
         {#if form?.errors?.name}
-          <p class="mt-1 text-sm text-danger">{form.errors.name[0]}</p>
+          <p class="mt-1 text-sm text-danger" role="alert">{form.errors.name[0]}</p>
         {/if}
       </div>
 
@@ -43,7 +43,7 @@
           class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           placeholder="you@example.com" />
         {#if form?.errors?.email}
-          <p class="mt-1 text-sm text-danger">{form.errors.email[0]}</p>
+          <p class="mt-1 text-sm text-danger" role="alert">{form.errors.email[0]}</p>
         {/if}
       </div>
 
@@ -53,7 +53,7 @@
           class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           placeholder="Min. 8 characters" />
         {#if form?.errors?.password}
-          <p class="mt-1 text-sm text-danger">{form.errors.password[0]}</p>
+          <p class="mt-1 text-sm text-danger" role="alert">{form.errors.password[0]}</p>
         {/if}
       </div>
 

@@ -3,7 +3,7 @@ import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 const config = {
   preprocess: vitePreprocess(),
   kit: {
-    adapter: adapter(),
+    adapter: adapter({ runtime: "nodejs22.x" }),
     alias: {
       $components: "src/lib/components",
       $server: "src/lib/server",

@@ -2,6 +2,24 @@
 
 A personal medication tracking web application built with SvelteKit, designed for quick dose logging, live timers, adherence analytics, and inventory management. Server-first architecture with a dark-mode glassmorphism UI.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/Node-%3E%3D20-brightgreen)](https://nodejs.org)
+[![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev)
+[![Deploy](https://img.shields.io/badge/Vercel-deployed-black?logo=vercel)](https://vercel.com)
+
+[Features](#features) · [Tech Stack](#tech-stack) · [Architecture](#architecture) · [Getting Started](#getting-started) · [Testing](#testing) · [Project Structure](#project-structure) · [Design System](#design-system) · [Deployment](#deployment) · [Roadmap](#roadmap) · [Author](#author) · [License](#license)
+
+![MedTracker dashboard](docs/screenshots/hero-dashboard.png)
+
+## Screenshots
+
+|                                                  |                                                        |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| ![Medications](docs/screenshots/medications.png) | ![Add Medication](docs/screenshots/add-medication.png) |
+| _Medications_                                    | _Add Medication_                                       |
+| ![History](docs/screenshots/history.png)         | ![Analytics](docs/screenshots/analytics.png)           |
+| _History_                                        | _Analytics_                                            |
+
 ## Features
 
 ### Dose Logging
@@ -67,6 +85,21 @@ A personal medication tracking web application built with SvelteKit, designed fo
 | Testing          | [Vitest](https://vitest.dev) + [Playwright](https://playwright.dev)                           |
 | Deployment       | [Vercel](https://vercel.com) (via `@sveltejs/adapter-vercel`)                                 |
 
+## Architecture
+
+```mermaid
+flowchart LR
+  U[User browser<br/>Svelte 5 runes] -->|form actions<br/>use:enhance| SK[SvelteKit<br/>+page.server.ts]
+  SK -->|session check| LU[Lucia v3<br/>hooks.server.ts]
+  SK -->|typed queries| DR[Drizzle ORM]
+  DR --> PG[(Neon Postgres<br/>users · medications<br/>doseLogs · sessions<br/>auditLogs)]
+  SK -->|OAuth| AR[Arctic<br/>Google / GitHub]
+  SK -->|verification<br/>password reset| RS[Resend email]
+  VC[Vercel Cron<br/>09:00 daily] -->|Bearer CRON_SECRET| SK
+  SK -->|overdue alerts| RS
+  SK -->|PDF / CSV<br/>/api/export| U
+```
+
 ## Getting Started
 
 ### Prerequisites
@@ -79,7 +112,7 @@ A personal medication tracking web application built with SvelteKit, designed fo
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/medication-tracker.git
+git clone https://github.com/JWhite212/medication-tracker.git
 cd medication-tracker
 npm install
 ```
@@ -205,6 +238,28 @@ All components use Svelte 5 runes (`$props()`, `$state()`, `$derived()`, `$effec
 The app is configured for Vercel deployment via `@sveltejs/adapter-vercel`. Set all environment variables in your Vercel project settings.
 
 For scheduled medication reminders, configure a Vercel Cron Job pointing to `/api/cron/reminders` with the `CRON_SECRET` header.
+
+## Roadmap
+
+- [ ] Full 2FA / TOTP flow (schema fields + settings UI skeleton are already in place)
+- [ ] Drug-drug interaction warnings
+- [ ] Weight-based and renal-impairment dosing support
+- [ ] Real-time multi-device dose sync (WebSocket / Server-Sent Events)
+- [ ] Recurring per-dose reminders (not just daily overdue digests)
+- [ ] Native push notifications via PWA / web push
+- [ ] Refill-projection improvements (learning per-medication usage)
+- [ ] Caregiver shared-access mode (read-only delegated accounts)
+- [ ] Mobile wrapper (Capacitor) for App Store / Play Store distribution
+- [ ] Medication photo recognition for faster add-medication flow
+
+## Author
+
+**Jamie White** — early-career software engineer (UK).
+
+- GitHub: [@JWhite212](https://github.com/JWhite212)
+- Email: [jamiecs@live.co.uk](mailto:jamiecs@live.co.uk)
+- Portfolio: [jamie-white-portfolio.vercel.app](https://jamie-white-portfolio.vercel.app)
+- Case study: [jamie-white-portfolio.vercel.app/projects/medication-tracker](https://jamie-white-portfolio.vercel.app/projects/medication-tracker)
 
 ## License
 

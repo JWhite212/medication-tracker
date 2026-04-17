@@ -175,6 +175,18 @@ export const pushSubscriptions = pgTable(
   (table) => [index("push_subscriptions_user_idx").on(table.userId)],
 );
 
+export const emailVerificationTokens = pgTable("email_verification_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const passwordResetTokens = pgTable("password_reset_tokens", {
   id: text("id").primaryKey(),
   userId: text("user_id")

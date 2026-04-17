@@ -22,18 +22,33 @@
 
   <GlassCard>
     <div class="flex items-center justify-between">
-      <div>
-        <p class="font-medium">Archive Medication</p>
-        <p class="text-sm text-text-secondary">Remove this medication from your active list.</p>
-      </div>
-      <form method="POST" action="?/archive">
-        <button
-          type="submit"
-          class="rounded-lg border border-danger px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10"
-        >
-          Archive
-        </button>
-      </form>
+      {#if data.medication.isArchived}
+        <div>
+          <p class="font-medium">Archived Medication</p>
+          <p class="text-sm text-text-secondary">Restore this medication to your active list.</p>
+        </div>
+        <form method="POST" action="?/unarchive">
+          <button
+            type="submit"
+            class="rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10"
+          >
+            Unarchive
+          </button>
+        </form>
+      {:else}
+        <div>
+          <p class="font-medium">Archive Medication</p>
+          <p class="text-sm text-text-secondary">Remove this medication from your active list.</p>
+        </div>
+        <form method="POST" action="?/archive">
+          <button
+            type="submit"
+            class="rounded-lg border border-danger px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10"
+          >
+            Archive
+          </button>
+        </form>
+      {/if}
     </div>
   </GlassCard>
 </div>

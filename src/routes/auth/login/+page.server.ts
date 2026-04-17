@@ -64,6 +64,18 @@ export const actions: Actions = {
       });
     }
 
+    // If 2FA is enabled, redirect to TOTP verification
+    if (user.twoFactorEnabled) {
+      cookies.set("pending_2fa", user.id, {
+        path: "/",
+        maxAge: 300,
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+      });
+      redirect(302, "/auth/2fa");
+    }
+
     const session = await lucia.createSession(user.id, {});
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {

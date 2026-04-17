@@ -3,9 +3,11 @@ import {
   getPerMedicationStats,
   getHourlyDistribution,
   getDayOfWeekDistribution,
+  getSideEffectStats,
   calculateStreak,
   calculateTrend,
 } from "$lib/server/analytics";
+import type { DateRange } from "$lib/server/analytics";
 import type { PageServerLoad } from "./$types";
 
 const VALID_PERIODS = new Set(["7", "30", "90", "365"]);
@@ -15,6 +17,13 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
   const timezone = locals.user!.timezone;
   const { preferences } = await parent();
 
+  const fromParam = url.searchParams.get("from");
+  const toParam = url.searchParams.get("to");
+  const customRange: DateRange | undefined =
+    fromParam && toParam
+      ? { from: new Date(fromParam), to: new Date(toParam) }
+      : undefined;
+
   const periodParam = url.searchParams.get("period");
   const period =
     periodParam && VALID_PERIODS.has(periodParam)
@@ -22,23 +31,33 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
       : preferences.heatmapPeriod;
 
   const now = Date.now();
-  const previousRange = {
-    from: new Date(now - period * 2 * 86400000),
-    to: new Date(now - period * 86400000),
-  };
+  const previousRange: DateRange = customRange
+    ? {
+        from: new Date(
+          customRange.from!.getTime() -
+            (customRange.to!.getTime() - customRange.from!.getTime()),
+        ),
+        to: customRange.from!,
+      }
+    : {
+        from: new Date(now - period * 2 * 86400000),
+        to: new Date(now - period * 86400000),
+      };
 
   const [
     dailyCounts,
     medStats,
     hourly,
     dayOfWeek,
+    sideEffects,
     prevDailyCounts,
     prevMedStats,
   ] = await Promise.all([
-    getDailyDoseCounts(userId, period, timezone),
-    getPerMedicationStats(userId, period),
-    getHourlyDistribution(userId, period, timezone),
-    getDayOfWeekDistribution(userId, period, timezone),
+    getDailyDoseCounts(userId, period, timezone, customRange),
+    getPerMedicationStats(userId, period, customRange),
+    getHourlyDistribution(userId, period, timezone, customRange),
+    getDayOfWeekDistribution(userId, period, timezone, customRange),
+    getSideEffectStats(userId, period, timezone, customRange),
     getDailyDoseCounts(userId, period, timezone, previousRange),
     getPerMedicationStats(userId, period, previousRange),
   ]);
@@ -84,10 +103,13 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     medStats,
     hourly,
     dayOfWeek,
+    sideEffects,
     streak,
     period,
     totalDoses,
     avgAdherence,
     trends,
+    from: fromParam ?? "",
+    to: toParam ?? "",
   };
 };

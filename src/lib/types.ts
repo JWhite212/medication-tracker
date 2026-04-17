@@ -50,6 +50,8 @@ export type MedicationWithStats = Medication & {
   weeklyDoseCount: number;
   avgDailyConsumption: number;
   daysUntilRefill: number | null;
+};
+
 export type MedicationTimingStatus = {
   medicationId: string;
   status: "ok" | "due_soon" | "due_now" | "overdue";

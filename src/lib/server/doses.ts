@@ -83,6 +83,23 @@ export async function logDose(
   return dose;
 }
 
+export async function logSkippedDose(userId: string, medicationId: string) {
+  const id = createId();
+  const now = new Date();
+  await db.insert(doseLogs).values({
+    id,
+    userId,
+    medicationId,
+    quantity: 0,
+    takenAt: now,
+    loggedAt: now,
+    notes: "Skipped",
+    sideEffects: null,
+  });
+  await logAudit(userId, "dose_log", id, "create");
+  return id;
+}
+
 export async function deleteDose(userId: string, doseId: string) {
   const [dose] = await db
     .select()

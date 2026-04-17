@@ -1,3 +1,4 @@
+import "$lib/server/env";
 import type { Handle } from "@sveltejs/kit";
 import { lucia } from "$lib/server/auth/lucia";
 

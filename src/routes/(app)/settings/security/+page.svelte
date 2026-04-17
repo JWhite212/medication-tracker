@@ -58,6 +58,60 @@
     </form>
   </GlassCard>
 
+  <!-- Two-Factor Authentication -->
+  <GlassCard>
+    <h2 class="mb-4 text-lg font-semibold">Two-Factor Authentication</h2>
+
+    {#if form?.totpEnabled}
+      <p class="mb-4 rounded-lg bg-success/10 px-4 py-2 text-sm text-success">Two-factor authentication enabled successfully.</p>
+    {/if}
+    {#if form?.totpDisabled}
+      <p class="mb-4 rounded-lg bg-success/10 px-4 py-2 text-sm text-success">Two-factor authentication disabled.</p>
+    {/if}
+    {#if form?.totpError}
+      <p class="mb-4 rounded-lg bg-danger/10 px-4 py-2 text-sm text-danger" role="alert">{form.totpError}</p>
+    {/if}
+
+    {#if form?.totpSetup}
+      <!-- Step 2: Scan QR and verify -->
+      <div class="space-y-4">
+        <p class="text-sm text-text-secondary">Scan this QR code with your authenticator app, then enter the 6-digit code to verify.</p>
+        <div class="flex justify-center">
+          <img src={form.totpSetup.qrCode} alt="TOTP QR Code" class="rounded-lg" width="200" height="200" />
+        </div>
+        <p class="text-center text-xs text-text-muted">Manual entry: <code class="rounded bg-surface-overlay px-2 py-0.5 text-xs">{form.totpSetup.secret}</code></p>
+        <form method="POST" action="?/verifyTwoFactor" use:enhance class="flex items-end gap-3">
+          <Input label="Verification Code" name="code" placeholder="000000" required />
+          <button type="submit" class="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90">
+            Verify
+          </button>
+        </form>
+      </div>
+    {:else if data.twoFactorEnabled}
+      <!-- 2FA is enabled — show disable option -->
+      <div class="space-y-4">
+        <div class="flex items-center gap-3">
+          <span class="rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">Enabled</span>
+          <p class="text-sm text-text-secondary">Your account is protected with two-factor authentication.</p>
+        </div>
+        <form method="POST" action="?/disableTwoFactor" use:enhance class="flex items-end gap-3">
+          <Input label="Enter code to disable" name="code" placeholder="000000" required />
+          <button type="submit" class="rounded-lg border border-danger/30 px-5 py-2.5 text-sm font-medium text-danger transition-colors hover:bg-danger/10">
+            Disable 2FA
+          </button>
+        </form>
+      </div>
+    {:else}
+      <!-- Step 1: Setup -->
+      <p class="mb-4 text-sm text-text-secondary">Add an extra layer of security by requiring a code from your authenticator app when signing in.</p>
+      <form method="POST" action="?/setupTwoFactor" use:enhance>
+        <button type="submit" class="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90">
+          Set Up 2FA
+        </button>
+      </form>
+    {/if}
+  </GlassCard>
+
   <!-- Active Sessions -->
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Active Sessions</h2>

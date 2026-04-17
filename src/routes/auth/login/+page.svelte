@@ -8,6 +8,7 @@
 <svelte:head>
 	<title>Sign In — MedTracker</title>
 	<meta name="description" content="Sign in to MedTracker to log doses, view live medication timers, and track your adherence." />
+	<link rel="canonical" href="https://medication-tracker-jw.vercel.app/auth/login" />
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">
@@ -16,6 +17,12 @@
 	>
 		<h1 class="mb-2 text-2xl font-bold">Welcome back</h1>
 		<p class="mb-6 text-text-secondary">Sign in to your account</p>
+
+		{#if data.oauthError === 'oauth_email_conflict'}
+			<div class="mb-4 rounded-lg bg-warning/10 p-3 text-sm text-warning">
+				An account with that email already exists. Please sign in with your password, then link your OAuth provider from settings.
+			</div>
+		{/if}
 
 		{#if form?.errors?.form}
 			<div class="mb-4 rounded-lg bg-danger/10 p-3 text-sm text-danger">

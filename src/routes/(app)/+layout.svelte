@@ -63,7 +63,7 @@
       <Sidebar user={data.user} />
     </div>
 
-    <main class="flex-1 overflow-y-auto p-4 pt-18 md:p-6 md:pt-6 lg:p-8">
+    <main id="main-content" class="flex-1 overflow-y-auto p-4 pt-18 md:p-6 md:pt-6 lg:p-8">
       {@render children()}
     </main>
   </div>

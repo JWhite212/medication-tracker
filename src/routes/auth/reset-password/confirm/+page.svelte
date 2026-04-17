@@ -7,6 +7,7 @@
 
 <svelte:head>
   <title>Set New Password — MedTracker</title>
+  <meta name="description" content="Choose a new password for your MedTracker account." />
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">

@@ -1,4 +1,5 @@
 import { redirect, error } from "@sveltejs/kit";
+import { timingSafeEqual } from "crypto";
 import { getGoogle, getGitHub } from "$lib/server/auth/oauth";
 import { lucia } from "$lib/server/auth/lucia";
 import { db } from "$lib/server/db";
@@ -6,6 +7,11 @@ import { users, oauthAccounts } from "$lib/server/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { RequestHandler } from "./$types";
+
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 interface OAuthUserInfo {
   id: string;
@@ -99,7 +105,11 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   // Verify OAuth state to prevent CSRF
   const storedState = cookies.get("oauth_state");
   const returnedState = url.searchParams.get("state");
-  if (!storedState || storedState !== returnedState) {
+  if (
+    !storedState ||
+    !returnedState ||
+    !safeEqual(storedState, returnedState)
+  ) {
     error(400, "Invalid OAuth state");
   }
   cookies.delete("oauth_state", { path: "/" });
@@ -138,13 +148,23 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   }
 
   const [existingUser] = await db
-    .select()
+    .select({ id: users.id, passwordHash: users.passwordHash })
     .from(users)
     .where(eq(users.email, oauthUser.email))
     .limit(1);
   let userId: string;
 
   if (existingUser) {
+    // Refuse auto-linking to accounts that have a password set.
+    // This prevents account takeover via OAuth providers that allow
+    // unverified emails matching an existing password-based account.
+    if (existingUser.passwordHash) {
+      redirect(
+        302,
+        "/auth/login?error=oauth_email_conflict&email=" +
+          encodeURIComponent(oauthUser.email),
+      );
+    }
     userId = existingUser.id;
     await db
       .update(users)

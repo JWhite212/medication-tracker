@@ -19,7 +19,7 @@
     </div>
   </header>
 
-  <main class="flex flex-1 flex-col items-center justify-center px-4 text-center sm:px-6">
+  <main id="main-content" class="flex flex-1 flex-col items-center justify-center px-4 text-center sm:px-6">
     <h1 class="max-w-2xl text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
       Track your medications
       <span class="text-accent">effortlessly</span>
@@ -37,17 +37,17 @@
     <div class="mt-16 grid max-w-3xl grid-cols-1 gap-6 text-center sm:grid-cols-3 sm:gap-8">
       <div>
         <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-accent/15 text-xl">⏱</div>
-        <h3 class="font-semibold">Live Timers</h3>
+        <h2 class="font-semibold">Live Timers</h2>
         <p class="mt-1 text-sm text-text-secondary">See exactly when you last took each medication</p>
       </div>
       <div>
         <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-success/15 text-xl">📊</div>
-        <h3 class="font-semibold">Analytics</h3>
+        <h2 class="font-semibold">Analytics</h2>
         <p class="mt-1 text-sm text-text-secondary">Track streaks, adherence, and patterns over time</p>
       </div>
       <div>
         <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-warning/15 text-xl">🔒</div>
-        <h3 class="font-semibold">Secure</h3>
+        <h2 class="font-semibold">Secure</h2>
         <p class="mt-1 text-sm text-text-secondary">Your data is encrypted and never shared</p>
       </div>
     </div>

@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(/Users/jamiewhite/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/brainstorming/scripts/start-server.sh:*)",
-      "Bash(npx sv:*)"
+      "Bash(npx sv:*)",
+      "Bash(npx vitest:*)",
+      "Bash(curl -s http://localhost:5173/dashboard)",
+      "Bash(curl:*)",
+      "Bash(pkill -f \"vite dev\")",
+      "Bash(npx drizzle-kit:*)"
     ]
   }
 }

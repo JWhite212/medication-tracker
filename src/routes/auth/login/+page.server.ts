@@ -10,9 +10,10 @@ import { hasOAuthProviders } from "$lib/server/auth/oauth";
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   if (locals.user) redirect(302, "/dashboard");
-  return { hasOAuth: hasOAuthProviders() };
+  const oauthError = url.searchParams.get("error");
+  return { hasOAuth: hasOAuthProviders(), oauthError };
 };
 
 export const actions: Actions = {

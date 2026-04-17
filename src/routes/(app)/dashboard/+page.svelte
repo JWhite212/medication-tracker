@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { enhance } from '$app/forms';
   import SummaryStrip from '$components/SummaryStrip.svelte';
   import MyDayTimeline from '$components/MyDayTimeline.svelte';
   import QuickLogBar from '$components/QuickLogBar.svelte';
@@ -75,6 +76,12 @@
             <span class="text-xs font-medium text-warning">
               {formatDueIn(entry.minutesUntilDue * 60_000)}
             </span>
+            <form method="POST" action="?/skipDose" use:enhance>
+              <input type="hidden" name="medicationId" value={entry.medicationId} />
+              <button type="submit" class="rounded px-2 py-1 text-xs text-text-muted transition-colors hover:bg-glass-hover hover:text-text-primary">
+                Skip
+              </button>
+            </form>
           </div>
         {/each}
       </div>

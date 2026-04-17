@@ -47,6 +47,21 @@ export async function sendPasswordResetEmail(
   });
 }
 
+export async function sendLowInventoryEmail(
+  email: string,
+  medicationName: string,
+  count: number,
+  threshold: number,
+) {
+  await getResend().emails.send({
+    from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
+    to: email,
+    subject: `Low inventory: ${medicationName}`,
+    html: `<p><strong>${escHtml(medicationName)}</strong> has ${count} doses remaining (threshold: ${threshold}).</p>
+           <p>Consider refilling soon.</p>`,
+  });
+}
+
 export async function sendReminderEmail(
   email: string,
   medicationName: string,

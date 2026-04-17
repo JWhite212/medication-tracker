@@ -58,6 +58,23 @@
     { value: 'otc', label: 'Over the Counter' },
     { value: 'supplement', label: 'Supplement' }
   ];
+
+  let interactionWarnings = $state<string[]>([]);
+  let interactionTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function checkInteractions(name: string) {
+    clearTimeout(interactionTimer);
+    if (!name || name.length < 2 || medication) { interactionWarnings = []; return; }
+    interactionTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/interactions?drug=${encodeURIComponent(name)}`);
+        if (res.ok) {
+          const data = await res.json();
+          interactionWarnings = data.warnings ?? [];
+        }
+      } catch { interactionWarnings = []; }
+    }, 500);
+  }
 </script>
 
 <form
@@ -85,7 +102,18 @@
     error={errors['name']?.[0] ?? ''}
     required
     placeholder="e.g. Aspirin"
+    onblur={(e: FocusEvent & { currentTarget: HTMLInputElement }) => checkInteractions(e.currentTarget.value)}
   />
+
+  {#if interactionWarnings.length > 0}
+    <div class="rounded-lg border border-warning/30 bg-warning/5 px-4 py-3">
+      <p class="mb-1 text-xs font-medium text-warning">Potential Drug Interactions</p>
+      {#each interactionWarnings as warning}
+        <p class="text-sm text-text-secondary">{warning}</p>
+      {/each}
+      <p class="mt-2 text-xs text-text-muted">Advisory only — consult your healthcare provider.</p>
+    </div>
+  {/if}
 
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <Input

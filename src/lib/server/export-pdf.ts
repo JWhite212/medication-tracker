@@ -15,6 +15,7 @@ export async function generateReport(
     .select({
       takenAt: doseLogs.takenAt,
       quantity: doseLogs.quantity,
+      sideEffects: doseLogs.sideEffects,
       medName: medications.name,
       dosageAmount: medications.dosageAmount,
       dosageUnit: medications.dosageUnit,
@@ -53,6 +54,15 @@ export async function generateReport(
         .text(
           `${formatTime(new Date(dose.takenAt), timezone)}  ${dose.medName} ${dose.dosageAmount}${dose.dosageUnit} x${dose.quantity}`,
         );
+      if (dose.sideEffects?.length) {
+        doc
+          .fontSize(8)
+          .fillColor("#888888")
+          .text(
+            `  Side effects: ${dose.sideEffects.map((e) => `${e.name} (${e.severity})`).join(", ")}`,
+          )
+          .fillColor("#000000");
+      }
     }
 
     doc.end();

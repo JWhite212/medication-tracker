@@ -5,7 +5,10 @@ import { hashPassword } from "$lib/server/auth/password";
 import { lucia } from "$lib/server/auth/lucia";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { db } from "$lib/server/db";
-import { users } from "$lib/server/db/schema";
+import { users, emailVerificationTokens } from "$lib/server/db/schema";
+import { sha256 } from "@oslojs/crypto/sha2";
+import { encodeHexLowerCase } from "@oslojs/encoding";
+import { sendVerificationEmail } from "$lib/server/email";
 import { eq } from "drizzle-orm";
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
@@ -99,6 +102,27 @@ export const actions: Actions = {
     });
 
     await logAudit(userId, "user", userId, "create");
+
+    // Send email verification (non-blocking — failure doesn't prevent registration)
+    try {
+      const rawToken = crypto.randomUUID();
+      const tokenHash = encodeHexLowerCase(
+        sha256(new TextEncoder().encode(rawToken)),
+      );
+      await db.insert(emailVerificationTokens).values({
+        id: createId(),
+        userId,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+      await sendVerificationEmail(
+        email,
+        rawToken,
+        request.headers.get("origin") ?? "",
+      );
+    } catch {
+      // Email verification failure should not block registration
+    }
 
     const session = await lucia.createSession(userId, {});
     const sessionCookie = lucia.createSessionCookie(session.id);

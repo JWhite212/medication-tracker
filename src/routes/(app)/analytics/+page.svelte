@@ -21,6 +21,15 @@
 	function setPeriod(value: number) {
 		const url = new URL(window.location.href);
 		url.searchParams.set('period', String(value));
+		url.searchParams.delete('from');
+		url.searchParams.delete('to');
+		goto(url.toString(), { invalidateAll: true });
+	}
+
+	function setDateRange(key: string, value: string) {
+		const url = new URL(window.location.href);
+		if (value) url.searchParams.set(key, value);
+		else url.searchParams.delete(key);
 		goto(url.toString(), { invalidateAll: true });
 	}
 </script>
@@ -41,6 +50,13 @@
 					{p.label}
 				</button>
 			{/each}
+		</div>
+		<div class="flex items-center gap-2">
+			<input type="date" value={data.from} onchange={(e) => setDateRange('from', e.currentTarget.value)}
+				class="rounded-lg border border-glass-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary" />
+			<span class="text-xs text-text-muted">to</span>
+			<input type="date" value={data.to} onchange={(e) => setDateRange('to', e.currentTarget.value)}
+				class="rounded-lg border border-glass-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary" />
 		</div>
 	</div>
 
@@ -126,4 +142,38 @@
 			{/each}
 		</div></div>
 	</GlassCard>
+
+	{#if data.sideEffects.frequency.length > 0}
+		<GlassCard>
+			<h2 class="mb-4 text-lg font-semibold">Side Effects</h2>
+			<div class="space-y-2">
+				{#each data.sideEffects.frequency as effect}
+					{@const maxCount = data.sideEffects.frequency[0].count}
+					<div class="flex items-center gap-3">
+						<span class="w-28 truncate text-sm">{effect.name}</span>
+						<div class="flex-1 h-4 rounded-full bg-surface-overlay overflow-hidden">
+							<div class="h-full rounded-full bg-warning/70" style="width: {(effect.count / maxCount) * 100}%"></div>
+						</div>
+						<span class="text-xs text-text-muted w-8 text-right">{effect.count}</span>
+					</div>
+				{/each}
+			</div>
+
+			{#if data.sideEffects.byMedication.length > 0}
+				<h3 class="mb-2 mt-6 text-sm font-medium text-text-secondary">By Medication</h3>
+				<div class="space-y-3">
+					{#each data.sideEffects.byMedication as med}
+						<div>
+							<p class="text-sm font-medium">{med.medication}</p>
+							<div class="mt-1 flex flex-wrap gap-1.5">
+								{#each med.effects as eff}
+									<span class="rounded-full bg-warning/10 px-2.5 py-0.5 text-xs text-warning">{eff.name} ({eff.count})</span>
+								{/each}
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</GlassCard>
+	{/if}
 </div>

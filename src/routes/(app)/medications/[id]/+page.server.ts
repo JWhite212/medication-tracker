@@ -4,6 +4,7 @@ import {
   getMedicationById,
   updateMedication,
   archiveMedication,
+  unarchiveMedication,
 } from "$lib/server/medications";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -35,6 +36,10 @@ export const actions: Actions = {
   },
   archive: async ({ locals, params }) => {
     await archiveMedication(locals.user!.id, params.id);
+    redirect(302, "/medications");
+  },
+  unarchive: async ({ locals, params }) => {
+    await unarchiveMedication(locals.user!.id, params.id);
     redirect(302, "/medications");
   },
 };

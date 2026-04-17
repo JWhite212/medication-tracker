@@ -5,6 +5,12 @@ import { users, sessions } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
 import { passwordChangeSchema } from "$lib/utils/validation";
 import { hashPassword, verifyPassword } from "$lib/server/auth/password";
+import {
+  generateTOTPSecret,
+  getTOTPUri,
+  generateQRDataUrl,
+  verifyTOTPCode,
+} from "$lib/server/auth/totp";
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -17,6 +23,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     user: locals.user!,
     sessions: userSessions,
     currentSessionId: locals.session!.id,
+    twoFactorEnabled: locals.user!.twoFactorEnabled,
   };
 };
 
@@ -74,6 +81,62 @@ export const actions: Actions = {
       }
     }
     return { sessionRevoked: true };
+  },
+  setupTwoFactor: async ({ locals }) => {
+    const secret = generateTOTPSecret();
+    await db
+      .update(users)
+      .set({ totpSecret: secret })
+      .where(eq(users.id, locals.user!.id));
+    const uri = getTOTPUri(secret, locals.user!.email);
+    const qrCode = await generateQRDataUrl(uri);
+    return { totpSetup: { qrCode, secret } };
+  },
+  verifyTwoFactor: async ({ request, locals }) => {
+    const formData = Object.fromEntries(await request.formData());
+    const code = String(formData.code ?? "");
+    if (code.length !== 6 || !/^\d{6}$/.test(code))
+      return fail(400, { totpError: "Enter a 6-digit code" });
+
+    const [user] = await db
+      .select({ totpSecret: users.totpSecret })
+      .from(users)
+      .where(eq(users.id, locals.user!.id))
+      .limit(1);
+    if (!user?.totpSecret)
+      return fail(400, { totpError: "Setup required first" });
+    if (!verifyTOTPCode(user.totpSecret, code))
+      return fail(400, { totpError: "Invalid code — try again" });
+
+    await db
+      .update(users)
+      .set({ twoFactorEnabled: true, updatedAt: new Date() })
+      .where(eq(users.id, locals.user!.id));
+    await logAudit(locals.user!.id, "user", locals.user!.id, "update", {
+      twoFactorEnabled: { from: false, to: true },
+    });
+    return { totpEnabled: true };
+  },
+  disableTwoFactor: async ({ request, locals }) => {
+    const formData = Object.fromEntries(await request.formData());
+    const code = String(formData.code ?? "");
+
+    const [user] = await db
+      .select({ totpSecret: users.totpSecret })
+      .from(users)
+      .where(eq(users.id, locals.user!.id))
+      .limit(1);
+    if (!user?.totpSecret || !verifyTOTPCode(user.totpSecret, code))
+      return fail(400, { totpError: "Invalid code" });
+
+    await db
+      .update(users)
+      .set({ twoFactorEnabled: false, totpSecret: null, updatedAt: new Date() })
+      .where(eq(users.id, locals.user!.id));
+    await logAudit(locals.user!.id, "user", locals.user!.id, "update", {
+      twoFactorEnabled: { from: true, to: false },
+    });
+    return { totpDisabled: true };
   },
   logout: async ({ locals, cookies }) => {
     if (locals.session) {

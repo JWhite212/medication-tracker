@@ -4,6 +4,7 @@ import {
   getTodaysDoses,
   getLastDosePerMedication,
   logDose,
+  logSkippedDose,
   deleteDose,
   updateDose,
 } from "$lib/server/doses";
@@ -119,6 +120,13 @@ export const actions: Actions = {
       notes,
       sideEffects: sideEffects ?? null,
     });
+    return { success: true };
+  },
+  skipDose: async ({ request, locals }) => {
+    const formData = Object.fromEntries(await request.formData());
+    const medicationId = String(formData.medicationId);
+    if (!medicationId) return fail(400);
+    await logSkippedDose(locals.user!.id, medicationId);
     return { success: true };
   },
 };

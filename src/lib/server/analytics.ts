@@ -190,3 +190,61 @@ export async function getDayOfWeekDistribution(
       sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`,
     );
 }
+
+export async function getSideEffectStats(
+  userId: string,
+  days: number,
+  timezone: string = "UTC",
+  range?: DateRange,
+) {
+  const rows = await db
+    .select({
+      sideEffects: doseLogs.sideEffects,
+      medicationName: medications.name,
+    })
+    .from(doseLogs)
+    .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
+    .where(buildDateFilters(userId, days, timezone, range));
+
+  const effectCounts = new Map<
+    string,
+    { count: number; severities: Map<string, number> }
+  >();
+  const medEffects = new Map<string, Map<string, number>>();
+
+  for (const row of rows) {
+    if (!row.sideEffects) continue;
+    for (const effect of row.sideEffects) {
+      const existing = effectCounts.get(effect.name) ?? {
+        count: 0,
+        severities: new Map(),
+      };
+      existing.count++;
+      existing.severities.set(
+        effect.severity,
+        (existing.severities.get(effect.severity) ?? 0) + 1,
+      );
+      effectCounts.set(effect.name, existing);
+
+      const medMap = medEffects.get(row.medicationName) ?? new Map();
+      medMap.set(effect.name, (medMap.get(effect.name) ?? 0) + 1);
+      medEffects.set(row.medicationName, medMap);
+    }
+  }
+
+  return {
+    frequency: [...effectCounts.entries()]
+      .map(([name, { count, severities }]) => ({
+        name,
+        count,
+        severities: Object.fromEntries(severities),
+      }))
+      .sort((a, b) => b.count - a.count),
+    byMedication: [...medEffects.entries()].map(([medication, effects]) => ({
+      medication,
+      effects: [...effects.entries()]
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count),
+    })),
+  };
+}

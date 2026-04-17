@@ -14,6 +14,7 @@ export async function generateCsvReport(
       takenAt: doseLogs.takenAt,
       quantity: doseLogs.quantity,
       notes: doseLogs.notes,
+      sideEffects: doseLogs.sideEffects,
       medName: medications.name,
       dosageAmount: medications.dosageAmount,
       dosageUnit: medications.dosageUnit,
@@ -29,7 +30,7 @@ export async function generateCsvReport(
     )
     .orderBy(desc(doseLogs.takenAt));
 
-  const header = "Date,Time,Medication,Dosage,Quantity,Notes";
+  const header = "Date,Time,Medication,Dosage,Quantity,Notes,Side Effects";
   const rows = doses.map((dose) => {
     const dt = new Date(dose.takenAt);
     const date = new Intl.DateTimeFormat("en-CA", {
@@ -45,6 +46,10 @@ export async function generateCsvReport(
       `${dose.dosageAmount}${dose.dosageUnit}`,
       dose.quantity,
       escapeCsv(dose.notes ?? ""),
+      escapeCsv(
+        dose.sideEffects?.map((e) => `${e.name} (${e.severity})`).join("; ") ??
+          "",
+      ),
     ].join(",");
   });
 

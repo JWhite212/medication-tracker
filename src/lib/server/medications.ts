@@ -134,6 +134,32 @@ export async function updateMedication(
   return updated;
 }
 
+export async function swapSortOrder(
+  userId: string,
+  medId1: string,
+  medId2: string,
+) {
+  const [m1] = await db
+    .select({ sortOrder: medications.sortOrder })
+    .from(medications)
+    .where(and(eq(medications.id, medId1), eq(medications.userId, userId)))
+    .limit(1);
+  const [m2] = await db
+    .select({ sortOrder: medications.sortOrder })
+    .from(medications)
+    .where(and(eq(medications.id, medId2), eq(medications.userId, userId)))
+    .limit(1);
+  if (!m1 || !m2) return;
+  await db
+    .update(medications)
+    .set({ sortOrder: m2.sortOrder })
+    .where(eq(medications.id, medId1));
+  await db
+    .update(medications)
+    .set({ sortOrder: m1.sortOrder })
+    .where(eq(medications.id, medId2));
+}
+
 export async function archiveMedication(userId: string, id: string) {
   await db
     .update(medications)
@@ -142,4 +168,24 @@ export async function archiveMedication(userId: string, id: string) {
   await logAudit(userId, "medication", id, "update", {
     isArchived: { from: false, to: true },
   });
+}
+
+export async function unarchiveMedication(userId: string, id: string) {
+  await db
+    .update(medications)
+    .set({ isArchived: false, updatedAt: new Date() })
+    .where(and(eq(medications.id, id), eq(medications.userId, userId)));
+  await logAudit(userId, "medication", id, "update", {
+    isArchived: { from: true, to: false },
+  });
+}
+
+export async function getArchivedMedications(userId: string) {
+  return db
+    .select()
+    .from(medications)
+    .where(
+      and(eq(medications.userId, userId), eq(medications.isArchived, true)),
+    )
+    .orderBy(medications.name);
 }

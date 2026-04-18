@@ -66,6 +66,17 @@ export function computeScheduleSlots(
 ): ScheduleSlot[] {
   const slots: ScheduleSlot[] = [];
 
+  // Pre-index doses by medicationId to avoid repeated O(n) filtering
+  const dosesByMedId = new Map<string, DoseLogWithMedication[]>();
+  for (const dose of todaysDoses) {
+    let arr = dosesByMedId.get(dose.medicationId);
+    if (!arr) {
+      arr = [];
+      dosesByMedId.set(dose.medicationId, arr);
+    }
+    arr.push(dose);
+  }
+
   for (const med of medications) {
     if (med.scheduleType !== "scheduled") continue;
     const intervalHours = Number(med.scheduleIntervalHours);
@@ -105,7 +116,7 @@ export function computeScheduleSlots(
 
     expectedTimes.sort((a, b) => a.getTime() - b.getTime());
 
-    const medDoses = todaysDoses.filter((d) => d.medicationId === med.id);
+    const medDoses = dosesByMedId.get(med.id) ?? [];
 
     for (const expected of expectedTimes) {
       const matchedDose = medDoses.find(

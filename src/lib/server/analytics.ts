@@ -94,17 +94,10 @@ export async function getDailyDoseCounts(
 export async function getPerMedicationStats(
   userId: string,
   days: number,
+  timezone: string = "UTC",
   range?: DateRange,
 ) {
-  const since = new Date(Date.now() - days * 86400000);
-  const whereClause =
-    range?.from && range?.to
-      ? and(
-          eq(doseLogs.userId, userId),
-          gte(doseLogs.takenAt, range.from),
-          lte(doseLogs.takenAt, range.to),
-        )
-      : and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, since));
+  const whereClause = buildDateFilters(userId, days, timezone, range);
 
   const effectiveDays =
     range?.from && range?.to

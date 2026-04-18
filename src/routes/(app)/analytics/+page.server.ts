@@ -54,12 +54,12 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     prevMedStats,
   ] = await Promise.all([
     getDailyDoseCounts(userId, period, timezone, customRange),
-    getPerMedicationStats(userId, period, customRange),
+    getPerMedicationStats(userId, period, timezone, customRange),
     getHourlyDistribution(userId, period, timezone, customRange),
     getDayOfWeekDistribution(userId, period, timezone, customRange),
     getSideEffectStats(userId, period, timezone, customRange),
     getDailyDoseCounts(userId, period, timezone, previousRange),
-    getPerMedicationStats(userId, period, previousRange),
+    getPerMedicationStats(userId, period, timezone, previousRange),
   ]);
 
   const streak = calculateStreak(

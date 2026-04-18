@@ -165,8 +165,4 @@ export const pushSubscriptionSchema = z.object({
   }),
 });
 
-export type RegisterInput = z.infer<typeof registerSchema>;
-export type LoginInput = z.infer<typeof loginSchema>;
 export type MedicationInput = z.infer<typeof medicationSchema>;
-export type DoseLogInput = z.infer<typeof doseLogSchema>;
-export type SettingsInput = z.infer<typeof settingsSchema>;

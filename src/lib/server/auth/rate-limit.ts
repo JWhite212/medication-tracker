@@ -30,7 +30,3 @@ export async function checkRateLimit(
   const retryAfterMs = Math.max(0, row.resetAt.getTime() - Date.now());
   return { allowed: row.count <= maxAttempts, retryAfterMs };
 }
-
-export async function resetRateLimit(key: string): Promise<void> {
-  await db.delete(rateLimits).where(sql`${rateLimits.key} = ${key}`);
-}

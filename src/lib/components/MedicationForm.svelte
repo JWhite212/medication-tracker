@@ -4,6 +4,7 @@
   import type { Medication } from "$lib/types";
   import Input from "$lib/components/ui/Input.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
+  import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
   import { getMedicationBackground, PATTERN_OPTIONS } from "$lib/utils/medication-style";
 
   let {
@@ -118,12 +119,17 @@
   />
 
   {#if interactionWarnings.length > 0}
-    <div class="border-warning/30 bg-warning/5 rounded-lg border px-4 py-3">
-      <p class="text-warning mb-1 text-xs font-medium">Potential Drug Interactions</p>
+    <div class="border-warning/30 bg-warning/5 rounded-lg border px-4 py-3" role="alert">
+      <p class="text-warning mb-1 text-xs font-medium tracking-wider uppercase">
+        Experimental interaction notice
+      </p>
       {#each interactionWarnings as warning}
         <p class="text-text-secondary text-sm">{warning}</p>
       {/each}
-      <p class="text-text-muted mt-2 text-xs">Advisory only — consult your healthcare provider.</p>
+      <p class="text-text-muted mt-2 text-xs">
+        This check may miss interactions and may produce false positives. It is not a substitute for
+        professional medical advice.
+      </p>
     </div>
   {/if}
 
@@ -420,6 +426,8 @@
     >
     {#if errors["notes"]?.[0]}<p class="text-danger mt-1 text-sm">{errors["notes"][0]}</p>{/if}
   </div>
+
+  <MedicalDisclaimer variant="inline" />
 
   <button
     type="submit"

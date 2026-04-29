@@ -2,6 +2,7 @@
   import GlassCard from "$components/ui/GlassCard.svelte";
   import Heatmap from "$components/Heatmap.svelte";
   import AdherenceChart from "$components/AdherenceChart.svelte";
+  import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
   import { goto } from "$app/navigation";
 
   let { data } = $props();
@@ -39,6 +40,8 @@
 </svelte:head>
 
 <div class="mx-auto max-w-3xl space-y-6">
+  <MedicalDisclaimer variant="inline" />
+
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <h1 class="text-2xl font-bold">Analytics</h1>
     <div class="border-glass-border bg-glass flex gap-1 rounded-lg border p-1 backdrop-blur-xl">

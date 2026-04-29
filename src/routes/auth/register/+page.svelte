@@ -2,6 +2,7 @@
   import { enhance } from "$app/forms";
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
   import splashImage from "$lib/assets/8ccec61e-617c-4da0-8596-c6aa9970893e.png";
+  import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
 
   let { form } = $props();
   let loading = $state(false);
@@ -96,6 +97,18 @@
           <p class="text-danger mt-1 text-sm" role="alert">{errors.password[0]}</p>
         {/if}
       </div>
+
+      <label class="text-text-secondary flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          name="disclaimerAcknowledged"
+          required
+          class="border-glass-border bg-surface-raised text-accent focus:ring-accent mt-0.5 h-4 w-4 rounded border focus:ring-1"
+        />
+        <span> I understand MedTracker is a personal tracking tool, not medical advice. </span>
+      </label>
+
+      <MedicalDisclaimer variant="compact" />
 
       <button
         type="submit"

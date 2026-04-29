@@ -2,6 +2,7 @@
   import { enhance } from "$app/forms";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import Modal from "$lib/components/ui/Modal.svelte";
+  import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
 
   let { data, form } = $props();
   let showDeleteConfirm = $state(false);
@@ -25,6 +26,11 @@
 
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Export</h2>
+
+    <div class="mb-4">
+      <MedicalDisclaimer variant="inline" />
+    </div>
+
     <form method="POST" action="?/updateFormat" use:enhance class="space-y-4">
       <div>
         <label for="exportFormat" class="mb-1 block text-sm font-medium"

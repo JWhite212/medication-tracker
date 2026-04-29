@@ -1,0 +1,13 @@
+build
+.svelte-kit
+.vercel
+node_modules
+drizzle
+static/icons
+static/favicon.svg
+static/og-image.svg
+coverage
+playwright-report
+test-results
+package-lock.json
+.claude/PRPs/

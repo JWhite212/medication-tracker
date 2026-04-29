@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("$lib/server/db", () => ({ db: {} }));
 
-import { calculateStreak, calculateAdherence, calculateTrend } from "$lib/server/analytics";
+import {
+  calculateStreak,
+  calculateAdherence,
+  calculateOveruse,
+  calculateTrend,
+} from "$lib/server/analytics";
 
 describe("calculateStreak", () => {
   it("returns 0 for empty dates", () => {
@@ -40,6 +45,30 @@ describe("calculateAdherence", () => {
 
   it("returns 0 for no expected doses", () => {
     expect(calculateAdherence(0, 0)).toBe(0);
+  });
+
+  it("caps at 100% when taken exceeds expected", () => {
+    expect(calculateAdherence(10, 7)).toBe(100);
+    expect(calculateAdherence(20, 1)).toBe(100);
+  });
+});
+
+describe("calculateOveruse", () => {
+  it("is 0 when taken does not exceed expected", () => {
+    expect(calculateOveruse(0, 0)).toBe(0);
+    expect(calculateOveruse(5, 7)).toBe(0);
+    expect(calculateOveruse(7, 7)).toBe(0);
+  });
+
+  it("reports overflow as a percentage above 100% adherence", () => {
+    // 10 taken / 7 expected = 142.9% adherence -> 42.9% overuse
+    expect(calculateOveruse(10, 7)).toBeCloseTo(42.9, 0);
+    // 14 / 7 = 200% adherence -> 100% overuse
+    expect(calculateOveruse(14, 7)).toBe(100);
+  });
+
+  it("returns 0 when expected is 0 (avoid divide-by-zero)", () => {
+    expect(calculateOveruse(5, 0)).toBe(0);
   });
 });
 

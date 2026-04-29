@@ -1,7 +1,6 @@
 <script lang="ts">
   import Sidebar from "$components/Sidebar.svelte";
   import MobileHeader from "$components/MobileHeader.svelte";
-  import KeyboardShortcuts from "$components/KeyboardShortcuts.svelte";
   import type { SessionUser } from "$lib/types";
 
   let { data, children } = $props();
@@ -73,6 +72,4 @@
       {@render children()}
     </main>
   </div>
-
-  <KeyboardShortcuts />
 </div>

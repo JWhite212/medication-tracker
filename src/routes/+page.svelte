@@ -2,6 +2,7 @@
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
   import heroImage from "$lib/assets/9910d8b5-01d3-4293-94a7-eca14d4e66f5.png";
   import wordmark from "$lib/assets/medtracker-logo-lockup-vector.svg";
+  import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
 </script>
 
 <svelte:head>
@@ -113,8 +114,11 @@
     </div>
   </main>
 
-  <footer class="border-glass-border flex flex-col items-center gap-3 border-t px-4 py-8 sm:px-6">
+  <footer class="border-glass-border flex flex-col items-center gap-4 border-t px-4 py-8 sm:px-6">
     <img src={wordmark} alt="MedTracker" width="220" height="55" class="h-12 w-auto" />
+    <div class="w-full max-w-2xl">
+      <MedicalDisclaimer variant="inline" />
+    </div>
     <p class="text-text-muted text-xs">© MedTracker · Personal medication tracker</p>
   </footer>
 </div>

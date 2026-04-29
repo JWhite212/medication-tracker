@@ -8,6 +8,7 @@
   import Toast from "$components/ui/Toast.svelte";
   import Modal from "$components/ui/Modal.svelte";
   import DoseEditForm from "$components/DoseEditForm.svelte";
+  import KeyboardShortcuts from "$components/KeyboardShortcuts.svelte";
   import type { DoseLogWithMedication } from "$lib/types";
   import { formatDueIn } from "$lib/utils/time";
   import { getMedicationBackground } from "$lib/utils/medication-style";
@@ -126,3 +127,5 @@
     <DoseEditForm dose={editingDose} onclose={() => (editingDose = null)} />
   {/if}
 </Modal>
+
+<KeyboardShortcuts medications={data.medications} />

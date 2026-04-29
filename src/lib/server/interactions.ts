@@ -2,10 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { medications } from "$lib/server/db/schema";
 
-export async function checkInteractions(
-  userId: string,
-  drugName: string,
-): Promise<string[]> {
+export async function checkInteractions(userId: string, drugName: string): Promise<string[]> {
   const existingMeds = await db
     .select({ name: medications.name })
     .from(medications)
@@ -21,8 +18,7 @@ export async function checkInteractions(
     );
     if (!res.ok) return [];
     const data = await res.json();
-    const interactionText: string =
-      data.results?.[0]?.drug_interactions?.[0] ?? "";
+    const interactionText: string = data.results?.[0]?.drug_interactions?.[0] ?? "";
     const lowerText = interactionText.toLowerCase();
 
     for (const existing of existingNames) {

@@ -21,19 +21,13 @@ interface OAuthUserInfo {
   avatarUrl: string | null;
 }
 
-async function getGoogleUser(
-  code: string,
-  codeVerifier: string,
-): Promise<OAuthUserInfo> {
+async function getGoogleUser(code: string, codeVerifier: string): Promise<OAuthUserInfo> {
   const google = getGoogle();
   if (!google) error(503, "OAuth not configured");
   const tokens = await google.validateAuthorizationCode(code, codeVerifier);
-  const response = await fetch(
-    "https://openidconnect.googleapis.com/v1/userinfo",
-    {
-      headers: { Authorization: `Bearer ${tokens.accessToken()}` },
-    },
-  );
+  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    headers: { Authorization: `Bearer ${tokens.accessToken()}` },
+  });
   const data = await response.json();
   return {
     id: data.sub,
@@ -55,8 +49,7 @@ async function getGitHubUser(code: string): Promise<OAuthUserInfo> {
     headers: { Authorization: `Bearer ${tokens.accessToken()}` },
   });
   const emails = await emailResponse.json();
-  const primaryEmail =
-    emails.find((e: { primary: boolean }) => e.primary)?.email ?? data.email;
+  const primaryEmail = emails.find((e: { primary: boolean }) => e.primary)?.email ?? data.email;
   return {
     id: String(data.id),
     email: primaryEmail,
@@ -84,11 +77,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       if (!google) error(503, "OAuth not configured");
       const codeVerifier = crypto.randomUUID();
       const scopes = ["openid", "email", "profile"];
-      const authUrl = google.createAuthorizationURL(
-        state,
-        codeVerifier,
-        scopes,
-      );
+      const authUrl = google.createAuthorizationURL(state, codeVerifier, scopes);
       cookies.set("google_code_verifier", codeVerifier, cookieOpts);
       cookies.set("oauth_state", state, cookieOpts);
       redirect(302, authUrl.toString());
@@ -106,11 +95,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   // Verify OAuth state to prevent CSRF
   const storedState = cookies.get("oauth_state");
   const returnedState = url.searchParams.get("state");
-  if (
-    !storedState ||
-    !returnedState ||
-    !safeEqual(storedState, returnedState)
-  ) {
+  if (!storedState || !returnedState || !safeEqual(storedState, returnedState)) {
     error(400, "Invalid OAuth state");
   }
   cookies.delete("oauth_state", { path: "/" });
@@ -131,10 +116,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     .select()
     .from(oauthAccounts)
     .where(
-      and(
-        eq(oauthAccounts.provider, provider),
-        eq(oauthAccounts.providerUserId, oauthUser.id),
-      ),
+      and(eq(oauthAccounts.provider, provider), eq(oauthAccounts.providerUserId, oauthUser.id)),
     )
     .limit(1);
 
@@ -162,8 +144,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     if (existingUser.passwordHash) {
       redirect(
         302,
-        "/auth/login?error=oauth_email_conflict&email=" +
-          encodeURIComponent(oauthUser.email),
+        "/auth/login?error=oauth_email_conflict&email=" + encodeURIComponent(oauthUser.email),
       );
     }
     userId = existingUser.id;
@@ -182,9 +163,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     });
   }
 
-  await db
-    .insert(oauthAccounts)
-    .values({ provider, providerUserId: oauthUser.id, userId });
+  await db.insert(oauthAccounts).values({ provider, providerUserId: oauthUser.id, userId });
 
   const session = await lucia.createSession(userId, {});
   const sessionCookie = lucia.createSessionCookie(session.id);

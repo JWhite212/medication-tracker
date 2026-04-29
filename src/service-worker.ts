@@ -17,11 +17,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(
-          keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)),
-        ),
-      ),
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))),
   );
 });
 
@@ -34,16 +30,12 @@ self.addEventListener("fetch", (event) => {
 
   if (isStaticAsset) {
     // Cache-first for build assets and static files
-    event.respondWith(
-      caches.match(event.request).then((r) => r ?? fetch(event.request)),
-    );
+    event.respondWith(caches.match(event.request).then((r) => r ?? fetch(event.request)));
   } else {
     // Network-first for pages/API — never cache authenticated responses
     event.respondWith(
       fetch(event.request).catch(() =>
-        caches
-          .match(event.request)
-          .then((r) => r ?? new Response("Offline", { status: 503 })),
+        caches.match(event.request).then((r) => r ?? new Response("Offline", { status: 503 })),
       ),
     );
   }
@@ -70,8 +62,7 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: "window" }).then((list) => {
       for (const client of list) {
-        if (client.url.includes(url) && "focus" in client)
-          return client.focus();
+        if (client.url.includes(url) && "focus" in client) return client.focus();
       }
       return self.clients.openWindow(url);
     }),

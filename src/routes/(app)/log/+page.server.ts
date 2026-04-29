@@ -56,9 +56,7 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
         colour: medications.colour,
       })
       .from(medications)
-      .where(
-        and(eq(medications.userId, userId), eq(medications.isArchived, false)),
-      )
+      .where(and(eq(medications.userId, userId), eq(medications.isArchived, false)))
       .orderBy(medications.name),
   ]);
 
@@ -79,8 +77,7 @@ export const actions: Actions = {
   editDose: async ({ request, locals }) => {
     const formData = Object.fromEntries(await request.formData());
     const parsed = doseEditSchema.safeParse(formData);
-    if (!parsed.success)
-      return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
+    if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
 
     const { doseId, takenAt, quantity, notes, sideEffects } = parsed.data;
     await updateDose(locals.user!.id, doseId, {

@@ -26,11 +26,7 @@ export const actions: Actions = {
       });
     }
 
-    const result = await updateMedication(
-      locals.user!.id,
-      params.id,
-      parsed.data,
-    );
+    const result = await updateMedication(locals.user!.id, params.id, parsed.data);
     if (!result) error(404, "Medication not found");
     redirect(302, "/medications");
   },

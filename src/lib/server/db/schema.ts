@@ -20,12 +20,8 @@ export const users = pgTable("users", {
   totpSecret: text("totp_secret"),
   twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   emailVerified: boolean("email_verified").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const sessions = pgTable(
@@ -74,16 +70,10 @@ export const medications = pgTable(
     inventoryAlertThreshold: integer("inventory_alert_threshold"),
     sortOrder: integer("sort_order").notNull().default(0),
     isArchived: boolean("is_archived").notNull().default(false),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index("medications_user_archived_idx").on(table.userId, table.isArchived),
-  ],
+  (table) => [index("medications_user_archived_idx").on(table.userId, table.isArchived)],
 );
 
 export const doseLogs = pgTable(
@@ -98,9 +88,7 @@ export const doseLogs = pgTable(
       .references(() => medications.id, { onDelete: "cascade" }),
     quantity: integer("quantity").notNull().default(1),
     takenAt: timestamp("taken_at", { withTimezone: true }).notNull(),
-    loggedAt: timestamp("logged_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    loggedAt: timestamp("logged_at", { withTimezone: true }).notNull().defaultNow(),
     notes: text("notes"),
     sideEffects:
       jsonb("side_effects").$type<
@@ -111,11 +99,7 @@ export const doseLogs = pgTable(
   (table) => [
     index("dose_logs_user_taken_idx").on(table.userId, table.takenAt),
     index("dose_logs_med_taken_idx").on(table.medicationId, table.takenAt),
-    index("dose_logs_user_status_taken_idx").on(
-      table.userId,
-      table.status,
-      table.takenAt,
-    ),
+    index("dose_logs_user_status_taken_idx").on(table.userId, table.status, table.takenAt),
   ],
 );
 
@@ -132,13 +116,9 @@ export const auditLogs = pgTable(
     entityId: text("entity_id").notNull(),
     action: text("action").notNull(),
     changes: jsonb("changes"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index("audit_logs_user_created_idx").on(table.userId, table.createdAt),
-  ],
+  (table) => [index("audit_logs_user_created_idx").on(table.userId, table.createdAt)],
 );
 
 export const userPreferences = pgTable("user_preferences", {
@@ -155,9 +135,7 @@ export const userPreferences = pgTable("user_preferences", {
   doseLogPageSize: integer("dose_log_page_size").notNull().default(20),
   heatmapPeriod: integer("heatmap_period").notNull().default(90),
   exportFormat: text("export_format").notNull().default("pdf"),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const rateLimits = pgTable("rate_limits", {
@@ -176,9 +154,7 @@ export const pushSubscriptions = pgTable(
     endpoint: text("endpoint").notNull().unique(),
     p256dh: text("p256dh").notNull(),
     auth: text("auth").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("push_subscriptions_user_idx").on(table.userId)],
 );
@@ -190,9 +166,7 @@ export const emailVerificationTokens = pgTable("email_verification_tokens", {
     .references(() => users.id, { onDelete: "cascade" }),
   tokenHash: text("token_hash").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const passwordResetTokens = pgTable("password_reset_tokens", {
@@ -202,9 +176,7 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
     .references(() => users.id, { onDelete: "cascade" }),
   tokenHash: text("token_hash").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const reminderEvents = pgTable(
@@ -221,9 +193,7 @@ export const reminderEvents = pgTable(
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
     dedupeKey: text("dedupe_key").notNull().unique(),
   },
-  (table) => [
-    index("reminder_events_user_sent_idx").on(table.userId, table.sentAt),
-  ],
+  (table) => [index("reminder_events_user_sent_idx").on(table.userId, table.sentAt)],
 );
 
 export const reauthTokens = pgTable(
@@ -237,11 +207,7 @@ export const reauthTokens = pgTable(
     purpose: text("purpose").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index("reauth_tokens_user_purpose_idx").on(table.userId, table.purpose),
-  ],
+  (table) => [index("reauth_tokens_user_purpose_idx").on(table.userId, table.purpose)],
 );

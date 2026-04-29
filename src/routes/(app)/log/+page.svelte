@@ -1,10 +1,10 @@
 <script lang="ts">
-  import TimelineEntry from '$components/TimelineEntry.svelte';
-  import Modal from '$components/ui/Modal.svelte';
-  import DoseEditForm from '$components/DoseEditForm.svelte';
-  import { goto } from '$app/navigation';
-  import type { DoseLogWithMedication } from '$lib/types';
-  import emptyDoseHistory from '$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.png';
+  import TimelineEntry from "$components/TimelineEntry.svelte";
+  import Modal from "$components/ui/Modal.svelte";
+  import DoseEditForm from "$components/DoseEditForm.svelte";
+  import { goto } from "$app/navigation";
+  import type { DoseLogWithMedication } from "$lib/types";
+  import emptyDoseHistory from "$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.png";
 
   let { data } = $props();
   let editingDose = $state<DoseLogWithMedication | null>(null);
@@ -13,21 +13,30 @@
     const url = new URL(window.location.href);
     if (value) url.searchParams.set(key, value);
     else url.searchParams.delete(key);
-    url.searchParams.set('page', '1');
+    url.searchParams.set("page", "1");
     goto(url.toString(), { invalidateAll: true });
   }
 
   function formatDateKey(date: Date, tz: string): string {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
   }
 
   function formatDateLabel(dateKey: string, todayKey: string, yesterdayKey: string): string {
-    if (dateKey === todayKey) return 'Today';
-    if (dateKey === yesterdayKey) return 'Yesterday';
+    if (dateKey === todayKey) return "Today";
+    if (dateKey === yesterdayKey) return "Yesterday";
 
-    const [y, m, d] = dateKey.split('-').map(Number);
+    const [y, m, d] = dateKey.split("-").map(Number);
     const date = new Date(y, m - 1, d);
-    return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(date);
+    return new Intl.DateTimeFormat("en-GB", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    }).format(date);
   }
 
   const groupedDoses = $derived.by(() => {
@@ -60,25 +69,37 @@
 <div class="mx-auto w-full max-w-2xl space-y-6">
   <h1 class="text-2xl font-bold">Dose History</h1>
 
-  <div class="flex flex-col gap-2 rounded-xl border border-glass-border bg-glass p-4 backdrop-blur-xl sm:flex-row sm:flex-wrap sm:gap-3">
+  <div
+    class="border-glass-border bg-glass flex flex-col gap-2 rounded-xl border p-4 backdrop-blur-xl sm:flex-row sm:flex-wrap sm:gap-3"
+  >
     <select
-      class="w-full rounded-lg border border-glass-border bg-surface-raised px-3 py-2 text-sm text-text-primary sm:w-auto"
-      onchange={(e) => updateFilter('medication', e.currentTarget.value)}
+      class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
+      onchange={(e) => updateFilter("medication", e.currentTarget.value)}
     >
       <option value="">All medications</option>
       {#each data.medications as med}
         <option value={med.id} selected={med.id === data.filters.medication}>{med.name}</option>
       {/each}
     </select>
-    <input type="date" class="w-full rounded-lg border border-glass-border bg-surface-raised px-3 py-2 text-sm text-text-primary sm:w-auto"
-      value={data.filters.from ?? ''} onchange={(e) => updateFilter('from', e.currentTarget.value)} />
-    <span class="self-center text-text-muted">to</span>
-    <input type="date" class="w-full rounded-lg border border-glass-border bg-surface-raised px-3 py-2 text-sm text-text-primary sm:w-auto"
-      value={data.filters.to ?? ''} onchange={(e) => updateFilter('to', e.currentTarget.value)} />
+    <input
+      type="date"
+      class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
+      value={data.filters.from ?? ""}
+      onchange={(e) => updateFilter("from", e.currentTarget.value)}
+    />
+    <span class="text-text-muted self-center">to</span>
+    <input
+      type="date"
+      class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
+      value={data.filters.to ?? ""}
+      onchange={(e) => updateFilter("to", e.currentTarget.value)}
+    />
   </div>
 
   {#if data.doses.length === 0}
-    <div class="flex flex-col items-center rounded-xl border border-glass-border bg-glass p-8 text-center backdrop-blur-xl">
+    <div
+      class="border-glass-border bg-glass flex flex-col items-center rounded-xl border p-8 text-center backdrop-blur-xl"
+    >
       <img
         src={emptyDoseHistory}
         alt="No dose history yet — your logged doses will appear here once you start tracking"
@@ -90,12 +111,17 @@
   {:else}
     <div role="list">
       {#each groupedDoses as group (group.dateKey)}
-        <div class="sticky top-0 z-10 -mx-1 px-1 py-2 bg-surface/80 backdrop-blur-sm">
-          <h3 class="text-sm font-medium text-text-secondary">{group.label}</h3>
+        <div class="bg-surface/80 sticky top-0 z-10 -mx-1 px-1 py-2 backdrop-blur-sm">
+          <h3 class="text-text-secondary text-sm font-medium">{group.label}</h3>
         </div>
         <div class="space-y-2 pb-4">
           {#each group.doses as dose (dose.id)}
-            <TimelineEntry {dose} timezone={data.timezone} timeFormat={data.preferences.timeFormat as '12h' | '24h'} onedit={(d) => (editingDose = d)} />
+            <TimelineEntry
+              {dose}
+              timezone={data.timezone}
+              timeFormat={data.preferences.timeFormat as "12h" | "24h"}
+              onedit={(d) => (editingDose = d)}
+            />
           {/each}
         </div>
       {/each}
@@ -104,13 +130,22 @@
 
   <nav aria-label="Dose history pagination" class="flex items-center justify-between">
     {#if data.page > 1}
-      <a href="?page={data.page - 1}" rel="prev" aria-label="Go to previous page"
-        class="rounded-lg border border-glass-border px-4 py-2 text-sm hover:bg-glass-hover">Previous</a>
+      <a
+        href="?page={data.page - 1}"
+        rel="prev"
+        aria-label="Go to previous page"
+        class="border-glass-border hover:bg-glass-hover rounded-lg border px-4 py-2 text-sm"
+        >Previous</a
+      >
     {:else}<div></div>{/if}
-    <span class="text-sm text-text-secondary" aria-current="page">Page {data.page}</span>
+    <span class="text-text-secondary text-sm" aria-current="page">Page {data.page}</span>
     {#if data.hasMore}
-      <a href="?page={data.page + 1}" rel="next" aria-label="Go to next page"
-        class="rounded-lg border border-glass-border px-4 py-2 text-sm hover:bg-glass-hover">Next</a>
+      <a
+        href="?page={data.page + 1}"
+        rel="next"
+        aria-label="Go to next page"
+        class="border-glass-border hover:bg-glass-hover rounded-lg border px-4 py-2 text-sm">Next</a
+      >
     {:else}<div></div>{/if}
   </nav>
 </div>

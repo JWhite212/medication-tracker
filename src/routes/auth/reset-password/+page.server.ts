@@ -27,11 +27,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 export const actions: Actions = {
   default: async ({ request, url, getClientAddress }) => {
     const ip = getClientAddress();
-    const { allowed, retryAfterMs } = await checkRateLimit(
-      `reset:${ip}`,
-      3,
-      15 * 60 * 1000,
-    );
+    const { allowed, retryAfterMs } = await checkRateLimit(`reset:${ip}`, 3, 15 * 60 * 1000);
     if (!allowed) {
       return fail(429, {
         error: `Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
@@ -55,9 +51,7 @@ export const actions: Actions = {
 
     if (user) {
       // Delete any existing tokens for this user
-      await db
-        .delete(passwordResetTokens)
-        .where(eq(passwordResetTokens.userId, user.id));
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
 
       const token = crypto.randomUUID();
       const tokenHash = await hashToken(token);

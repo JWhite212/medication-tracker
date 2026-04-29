@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { enhance } from '$app/forms';
+  import { enhance } from "$app/forms";
 
   let { form } = $props();
   let loading = $state(false);
 
   function sanitize(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
-    const cleaned = input.value.replace(/\D/g, '').slice(0, 6);
+    const cleaned = input.value.replace(/\D/g, "").slice(0, 6);
     if (cleaned !== input.value) input.value = cleaned;
   }
 </script>
@@ -16,12 +16,12 @@
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">
-  <div class="w-full max-w-md rounded-xl border border-glass-border bg-glass p-8 backdrop-blur-xl">
+  <div class="border-glass-border bg-glass w-full max-w-md rounded-xl border p-8 backdrop-blur-xl">
     <h1 class="mb-2 text-2xl font-bold">Two-Factor Authentication</h1>
-    <p class="mb-6 text-text-secondary">Enter the 6-digit code from your authenticator app.</p>
+    <p class="text-text-secondary mb-6">Enter the 6-digit code from your authenticator app.</p>
 
     {#if form?.error}
-      <div class="mb-4 rounded-lg bg-danger/10 p-3 text-sm text-danger" role="alert">
+      <div class="bg-danger/10 text-danger mb-4 rounded-lg p-3 text-sm" role="alert">
         {form.error}
       </div>
     {/if}
@@ -48,20 +48,20 @@
           maxlength="6"
           required
           oninput={sanitize}
-          class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-center text-2xl tracking-widest text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 text-center text-2xl tracking-widest focus:ring-1 focus:outline-none"
           placeholder="000000"
         />
       </div>
       <button
         type="submit"
         disabled={loading}
-        class="w-full rounded-lg bg-accent py-2.5 font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+        class="bg-accent hover:bg-accent-hover w-full rounded-lg py-2.5 font-medium text-white transition-colors disabled:opacity-50"
       >
-        {loading ? 'Verifying...' : 'Verify'}
+        {loading ? "Verifying..." : "Verify"}
       </button>
     </form>
 
-    <p class="mt-6 text-center text-sm text-text-secondary">
+    <p class="text-text-secondary mt-6 text-center text-sm">
       <a href="/auth/login" class="text-accent hover:underline">Back to login</a>
     </p>
   </div>

@@ -2,7 +2,7 @@
   type ToastItem = {
     id: string;
     message: string;
-    type: 'success' | 'error';
+    type: "success" | "error";
     undoAction?: () => void;
   };
 
@@ -10,8 +10,8 @@
 
   export function showToast(
     message: string,
-    type: 'success' | 'error' = 'success',
-    undoAction?: () => void
+    type: "success" | "error" = "success",
+    undoAction?: () => void,
   ) {
     const id = crypto.randomUUID();
     toasts.push({ id, message, type, undoAction });
@@ -25,10 +25,11 @@
   }
 </script>
 
-<div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2" aria-live="polite">
+<div class="fixed right-4 bottom-4 z-50 flex flex-col gap-2" aria-live="polite">
   {#each toasts as toast (toast.id)}
     <div
-      class="flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg backdrop-blur-xl {toast.type === 'success'
+      class="flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg backdrop-blur-xl {toast.type ===
+      'success'
         ? 'border-success/30 bg-success/10 text-success'
         : 'border-danger/30 bg-danger/10 text-danger'}"
       role="alert"

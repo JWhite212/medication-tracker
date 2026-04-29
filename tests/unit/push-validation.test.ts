@@ -46,9 +46,7 @@ describe("pushSubscriptionSchema", () => {
   });
 
   it("rejects missing keys object", () => {
-    expect(
-      pushSubscriptionSchema.safeParse({ endpoint: valid.endpoint }).success,
-    ).toBe(false);
+    expect(pushSubscriptionSchema.safeParse({ endpoint: valid.endpoint }).success).toBe(false);
   });
 
   it("rejects empty p256dh", () => {

@@ -1,20 +1,29 @@
 <script lang="ts">
-  import { enhance } from '$app/forms';
-  import type { Medication, MedicationTimingStatus } from '$lib/types';
-  import { showToast } from '$components/ui/Toast.svelte';
-  import { getMedicationBackground } from '$lib/utils/medication-style';
-  import { formatDueIn } from '$lib/utils/time';
+  import { enhance } from "$app/forms";
+  import type { Medication, MedicationTimingStatus } from "$lib/types";
+  import { showToast } from "$components/ui/Toast.svelte";
+  import { getMedicationBackground } from "$lib/utils/medication-style";
+  import { formatDueIn } from "$lib/utils/time";
 
-  let { medications, timingStatus = [] }: { medications: Medication[]; timingStatus?: MedicationTimingStatus[] } = $props();
+  let {
+    medications,
+    timingStatus = [],
+  }: { medications: Medication[]; timingStatus?: MedicationTimingStatus[] } = $props();
 
   let quantities: Record<string, number> = $state({});
   let flashingMeds: Record<string, boolean> = $state({});
 
-  function getQty(medId: string) { return quantities[medId] ?? 1; }
-  function setQty(medId: string, val: number) { quantities[medId] = Math.max(1, Math.min(10, val)); }
+  function getQty(medId: string) {
+    return quantities[medId] ?? 1;
+  }
+  function setQty(medId: string, val: number) {
+    quantities[medId] = Math.max(1, Math.min(10, val));
+  }
   function triggerFlash(medId: string) {
     flashingMeds[medId] = true;
-    setTimeout(() => { flashingMeds[medId] = false; }, 700);
+    setTimeout(() => {
+      flashingMeds[medId] = false;
+    }, 700);
   }
 
   const timingMap = $derived(new Map(timingStatus.map((t) => [t.medicationId, t])));
@@ -28,10 +37,10 @@
       action="?/logDose"
       use:enhance={() => {
         return async ({ result, update }) => {
-          if (result.type === 'success') {
+          if (result.type === "success") {
             const qty = getQty(med.id);
             const label = qty > 1 ? `${med.name} ×${qty} logged` : `${med.name} logged`;
-            showToast(label, 'success');
+            showToast(label, "success");
             triggerFlash(med.id);
           }
           await update();
@@ -43,20 +52,28 @@
 
       <div class="flex flex-col items-center gap-1">
         <div
-          class="flex items-center rounded-full text-sm font-medium text-white overflow-hidden {flashingMeds[med.id] ? 'animate-success-flash' : ''}"
-          style="background: {getMedicationBackground(med.colour, med.colourSecondary, med.pattern)}"
+          class="flex items-center overflow-hidden rounded-full text-sm font-medium text-white {flashingMeds[
+            med.id
+          ]
+            ? 'animate-success-flash'
+            : ''}"
+          style="background: {getMedicationBackground(
+            med.colour,
+            med.colourSecondary,
+            med.pattern,
+          )}"
         >
           <!-- Minus button (only visible when qty > 1) -->
           {#if getQty(med.id) > 1}
             <button
               type="button"
-              class="px-2 py-2 text-white/70 hover:text-white hover:bg-black/10 transition-colors leading-none select-none"
+              class="px-2 py-2 leading-none text-white/70 transition-colors select-none hover:bg-black/10 hover:text-white"
               aria-label="Decrease quantity"
-              onclick={() => setQty(med.id, getQty(med.id) - 1)}
-            >−</button>
+              onclick={() => setQty(med.id, getQty(med.id) - 1)}>−</button
+            >
 
             <!-- Quantity display -->
-            <span class="px-1 tabular-nums text-white/90">{getQty(med.id)}×</span>
+            <span class="px-1 text-white/90 tabular-nums">{getQty(med.id)}×</span>
           {/if}
 
           <!-- Submit button: medication name + dosage -->
@@ -71,15 +88,19 @@
           <!-- Plus button -->
           <button
             type="button"
-            class="px-2 py-2 text-white/70 hover:text-white hover:bg-black/10 transition-colors leading-none select-none"
+            class="px-2 py-2 leading-none text-white/70 transition-colors select-none hover:bg-black/10 hover:text-white"
             aria-label="Increase quantity"
-            onclick={() => setQty(med.id, getQty(med.id) + 1)}
-          >+</button>
+            onclick={() => setQty(med.id, getQty(med.id) + 1)}>+</button
+          >
         </div>
 
-        {#if timing && timing.status !== 'ok'}
+        {#if timing && timing.status !== "ok"}
           <span
-            class="text-xs font-medium {timing.status === 'overdue' ? 'text-warning' : timing.status === 'due_now' ? 'text-accent animate-pulse' : 'text-text-muted'}"
+            class="text-xs font-medium {timing.status === 'overdue'
+              ? 'text-warning'
+              : timing.status === 'due_now'
+                ? 'text-accent animate-pulse'
+                : 'text-text-muted'}"
           >
             {formatDueIn(timing.minutesUntilDue * 60_000)}
           </span>

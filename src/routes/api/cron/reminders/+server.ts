@@ -2,10 +2,7 @@ import { json, error } from "@sveltejs/kit";
 import { env } from "$env/dynamic/private";
 import { timingSafeEqual } from "crypto";
 import { lt } from "drizzle-orm";
-import {
-  checkOverdueMedications,
-  checkLowInventoryMedications,
-} from "$lib/server/reminders";
+import { checkOverdueMedications, checkLowInventoryMedications } from "$lib/server/reminders";
 import { db } from "$lib/server/db";
 import { passwordResetTokens, rateLimits } from "$lib/server/db/schema";
 import type { RequestHandler } from "./$types";
@@ -26,9 +23,7 @@ export const GET: RequestHandler = async ({ request }) => {
   await checkLowInventoryMedications();
 
   // Clean up expired password reset tokens
-  await db
-    .delete(passwordResetTokens)
-    .where(lt(passwordResetTokens.expiresAt, new Date()));
+  await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, new Date()));
 
   // Clean up expired rate limit entries
   await db.delete(rateLimits).where(lt(rateLimits.resetAt, new Date()));

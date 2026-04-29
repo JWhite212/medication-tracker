@@ -1,9 +1,4 @@
-const GEOMETRIC_PATTERNS = new Set([
-  "stripes",
-  "h-stripes",
-  "dots",
-  "checkerboard",
-]);
+const GEOMETRIC_PATTERNS = new Set(["stripes", "h-stripes", "dots", "checkerboard"]);
 
 export function getMedicationBackground(
   colour: string,
@@ -17,8 +12,7 @@ export function getMedicationBackground(
   if (!colourSecondary || pattern === "solid") return c1;
 
   // Smart fallback: geometric patterns render as gradient at small sizes (<20px)
-  const effectivePattern =
-    small && GEOMETRIC_PATTERNS.has(pattern) ? "gradient" : pattern;
+  const effectivePattern = small && GEOMETRIC_PATTERNS.has(pattern) ? "gradient" : pattern;
 
   switch (effectivePattern) {
     case "split":

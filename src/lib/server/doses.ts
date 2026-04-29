@@ -13,16 +13,11 @@ export class MedicationNotFoundError extends Error {
   }
 }
 
-async function assertMedicationBelongsToUser(
-  userId: string,
-  medicationId: string,
-): Promise<void> {
+async function assertMedicationBelongsToUser(userId: string, medicationId: string): Promise<void> {
   const [row] = await db
     .select({ id: medications.id })
     .from(medications)
-    .where(
-      and(eq(medications.id, medicationId), eq(medications.userId, userId)),
-    )
+    .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
     .limit(1);
 
   if (!row) throw new MedicationNotFoundError(medicationId);
@@ -189,10 +184,7 @@ export async function updateDose(
     .returning();
 
   const parallel: Promise<unknown>[] = [doseUpdatePromise];
-  if (
-    updates.quantity !== undefined &&
-    updates.quantity !== existing.quantity
-  ) {
+  if (updates.quantity !== undefined && updates.quantity !== existing.quantity) {
     const diff = updates.quantity - existing.quantity;
     parallel.push(
       db

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import Sidebar from '$components/Sidebar.svelte';
-  import MobileHeader from '$components/MobileHeader.svelte';
-  import KeyboardShortcuts from '$components/KeyboardShortcuts.svelte';
-  import type { SessionUser } from '$lib/types';
+  import Sidebar from "$components/Sidebar.svelte";
+  import MobileHeader from "$components/MobileHeader.svelte";
+  import KeyboardShortcuts from "$components/KeyboardShortcuts.svelte";
+  import type { SessionUser } from "$lib/types";
 
   let { data, children } = $props();
   let sidebarOpen = $state(false);
@@ -17,9 +17,9 @@
     const b = lin(parseInt(hex.slice(5, 7), 16));
     const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     // WCAG contrast ratio: pick whichever (white or dark) has higher contrast
-    const crWhite = (1.05) / (L + 0.05);
+    const crWhite = 1.05 / (L + 0.05);
     const crDark = (L + 0.05) / (0.005 + 0.05);
-    return crWhite >= crDark ? '#ffffff' : '#111111';
+    return crWhite >= crDark ? "#ffffff" : "#111111";
   }
 
   const accentColor = $derived(data.preferences.accentColor);
@@ -34,7 +34,7 @@
   style:--color-accent={accentColor}
   style:--color-accent-fg={accentFgColor}
   data-density={data.preferences.uiDensity}
-  data-reduced-motion={data.preferences.reducedMotion ? 'true' : 'false'}
+  data-reduced-motion={data.preferences.reducedMotion ? "true" : "false"}
 >
   <!-- Mobile header (below md) -->
   <div class="md:hidden">
@@ -49,7 +49,7 @@
       aria-modal="true"
       aria-label="Navigation menu"
       tabindex="-1"
-      onkeydown={(e) => e.key === 'Escape' && (sidebarOpen = false)}
+      onkeydown={(e) => e.key === "Escape" && (sidebarOpen = false)}
     >
       <button
         type="button"

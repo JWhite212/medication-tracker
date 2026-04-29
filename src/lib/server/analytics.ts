@@ -24,8 +24,7 @@ function buildDateFilters(
   status: DoseLogStatus | "any" = "taken",
 ) {
   const baseUser = eq(doseLogs.userId, userId);
-  const statusFilter =
-    status === "any" ? undefined : eq(doseLogs.status, status);
+  const statusFilter = status === "any" ? undefined : eq(doseLogs.status, status);
 
   if (range?.from && range?.to) {
     return and(
@@ -36,11 +35,7 @@ function buildDateFilters(
     );
   }
   const since = startOfDay(new Date(Date.now() - days * 86400000), timezone);
-  return and(
-    baseUser,
-    ...(statusFilter ? [statusFilter] : []),
-    gte(doseLogs.takenAt, since),
-  );
+  return and(baseUser, ...(statusFilter ? [statusFilter] : []), gte(doseLogs.takenAt, since));
 }
 
 export function calculateTrend(
@@ -55,14 +50,9 @@ export function calculateTrend(
   return { direction: change > 0 ? "up" : "down", percent: rounded };
 }
 
-export function calculateStreak(
-  sortedDates: string[],
-  timezone: string = "UTC",
-): number {
+export function calculateStreak(sortedDates: string[], timezone: string = "UTC"): number {
   if (sortedDates.length === 0) return 0;
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(
-    new Date(),
-  );
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
   if (sortedDates[0] !== today) return 0;
   let streak = 1;
   for (let i = 1; i < sortedDates.length; i++) {
@@ -106,9 +96,7 @@ export async function getDailyDoseCounts(
     .from(doseLogs)
     .where(buildDateFilters(userId, days, timezone, range))
     .groupBy(sql`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`)
-    .orderBy(
-      desc(sql`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`),
-    );
+    .orderBy(desc(sql`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`));
 }
 
 export async function getPerMedicationStats(
@@ -123,10 +111,7 @@ export async function getPerMedicationStats(
 
   const effectiveDays =
     range?.from && range?.to
-      ? Math.max(
-          1,
-          Math.round((range.to.getTime() - range.from.getTime()) / 86400000),
-        )
+      ? Math.max(1, Math.round((range.to.getTime() - range.from.getTime()) / 86400000))
       : days;
 
   const rows = await db
@@ -188,9 +173,7 @@ export async function getPerMedicationStats(
   return [...buckets.values()]
     .filter((b) => includeAsNeeded || b.scheduleType !== "as_needed")
     .map((b) => {
-      const expectedPerDay = b.scheduleIntervalHours
-        ? 24 / Number(b.scheduleIntervalHours)
-        : 1;
+      const expectedPerDay = b.scheduleIntervalHours ? 24 / Number(b.scheduleIntervalHours) : 1;
       const expectedTotal = Math.round(expectedPerDay * effectiveDays);
       // doseCount kept for backwards compatibility with any callers
       // still expecting that shape; new fields added alongside.
@@ -264,12 +247,8 @@ export async function getHourlyDistribution(
     })
     .from(doseLogs)
     .where(buildDateFilters(userId, days, timezone, range))
-    .groupBy(
-      sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`,
-    )
-    .orderBy(
-      sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`,
-    );
+    .groupBy(sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`)
+    .orderBy(sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`);
 }
 
 export async function getDayOfWeekDistribution(
@@ -285,12 +264,8 @@ export async function getDayOfWeekDistribution(
     })
     .from(doseLogs)
     .where(buildDateFilters(userId, days, timezone, range))
-    .groupBy(
-      sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`,
-    )
-    .orderBy(
-      sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`,
-    );
+    .groupBy(sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`)
+    .orderBy(sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`);
 }
 
 export async function getSideEffectStats(
@@ -308,10 +283,7 @@ export async function getSideEffectStats(
     .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
     .where(buildDateFilters(userId, days, timezone, range));
 
-  const effectCounts = new Map<
-    string,
-    { count: number; severities: Map<string, number> }
-  >();
+  const effectCounts = new Map<string, { count: number; severities: Map<string, number> }>();
   const medEffects = new Map<string, Map<string, number>>();
 
   for (const row of rows) {
@@ -322,10 +294,7 @@ export async function getSideEffectStats(
         severities: new Map(),
       };
       existing.count++;
-      existing.severities.set(
-        effect.severity,
-        (existing.severities.get(effect.severity) ?? 0) + 1,
-      );
+      existing.severities.set(effect.severity, (existing.severities.get(effect.severity) ?? 0) + 1);
       effectCounts.set(effect.name, existing);
 
       const medMap = medEffects.get(row.medicationName) ?? new Map();

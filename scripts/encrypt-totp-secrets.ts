@@ -27,10 +27,7 @@ async function main() {
       continue;
     }
     const encrypted = encryptSecret(row.totpSecret);
-    await db
-      .update(users)
-      .set({ totpSecret: encrypted })
-      .where(eq(users.id, row.id));
+    await db.update(users).set({ totpSecret: encrypted }).where(eq(users.id, row.id));
     migrated++;
   }
 

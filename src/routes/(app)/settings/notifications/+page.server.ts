@@ -1,8 +1,5 @@
 import { fail } from "@sveltejs/kit";
-import {
-  getOrCreatePreferences,
-  updatePreferences,
-} from "$lib/server/preferences";
+import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferences";
 import { notificationSchema } from "$lib/utils/validation";
 import { logAudit, computeChanges } from "$lib/server/audit";
 import { getVapidPublicKey } from "$lib/server/push";
@@ -17,8 +14,7 @@ export const actions: Actions = {
   default: async ({ request, locals }) => {
     const formData = Object.fromEntries(await request.formData());
     const parsed = notificationSchema.safeParse(formData);
-    if (!parsed.success)
-      return fail(400, { errors: parsed.error.flatten().fieldErrors });
+    if (!parsed.success) return fail(400, { errors: parsed.error.flatten().fieldErrors });
 
     const before = await getOrCreatePreferences(locals.user!.id);
     const updated = await updatePreferences(locals.user!.id, parsed.data);
@@ -34,13 +30,7 @@ export const actions: Actions = {
       },
     );
     if (changes)
-      await logAudit(
-        locals.user!.id,
-        "user_preferences",
-        locals.user!.id,
-        "update",
-        changes,
-      );
+      await logAudit(locals.user!.id, "user_preferences", locals.user!.id, "update", changes);
 
     return { success: true };
   },

@@ -24,9 +24,7 @@ export const actions: Actions = {
     if (!allowed) {
       return fail(429, {
         errors: {
-          form: [
-            `Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
-          ],
+          form: [`Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`],
         },
       });
     }
@@ -43,11 +41,7 @@ export const actions: Actions = {
 
     const { email, password } = parsed.data;
 
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
+    const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
     if (!user || !user.passwordHash) {
       return fail(400, {

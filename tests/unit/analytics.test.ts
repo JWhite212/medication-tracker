@@ -2,11 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("$lib/server/db", () => ({ db: {} }));
 
-import {
-  calculateStreak,
-  calculateAdherence,
-  calculateTrend,
-} from "$lib/server/analytics";
+import { calculateStreak, calculateAdherence, calculateTrend } from "$lib/server/analytics";
 
 describe("calculateStreak", () => {
   it("returns 0 for empty dates", () => {

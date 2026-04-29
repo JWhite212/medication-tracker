@@ -87,10 +87,7 @@ export async function requireRecentReauth(
 
   if (!row) return false;
 
-  await db
-    .update(reauthTokens)
-    .set({ usedAt: now })
-    .where(eq(reauthTokens.id, row.id));
+  await db.update(reauthTokens).set({ usedAt: now }).where(eq(reauthTokens.id, row.id));
 
   return true;
 }

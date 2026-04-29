@@ -47,10 +47,7 @@ export function formatTime(date: Date, timezone: string): string {
  * in the given IANA timezone. datetime-local has no timezone info, so we
  * figure out the UTC offset for that wall-clock time in the user's zone.
  */
-export function parseDateTimeLocal(
-  datetimeLocal: string,
-  timezone: string,
-): Date {
+export function parseDateTimeLocal(datetimeLocal: string, timezone: string): Date {
   const asUtc = new Date(datetimeLocal + "Z");
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
@@ -63,8 +60,7 @@ export function parseDateTimeLocal(
     hour12: false,
   }).formatToParts(asUtc);
 
-  const get = (type: string) =>
-    parts.find((p) => p.type === type)?.value ?? "0";
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
   const tzTime = new Date(
     `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}Z`,
   );

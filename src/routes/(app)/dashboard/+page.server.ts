@@ -10,11 +10,7 @@ import {
   MedicationNotFoundError,
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
-import {
-  parseDateTimeLocal,
-  startOfDay,
-  computeTimingStatus,
-} from "$lib/utils/time";
+import { parseDateTimeLocal, startOfDay, computeTimingStatus } from "$lib/utils/time";
 import { computeScheduleSlots } from "$lib/utils/schedule";
 import type { Actions, PageServerLoad } from "./$types";
 import type { MedicationTimingStatus } from "$lib/types";
@@ -27,9 +23,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     getLastDosePerMedication(user.id),
   ]);
 
-  const lastDoseMap = new Map(
-    lastDoses.map((d) => [d.medicationId, d.lastTakenAt]),
-  );
+  const lastDoseMap = new Map(lastDoses.map((d) => [d.medicationId, d.lastTakenAt]));
 
   const now = new Date();
 
@@ -118,8 +112,7 @@ export const actions: Actions = {
   editDose: async ({ request, locals }) => {
     const formData = Object.fromEntries(await request.formData());
     const parsed = doseEditSchema.safeParse(formData);
-    if (!parsed.success)
-      return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
+    if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
 
     const { doseId, takenAt, quantity, notes, sideEffects } = parsed.data;
     await updateDose(locals.user!.id, doseId, {

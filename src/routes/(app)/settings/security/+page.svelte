@@ -94,17 +94,31 @@
           <span class="rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">Enabled</span>
           <p class="text-sm text-text-secondary">Your account is protected with two-factor authentication.</p>
         </div>
-        <form method="POST" action="?/disableTwoFactor" use:enhance class="flex items-end gap-3">
-          <Input label="Enter code to disable" name="code" placeholder="000000" required />
-          <button type="submit" class="rounded-lg border border-danger/30 px-5 py-2.5 text-sm font-medium text-danger transition-colors hover:bg-danger/10">
-            Disable 2FA
-          </button>
+        <form method="POST" action="?/disableTwoFactor" use:enhance class="space-y-3">
+          <Input
+            label="Confirm your password"
+            name="currentPassword"
+            type="password"
+            required
+          />
+          <div class="flex items-end gap-3">
+            <Input label="Authenticator code" name="code" placeholder="000000" required />
+            <button type="submit" class="rounded-lg border border-danger/30 px-5 py-2.5 text-sm font-medium text-danger transition-colors hover:bg-danger/10">
+              Disable 2FA
+            </button>
+          </div>
         </form>
       </div>
     {:else}
       <!-- Step 1: Setup -->
       <p class="mb-4 text-sm text-text-secondary">Add an extra layer of security by requiring a code from your authenticator app when signing in.</p>
-      <form method="POST" action="?/setupTwoFactor" use:enhance>
+      <form method="POST" action="?/setupTwoFactor" use:enhance class="space-y-4">
+        <Input
+          label="Confirm your password"
+          name="currentPassword"
+          type="password"
+          required
+        />
         <button type="submit" class="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90">
           Set Up 2FA
         </button>

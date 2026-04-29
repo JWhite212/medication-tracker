@@ -4,12 +4,14 @@ import { db } from "$lib/server/db";
 import { users, sessions } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
 import { passwordChangeSchema } from "$lib/utils/validation";
-import { hashPassword, verifyPassword } from "$lib/server/auth/password";
+import { hashPassword } from "$lib/server/auth/password";
+import { confirmReauth } from "$lib/server/auth/reauth";
 import {
   generateTOTPSecret,
   getTOTPUri,
   generateQRDataUrl,
   verifyTOTPCode,
+  encryptTOTPSecret,
 } from "$lib/server/auth/totp";
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
@@ -34,23 +36,12 @@ export const actions: Actions = {
     if (!parsed.success)
       return fail(400, { passwordErrors: parsed.error.flatten().fieldErrors });
 
-    const [user] = await db
-      .select({ passwordHash: users.passwordHash })
-      .from(users)
-      .where(eq(users.id, locals.user!.id))
-      .limit(1);
-    if (!user?.passwordHash)
-      return fail(400, {
-        passwordErrors: {
-          currentPassword: ["No password set (OAuth account)"],
-        },
-      });
-
-    const valid = await verifyPassword(
-      user.passwordHash,
+    const reauth = await confirmReauth(
+      locals.user!.id,
       parsed.data.currentPassword,
+      "change_password",
     );
-    if (!valid)
+    if (!reauth.ok)
       return fail(400, {
         passwordErrors: { currentPassword: ["Incorrect password"] },
       });
@@ -82,11 +73,24 @@ export const actions: Actions = {
     }
     return { sessionRevoked: true };
   },
-  setupTwoFactor: async ({ locals }) => {
+  setupTwoFactor: async ({ request, locals }) => {
+    const formData = await request.formData();
+    const currentPassword = String(formData.get("currentPassword") ?? "");
+
+    const reauth = await confirmReauth(
+      locals.user!.id,
+      currentPassword,
+      "enable_2fa",
+    );
+    if (!reauth.ok)
+      return fail(400, {
+        totpError: "Incorrect password — re-enter to enable 2FA",
+      });
+
     const secret = generateTOTPSecret();
     await db
       .update(users)
-      .set({ totpSecret: secret })
+      .set({ totpSecret: encryptTOTPSecret(secret) })
       .where(eq(users.id, locals.user!.id));
     const uri = getTOTPUri(secret, locals.user!.email);
     const qrCode = await generateQRDataUrl(uri);
@@ -120,6 +124,14 @@ export const actions: Actions = {
   disableTwoFactor: async ({ request, locals }) => {
     const formData = Object.fromEntries(await request.formData());
     const code = String(formData.code ?? "");
+    const currentPassword = String(formData.currentPassword ?? "");
+
+    const reauth = await confirmReauth(
+      locals.user!.id,
+      currentPassword,
+      "disable_2fa",
+    );
+    if (!reauth.ok) return fail(400, { totpError: "Incorrect password" });
 
     const [user] = await db
       .select({ totpSecret: users.totpSecret })

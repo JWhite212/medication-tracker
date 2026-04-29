@@ -7,6 +7,7 @@ import {
   logSkippedDose,
   deleteDose,
   updateDose,
+  MedicationNotFoundError,
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
 import {
@@ -88,14 +89,21 @@ export const actions: Actions = {
     }
 
     const { medicationId, quantity, takenAt, notes, sideEffects } = parsed.data;
-    await logDose(
-      locals.user!.id,
-      medicationId,
-      quantity,
-      takenAt ? new Date(takenAt) : undefined,
-      notes,
-      sideEffects,
-    );
+    try {
+      await logDose(
+        locals.user!.id,
+        medicationId,
+        quantity,
+        takenAt ? new Date(takenAt) : undefined,
+        notes,
+        sideEffects,
+      );
+    } catch (err) {
+      if (err instanceof MedicationNotFoundError) {
+        return fail(404, { errors: { form: ["Medication not found"] } });
+      }
+      throw err;
+    }
 
     return { success: true };
   },
@@ -126,7 +134,14 @@ export const actions: Actions = {
     const formData = Object.fromEntries(await request.formData());
     const medicationId = String(formData.medicationId);
     if (!medicationId) return fail(400);
-    await logSkippedDose(locals.user!.id, medicationId);
+    try {
+      await logSkippedDose(locals.user!.id, medicationId);
+    } catch (err) {
+      if (err instanceof MedicationNotFoundError) {
+        return fail(404, { error: "Medication not found" });
+      }
+      throw err;
+    }
     return { success: true };
   },
 };

@@ -1,4 +1,5 @@
 import { fail, redirect } from "@sveltejs/kit";
+import { dev } from "$app/environment";
 import { loginSchema } from "$lib/utils/validation";
 import { verifyPassword } from "$lib/server/auth/password";
 import { lucia } from "$lib/server/auth/lucia";
@@ -70,7 +71,7 @@ export const actions: Actions = {
         path: "/",
         maxAge: 300,
         httpOnly: true,
-        secure: true,
+        secure: !dev,
         sameSite: "lax",
       });
       redirect(302, "/auth/2fa");

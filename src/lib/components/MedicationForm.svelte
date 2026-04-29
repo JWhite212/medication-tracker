@@ -9,6 +9,11 @@
   import { getMedicationBackground, PATTERN_OPTIONS } from "$lib/utils/medication-style";
 
   type ScheduleMode = "interval" | "fixed_time" | "prn";
+  const SCHEDULE_MODES = new Set<ScheduleMode>(["interval", "fixed_time", "prn"]);
+
+  function isScheduleMode(v: unknown): v is ScheduleMode {
+    return typeof v === "string" && SCHEDULE_MODES.has(v as ScheduleMode);
+  }
 
   let {
     medication = undefined,
@@ -23,7 +28,7 @@
   } = $props();
 
   function deriveInitialMode(): ScheduleMode {
-    if (formValues["scheduleMode"]) return formValues["scheduleMode"] as ScheduleMode;
+    if (isScheduleMode(formValues["scheduleMode"])) return formValues["scheduleMode"];
     if (schedules.length > 0) {
       const kinds = new Set(schedules.map((s) => s.scheduleKind));
       if (kinds.size === 1) {

@@ -43,4 +43,28 @@ SELECT
   now()
 FROM "medications"
 WHERE "schedule_type" = 'as_needed'
-ON CONFLICT ("id") DO NOTHING;
+ON CONFLICT ("id") DO NOTHING;--> statement-breakpoint
+-- Defense-in-depth: enforce the discriminated-union shape at the DB
+-- level so a stray write can't produce an inconsistent row that
+-- readers would have to special-case.
+ALTER TABLE "medication_schedules"
+  ADD CONSTRAINT "chk_medication_schedules_kind"
+  CHECK ("schedule_kind" IN ('fixed_time', 'interval', 'prn'));--> statement-breakpoint
+ALTER TABLE "medication_schedules"
+  ADD CONSTRAINT "chk_medication_schedules_fixed_time"
+  CHECK (
+    "schedule_kind" <> 'fixed_time'
+    OR ("time_of_day" IS NOT NULL AND "interval_hours" IS NULL)
+  );--> statement-breakpoint
+ALTER TABLE "medication_schedules"
+  ADD CONSTRAINT "chk_medication_schedules_interval"
+  CHECK (
+    "schedule_kind" <> 'interval'
+    OR ("interval_hours" IS NOT NULL AND "time_of_day" IS NULL)
+  );--> statement-breakpoint
+ALTER TABLE "medication_schedules"
+  ADD CONSTRAINT "chk_medication_schedules_prn"
+  CHECK (
+    "schedule_kind" <> 'prn'
+    OR ("time_of_day" IS NULL AND "interval_hours" IS NULL AND "days_of_week" IS NULL)
+  );

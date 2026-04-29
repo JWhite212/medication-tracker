@@ -243,11 +243,15 @@ export function computeScheduleSlots(
     dedup.sort((a, b) => a.getTime() - b.getTime());
 
     const medDoses = dosesByMedId.get(med.id) ?? [];
+    const usedDoseIds = new Set<string>();
 
     for (const expected of dedup) {
       const matchedDose = medDoses.find(
-        (d) => Math.abs(new Date(d.takenAt).getTime() - expected.getTime()) <= MATCH_TOLERANCE_MS,
+        (d) =>
+          !usedDoseIds.has(d.id) &&
+          Math.abs(new Date(d.takenAt).getTime() - expected.getTime()) <= MATCH_TOLERANCE_MS,
       );
+      if (matchedDose) usedDoseIds.add(matchedDose.id);
 
       let status: ScheduleSlotStatus;
       if (matchedDose) {

@@ -24,8 +24,9 @@ several downstream readers had to special-case.
 ## Decision
 
 Introduce a `medication_schedules` table that owns the schedule
-shape, with one **row per slot**. A medication can have any number
-of schedule rows; readers union the slots they emit.
+shape, with one **row per schedule rule**. A medication can have
+any number of rules; readers compute and emit the actual slots
+for a given day/window from those rules and union them.
 
 ```ts
 medicationSchedules: {

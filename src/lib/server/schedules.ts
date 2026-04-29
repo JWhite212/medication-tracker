@@ -1,11 +1,17 @@
 import { createId } from "@paralleldrive/cuid2";
 import { eq, and, asc } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { medicationSchedules } from "$lib/server/db/schema";
+import { medicationSchedules, medications } from "$lib/server/db/schema";
 import type { ScheduleInput } from "$lib/utils/validation";
 import type { InferSelectModel } from "drizzle-orm";
 
 export type MedicationSchedule = InferSelectModel<typeof medicationSchedules>;
+
+export class MedicationOwnershipError extends Error {
+  constructor() {
+    super("Medication not found or not owned by user");
+  }
+}
 
 export async function getSchedulesForUser(
   userId: string,
@@ -52,6 +58,16 @@ export async function replaceSchedulesForMedication(
   userId: string,
   schedules: ScheduleInput[],
 ): Promise<void> {
+  // Self-defending ownership check — callers already filter by userId,
+  // but verify here so a misuse can't write rows that point at another
+  // user's medication via the FK.
+  const [owner] = await db
+    .select({ id: medications.id })
+    .from(medications)
+    .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
+    .limit(1);
+  if (!owner) throw new MedicationOwnershipError();
+
   await db
     .delete(medicationSchedules)
     .where(

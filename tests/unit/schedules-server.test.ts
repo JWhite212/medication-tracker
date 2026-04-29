@@ -5,13 +5,17 @@ type DeleteCall = { table: string };
 const inserts: Insert[] = [];
 const deletes: DeleteCall[] = [];
 const selectRows: Array<Record<string, unknown>> = [];
+// Controls the ownership-check lookup; set to [] to simulate
+// "medication not owned by this user".
+const ownerRows: Array<{ id: string }> = [{ id: "med-A" }];
 
 vi.mock("$lib/server/db", () => ({
   db: {
-    select: () => ({
+    select: (shape?: Record<string, unknown>) => ({
       from: () => ({
         where: () => ({
           orderBy: () => Promise.resolve([...selectRows]),
+          limit: () => Promise.resolve(shape && "id" in shape ? [...ownerRows] : [...selectRows]),
         }),
         orderBy: () => Promise.resolve([...selectRows]),
       }),
@@ -31,13 +35,19 @@ vi.mock("$lib/server/db", () => ({
   },
 }));
 
-const { getSchedulesForUser, getSchedulesForMedication, replaceSchedulesForMedication } =
-  await import("../../src/lib/server/schedules");
+const {
+  getSchedulesForUser,
+  getSchedulesForMedication,
+  replaceSchedulesForMedication,
+  MedicationOwnershipError,
+} = await import("../../src/lib/server/schedules");
 
 beforeEach(() => {
   inserts.length = 0;
   deletes.length = 0;
   selectRows.length = 0;
+  ownerRows.length = 0;
+  ownerRows.push({ id: "med-A" });
 });
 
 describe("getSchedulesForUser", () => {
@@ -108,5 +118,14 @@ describe("replaceSchedulesForMedication", () => {
     ]);
     const rows = inserts[0].values as Array<Record<string, unknown>>;
     expect(rows[0].daysOfWeek).toBeNull();
+  });
+
+  it("throws MedicationOwnershipError when medication is not owned by user", async () => {
+    ownerRows.length = 0;
+    await expect(
+      replaceSchedulesForMedication("med-X", "u", [{ scheduleKind: "prn" }]),
+    ).rejects.toBeInstanceOf(MedicationOwnershipError);
+    expect(deletes).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
   });
 });

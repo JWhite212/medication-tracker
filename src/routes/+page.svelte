@@ -1,7 +1,7 @@
 <script lang="ts">
-  import appIcon from '$lib/assets/1974f178-4b4b-4da9-a561-26adec22d906.png';
+  import appIcon from '$lib/assets/medtracker-icon-vector.svg';
   import heroImage from '$lib/assets/9910d8b5-01d3-4293-94a7-eca14d4e66f5.png';
-  import wordmark from '$lib/assets/b0cd4ffc-1e52-4c12-b228-56f72d81d044.png';
+  import wordmark from '$lib/assets/medtracker-logo-lockup-vector.svg';
 </script>
 
 <svelte:head>
@@ -74,9 +74,7 @@
   </main>
 
   <footer class="flex flex-col items-center gap-3 border-t border-glass-border px-4 py-8 sm:px-6">
-    <div class="rounded-2xl bg-white px-6 py-3 shadow-sm">
-      <img src={wordmark} alt="MedTracker" width="180" height="44" class="h-9 w-auto" />
-    </div>
+    <img src={wordmark} alt="MedTracker" width="220" height="55" class="h-12 w-auto" />
     <p class="text-xs text-text-muted">© MedTracker · Personal medication tracker</p>
   </footer>
 </div>

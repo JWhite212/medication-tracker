@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SessionUser } from '$lib/types';
-  import appIcon from '$lib/assets/1974f178-4b4b-4da9-a561-26adec22d906.png';
+  import appIcon from '$lib/assets/medtracker-icon-vector.svg';
 
   let { user, ontoggle }: { user: SessionUser; ontoggle: () => void } = $props();
 </script>

@@ -139,16 +139,12 @@ Notable design choices captured in the ADRs:
 
 ## 6. What I would improve next
 
-- **Schedule model** — replace the simple `scheduleIntervalHours`
-  with a proper `medication_schedules` table that supports fixed
-  times, day-of-week patterns, and PRN. Designed; deferred to the
-  next milestone (PR 4d).
 - **Test coverage** — server unit tests for `doses.ts` and the
   reauth helper need a test database; that infrastructure is the
   next CI investment.
 - **End-to-end tests** — Playwright journey + axe-core a11y audit.
 - **Native shell** — wrap the PWA in Capacitor for App Store /
-  Play Store distribution once the schedule model lands.
+  Play Store distribution.
 - **Doctor-share** — read-only signed URL for sharing the last 30
   days of dose history without giving someone account access.
 

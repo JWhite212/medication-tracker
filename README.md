@@ -98,8 +98,8 @@ Honest about what's complete vs. what's planned:
 | Drug interaction notice          | Experimental, behind `INTERACTIONS_ENABLED` flag                                                                      |
 | Medical disclaimer               | Surfaced on landing, register, medication form, analytics, exports                                                    |
 | Re-auth gate (sensitive actions) | Complete for change-password, enable/disable 2FA, delete account; **planned** for full export and revoke-all-sessions |
-| Medication scheduling            | Interval-based today; **planned** richer fixed-time / day-of-week / PRN model                                         |
-| Demo account + seed              | **Planned** in PR 4c                                                                                                  |
+| Medication scheduling            | Interval, fixed-time, and PRN; multi-row schedules with optional day-of-week filters                                  |
+| Demo account + seed              | Complete; `npm run seed:demo` (4c)                                                                                    |
 | End-to-end tests                 | **Planned**; unit tests cover security primitives                                                                     |
 
 ## Technical highlights
@@ -244,9 +244,6 @@ interactions).
 
 ## Known limitations
 
-- **Schedule model** is interval-based today (`scheduleIntervalHours`).
-  Fixed-time schedules and day-of-week patterns are designed but not
-  yet shipped — see PR 4d on the roadmap.
 - **End-to-end tests** are stubbed; the unit suite covers crypto,
   TOTP, CSV escape, and analytics primitives but not full user
   journeys.
@@ -268,7 +265,7 @@ Tracked across four implementation phases, with the source plan in
   interactions; coverage thresholds. **Done.**
 - **Phase 4 polish** — keyboard shortcuts fix, interactions feature
   flag, medical disclaimer (4a). README, ADRs, case study (4b).
-  Demo seed account (4c). Schedule refactor (4d).
+  Demo seed account (4c). Multi-row schedule refactor (4d). **Done.**
 
 ## What I learned
 

@@ -2,7 +2,31 @@ import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { startOfDay } from "$lib/utils/time";
+import { getSchedulesForUser } from "$lib/server/schedules";
+import type { MedicationSchedule } from "$lib/server/schedules";
 import type { DoseLogStatus } from "$lib/server/db/schema";
+
+/**
+ * Sum expected doses per day across a medication's schedule rows.
+ * - interval rows contribute 24 / intervalHours
+ * - fixed_time rows contribute 1, scaled down if daysOfWeek restricts
+ *   the schedule to specific weekdays
+ * - prn rows contribute 0
+ */
+export function expectedPerDayForSchedules(schedules: MedicationSchedule[]): number {
+  let perDay = 0;
+  for (const s of schedules) {
+    if (s.scheduleKind === "prn") continue;
+    if (s.scheduleKind === "interval" && s.intervalHours) {
+      const hrs = Number(s.intervalHours);
+      if (hrs > 0) perDay += 24 / hrs;
+    } else if (s.scheduleKind === "fixed_time" && s.timeOfDay) {
+      const dayFraction = s.daysOfWeek && s.daysOfWeek.length > 0 ? s.daysOfWeek.length / 7 : 1;
+      perDay += dayFraction;
+    }
+  }
+  return perDay;
+}
 
 const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
 
@@ -106,7 +130,6 @@ export async function getPerMedicationStats(
   range?: DateRange,
   options?: { includeAsNeeded?: boolean },
 ) {
-  // Pull every status in one query and tally per-medication.
   const whereClauseAll = buildDateFilters(userId, days, timezone, range, "any");
 
   const effectiveDays =
@@ -114,28 +137,31 @@ export async function getPerMedicationStats(
       ? Math.max(1, Math.round((range.to.getTime() - range.from.getTime()) / 86400000))
       : days;
 
-  const rows = await db
-    .select({
-      medicationId: doseLogs.medicationId,
-      medicationName: medications.name,
-      colour: medications.colour,
-      scheduleIntervalHours: medications.scheduleIntervalHours,
-      scheduleType: medications.scheduleType,
-      status: doseLogs.status,
-      events: sql<number>`count(*)::int`,
-      quantity: sql<number>`coalesce(sum(${doseLogs.quantity}), 0)::int`,
-    })
-    .from(doseLogs)
-    .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
-    .where(whereClauseAll)
-    .groupBy(
-      doseLogs.medicationId,
-      medications.name,
-      medications.colour,
-      medications.scheduleIntervalHours,
-      medications.scheduleType,
-      doseLogs.status,
-    );
+  const [rows, schedulesByMed] = await Promise.all([
+    db
+      .select({
+        medicationId: doseLogs.medicationId,
+        medicationName: medications.name,
+        colour: medications.colour,
+        scheduleIntervalHours: medications.scheduleIntervalHours,
+        scheduleType: medications.scheduleType,
+        status: doseLogs.status,
+        events: sql<number>`count(*)::int`,
+        quantity: sql<number>`coalesce(sum(${doseLogs.quantity}), 0)::int`,
+      })
+      .from(doseLogs)
+      .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
+      .where(whereClauseAll)
+      .groupBy(
+        doseLogs.medicationId,
+        medications.name,
+        medications.colour,
+        medications.scheduleIntervalHours,
+        medications.scheduleType,
+        doseLogs.status,
+      ),
+    getSchedulesForUser(userId),
+  ]);
 
   type Bucket = {
     medicationId: string;
@@ -171,12 +197,25 @@ export async function getPerMedicationStats(
   const includeAsNeeded = options?.includeAsNeeded ?? false;
 
   return [...buckets.values()]
-    .filter((b) => includeAsNeeded || b.scheduleType !== "as_needed")
+    .filter((b) => {
+      if (includeAsNeeded) return true;
+      const sched = schedulesByMed.get(b.medicationId);
+      // Hide pure-PRN medications by default. Fall back to legacy
+      // scheduleType column if no schedule rows exist yet (pre-backfill).
+      if (sched && sched.length > 0) {
+        return sched.some((s) => s.scheduleKind !== "prn");
+      }
+      return b.scheduleType !== "as_needed";
+    })
     .map((b) => {
-      const expectedPerDay = b.scheduleIntervalHours ? 24 / Number(b.scheduleIntervalHours) : 1;
+      const sched = schedulesByMed.get(b.medicationId) ?? [];
+      const expectedPerDay =
+        sched.length > 0
+          ? expectedPerDayForSchedules(sched)
+          : b.scheduleIntervalHours
+            ? 24 / Number(b.scheduleIntervalHours)
+            : 0;
       const expectedTotal = Math.round(expectedPerDay * effectiveDays);
-      // doseCount kept for backwards compatibility with any callers
-      // still expecting that shape; new fields added alongside.
       return {
         medicationId: b.medicationId,
         medicationName: b.medicationName,

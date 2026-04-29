@@ -152,3 +152,22 @@ export const pushSubscriptionSchema = z.object({
 });
 
 export type MedicationInput = z.infer<typeof medicationSchema>;
+
+export const scheduleRowSchema = z.discriminatedUnion("scheduleKind", [
+  z.object({
+    scheduleKind: z.literal("interval"),
+    intervalHours: z.coerce.number().positive().max(72),
+  }),
+  z.object({
+    scheduleKind: z.literal("fixed_time"),
+    timeOfDay: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:mm"),
+    daysOfWeek: z.array(z.number().int().min(0).max(6)).max(7).nullable().optional(),
+  }),
+  z.object({
+    scheduleKind: z.literal("prn"),
+  }),
+]);
+
+export const schedulesSchema = z.array(scheduleRowSchema).min(1).max(20);
+
+export type ScheduleInput = z.infer<typeof scheduleRowSchema>;

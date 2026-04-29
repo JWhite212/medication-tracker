@@ -64,7 +64,10 @@ export const medications = pgTable(
     colourSecondary: text("colour_secondary"),
     pattern: text("pattern").notNull().default("solid"),
     notes: text("notes"),
+    // DEPRECATED — read from `medication_schedules` instead. Will be
+    // removed in a follow-up after one prod cycle.
     scheduleType: text("schedule_type").notNull().default("scheduled"),
+    // DEPRECATED — read from `medication_schedules` instead.
     scheduleIntervalHours: numeric("schedule_interval_hours"),
     inventoryCount: integer("inventory_count"),
     inventoryAlertThreshold: integer("inventory_alert_threshold"),
@@ -104,6 +107,31 @@ export const doseLogs = pgTable(
 );
 
 export type DoseLogStatus = "taken" | "skipped" | "missed";
+
+export type ScheduleKind = "fixed_time" | "interval" | "prn";
+
+export const medicationSchedules = pgTable(
+  "medication_schedules",
+  {
+    id: text("id").primaryKey(),
+    medicationId: text("medication_id")
+      .notNull()
+      .references(() => medications.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scheduleKind: text("schedule_kind").notNull().$type<ScheduleKind>(),
+    timeOfDay: text("time_of_day"),
+    intervalHours: numeric("interval_hours"),
+    daysOfWeek: jsonb("days_of_week").$type<number[]>(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("medication_schedules_med_idx").on(table.medicationId),
+    index("medication_schedules_user_idx").on(table.userId),
+  ],
+);
 
 export const auditLogs = pgTable(
   "audit_logs",

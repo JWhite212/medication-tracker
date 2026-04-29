@@ -91,6 +91,34 @@ describe("calculateDaysUntilRefill", () => {
   it("returns 0 when inventory is less than daily consumption", () => {
     expect(calculateDaysUntilRefill(1, 5)).toBe(0);
   });
+
+  it("uses schedule for scheduled meds even with no dose history", () => {
+    expect(calculateDaysUntilRefill(60, 0, "scheduled", 24)).toBe(60);
+  });
+
+  it("accepts numeric-string interval (Drizzle numeric column)", () => {
+    expect(calculateDaysUntilRefill(60, 0, "scheduled", "24")).toBe(60);
+  });
+
+  it("scheduled rate takes precedence over historical avg", () => {
+    expect(calculateDaysUntilRefill(60, 2, "scheduled", 24)).toBe(60);
+  });
+
+  it("falls back to historical avg for as_needed meds", () => {
+    expect(calculateDaysUntilRefill(60, 2, "as_needed", null)).toBe(30);
+  });
+
+  it("returns null for as_needed med with no history", () => {
+    expect(calculateDaysUntilRefill(60, 0, "as_needed", null)).toBeNull();
+  });
+
+  it("falls back to historical avg when scheduled but interval is missing", () => {
+    expect(calculateDaysUntilRefill(60, 2, "scheduled", null)).toBe(30);
+  });
+
+  it("supports sub-daily schedules (8h interval = 3/day)", () => {
+    expect(calculateDaysUntilRefill(30, 0, "scheduled", 8)).toBe(10);
+  });
 });
 
 describe("formatDueIn", () => {

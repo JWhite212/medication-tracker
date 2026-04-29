@@ -54,7 +54,12 @@ export async function getMedicationsWithStats(userId: string): Promise<Medicatio
       lastTakenAt: s?.lastTakenAt ?? null,
       weeklyDoseCount: s?.weeklyDoseCount ?? 0,
       avgDailyConsumption: avgDaily,
-      daysUntilRefill: calculateDaysUntilRefill(med.inventoryCount, avgDaily),
+      daysUntilRefill: calculateDaysUntilRefill(
+        med.inventoryCount,
+        avgDaily,
+        med.scheduleType,
+        med.scheduleIntervalHours,
+      ),
     };
   });
 }

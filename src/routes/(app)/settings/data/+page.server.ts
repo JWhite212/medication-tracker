@@ -9,7 +9,7 @@ import {
 import { dataSchema } from "$lib/utils/validation";
 import { logAudit, computeChanges } from "$lib/server/audit";
 import { lucia } from "$lib/server/auth/lucia";
-import { verifyPassword } from "$lib/server/auth/password";
+import { confirmReauth } from "$lib/server/auth/reauth";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -54,16 +54,8 @@ export const actions: Actions = {
       });
     }
 
-    const [user] = await db
-      .select({ passwordHash: users.passwordHash })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-
-    if (
-      !user?.passwordHash ||
-      !(await verifyPassword(user.passwordHash, password))
-    ) {
+    const reauth = await confirmReauth(userId, password, "delete_account");
+    if (!reauth.ok) {
       return fail(400, { deleteError: "Incorrect password." });
     }
 

@@ -32,7 +32,11 @@ jobs:
         run: npm run format:check
 
       - name: Unit tests with coverage
+        # Placeholder URL satisfies the Neon driver when test files
+        # transitively import server modules. No connection is made.
         run: npm run test:coverage
+        env:
+          DATABASE_URL: postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require
 
       - name: Upload coverage artifact
         if: always()

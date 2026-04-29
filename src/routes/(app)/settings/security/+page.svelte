@@ -5,6 +5,9 @@
   import Input from "$lib/components/ui/Input.svelte";
 
   let { data, form } = $props();
+
+  type FormErrors = Record<string, string[] | undefined>;
+  const passwordErrors = $derived((form?.passwordErrors ?? {}) as FormErrors);
 </script>
 
 <svelte:head>
@@ -34,21 +37,21 @@
         name="currentPassword"
         type="password"
         required
-        error={form?.passwordErrors?.currentPassword?.[0] ?? ""}
+        error={passwordErrors.currentPassword?.[0] ?? ""}
       />
       <Input
         label="New Password"
         name="newPassword"
         type="password"
         required
-        error={form?.passwordErrors?.newPassword?.[0] ?? ""}
+        error={passwordErrors.newPassword?.[0] ?? ""}
       />
       <Input
         label="Confirm New Password"
         name="confirmPassword"
         type="password"
         required
-        error={form?.passwordErrors?.confirmPassword?.[0] ?? ""}
+        error={passwordErrors.confirmPassword?.[0] ?? ""}
       />
 
       <button

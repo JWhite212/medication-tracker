@@ -32,7 +32,7 @@
       }}
       class="space-y-4"
     >
-      <input type="hidden" name="token" value={form?.token ?? data.token} />
+      <input type="hidden" name="token" value={(form as { token?: string })?.token ?? data.token} />
 
       <div>
         <label for="password" class="mb-1 block text-sm font-medium">New password</label>

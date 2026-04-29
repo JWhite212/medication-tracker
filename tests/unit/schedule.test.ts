@@ -36,6 +36,8 @@ function makeDose(overrides: Partial<DoseLogWithMedication> = {}): DoseLogWithMe
     takenAt: new Date("2026-04-16T08:00:00Z"),
     loggedAt: new Date("2026-04-16T08:00:00Z"),
     notes: null,
+    sideEffects: null,
+    status: "taken",
     medication: {
       name: "TestMed",
       dosageAmount: "200",

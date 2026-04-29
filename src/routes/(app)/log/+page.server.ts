@@ -33,6 +33,7 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
         loggedAt: doseLogs.loggedAt,
         notes: doseLogs.notes,
         sideEffects: doseLogs.sideEffects,
+        status: doseLogs.status,
         medication: {
           name: medications.name,
           dosageAmount: medications.dosageAmount,

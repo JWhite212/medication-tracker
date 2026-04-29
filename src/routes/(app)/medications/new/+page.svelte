@@ -13,6 +13,9 @@
   <h1 class="text-2xl font-bold">Add Medication</h1>
 
   <GlassCard>
-    <MedicationForm errors={form?.errors ?? {}} formValues={form?.values ?? {}} />
+    <MedicationForm
+      errors={form?.errors ?? {}}
+      formValues={(form?.values ?? {}) as Record<string, string>}
+    />
   </GlassCard>
 </div>

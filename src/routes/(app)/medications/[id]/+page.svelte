@@ -16,7 +16,7 @@
     <MedicationForm
       medication={data.medication}
       errors={form?.errors ?? {}}
-      formValues={form?.values ?? {}}
+      formValues={(form?.values ?? {}) as Record<string, string>}
     />
   </GlassCard>
 

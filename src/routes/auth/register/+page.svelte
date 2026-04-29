@@ -5,6 +5,10 @@
 
   let { form } = $props();
   let loading = $state(false);
+
+  type FormErrors = Record<string, string[] | undefined>;
+  const errors = $derived((form?.errors ?? {}) as FormErrors);
+  const formValues = $derived((form ?? {}) as { name?: string; email?: string });
 </script>
 
 <svelte:head>
@@ -52,12 +56,12 @@
           name="name"
           type="text"
           required
-          value={form?.name ?? ""}
+          value={formValues.name ?? ""}
           class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Your name"
         />
-        {#if form?.errors?.name}
-          <p class="text-danger mt-1 text-sm" role="alert">{form.errors.name[0]}</p>
+        {#if errors.name}
+          <p class="text-danger mt-1 text-sm" role="alert">{errors.name[0]}</p>
         {/if}
       </div>
 
@@ -68,12 +72,12 @@
           name="email"
           type="email"
           required
-          value={form?.email ?? ""}
+          value={formValues.email ?? ""}
           class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="you@example.com"
         />
-        {#if form?.errors?.email}
-          <p class="text-danger mt-1 text-sm" role="alert">{form.errors.email[0]}</p>
+        {#if errors.email}
+          <p class="text-danger mt-1 text-sm" role="alert">{errors.email[0]}</p>
         {/if}
       </div>
 
@@ -88,8 +92,8 @@
           class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Min. 8 characters"
         />
-        {#if form?.errors?.password}
-          <p class="text-danger mt-1 text-sm" role="alert">{form.errors.password[0]}</p>
+        {#if errors.password}
+          <p class="text-danger mt-1 text-sm" role="alert">{errors.password[0]}</p>
         {/if}
       </div>
 

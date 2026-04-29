@@ -4,6 +4,12 @@
 
   let { form, data } = $props();
   let loading = $state(false);
+
+  // SvelteKit infers a discriminated union from each fail() return shape,
+  // which makes form?.errors?.<key> fail to narrow. Treat errors as a
+  // bag of optional string[] so the template can read any field.
+  type FormErrors = Record<string, string[] | undefined>;
+  const errors = $derived((form?.errors ?? {}) as FormErrors);
 </script>
 
 <svelte:head>
@@ -31,9 +37,9 @@
       </div>
     {/if}
 
-    {#if form?.errors?.form}
+    {#if errors.form}
       <div class="bg-danger/10 text-danger mb-4 rounded-lg p-3 text-sm" role="alert">
-        {form.errors.form[0]}
+        {errors.form[0]}
       </div>
     {/if}
 

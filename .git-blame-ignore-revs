@@ -1,0 +1,6 @@
+# Revisions listed here are skipped by `git blame --ignore-revs-file`.
+# Configure your local git once with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: apply prettier baseline across the codebase
+1c83ce9

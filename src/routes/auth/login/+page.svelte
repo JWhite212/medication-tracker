@@ -61,7 +61,7 @@
           name="email"
           type="email"
           required
-          value={form?.email ?? ""}
+          value={form?.email ?? data.prefillEmail ?? ""}
           class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="you@example.com"
         />

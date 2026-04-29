@@ -43,9 +43,15 @@ Read the long-form story in [`docs/case-study.md`](docs/case-study.md).
 ## Live demo
 
 - App: <https://medication-tracker-jw.vercel.app>
-- The demo account (Phase 4c) is `demo@medtracker.app`. It's seeded
-  with a realistic profile so screenshots and quick walkthroughs
-  reflect a populated state.
+- Demo account: `demo@medtracker.app` / `demo-medtracker-2026`.
+  Seeded with five medications and ~30 days of dose history so the
+  dashboard, log, and analytics pages reflect a populated state.
+
+Refresh the demo (deletes and recreates the demo user, idempotent):
+
+```bash
+DATABASE_URL=... npm run seed:demo
+```
 
 ## Screenshots
 

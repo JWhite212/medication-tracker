@@ -150,7 +150,10 @@ export async function getPerMedicationStats(
         quantity: sql<number>`coalesce(sum(${doseLogs.quantity}), 0)::int`,
       })
       .from(doseLogs)
-      .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
+      .innerJoin(
+        medications,
+        and(eq(doseLogs.medicationId, medications.id), eq(medications.userId, userId)),
+      )
       .where(whereClauseAll)
       .groupBy(
         doseLogs.medicationId,

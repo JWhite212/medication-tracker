@@ -53,12 +53,12 @@ dropped in a follow-up migration.
 
 ### `medication_schedules` (Phase 4d)
 
-Owns the schedule for a medication, with one row per slot. A
-medication may have multiple rows. `schedule_kind` is one of:
+Owns the schedule rules for a medication, with one row per rule.
+A medication may have multiple rules. `schedule_kind` is one of:
 
 - `interval` — `interval_hours` set; project forward by N hours.
 - `fixed_time` — `time_of_day` set as `HH:mm` in the user's
-  timezone; optional `days_of_week` (jsonb int array, 0=Sun..6=Sat,
+  timezone; optional `days_of_week` (jsonb int array, 0 = Sun – 6 = Sat,
   null/empty = every day).
 - `prn` — no further fields; medication is logged on demand only.
 
@@ -66,7 +66,7 @@ Indexes on `medication_id` and `user_id`. Cascade-deletes when the
 parent medication or user is removed. Backfilled from the legacy
 `medications.schedule_type` / `schedule_interval_hours` columns by
 `0006_phase_4d_schedules.sql` using a deterministic
-`'sched_' || md5(medication_id)` key so re-runs are idempotent.
+`'sched_' || md5(medication_id)` key, so re-runs are idempotent.
 
 ### `dose_logs`
 

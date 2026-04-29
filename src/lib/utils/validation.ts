@@ -42,7 +42,9 @@ export const medicationSchema = z.object({
   scheduleIntervalHours: z
     .string()
     .regex(/^\d+(\.\d+)?$/)
-    .optional(),
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => (v === "" ? undefined : v)),
   inventoryCount: z.coerce.number().int().min(0).optional(),
   inventoryAlertThreshold: z.coerce.number().int().min(0).optional(),
 });

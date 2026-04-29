@@ -1,60 +1,121 @@
-import { sql, eq, and, isNotNull } from "drizzle-orm";
+import { sql, eq, and, isNotNull, ne } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { medications, doseLogs, users, userPreferences } from "$lib/server/db/schema";
+import {
+  medications,
+  doseLogs,
+  users,
+  userPreferences,
+  medicationSchedules,
+} from "$lib/server/db/schema";
 import { sendReminderEmail, sendLowInventoryEmail } from "./email";
 import { sendPushNotification } from "./push";
 import { formatTimeSince } from "$lib/utils/time";
+import { localTimeOnDateToUtc, getLocalDateString, getLocalDayOfWeek } from "$lib/utils/schedule";
+
+const FIXED_TIME_TOLERANCE_MS = 60 * 60 * 1000;
 
 export async function checkOverdueMedications() {
-  const medsWithLastDose = await db
+  const rows = await db
     .select({
+      scheduleId: medicationSchedules.id,
+      scheduleKind: medicationSchedules.scheduleKind,
+      intervalHours: medicationSchedules.intervalHours,
+      timeOfDay: medicationSchedules.timeOfDay,
+      daysOfWeek: medicationSchedules.daysOfWeek,
       medicationId: medications.id,
       medicationName: medications.name,
-      scheduleIntervalHours: medications.scheduleIntervalHours,
       userId: medications.userId,
       userEmail: users.email,
+      userTimezone: users.timezone,
       lastTakenAt: sql<Date | null>`(
         SELECT ${doseLogs.takenAt}
         FROM ${doseLogs}
         WHERE ${doseLogs.medicationId} = ${medications.id}
+          AND ${doseLogs.status} = 'taken'
         ORDER BY ${doseLogs.takenAt} DESC
         LIMIT 1
       )`,
     })
-    .from(medications)
+    .from(medicationSchedules)
+    .innerJoin(medications, eq(medicationSchedules.medicationId, medications.id))
     .innerJoin(users, eq(medications.userId, users.id))
     .innerJoin(userPreferences, eq(users.id, userPreferences.userId))
     .where(
       and(
         eq(medications.isArchived, false),
-        isNotNull(medications.scheduleIntervalHours),
+        ne(medicationSchedules.scheduleKind, "prn"),
         eq(userPreferences.emailReminders, true),
       ),
     );
 
-  for (const med of medsWithLastDose) {
-    if (!med.lastTakenAt) continue;
-    const intervalMs = Number(med.scheduleIntervalHours) * 3600000;
-    const elapsed = Date.now() - new Date(med.lastTakenAt).getTime();
-    if (elapsed > intervalMs) {
-      await sendReminderEmail(
-        med.userEmail,
-        med.medicationName,
-        formatTimeSince(new Date(med.lastTakenAt)),
-      );
+  const now = new Date();
+  // A single overdue medication should produce one email per cron run
+  // even when multiple schedules say so.
+  const notified = new Set<string>();
 
-      try {
-        await sendPushNotification(med.userId, {
-          title: `${med.medicationName} overdue`,
-          body: `Last taken ${formatTimeSince(new Date(med.lastTakenAt))} ago`,
-          url: "/dashboard",
-          tag: `overdue-${med.medicationId}`,
-        });
-      } catch {
-        // Push failure should not block email sending
-      }
+  for (const row of rows) {
+    if (!isScheduleOverdue(row, now)) continue;
+    if (notified.has(row.medicationId)) continue;
+    notified.add(row.medicationId);
+
+    const sinceLabel = row.lastTakenAt ? formatTimeSince(new Date(row.lastTakenAt)) : "never";
+
+    await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
+
+    try {
+      await sendPushNotification(row.userId, {
+        title: `${row.medicationName} overdue`,
+        body: row.lastTakenAt
+          ? `Last taken ${formatTimeSince(new Date(row.lastTakenAt))} ago`
+          : "Not yet taken",
+        url: "/dashboard",
+        tag: `overdue-${row.medicationId}`,
+      });
+    } catch {
+      // Push failure should not block email sending
     }
   }
+}
+
+type OverdueRow = {
+  scheduleKind: string;
+  intervalHours: string | null;
+  timeOfDay: string | null;
+  daysOfWeek: number[] | null;
+  userTimezone: string;
+  lastTakenAt: Date | null;
+};
+
+function isScheduleOverdue(row: OverdueRow, now: Date): boolean {
+  if (row.scheduleKind === "interval") {
+    if (!row.intervalHours || !row.lastTakenAt) return false;
+    const intervalMs = Number(row.intervalHours) * 3600000;
+    const elapsed = now.getTime() - new Date(row.lastTakenAt).getTime();
+    return elapsed > intervalMs;
+  }
+
+  if (row.scheduleKind === "fixed_time") {
+    if (!row.timeOfDay) return false;
+    const tz = row.userTimezone || "UTC";
+    const todayStr = getLocalDateString(now, tz);
+    const slotUtc = localTimeOnDateToUtc(todayStr, row.timeOfDay, tz);
+
+    // Slot still in the future — not overdue.
+    if (slotUtc.getTime() > now.getTime()) return false;
+
+    if (row.daysOfWeek && row.daysOfWeek.length > 0) {
+      const dow = getLocalDayOfWeek(slotUtc, tz);
+      if (!row.daysOfWeek.includes(dow)) return false;
+    }
+
+    if (row.lastTakenAt) {
+      const last = new Date(row.lastTakenAt).getTime();
+      if (Math.abs(last - slotUtc.getTime()) <= FIXED_TIME_TOLERANCE_MS) return false;
+    }
+    return true;
+  }
+
+  return false;
 }
 
 export async function checkLowInventoryMedications() {

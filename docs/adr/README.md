@@ -11,6 +11,7 @@ supersedes it.
 - [0003 — Server-first data flow with SvelteKit form actions](./0003-server-first-form-actions.md)
 - [0004 — Lucia v3 for session auth, Argon2 for passwords](./0004-lucia-auth.md)
 - [0005 — Idempotent reminder dispatch via dedupe key](./0005-reminder-deduplication.md)
+- [0006 — Multi-row medication schedules](./0006-medication-schedules.md)
 
 ## Format
 

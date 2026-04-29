@@ -13,13 +13,23 @@
 import { eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "../src/lib/server/db";
-import { users, medications, doseLogs, userPreferences } from "../src/lib/server/db/schema";
+import {
+  users,
+  medications,
+  doseLogs,
+  userPreferences,
+  medicationSchedules,
+} from "../src/lib/server/db/schema";
 import { hashPassword } from "../src/lib/server/auth/password";
 
 const DEMO_EMAIL = "demo@medtracker.app";
 const DEMO_PASSWORD = "demo-medtracker-2026";
 const DEMO_NAME = "Demo User";
 const DEMO_TZ = "Europe/London";
+
+type SeedSchedule =
+  | { kind: "interval"; intervalHours: string }
+  | { kind: "fixed_time"; timesOfDay: string[]; daysOfWeek?: number[] };
 
 type SeedMed = {
   name: string;
@@ -30,7 +40,13 @@ type SeedMed = {
   colour: string;
   colourSecondary: string | null;
   pattern: string;
-  scheduleIntervalHours: string;
+  schedule: SeedSchedule;
+  /**
+   * Approximate dose interval (hours) used by the synthetic dose-log
+   * generator to lay out history. For fixed_time meds this matches
+   * 24 / timesOfDay.length so the timeline still looks plausible.
+   */
+  approxIntervalHours: number;
   inventoryCount: number;
   inventoryAlertThreshold: number;
   /**
@@ -50,7 +66,8 @@ const SEED_MEDS: SeedMed[] = [
     colour: "#f59e0b",
     colourSecondary: null,
     pattern: "solid",
-    scheduleIntervalHours: "24",
+    schedule: { kind: "interval", intervalHours: "24" },
+    approxIntervalHours: 24,
     inventoryCount: 60,
     inventoryAlertThreshold: 14,
     takeRate: 0.92,
@@ -64,7 +81,8 @@ const SEED_MEDS: SeedMed[] = [
     colour: "#3b82f6",
     colourSecondary: null,
     pattern: "solid",
-    scheduleIntervalHours: "24",
+    schedule: { kind: "fixed_time", timesOfDay: ["08:00"] },
+    approxIntervalHours: 24,
     inventoryCount: 28,
     inventoryAlertThreshold: 7,
     takeRate: 0.96,
@@ -78,7 +96,8 @@ const SEED_MEDS: SeedMed[] = [
     colour: "#10b981",
     colourSecondary: "#06b6d4",
     pattern: "stripes",
-    scheduleIntervalHours: "12",
+    schedule: { kind: "interval", intervalHours: "12" },
+    approxIntervalHours: 12,
     inventoryCount: 56,
     inventoryAlertThreshold: 14,
     takeRate: 0.88,
@@ -92,7 +111,8 @@ const SEED_MEDS: SeedMed[] = [
     colour: "#ef4444",
     colourSecondary: null,
     pattern: "solid",
-    scheduleIntervalHours: "8",
+    schedule: { kind: "interval", intervalHours: "8" },
+    approxIntervalHours: 8,
     inventoryCount: 24,
     inventoryAlertThreshold: 6,
     takeRate: 0.7,
@@ -106,7 +126,8 @@ const SEED_MEDS: SeedMed[] = [
     colour: "#8b5cf6",
     colourSecondary: null,
     pattern: "solid",
-    scheduleIntervalHours: "24",
+    schedule: { kind: "interval", intervalHours: "24" },
+    approxIntervalHours: 24,
     inventoryCount: 90,
     inventoryAlertThreshold: 21,
     takeRate: 0.85,
@@ -160,7 +181,10 @@ async function main() {
     exportFormat: "pdf",
   });
 
-  // Insert medications with stable sortOrder.
+  // Insert medications with stable sortOrder. Legacy
+  // scheduleType/scheduleIntervalHours columns are still populated
+  // for one PR cycle for rollback safety; the canonical schedule
+  // shape lives in medication_schedules below.
   const medRows = SEED_MEDS.map((m, idx) => ({
     id: createId(),
     userId,
@@ -173,12 +197,49 @@ async function main() {
     colourSecondary: m.colourSecondary,
     pattern: m.pattern,
     scheduleType: "scheduled",
-    scheduleIntervalHours: m.scheduleIntervalHours,
+    scheduleIntervalHours: m.schedule.kind === "interval" ? m.schedule.intervalHours : null,
     inventoryCount: m.inventoryCount,
     inventoryAlertThreshold: m.inventoryAlertThreshold,
     sortOrder: idx,
   }));
   await db.insert(medications).values(medRows);
+
+  const scheduleRows: Array<typeof medicationSchedules.$inferInsert> = [];
+  for (let i = 0; i < SEED_MEDS.length; i++) {
+    const m = SEED_MEDS[i];
+    const medId = medRows[i].id;
+    if (m.schedule.kind === "interval") {
+      scheduleRows.push({
+        id: createId(),
+        medicationId: medId,
+        userId,
+        scheduleKind: "interval",
+        intervalHours: m.schedule.intervalHours,
+        timeOfDay: null,
+        daysOfWeek: null,
+        sortOrder: 0,
+      });
+    } else {
+      m.schedule.timesOfDay.forEach((tod, idx) => {
+        scheduleRows.push({
+          id: createId(),
+          medicationId: medId,
+          userId,
+          scheduleKind: "fixed_time",
+          intervalHours: null,
+          timeOfDay: tod,
+          daysOfWeek:
+            m.schedule.kind === "fixed_time" && m.schedule.daysOfWeek
+              ? m.schedule.daysOfWeek
+              : null,
+          sortOrder: idx,
+        });
+      });
+    }
+  }
+  if (scheduleRows.length > 0) {
+    await db.insert(medicationSchedules).values(scheduleRows);
+  }
 
   // Generate ~30 days of dose log history.
   const now = new Date();
@@ -188,7 +249,7 @@ async function main() {
   for (let i = 0; i < SEED_MEDS.length; i++) {
     const med = SEED_MEDS[i];
     const medId = medRows[i].id;
-    const intervalMs = Number(med.scheduleIntervalHours) * 60 * 60 * 1000;
+    const intervalMs = med.approxIntervalHours * 60 * 60 * 1000;
 
     for (let t = start.getTime(); t < now.getTime(); t += intervalMs) {
       const expectedAt = new Date(t + jitterMinutes() * 60 * 1000);

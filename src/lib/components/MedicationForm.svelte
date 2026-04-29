@@ -2,20 +2,53 @@
   import { enhance } from "$app/forms";
   import { tick } from "svelte";
   import type { Medication } from "$lib/types";
+  import type { MedicationSchedule } from "$lib/server/schedules";
   import Input from "$lib/components/ui/Input.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
   import { getMedicationBackground, PATTERN_OPTIONS } from "$lib/utils/medication-style";
 
+  type ScheduleMode = "interval" | "fixed_time" | "prn";
+
   let {
     medication = undefined,
+    schedules = [],
     errors = {},
     formValues = {},
   }: {
     medication?: Medication;
+    schedules?: MedicationSchedule[];
     errors?: Record<string, string[]>;
     formValues?: Record<string, string>;
   } = $props();
+
+  function deriveInitialMode(): ScheduleMode {
+    if (formValues["scheduleMode"]) return formValues["scheduleMode"] as ScheduleMode;
+    if (schedules.length > 0) {
+      const kinds = new Set(schedules.map((s) => s.scheduleKind));
+      if (kinds.size === 1) {
+        const only = [...kinds][0];
+        if (only === "fixed_time") return "fixed_time";
+        if (only === "prn") return "prn";
+        return "interval";
+      }
+      // Mixed kinds — keep the editor in fixed_time (most flexible).
+      return "fixed_time";
+    }
+    if (medication?.scheduleType === "as_needed") return "prn";
+    return "interval";
+  }
+
+  function deriveInitialTimes(): string[] {
+    const fixed = schedules.filter((s) => s.scheduleKind === "fixed_time" && s.timeOfDay);
+    if (fixed.length > 0) return fixed.map((s) => s.timeOfDay!);
+    return ["08:00"];
+  }
+
+  function deriveInitialDaysOfWeek(): number[] {
+    const fixed = schedules.find((s) => s.scheduleKind === "fixed_time" && s.daysOfWeek);
+    return (fixed?.daysOfWeek ?? []) as number[];
+  }
 
   const presetColours = [
     "#6366f1",
@@ -45,7 +78,69 @@
   let selectedPattern = $state(formValues["pattern"] ?? medication?.pattern ?? "solid");
 
   let loading = $state(false);
-  let scheduleType = $state(formValues["scheduleType"] ?? medication?.scheduleType ?? "scheduled");
+  let scheduleMode = $state<ScheduleMode>(deriveInitialMode());
+  let intervalHours = $state(
+    formValues["scheduleIntervalHours"] ??
+      schedules.find((s) => s.scheduleKind === "interval")?.intervalHours ??
+      medication?.scheduleIntervalHours ??
+      "",
+  );
+  let fixedTimes = $state<string[]>(deriveInitialTimes());
+  let daysOfWeek = $state<number[]>(deriveInitialDaysOfWeek());
+
+  const DAY_LABELS: { value: number; short: string }[] = [
+    { value: 1, short: "Mon" },
+    { value: 2, short: "Tue" },
+    { value: 3, short: "Wed" },
+    { value: 4, short: "Thu" },
+    { value: 5, short: "Fri" },
+    { value: 6, short: "Sat" },
+    { value: 0, short: "Sun" },
+  ];
+
+  function toggleDay(d: number) {
+    if (daysOfWeek.includes(d)) {
+      daysOfWeek = daysOfWeek.filter((x) => x !== d);
+    } else {
+      daysOfWeek = [...daysOfWeek, d].sort((a, b) => a - b);
+    }
+  }
+
+  function addFixedTime() {
+    fixedTimes = [...fixedTimes, "12:00"];
+  }
+
+  function removeFixedTime(idx: number) {
+    fixedTimes = fixedTimes.filter((_, i) => i !== idx);
+    if (fixedTimes.length === 0) fixedTimes = ["08:00"];
+  }
+
+  let schedulesJson = $derived.by(() => {
+    if (scheduleMode === "prn") {
+      return JSON.stringify([{ scheduleKind: "prn" }]);
+    }
+    if (scheduleMode === "interval") {
+      const hrs = Number(intervalHours);
+      return JSON.stringify([
+        { scheduleKind: "interval", intervalHours: Number.isFinite(hrs) && hrs > 0 ? hrs : 0 },
+      ]);
+    }
+    return JSON.stringify(
+      fixedTimes
+        .filter((t) => /^\d{2}:\d{2}$/.test(t))
+        .map((t) => ({
+          scheduleKind: "fixed_time",
+          timeOfDay: t,
+          daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek : null,
+        })),
+    );
+  });
+
+  // Legacy compatibility shim — keep medications.scheduleType /
+  // scheduleIntervalHours populated for one PR cycle so a rollback
+  // still works against the new schedules table.
+  let legacyScheduleType = $derived(scheduleMode === "prn" ? "as_needed" : "scheduled");
+  let legacyIntervalHours = $derived(scheduleMode === "interval" ? intervalHours : "");
 
   const formOptions = [
     { value: "tablet", label: "Tablet" },
@@ -321,57 +416,145 @@
 
   <div>
     <label class="mb-1 block text-sm font-medium">
-      Schedule Type
+      Schedule
       <Tooltip
-        text="Scheduled medications have a regular interval (e.g. every 8 hours). As-needed (PRN) medications are taken only when required and won't count toward adherence."
+        text="Interval: every N hours. Fixed time: at one or more specific times of day. As needed (PRN): only when required, no reminders."
       />
     </label>
-    <div class="flex gap-3">
+    <div class="flex gap-2">
       <button
         type="button"
-        onclick={() => (scheduleType = "scheduled")}
-        class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {scheduleType ===
-        'scheduled'
+        onclick={() => (scheduleMode = "interval")}
+        class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {scheduleMode ===
+        'interval'
           ? 'border-accent bg-accent/15 text-accent'
           : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
       >
-        Scheduled
+        Interval
       </button>
       <button
         type="button"
-        onclick={() => (scheduleType = "as_needed")}
-        class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {scheduleType ===
-        'as_needed'
+        onclick={() => (scheduleMode = "fixed_time")}
+        class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {scheduleMode ===
+        'fixed_time'
           ? 'border-accent bg-accent/15 text-accent'
           : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
       >
-        As Needed (PRN)
+        Fixed time
+      </button>
+      <button
+        type="button"
+        onclick={() => (scheduleMode = "prn")}
+        class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {scheduleMode ===
+        'prn'
+          ? 'border-accent bg-accent/15 text-accent'
+          : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
+      >
+        As needed (PRN)
       </button>
     </div>
-    <input type="hidden" name="scheduleType" value={scheduleType} />
   </div>
 
-  {#if scheduleType === "scheduled"}
+  {#if scheduleMode === "interval"}
     <div>
-      <label for="scheduleIntervalHours" class="mb-1 block text-sm font-medium">
-        Schedule Interval (hours)
+      <label for="intervalHours" class="mb-1 block text-sm font-medium">
+        Every N hours
         <Tooltip
           text="How many hours between doses. Used to calculate adherence and send overdue reminders."
         />
       </label>
       <input
-        id="scheduleIntervalHours"
-        name="scheduleIntervalHours"
+        id="intervalHours"
         type="number"
-        value={formValues["scheduleIntervalHours"] ?? medication?.scheduleIntervalHours ?? ""}
+        bind:value={intervalHours}
         placeholder="e.g. 8"
+        min="0.5"
+        max="72"
+        step="0.5"
         class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
       />
-      {#if errors["scheduleIntervalHours"]?.[0]}<p class="text-danger mt-1 text-sm">
-          {errors["scheduleIntervalHours"][0]}
+      {#if errors["schedules"]?.[0]}<p class="text-danger mt-1 text-sm">
+          {errors["schedules"][0]}
         </p>{/if}
     </div>
+  {:else if scheduleMode === "fixed_time"}
+    <div class="space-y-3">
+      <div>
+        <span class="mb-1 block text-sm font-medium">
+          Times of day
+          <Tooltip
+            text="One slot per scheduled time. Add multiple rows for twice-daily, three-times-daily, etc."
+          />
+        </span>
+        <div class="space-y-2">
+          {#each fixedTimes as _time, idx (idx)}
+            <div class="flex items-center gap-2">
+              <input
+                type="time"
+                bind:value={fixedTimes[idx]}
+                class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent flex-1 rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+                aria-label="Time of day {idx + 1}"
+              />
+              <button
+                type="button"
+                onclick={() => removeFixedTime(idx)}
+                disabled={fixedTimes.length <= 1}
+                class="border-glass-border text-text-secondary hover:text-danger hover:border-danger rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Remove this time"
+              >
+                Remove
+              </button>
+            </div>
+          {/each}
+        </div>
+        <button
+          type="button"
+          onclick={addFixedTime}
+          class="border-glass-border text-text-secondary hover:bg-glass-hover mt-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
+        >
+          + Add time
+        </button>
+      </div>
+
+      <div>
+        <span class="mb-1 block text-sm font-medium">
+          Days of the week
+          <Tooltip
+            text="Leave empty to apply every day. Select specific days (e.g. weekdays only) to restrict."
+          />
+        </span>
+        <div class="flex flex-wrap gap-2">
+          {#each DAY_LABELS as { value, short }}
+            <button
+              type="button"
+              onclick={() => toggleDay(value)}
+              aria-pressed={daysOfWeek.includes(value)}
+              class="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors {daysOfWeek.includes(
+                value,
+              )
+                ? 'border-accent bg-accent/15 text-accent'
+                : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
+            >
+              {short}
+            </button>
+          {/each}
+        </div>
+      </div>
+      {#if errors["schedules"]?.[0]}<p class="text-danger mt-1 text-sm">
+          {errors["schedules"][0]}
+        </p>{/if}
+    </div>
+  {:else}
+    <p class="border-glass-border text-text-secondary rounded-lg border px-4 py-3 text-sm">
+      As-needed medications are logged when you take them. No reminders are sent and they don't
+      count toward adherence.
+    </p>
   {/if}
+
+  <input type="hidden" name="scheduleMode" value={scheduleMode} />
+  <input type="hidden" name="schedules" value={schedulesJson} />
+  <input type="hidden" name="scheduleType" value={legacyScheduleType} />
+  <input type="hidden" name="scheduleIntervalHours" value={legacyIntervalHours} />
 
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div>

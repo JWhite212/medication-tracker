@@ -1,7 +1,17 @@
 import { fail, redirect } from "@sveltejs/kit";
-import { medicationSchema } from "$lib/utils/validation";
+import { medicationSchema, schedulesSchema } from "$lib/utils/validation";
 import { createMedication } from "$lib/server/medications";
+import { replaceSchedulesForMedication } from "$lib/server/schedules";
 import type { Actions } from "./$types";
+
+function parseSchedules(raw: unknown) {
+  if (typeof raw !== "string" || raw.length === 0) return undefined;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
 
 export const actions: Actions = {
   default: async ({ request, locals }) => {
@@ -15,7 +25,16 @@ export const actions: Actions = {
       });
     }
 
-    await createMedication(locals.user!.id, parsed.data);
+    const schedulesParsed = schedulesSchema.safeParse(parseSchedules(formData.schedules));
+    if (!schedulesParsed.success) {
+      return fail(400, {
+        errors: { schedules: ["Add at least one valid schedule row"] },
+        values: formData,
+      });
+    }
+
+    const med = await createMedication(locals.user!.id, parsed.data);
+    await replaceSchedulesForMedication(med.id, locals.user!.id, schedulesParsed.data);
     redirect(302, "/medications");
   },
 };

@@ -12,15 +12,17 @@ import {
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
 import { parseDateTimeLocal, startOfDay, computeTimingStatus } from "$lib/utils/time";
 import { computeScheduleSlots } from "$lib/utils/schedule";
+import { getSchedulesForUser } from "$lib/server/schedules";
 import type { Actions, PageServerLoad } from "./$types";
 import type { MedicationTimingStatus } from "$lib/types";
 
 export const load: PageServerLoad = async ({ locals }) => {
   const user = locals.user!;
-  const [medications, doses, lastDoses] = await Promise.all([
+  const [medications, doses, lastDoses, schedulesByMedId] = await Promise.all([
     getActiveMedications(user.id),
     getTodaysDoses(user.id, user.timezone),
     getLastDosePerMedication(user.id),
+    getSchedulesForUser(user.id),
   ]);
 
   const lastDoseMap = new Map(lastDoses.map((d) => [d.medicationId, d.lastTakenAt]));
@@ -56,6 +58,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   const scheduleSlots = computeScheduleSlots(
     medications,
+    schedulesByMedId,
     doses,
     lastDoseByMedication,
     dayStart,

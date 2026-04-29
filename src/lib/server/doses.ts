@@ -6,6 +6,28 @@ import { logAudit, computeChanges } from "./audit";
 import { startOfDay } from "$lib/utils/time";
 import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 
+export class MedicationNotFoundError extends Error {
+  constructor(medicationId: string) {
+    super(`Medication ${medicationId} not found for user`);
+    this.name = "MedicationNotFoundError";
+  }
+}
+
+async function assertMedicationBelongsToUser(
+  userId: string,
+  medicationId: string,
+): Promise<void> {
+  const [row] = await db
+    .select({ id: medications.id })
+    .from(medications)
+    .where(
+      and(eq(medications.id, medicationId), eq(medications.userId, userId)),
+    )
+    .limit(1);
+
+  if (!row) throw new MedicationNotFoundError(medicationId);
+}
+
 export async function getTodaysDoses(
   userId: string,
   timezone: string,
@@ -48,6 +70,7 @@ export async function logDose(
   notes?: string,
   sideEffects?: SideEffect[],
 ) {
+  await assertMedicationBelongsToUser(userId, medicationId);
   const id = createId();
   const now = new Date();
 
@@ -62,6 +85,7 @@ export async function logDose(
       loggedAt: now,
       notes: notes ?? null,
       sideEffects: sideEffects ?? null,
+      status: "taken",
     })
     .returning();
 
@@ -84,17 +108,19 @@ export async function logDose(
 }
 
 export async function logSkippedDose(userId: string, medicationId: string) {
+  await assertMedicationBelongsToUser(userId, medicationId);
   const id = createId();
   const now = new Date();
   await db.insert(doseLogs).values({
     id,
     userId,
     medicationId,
-    quantity: 0,
+    quantity: 1,
     takenAt: now,
     loggedAt: now,
-    notes: "Skipped",
+    notes: null,
     sideEffects: null,
+    status: "skipped",
   });
   await logAudit(userId, "dose_log", id, "create");
   return id;
@@ -199,7 +225,7 @@ export async function getLastDosePerMedication(
       lastTakenAt: max(doseLogs.takenAt),
     })
     .from(doseLogs)
-    .where(eq(doseLogs.userId, userId))
+    .where(and(eq(doseLogs.userId, userId), eq(doseLogs.status, "taken")))
     .groupBy(doseLogs.medicationId);
 
   return rows

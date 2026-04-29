@@ -1,6 +1,6 @@
 import { error, fail, redirect } from "@sveltejs/kit";
 import { db } from "$lib/server/db";
-import { users, passwordResetTokens } from "$lib/server/db/schema";
+import { users, passwordResetTokens, sessions } from "$lib/server/db/schema";
 import { hashPassword } from "$lib/server/auth/password";
 import { eq } from "drizzle-orm";
 import type { Actions, PageServerLoad } from "./$types";
@@ -83,6 +83,10 @@ export const actions: Actions = {
       .update(users)
       .set({ passwordHash, updatedAt: new Date() })
       .where(eq(users.id, record.userId));
+
+    // Invalidate every existing session so a compromised cookie can't
+    // outlive the password change.
+    await db.delete(sessions).where(eq(sessions.userId, record.userId));
 
     await db
       .delete(passwordResetTokens)

@@ -1,5 +1,6 @@
 import { redirect, error } from "@sveltejs/kit";
 import { timingSafeEqual } from "crypto";
+import { dev } from "$app/environment";
 import { getGoogle, getGitHub } from "$lib/server/auth/oauth";
 import { lucia } from "$lib/server/auth/lucia";
 import { db } from "$lib/server/db";
@@ -73,7 +74,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     const cookieOpts = {
       path: "/",
       httpOnly: true,
-      secure: true,
+      secure: !dev,
       maxAge: 600,
       sameSite: "lax" as const,
     };

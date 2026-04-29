@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import appIcon from '$lib/assets/1974f178-4b4b-4da9-a561-26adec22d906.png';
 
 	let { form, data } = $props();
 	let loading = $state(false);
@@ -15,6 +16,10 @@
 	<div
 		class="w-full max-w-md rounded-xl border border-glass-border bg-glass p-8 backdrop-blur-xl"
 	>
+		<a href="/" class="mb-4 flex items-center gap-2 text-text-secondary hover:text-text-primary">
+			<img src={appIcon} alt="" width="40" height="40" class="h-10 w-10 rounded-lg" />
+			<span class="text-base font-semibold">MedTracker</span>
+		</a>
 		<h1 class="mb-2 text-2xl font-bold">Welcome back</h1>
 		<p class="mb-6 text-text-secondary">Sign in to your account</p>
 

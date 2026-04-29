@@ -1,5 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import appIcon from '$lib/assets/1974f178-4b4b-4da9-a561-26adec22d906.png';
+  import splashImage from '$lib/assets/8ccec61e-617c-4da0-8596-c6aa9970893e.png';
 
   let { form } = $props();
   let loading = $state(false);
@@ -11,8 +13,21 @@
   <link rel="canonical" href="https://medication-tracker-jw.vercel.app/auth/register" />
 </svelte:head>
 
-<div class="flex min-h-screen items-center justify-center px-4">
+<div class="flex min-h-screen items-center justify-center gap-12 px-4 py-8">
+  <div class="hidden lg:flex lg:flex-col lg:items-center lg:justify-center">
+    <img
+      src={splashImage}
+      alt="MedTracker — Track medications with confidence"
+      width="300"
+      height="540"
+      class="max-h-[80vh] w-auto rounded-3xl shadow-2xl shadow-accent/10"
+    />
+  </div>
   <div class="w-full max-w-md rounded-xl border border-glass-border bg-glass p-8 backdrop-blur-xl">
+    <a href="/" class="mb-4 flex items-center gap-2 text-text-secondary hover:text-text-primary">
+      <img src={appIcon} alt="" width="40" height="40" class="h-10 w-10 rounded-lg" />
+      <span class="text-base font-semibold">MedTracker</span>
+    </a>
     <h1 class="mb-2 text-2xl font-bold">Create account</h1>
     <p class="mb-6 text-text-secondary">Start tracking your medications</p>
 

@@ -4,6 +4,7 @@
   import DoseEditForm from '$components/DoseEditForm.svelte';
   import { goto } from '$app/navigation';
   import type { DoseLogWithMedication } from '$lib/types';
+  import emptyDoseHistory from '$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.png';
 
   let { data } = $props();
   let editingDose = $state<DoseLogWithMedication | null>(null);
@@ -77,8 +78,14 @@
   </div>
 
   {#if data.doses.length === 0}
-    <div class="rounded-xl border border-glass-border bg-glass p-8 text-center backdrop-blur-xl">
-      <p class="text-text-secondary">No doses found for these filters</p>
+    <div class="flex flex-col items-center rounded-xl border border-glass-border bg-glass p-8 text-center backdrop-blur-xl">
+      <img
+        src={emptyDoseHistory}
+        alt="No dose history yet — your logged doses will appear here once you start tracking"
+        width="320"
+        height="240"
+        class="w-full max-w-xs"
+      />
     </div>
   {:else}
     <div role="list">

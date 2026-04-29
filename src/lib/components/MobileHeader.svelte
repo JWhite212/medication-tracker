@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { SessionUser } from '$lib/types';
+  import appIcon from '$lib/assets/1974f178-4b4b-4da9-a561-26adec22d906.png';
 
   let { user, ontoggle }: { user: SessionUser; ontoggle: () => void } = $props();
 </script>
@@ -16,7 +17,10 @@
     </svg>
   </button>
 
-  <a href="/dashboard" class="text-lg font-semibold">MedTracker</a>
+  <a href="/dashboard" class="flex items-center gap-2 text-lg font-semibold">
+    <img src={appIcon} alt="" width="28" height="28" class="h-7 w-7 rounded-md" />
+    <span>MedTracker</span>
+  </a>
 
   <a
     href="/settings"

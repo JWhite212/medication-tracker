@@ -16,6 +16,25 @@ import {
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
+async function requiresPasswordReauth(
+  userId: string,
+  currentPassword: string,
+  purpose: "enable_2fa" | "disable_2fa",
+): Promise<boolean> {
+  const [account] = await db
+    .select({ passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  // OAuth-only accounts do not have a password hash. They should still
+  // be able to manage 2FA using their authenticated session.
+  if (!account?.passwordHash) return true;
+
+  const reauth = await confirmReauth(userId, currentPassword, purpose);
+  return reauth.ok;
+}
+
 export const load: PageServerLoad = async ({ locals }) => {
   const userSessions = await db
     .select({ id: sessions.id, expiresAt: sessions.expiresAt })
@@ -77,12 +96,12 @@ export const actions: Actions = {
     const formData = await request.formData();
     const currentPassword = String(formData.get("currentPassword") ?? "");
 
-    const reauth = await confirmReauth(
+    const reauthOk = await requiresPasswordReauth(
       locals.user!.id,
       currentPassword,
       "enable_2fa",
     );
-    if (!reauth.ok)
+    if (!reauthOk)
       return fail(400, {
         totpError: "Incorrect password — re-enter to enable 2FA",
       });
@@ -126,12 +145,12 @@ export const actions: Actions = {
     const code = String(formData.code ?? "");
     const currentPassword = String(formData.currentPassword ?? "");
 
-    const reauth = await confirmReauth(
+    const reauthOk = await requiresPasswordReauth(
       locals.user!.id,
       currentPassword,
       "disable_2fa",
     );
-    if (!reauth.ok) return fail(400, { totpError: "Incorrect password" });
+    if (!reauthOk) return fail(400, { totpError: "Incorrect password" });
 
     const [user] = await db
       .select({ totpSecret: users.totpSecret })

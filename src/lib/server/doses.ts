@@ -40,6 +40,7 @@ export async function getTodaysDoses(
       userId: doseLogs.userId,
       medicationId: doseLogs.medicationId,
       quantity: doseLogs.quantity,
+      status: doseLogs.status,
       takenAt: doseLogs.takenAt,
       loggedAt: doseLogs.loggedAt,
       notes: doseLogs.notes,

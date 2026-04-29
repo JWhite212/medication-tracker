@@ -53,7 +53,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     timeFormat,
   );
 
-  return new Response(pdf, {
+  return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="medtracker-report-${dateStr}.pdf"`,

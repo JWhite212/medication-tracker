@@ -116,6 +116,7 @@ export async function getPerMedicationStats(
   days: number,
   timezone: string = "UTC",
   range?: DateRange,
+  options?: { includeAsNeeded?: boolean },
 ) {
   // Pull every status in one query and tally per-medication.
   const whereClauseAll = buildDateFilters(userId, days, timezone, range, "any");
@@ -182,8 +183,10 @@ export async function getPerMedicationStats(
     buckets.set(row.medicationId, b);
   }
 
+  const includeAsNeeded = options?.includeAsNeeded ?? false;
+
   return [...buckets.values()]
-    .filter((b) => b.scheduleType !== "as_needed")
+    .filter((b) => includeAsNeeded || b.scheduleType !== "as_needed")
     .map((b) => {
       const expectedPerDay = b.scheduleIntervalHours
         ? 24 / Number(b.scheduleIntervalHours)
@@ -218,7 +221,9 @@ export async function getDoseStatusBreakdown(
   timezone: string = "UTC",
   range?: DateRange,
 ) {
-  const stats = await getPerMedicationStats(userId, days, timezone, range);
+  const stats = await getPerMedicationStats(userId, days, timezone, range, {
+    includeAsNeeded: true,
+  });
 
   let takenEvents = 0;
   let takenQuantity = 0;

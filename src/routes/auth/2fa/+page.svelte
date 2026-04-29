@@ -3,6 +3,12 @@
 
   let { form } = $props();
   let loading = $state(false);
+
+  function sanitize(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const cleaned = input.value.replace(/\D/g, '').slice(0, 6);
+    if (cleaned !== input.value) input.value = cleaned;
+  }
 </script>
 
 <svelte:head>
@@ -39,9 +45,9 @@
           type="text"
           inputmode="numeric"
           autocomplete="one-time-code"
-          pattern="[0-9]{6}"
           maxlength="6"
           required
+          oninput={sanitize}
           class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-center text-2xl tracking-widest text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           placeholder="000000"
         />

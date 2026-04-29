@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="512" viewBox="0 0 2048 512" role="img" aria-labelledby="title desc">
+  <title id="title">MedTracker Logo Lockup</title>
+  <desc id="desc">Horizontal MedTracker logo with app icon and wordmark.</desc>
+  <defs>
+    <linearGradient id="icon-bg" x1="160" y1="130" x2="880" y2="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#18d0c3" />
+      <stop offset="0.48" stop-color="#0a93cf" />
+      <stop offset="1" stop-color="#0661c8" />
+    </linearGradient>
+    <linearGradient id="capsule-aqua" x1="315" y1="395" x2="660" y2="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#86edf0" />
+      <stop offset="1" stop-color="#34bdd6" />
+    </linearGradient>
+    <linearGradient id="check-plus" x1="470" y1="625" x2="790" y2="590" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2cefc1" />
+      <stop offset="1" stop-color="#44e686" />
+    </linearGradient>
+    <linearGradient id="pill-white" x1="410" y1="230" x2="720" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="0.78" stop-color="#f8fbff" />
+      <stop offset="1" stop-color="#e7eef7" />
+    </linearGradient>
+    <linearGradient id="wordmark" x1="545" y1="0" x2="1935" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#075bbb" />
+      <stop offset="0.43" stop-color="#0d78cf" />
+      <stop offset="1" stop-color="#02a8bc" />
+    </linearGradient>
+    <clipPath id="capsule-clip">
+      <rect x="-120" y="-310" width="240" height="620" rx="120" />
+    </clipPath>
+    <symbol id="medtracker-icon" viewBox="0 0 1024 1024">
+      <rect x="74" y="74" width="876" height="876" rx="210" fill="url(#icon-bg)" />
+      <path d="M333 272 C465 188 645 184 766 255" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="butt" opacity="0.98" />
+      <path d="M240 335 C190 430 188 553 232 661" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="butt" stroke-dasharray="50 38" opacity="0.98" />
+      <path d="M237 671 C305 813 479 873 644 817 C684 804 721 785 753 761" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="butt" opacity="0.98" />
+      <circle cx="284" cy="305" r="26" fill="#ffffff" />
+      <g transform="translate(528 512) rotate(43)">
+        <g clip-path="url(#capsule-clip)">
+          <rect x="-120" y="-310" width="240" height="620" rx="120" fill="url(#pill-white)" />
+          <rect x="-120" y="0" width="240" height="310" fill="url(#capsule-aqua)" />
+          <rect x="-120" y="-8" width="240" height="28" fill="#0b75b7" opacity="0.34" />
+        </g>
+        <rect x="-120" y="-310" width="240" height="620" rx="120" fill="none" stroke="#ffffff" stroke-width="32" />
+        <path d="M70 -220 C98 -188 102 -145 79 -105" fill="none" stroke="#0c8fc6" stroke-width="20" stroke-linecap="round" opacity="0.95" />
+      </g>
+      <path d="M463 637 L553 727 L747 530" fill="none" stroke="url(#check-plus)" stroke-width="46" stroke-linecap="round" stroke-linejoin="round" />
+      <g fill="url(#check-plus)">
+        <rect x="760" y="650" width="112" height="50" rx="16" />
+        <rect x="791" y="619" width="50" height="112" rx="16" />
+      </g>
+    </symbol>
+  </defs>
+
+  <use href="#medtracker-icon" x="100" y="86" width="340" height="340" />
+  <text x="545" y="320" fill="url(#wordmark)"
+        font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="170" font-weight="760" letter-spacing="-8">MedTracker</text>
+</svg>

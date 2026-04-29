@@ -43,4 +43,10 @@ jobs:
           retention-days: 14
 
       - name: Build
+        # SvelteKit's analyse step loads server modules at build time,
+        # so the Neon driver instantiates from DATABASE_URL even though
+        # no DB connection is made. A syntactically-valid placeholder
+        # is enough to satisfy it.
         run: npm run build
+        env:
+          DATABASE_URL: postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require

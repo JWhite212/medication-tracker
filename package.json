@@ -20,7 +20,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "encrypt:totp": "tsx scripts/encrypt-totp-secrets.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -46,6 +48,7 @@
     "svelte": "^5.55.2",
     "svelte-check": "^4.4.6",
     "tailwindcss": "^4.2.2",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.59.1",
     "vite": "^8.0.7",

@@ -14,7 +14,8 @@ import type { Actions, PageServerLoad } from "./$types";
 export const load: PageServerLoad = async ({ locals, url }) => {
   if (locals.user) redirect(302, "/dashboard");
   const oauthError = url.searchParams.get("error");
-  return { hasOAuth: hasOAuthProviders(), oauthError };
+  const prefillEmail = url.searchParams.get("email") ?? "";
+  return { hasOAuth: hasOAuthProviders(), oauthError, prefillEmail };
 };
 
 export const actions: Actions = {

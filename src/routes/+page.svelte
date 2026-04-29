@@ -58,14 +58,24 @@
           Log doses with a single tap. See live timers. Track adherence. Beautiful, fast, and
           secure.
         </p>
-        <div class="mt-8 flex gap-4">
+        <div class="mt-8 flex flex-wrap gap-4">
           <a
             href="/auth/register"
             class="bg-accent hover:bg-accent-hover hover:shadow-accent/25 rounded-xl px-8 py-3 text-lg font-medium text-white transition-all hover:shadow-lg"
           >
             Start Tracking
           </a>
+          <a
+            href="/auth/login?email=demo%40medtracker.app"
+            class="border-glass-border bg-glass text-text-primary hover:bg-glass-hover rounded-xl border px-8 py-3 text-lg font-medium transition-colors"
+          >
+            Try the demo
+          </a>
         </div>
+        <p class="text-text-muted mt-3 text-xs">
+          Demo account: <code class="text-text-secondary">demo@medtracker.app</code>
+          / <code class="text-text-secondary">demo-medtracker-2026</code>
+        </p>
       </div>
       <div class="flex justify-center lg:justify-end">
         <img

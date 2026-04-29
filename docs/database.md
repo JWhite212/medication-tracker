@@ -138,9 +138,24 @@ Useful commands:
 
 ## Seed data
 
-A seed script for the `demo@medtracker.app` account is planned for
-Phase 4. Until then, register a fresh account through the UI to
-populate the database.
+`scripts/seed-demo.ts` (run via `npm run seed:demo`) seeds the
+`demo@medtracker.app` portfolio account. It is idempotent — the
+existing demo user is deleted first, which cascade-clears every
+owned row, then the script re-inserts:
+
+- The user (password `demo-medtracker-2026`, timezone `Europe/London`,
+  email-verified, email reminders disabled).
+- Five medications spanning supplements, prescriptions, and OTC.
+- ~30 days of dose history with per-medication take-rates so the
+  analytics page reflects realistic adherence and one or two
+  medications surface light side-effects.
+
+Use this script to re-seed after a schema migration or to refresh
+demo data before taking screenshots:
+
+```bash
+DATABASE_URL=postgresql://... npm run seed:demo
+```
 
 ## Out-of-band history note
 

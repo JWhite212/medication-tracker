@@ -106,12 +106,20 @@ export const doseLogs = pgTable(
       jsonb("side_effects").$type<
         Array<{ name: string; severity: "mild" | "moderate" | "severe" }>
       >(),
+    status: text("status").notNull().default("taken").$type<DoseLogStatus>(),
   },
   (table) => [
     index("dose_logs_user_taken_idx").on(table.userId, table.takenAt),
     index("dose_logs_med_taken_idx").on(table.medicationId, table.takenAt),
+    index("dose_logs_user_status_taken_idx").on(
+      table.userId,
+      table.status,
+      table.takenAt,
+    ),
   ],
 );
+
+export type DoseLogStatus = "taken" | "skipped" | "missed";
 
 export const auditLogs = pgTable(
   "audit_logs",
@@ -198,3 +206,42 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
     .notNull()
     .defaultNow(),
 });
+
+export const reminderEvents = pgTable(
+  "reminder_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    medicationId: text("medication_id")
+      .notNull()
+      .references(() => medications.id, { onDelete: "cascade" }),
+    reminderType: text("reminder_type").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    dedupeKey: text("dedupe_key").notNull().unique(),
+  },
+  (table) => [
+    index("reminder_events_user_sent_idx").on(table.userId, table.sentAt),
+  ],
+);
+
+export const reauthTokens = pgTable(
+  "reauth_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    purpose: text("purpose").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("reauth_tokens_user_purpose_idx").on(table.userId, table.purpose),
+  ],
+);

@@ -1,12 +1,12 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import TimeSince from '$components/TimeSince.svelte';
-  import { formatTime } from '$lib/utils/time';
+  import { formatUserTime, type TimeFormat } from '$lib/utils/time';
   import { showToast } from '$components/ui/Toast.svelte';
   import type { DoseLogWithMedication } from '$lib/types';
   import { getMedicationBackground } from '$lib/utils/medication-style';
 
-  let { dose, timezone, onedit }: { dose: DoseLogWithMedication; timezone: string; onedit?: (dose: DoseLogWithMedication) => void } = $props();
+  let { dose, timezone, timeFormat = '12h', onedit }: { dose: DoseLogWithMedication; timezone: string; timeFormat?: TimeFormat; onedit?: (dose: DoseLogWithMedication) => void } = $props();
 
 </script>
 
@@ -29,7 +29,7 @@
     </div>
 
     <div class="flex items-center gap-4 text-sm">
-      <span class="text-text-secondary">{formatTime(new Date(dose.takenAt), timezone)}</span>
+      <span class="text-text-secondary">{formatUserTime(new Date(dose.takenAt), timezone, timeFormat)}</span>
       <span class="font-medium text-accent">
         <TimeSince date={new Date(dose.takenAt)} />
       </span>

@@ -1,12 +1,12 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { showToast } from '$components/ui/Toast.svelte';
-  import { formatTime } from '$lib/utils/time';
+  import { formatUserTime, type TimeFormat } from '$lib/utils/time';
   import { getMedicationBackground } from '$lib/utils/medication-style';
   import { groupSlotsByTimeOfDay } from '$lib/utils/schedule';
   import type { ScheduleSlot } from '$lib/utils/schedule';
 
-  let { scheduleSlots, timezone }: { scheduleSlots: ScheduleSlot[]; timezone: string } = $props();
+  let { scheduleSlots, timezone, timeFormat = '12h' }: { scheduleSlots: ScheduleSlot[]; timezone: string; timeFormat?: TimeFormat } = $props();
 
   let groups = $derived(groupSlotsByTimeOfDay(scheduleSlots, timezone));
 </script>
@@ -57,7 +57,7 @@
                   <span class="text-text-muted">{slot.dosageAmount}{slot.dosageUnit}</span>
                 </span>
                 <span class="shrink-0 text-xs text-text-secondary">
-                  {formatTime(expectedDate, timezone)}
+                  {formatUserTime(expectedDate, timezone, timeFormat)}
                 </span>
 
                 <!-- Quick-log button for non-taken slots -->

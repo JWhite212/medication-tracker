@@ -2,6 +2,7 @@ import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { startOfDay } from "$lib/utils/time";
+import type { DoseLogStatus } from "$lib/server/db/schema";
 
 const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
 
@@ -20,16 +21,26 @@ function buildDateFilters(
   days: number,
   timezone: string,
   range?: DateRange,
+  status: DoseLogStatus | "any" = "taken",
 ) {
+  const baseUser = eq(doseLogs.userId, userId);
+  const statusFilter =
+    status === "any" ? undefined : eq(doseLogs.status, status);
+
   if (range?.from && range?.to) {
     return and(
-      eq(doseLogs.userId, userId),
+      baseUser,
+      ...(statusFilter ? [statusFilter] : []),
       gte(doseLogs.takenAt, range.from),
       lte(doseLogs.takenAt, range.to),
     );
   }
   const since = startOfDay(new Date(Date.now() - days * 86400000), timezone);
-  return and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, since));
+  return and(
+    baseUser,
+    ...(statusFilter ? [statusFilter] : []),
+    gte(doseLogs.takenAt, since),
+  );
 }
 
 export function calculateTrend(
@@ -67,9 +78,18 @@ export function calculateStreak(
   return streak;
 }
 
+// Visual adherence: capped at 100% so the bar never overshoots.
+// Use calculateOveruse() for the over-100 overflow.
 export function calculateAdherence(taken: number, expected: number): number {
   if (expected === 0) return 0;
-  return Math.round((taken / expected) * 1000) / 10;
+  const raw = Math.round((taken / expected) * 1000) / 10;
+  return Math.min(100, raw);
+}
+
+export function calculateOveruse(taken: number, expected: number): number {
+  if (expected === 0) return 0;
+  if (taken <= expected) return 0;
+  return Math.round(((taken - expected) / expected) * 1000) / 10;
 }
 
 export async function getDailyDoseCounts(
@@ -97,7 +117,8 @@ export async function getPerMedicationStats(
   timezone: string = "UTC",
   range?: DateRange,
 ) {
-  const whereClause = buildDateFilters(userId, days, timezone, range);
+  // Pull every status in one query and tally per-medication.
+  const whereClauseAll = buildDateFilters(userId, days, timezone, range, "any");
 
   const effectiveDays =
     range?.from && range?.to
@@ -114,32 +135,115 @@ export async function getPerMedicationStats(
       colour: medications.colour,
       scheduleIntervalHours: medications.scheduleIntervalHours,
       scheduleType: medications.scheduleType,
-      doseCount: sql<number>`count(*)::int`,
+      status: doseLogs.status,
+      events: sql<number>`count(*)::int`,
+      quantity: sql<number>`coalesce(sum(${doseLogs.quantity}), 0)::int`,
     })
     .from(doseLogs)
     .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
-    .where(whereClause)
+    .where(whereClauseAll)
     .groupBy(
       doseLogs.medicationId,
       medications.name,
       medications.colour,
       medications.scheduleIntervalHours,
       medications.scheduleType,
+      doseLogs.status,
     );
 
-  return rows
-    .filter((row) => row.scheduleType !== "as_needed")
-    .map((row) => {
-      const expectedPerDay = row.scheduleIntervalHours
-        ? 24 / Number(row.scheduleIntervalHours)
+  type Bucket = {
+    medicationId: string;
+    medicationName: string;
+    colour: string;
+    scheduleIntervalHours: string | null;
+    scheduleType: string;
+    takenEvents: number;
+    takenQuantity: number;
+    skippedEvents: number;
+  };
+  const buckets = new Map<string, Bucket>();
+  for (const row of rows) {
+    const b = buckets.get(row.medicationId) ?? {
+      medicationId: row.medicationId,
+      medicationName: row.medicationName,
+      colour: row.colour,
+      scheduleIntervalHours: row.scheduleIntervalHours,
+      scheduleType: row.scheduleType,
+      takenEvents: 0,
+      takenQuantity: 0,
+      skippedEvents: 0,
+    };
+    if (row.status === "taken") {
+      b.takenEvents += row.events;
+      b.takenQuantity += row.quantity;
+    } else if (row.status === "skipped") {
+      b.skippedEvents += row.events;
+    }
+    buckets.set(row.medicationId, b);
+  }
+
+  return [...buckets.values()]
+    .filter((b) => b.scheduleType !== "as_needed")
+    .map((b) => {
+      const expectedPerDay = b.scheduleIntervalHours
+        ? 24 / Number(b.scheduleIntervalHours)
         : 1;
       const expectedTotal = Math.round(expectedPerDay * effectiveDays);
+      // doseCount kept for backwards compatibility with any callers
+      // still expecting that shape; new fields added alongside.
       return {
-        ...row,
-        adherence: calculateAdherence(row.doseCount, expectedTotal),
+        medicationId: b.medicationId,
+        medicationName: b.medicationName,
+        colour: b.colour,
+        scheduleIntervalHours: b.scheduleIntervalHours,
+        scheduleType: b.scheduleType,
+        doseCount: b.takenEvents,
+        takenEvents: b.takenEvents,
+        takenQuantity: b.takenQuantity,
+        skippedEvents: b.skippedEvents,
         expectedTotal,
+        adherence: calculateAdherence(b.takenEvents, expectedTotal),
+        overuse: calculateOveruse(b.takenEvents, expectedTotal),
       };
     });
+}
+
+// User-level dose status breakdown. Per the doc, missedCount is
+// "expected but unresolved" — for interval schedules we infer it as
+// expected - taken - skipped (clamped at 0). For as_needed meds we
+// treat expected as 0.
+export async function getDoseStatusBreakdown(
+  userId: string,
+  days: number,
+  timezone: string = "UTC",
+  range?: DateRange,
+) {
+  const stats = await getPerMedicationStats(userId, days, timezone, range);
+
+  let takenEvents = 0;
+  let takenQuantity = 0;
+  let skippedEvents = 0;
+  let expectedTotal = 0;
+
+  for (const m of stats) {
+    takenEvents += m.takenEvents;
+    takenQuantity += m.takenQuantity;
+    skippedEvents += m.skippedEvents;
+    expectedTotal += m.expectedTotal;
+  }
+
+  const resolved = takenEvents + skippedEvents;
+  const missedEvents = Math.max(0, expectedTotal - resolved);
+
+  return {
+    takenEvents,
+    takenQuantity,
+    skippedEvents,
+    missedEvents,
+    expectedTotal,
+    adherencePercent: calculateAdherence(takenEvents, expectedTotal),
+    overusePercent: calculateOveruse(takenEvents, expectedTotal),
+  };
 }
 
 export async function getHourlyDistribution(

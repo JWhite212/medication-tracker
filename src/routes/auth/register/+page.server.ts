@@ -25,9 +25,7 @@ async function isPasswordBreached(password: string): Promise<boolean> {
   const prefix = hashHex.slice(0, 5);
   const suffix = hashHex.slice(5);
 
-  const response = await fetch(
-    `https://api.pwnedpasswords.com/range/${prefix}`,
-  );
+  const response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`);
   const text = await response.text();
   return text.split("\n").some((line) => line.startsWith(suffix));
 }
@@ -39,17 +37,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 export const actions: Actions = {
   default: async ({ request, cookies, getClientAddress }) => {
     const ip = getClientAddress();
-    const { allowed, retryAfterMs } = await checkRateLimit(
-      `register:${ip}`,
-      5,
-      15 * 60 * 1000,
-    );
+    const { allowed, retryAfterMs } = await checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000);
     if (!allowed) {
       return fail(429, {
         errors: {
-          form: [
-            `Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
-          ],
+          form: [`Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`],
         },
       });
     }
@@ -70,19 +62,14 @@ export const actions: Actions = {
     if (await isPasswordBreached(password)) {
       return fail(400, {
         errors: {
-          password: [
-            "This password has appeared in a data breach. Please choose a different one.",
-          ],
+          password: ["This password has appeared in a data breach. Please choose a different one."],
         },
         email,
         name,
       });
     }
 
-    const existing = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, email));
+    const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     if (existing.length > 0) {
       return fail(400, {
         errors: { email: ["An account with this email already exists"] },
@@ -106,20 +93,14 @@ export const actions: Actions = {
     // Send email verification (non-blocking — failure doesn't prevent registration)
     try {
       const rawToken = crypto.randomUUID();
-      const tokenHash = encodeHexLowerCase(
-        sha256(new TextEncoder().encode(rawToken)),
-      );
+      const tokenHash = encodeHexLowerCase(sha256(new TextEncoder().encode(rawToken)));
       await db.insert(emailVerificationTokens).values({
         id: createId(),
         userId,
         tokenHash,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
-      await sendVerificationEmail(
-        email,
-        rawToken,
-        request.headers.get("origin") ?? "",
-      );
+      await sendVerificationEmail(email, rawToken, request.headers.get("origin") ?? "");
     } catch {
       // Email verification failure should not block registration
     }

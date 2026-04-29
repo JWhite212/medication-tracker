@@ -1,6 +1,6 @@
 <script lang="ts">
-  import GlassCard from '$lib/components/ui/GlassCard.svelte';
-  import MedicationForm from '$lib/components/MedicationForm.svelte';
+  import GlassCard from "$lib/components/ui/GlassCard.svelte";
+  import MedicationForm from "$lib/components/MedicationForm.svelte";
 
   let { data, form } = $props();
 </script>
@@ -25,12 +25,12 @@
       {#if data.medication.isArchived}
         <div>
           <p class="font-medium">Archived Medication</p>
-          <p class="text-sm text-text-secondary">Restore this medication to your active list.</p>
+          <p class="text-text-secondary text-sm">Restore this medication to your active list.</p>
         </div>
         <form method="POST" action="?/unarchive">
           <button
             type="submit"
-            class="rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10"
+            class="border-accent text-accent hover:bg-accent/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
           >
             Unarchive
           </button>
@@ -38,12 +38,12 @@
       {:else}
         <div>
           <p class="font-medium">Archive Medication</p>
-          <p class="text-sm text-text-secondary">Remove this medication from your active list.</p>
+          <p class="text-text-secondary text-sm">Remove this medication from your active list.</p>
         </div>
         <form method="POST" action="?/archive">
           <button
             type="submit"
-            class="rounded-lg border border-danger px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10"
+            class="border-danger text-danger hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
           >
             Archive
           </button>

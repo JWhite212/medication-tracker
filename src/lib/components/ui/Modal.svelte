@@ -1,9 +1,13 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-  import { tick } from 'svelte';
+  import type { Snippet } from "svelte";
+  import { tick } from "svelte";
 
-  let { open = false, onclose, title = '', children }:
-    { open: boolean; onclose: () => void; title?: string; children: Snippet } = $props();
+  let {
+    open = false,
+    onclose,
+    title = "",
+    children,
+  }: { open: boolean; onclose: () => void; title?: string; children: Snippet } = $props();
 
   let dialogEl: HTMLDivElement | undefined = $state();
   let previouslyFocused = $state<HTMLElement | null>(null);
@@ -30,8 +34,11 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') { onclose(); return; }
-    if (e.key !== 'Tab' || !dialogEl) return;
+    if (e.key === "Escape") {
+      onclose();
+      return;
+    }
+    if (e.key !== "Tab" || !dialogEl) return;
 
     const focusable = dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE);
     if (focusable.length === 0) return;
@@ -59,7 +66,10 @@
     aria-labelledby={titleId}
     tabindex="-1"
   >
-    <div bind:this={dialogEl} class="w-full max-w-md rounded-xl border border-glass-border bg-surface-raised p-6 shadow-2xl">
+    <div
+      bind:this={dialogEl}
+      class="border-glass-border bg-surface-raised w-full max-w-md rounded-xl border p-6 shadow-2xl"
+    >
       {#if title && titleId}
         <h2 id={titleId} class="sr-only">{title}</h2>
       {/if}

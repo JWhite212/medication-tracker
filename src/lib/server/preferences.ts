@@ -3,9 +3,7 @@ import { db } from "$lib/server/db";
 import { userPreferences } from "$lib/server/db/schema";
 import type { UserPreferences } from "$lib/types";
 
-export async function getOrCreatePreferences(
-  userId: string,
-): Promise<UserPreferences> {
+export async function getOrCreatePreferences(userId: string): Promise<UserPreferences> {
   const [existing] = await db
     .select()
     .from(userPreferences)
@@ -14,10 +12,7 @@ export async function getOrCreatePreferences(
 
   if (existing) return existing;
 
-  const [created] = await db
-    .insert(userPreferences)
-    .values({ userId })
-    .returning();
+  const [created] = await db.insert(userPreferences).values({ userId }).returning();
 
   return created;
 }

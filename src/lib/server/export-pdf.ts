@@ -41,11 +41,7 @@ export async function generateReport(
       .from(doseLogs)
       .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
       .where(
-        and(
-          eq(doseLogs.userId, userId),
-          gte(doseLogs.takenAt, from),
-          lte(doseLogs.takenAt, to),
-        ),
+        and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, from), lte(doseLogs.takenAt, to)),
       )
       .orderBy(desc(doseLogs.takenAt)),
     db
@@ -86,12 +82,9 @@ export async function generateReport(
     if (userName) {
       doc.fontSize(11).text(userName, { align: "center" });
     }
-    doc
-      .fontSize(11)
-      .text(
-        `${formatDateInTz(from, timezone)} — ${formatDateInTz(to, timezone)}`,
-        { align: "center" },
-      );
+    doc.fontSize(11).text(`${formatDateInTz(from, timezone)} — ${formatDateInTz(to, timezone)}`, {
+      align: "center",
+    });
     doc.fontSize(9).fillColor("#666666").text(`Timezone: ${timezone}`, {
       align: "center",
     });
@@ -124,9 +117,7 @@ export async function generateReport(
         const archived = m.isArchived ? " (archived)" : "";
         doc
           .fontSize(10)
-          .text(
-            `• ${m.name} — ${m.dosageAmount}${m.dosageUnit}, ${m.scheduleType}${archived}`,
-          );
+          .text(`• ${m.name} — ${m.dosageAmount}${m.dosageUnit}, ${m.scheduleType}${archived}`);
       }
     }
     doc.moveDown(1);
@@ -138,11 +129,7 @@ export async function generateReport(
       doc.fontSize(10).text("No doses recorded in this range.");
     } else {
       for (const dose of doses) {
-        const time = formatUserTime(
-          new Date(dose.takenAt),
-          timezone,
-          timeFormat,
-        );
+        const time = formatUserTime(new Date(dose.takenAt), timezone, timeFormat);
         const date = formatDateInTz(new Date(dose.takenAt), timezone);
         const statusLabel = dose.status === "skipped" ? " [SKIPPED]" : "";
         doc
@@ -167,9 +154,7 @@ export async function generateReport(
     if (sideEffectCounts.size > 0) {
       doc.fontSize(14).text("Side-effect frequency");
       doc.moveDown(0.5);
-      const sorted = [...sideEffectCounts.entries()].sort(
-        (a, b) => b[1] - a[1],
-      );
+      const sorted = [...sideEffectCounts.entries()].sort((a, b) => b[1] - a[1]);
       for (const [name, count] of sorted) {
         doc.fontSize(10).text(`• ${name}: ${count}`);
       }

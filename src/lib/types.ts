@@ -1,10 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type {
-  users,
-  medications,
-  doseLogs,
-  userPreferences,
-} from "$lib/server/db/schema";
+import type { users, medications, doseLogs, userPreferences } from "$lib/server/db/schema";
 
 export type User = InferSelectModel<typeof users>;
 export type Medication = InferSelectModel<typeof medications>;
@@ -12,13 +7,7 @@ export type DoseLog = InferSelectModel<typeof doseLogs>;
 
 export type SessionUser = Pick<
   User,
-  | "id"
-  | "email"
-  | "name"
-  | "avatarUrl"
-  | "timezone"
-  | "twoFactorEnabled"
-  | "emailVerified"
+  "id" | "email" | "name" | "avatarUrl" | "timezone" | "twoFactorEnabled" | "emailVerified"
 >;
 
 export type UserPreferences = InferSelectModel<typeof userPreferences>;
@@ -31,13 +20,7 @@ export type SideEffect = {
 export type DoseLogWithMedication = DoseLog & {
   medication: Pick<
     Medication,
-    | "name"
-    | "dosageAmount"
-    | "dosageUnit"
-    | "form"
-    | "colour"
-    | "colourSecondary"
-    | "pattern"
+    "name" | "dosageAmount" | "dosageUnit" | "form" | "colour" | "colourSecondary" | "pattern"
   >;
 };
 

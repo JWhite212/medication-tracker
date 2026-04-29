@@ -394,12 +394,8 @@ export const users = pgTable("users", {
   totpSecret: text("totp_secret"),
   twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   emailVerified: boolean("email_verified").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const sessions = pgTable("sessions", {
@@ -441,16 +437,10 @@ export const medications = pgTable(
     inventoryAlertThreshold: integer("inventory_alert_threshold"),
     sortOrder: integer("sort_order").notNull().default(0),
     isArchived: boolean("is_archived").notNull().default(false),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index("medications_user_archived_idx").on(table.userId, table.isArchived),
-  ],
+  (table) => [index("medications_user_archived_idx").on(table.userId, table.isArchived)],
 );
 
 export const doseLogs = pgTable(
@@ -465,9 +455,7 @@ export const doseLogs = pgTable(
       .references(() => medications.id, { onDelete: "cascade" }),
     quantity: integer("quantity").notNull().default(1),
     takenAt: timestamp("taken_at", { withTimezone: true }).notNull(),
-    loggedAt: timestamp("logged_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    loggedAt: timestamp("logged_at", { withTimezone: true }).notNull().defaultNow(),
     notes: text("notes"),
   },
   (table) => [
@@ -487,13 +475,9 @@ export const auditLogs = pgTable(
     entityId: text("entity_id").notNull(),
     action: text("action").notNull(),
     changes: jsonb("changes"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index("audit_logs_user_created_idx").on(table.userId, table.createdAt),
-  ],
+  (table) => [index("audit_logs_user_created_idx").on(table.userId, table.createdAt)],
 );
 ```
 
@@ -519,13 +503,7 @@ Create `src/lib/types.ts`:
 
 ```ts
 import type { InferSelectModel } from "drizzle-orm";
-import type {
-  users,
-  medications,
-  doseLogs,
-  auditLogs,
-  sessions,
-} from "$lib/server/db/schema";
+import type { users, medications, doseLogs, auditLogs, sessions } from "$lib/server/db/schema";
 
 export type User = InferSelectModel<typeof users>;
 export type Medication = InferSelectModel<typeof medications>;
@@ -535,20 +513,11 @@ export type SessionRecord = InferSelectModel<typeof sessions>;
 
 export type SessionUser = Pick<
   User,
-  | "id"
-  | "email"
-  | "name"
-  | "avatarUrl"
-  | "timezone"
-  | "twoFactorEnabled"
-  | "emailVerified"
+  "id" | "email" | "name" | "avatarUrl" | "timezone" | "twoFactorEnabled" | "emailVerified"
 >;
 
 export type DoseLogWithMedication = DoseLog & {
-  medication: Pick<
-    Medication,
-    "name" | "dosageAmount" | "dosageUnit" | "form" | "colour"
-  >;
+  medication: Pick<Medication, "name" | "dosageAmount" | "dosageUnit" | "form" | "colour">;
 };
 ```
 
@@ -1007,10 +976,7 @@ export async function hashPassword(password: string): Promise<string> {
   });
 }
 
-export async function verifyPassword(
-  hash: string,
-  password: string,
-): Promise<boolean> {
+export async function verifyPassword(hash: string, password: string): Promise<boolean> {
   return verify(hash, password);
 }
 ```
@@ -1171,11 +1137,7 @@ import { env } from "$env/dynamic/private";
 
 const resend = new Resend(env.RESEND_API_KEY);
 
-export async function sendVerificationEmail(
-  email: string,
-  token: string,
-  baseUrl: string,
-) {
+export async function sendVerificationEmail(email: string, token: string, baseUrl: string) {
   const verifyUrl = `${baseUrl}/auth/verify?token=${token}`;
   await resend.emails.send({
     from: "MedTracker <noreply@yourdomain.com>",
@@ -1186,11 +1148,7 @@ export async function sendVerificationEmail(
   });
 }
 
-export async function sendPasswordResetEmail(
-  email: string,
-  token: string,
-  baseUrl: string,
-) {
+export async function sendPasswordResetEmail(email: string, token: string, baseUrl: string) {
   const resetUrl = `${baseUrl}/auth/reset-password?token=${token}`;
   await resend.emails.send({
     from: "MedTracker <noreply@yourdomain.com>",
@@ -1201,11 +1159,7 @@ export async function sendPasswordResetEmail(
   });
 }
 
-export async function sendReminderEmail(
-  email: string,
-  medicationName: string,
-  lastTaken: string,
-) {
+export async function sendReminderEmail(email: string, medicationName: string, lastTaken: string) {
   await resend.emails.send({
     from: "MedTracker <noreply@yourdomain.com>",
     to: email,
@@ -1264,10 +1218,7 @@ export const actions: Actions = {
 
     const { email, password, name } = parsed.data;
 
-    const existing = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, email));
+    const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     if (existing.length > 0) {
       return fail(400, {
         errors: { email: ["An account with this email already exists"] },
@@ -1304,7 +1255,7 @@ Create `src/routes/auth/register/+page.svelte`:
 
 ```svelte
 <script lang="ts">
-  import { enhance } from '$app/forms';
+  import { enhance } from "$app/forms";
 
   let { form } = $props();
   let loading = $state(false);
@@ -1315,9 +1266,9 @@ Create `src/routes/auth/register/+page.svelte`:
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">
-  <div class="w-full max-w-md rounded-xl border border-glass-border bg-glass p-8 backdrop-blur-xl">
+  <div class="border-glass-border bg-glass w-full max-w-md rounded-xl border p-8 backdrop-blur-xl">
     <h1 class="mb-2 text-2xl font-bold">Create account</h1>
-    <p class="mb-6 text-text-secondary">Start tracking your medications</p>
+    <p class="text-text-secondary mb-6">Start tracking your medications</p>
 
     <form
       method="POST"
@@ -1332,41 +1283,62 @@ Create `src/routes/auth/register/+page.svelte`:
     >
       <div>
         <label for="name" class="mb-1 block text-sm font-medium">Name</label>
-        <input id="name" name="name" type="text" required value={form?.name ?? ''}
-          class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          placeholder="Your name" />
+        <input
+          id="name"
+          name="name"
+          type="text"
+          required
+          value={form?.name ?? ""}
+          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          placeholder="Your name"
+        />
         {#if form?.errors?.name}
-          <p class="mt-1 text-sm text-danger">{form.errors.name[0]}</p>
+          <p class="text-danger mt-1 text-sm">{form.errors.name[0]}</p>
         {/if}
       </div>
 
       <div>
         <label for="email" class="mb-1 block text-sm font-medium">Email</label>
-        <input id="email" name="email" type="email" required value={form?.email ?? ''}
-          class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          placeholder="you@example.com" />
+        <input
+          id="email"
+          name="email"
+          type="email"
+          required
+          value={form?.email ?? ""}
+          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          placeholder="you@example.com"
+        />
         {#if form?.errors?.email}
-          <p class="mt-1 text-sm text-danger">{form.errors.email[0]}</p>
+          <p class="text-danger mt-1 text-sm">{form.errors.email[0]}</p>
         {/if}
       </div>
 
       <div>
         <label for="password" class="mb-1 block text-sm font-medium">Password</label>
-        <input id="password" name="password" type="password" required minlength="8"
-          class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          placeholder="Min. 8 characters" />
+        <input
+          id="password"
+          name="password"
+          type="password"
+          required
+          minlength="8"
+          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          placeholder="Min. 8 characters"
+        />
         {#if form?.errors?.password}
-          <p class="mt-1 text-sm text-danger">{form.errors.password[0]}</p>
+          <p class="text-danger mt-1 text-sm">{form.errors.password[0]}</p>
         {/if}
       </div>
 
-      <button type="submit" disabled={loading}
-        class="w-full rounded-lg bg-accent py-2.5 font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50">
-        {loading ? 'Creating account...' : 'Create account'}
+      <button
+        type="submit"
+        disabled={loading}
+        class="bg-accent hover:bg-accent-hover w-full rounded-lg py-2.5 font-medium text-white transition-colors disabled:opacity-50"
+      >
+        {loading ? "Creating account..." : "Create account"}
       </button>
     </form>
 
-    <p class="mt-6 text-center text-sm text-text-secondary">
+    <p class="text-text-secondary mt-6 text-center text-sm">
       Already have an account? <a href="/auth/login" class="text-accent hover:underline">Sign in</a>
     </p>
   </div>
@@ -1399,9 +1371,7 @@ export const actions: Actions = {
     if (!allowed) {
       return fail(429, {
         errors: {
-          form: [
-            `Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
-          ],
+          form: [`Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`],
         },
       });
     }
@@ -1418,11 +1388,7 @@ export const actions: Actions = {
 
     const { email, password } = parsed.data;
 
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
+    const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
     if (!user || !user.passwordHash) {
       return fail(400, {
@@ -1457,7 +1423,7 @@ Create `src/routes/auth/login/+page.svelte`:
 
 ```svelte
 <script lang="ts">
-  import { enhance } from '$app/forms';
+  import { enhance } from "$app/forms";
 
   let { form } = $props();
   let loading = $state(false);
@@ -1468,51 +1434,83 @@ Create `src/routes/auth/login/+page.svelte`:
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">
-  <div class="w-full max-w-md rounded-xl border border-glass-border bg-glass p-8 backdrop-blur-xl">
+  <div class="border-glass-border bg-glass w-full max-w-md rounded-xl border p-8 backdrop-blur-xl">
     <h1 class="mb-2 text-2xl font-bold">Welcome back</h1>
-    <p class="mb-6 text-text-secondary">Sign in to your account</p>
+    <p class="text-text-secondary mb-6">Sign in to your account</p>
 
     {#if form?.errors?.form}
-      <div class="mb-4 rounded-lg bg-danger/10 p-3 text-sm text-danger">{form.errors.form[0]}</div>
+      <div class="bg-danger/10 text-danger mb-4 rounded-lg p-3 text-sm">{form.errors.form[0]}</div>
     {/if}
 
-    <form method="POST" use:enhance={() => {
-      loading = true;
-      return async ({ update }) => { loading = false; await update(); };
-    }} class="space-y-4">
+    <form
+      method="POST"
+      use:enhance={() => {
+        loading = true;
+        return async ({ update }) => {
+          loading = false;
+          await update();
+        };
+      }}
+      class="space-y-4"
+    >
       <div>
         <label for="email" class="mb-1 block text-sm font-medium">Email</label>
-        <input id="email" name="email" type="email" required value={form?.email ?? ''}
-          class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          placeholder="you@example.com" />
+        <input
+          id="email"
+          name="email"
+          type="email"
+          required
+          value={form?.email ?? ""}
+          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          placeholder="you@example.com"
+        />
       </div>
       <div>
         <label for="password" class="mb-1 block text-sm font-medium">Password</label>
-        <input id="password" name="password" type="password" required
-          class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          placeholder="Your password" />
+        <input
+          id="password"
+          name="password"
+          type="password"
+          required
+          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          placeholder="Your password"
+        />
       </div>
       <div class="flex items-center justify-between">
-        <a href="/auth/reset-password" class="text-sm text-accent hover:underline">Forgot password?</a>
+        <a href="/auth/reset-password" class="text-accent text-sm hover:underline"
+          >Forgot password?</a
+        >
       </div>
-      <button type="submit" disabled={loading}
-        class="w-full rounded-lg bg-accent py-2.5 font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50">
-        {loading ? 'Signing in...' : 'Sign in'}
+      <button
+        type="submit"
+        disabled={loading}
+        class="bg-accent hover:bg-accent-hover w-full rounded-lg py-2.5 font-medium text-white transition-colors disabled:opacity-50"
+      >
+        {loading ? "Signing in..." : "Sign in"}
       </button>
     </form>
 
     <div class="mt-6 flex items-center gap-3">
-      <div class="h-px flex-1 bg-glass-border"></div>
-      <span class="text-xs text-text-muted">OR</span>
-      <div class="h-px flex-1 bg-glass-border"></div>
+      <div class="bg-glass-border h-px flex-1"></div>
+      <span class="text-text-muted text-xs">OR</span>
+      <div class="bg-glass-border h-px flex-1"></div>
     </div>
     <div class="mt-6 flex flex-col gap-3">
-      <a href="/auth/callback/google" class="flex items-center justify-center gap-2 rounded-lg border border-glass-border py-2.5 text-sm font-medium transition-colors hover:bg-glass-hover">Continue with Google</a>
-      <a href="/auth/callback/github" class="flex items-center justify-center gap-2 rounded-lg border border-glass-border py-2.5 text-sm font-medium transition-colors hover:bg-glass-hover">Continue with GitHub</a>
+      <a
+        href="/auth/callback/google"
+        class="border-glass-border hover:bg-glass-hover flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
+        >Continue with Google</a
+      >
+      <a
+        href="/auth/callback/github"
+        class="border-glass-border hover:bg-glass-hover flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
+        >Continue with GitHub</a
+      >
     </div>
 
-    <p class="mt-6 text-center text-sm text-text-secondary">
-      Don't have an account? <a href="/auth/register" class="text-accent hover:underline">Sign up</a>
+    <p class="text-text-secondary mt-6 text-center text-sm">
+      Don't have an account? <a href="/auth/register" class="text-accent hover:underline">Sign up</a
+      >
     </p>
   </div>
 </div>
@@ -1575,17 +1573,11 @@ interface OAuthUserInfo {
   avatarUrl: string | null;
 }
 
-async function getGoogleUser(
-  code: string,
-  codeVerifier: string,
-): Promise<OAuthUserInfo> {
+async function getGoogleUser(code: string, codeVerifier: string): Promise<OAuthUserInfo> {
   const tokens = await google.validateAuthorizationCode(code, codeVerifier);
-  const response = await fetch(
-    "https://openidconnect.googleapis.com/v1/userinfo",
-    {
-      headers: { Authorization: `Bearer ${tokens.accessToken()}` },
-    },
-  );
+  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    headers: { Authorization: `Bearer ${tokens.accessToken()}` },
+  });
   const data = await response.json();
   return {
     id: data.sub,
@@ -1605,8 +1597,7 @@ async function getGitHubUser(code: string): Promise<OAuthUserInfo> {
     headers: { Authorization: `Bearer ${tokens.accessToken()}` },
   });
   const emails = await emailResponse.json();
-  const primaryEmail =
-    emails.find((e: { primary: boolean }) => e.primary)?.email ?? data.email;
+  const primaryEmail = emails.find((e: { primary: boolean }) => e.primary)?.email ?? data.email;
   return {
     id: String(data.id),
     email: primaryEmail,
@@ -1623,11 +1614,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     if (provider === "google") {
       const codeVerifier = crypto.randomUUID();
       const scopes = ["openid", "email", "profile"];
-      const authUrl = google.createAuthorizationURL(
-        crypto.randomUUID(),
-        codeVerifier,
-        scopes,
-      );
+      const authUrl = google.createAuthorizationURL(crypto.randomUUID(), codeVerifier, scopes);
       cookies.set("google_code_verifier", codeVerifier, {
         path: "/",
         httpOnly: true,
@@ -1638,9 +1625,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       redirect(302, authUrl.toString());
     }
     if (provider === "github") {
-      const authUrl = github.createAuthorizationURL(crypto.randomUUID(), [
-        "user:email",
-      ]);
+      const authUrl = github.createAuthorizationURL(crypto.randomUUID(), ["user:email"]);
       redirect(302, authUrl.toString());
     }
     error(400, "Unsupported provider");
@@ -1662,10 +1647,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     .select()
     .from(oauthAccounts)
     .where(
-      and(
-        eq(oauthAccounts.provider, provider),
-        eq(oauthAccounts.providerUserId, oauthUser.id),
-      ),
+      and(eq(oauthAccounts.provider, provider), eq(oauthAccounts.providerUserId, oauthUser.id)),
     )
     .limit(1);
 
@@ -1694,20 +1676,16 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       .where(eq(users.id, userId));
   } else {
     userId = createId();
-    await db
-      .insert(users)
-      .values({
-        id: userId,
-        email: oauthUser.email,
-        name: oauthUser.name,
-        avatarUrl: oauthUser.avatarUrl,
-        emailVerified: true,
-      });
+    await db.insert(users).values({
+      id: userId,
+      email: oauthUser.email,
+      name: oauthUser.name,
+      avatarUrl: oauthUser.avatarUrl,
+      emailVerified: true,
+    });
   }
 
-  await db
-    .insert(oauthAccounts)
-    .values({ provider, providerUserId: oauthUser.id, userId });
+  await db.insert(oauthAccounts).values({ provider, providerUserId: oauthUser.id, userId });
 
   const session = await lucia.createSession(userId, {});
   const sessionCookie = lucia.createSessionCookie(session.id);
@@ -1754,42 +1732,54 @@ Create `src/lib/components/Sidebar.svelte`:
 
 ```svelte
 <script lang="ts">
-  import type { SessionUser } from '$lib/types';
-  import { page } from '$app/stores';
+  import type { SessionUser } from "$lib/types";
+  import { page } from "$app/stores";
 
   let { user }: { user: SessionUser } = $props();
 
   const navItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: '⏱' },
-    { href: '/medications', label: 'Medications', icon: '💊' },
-    { href: '/log', label: 'History', icon: '📋' },
-    { href: '/analytics', label: 'Analytics', icon: '📊' },
-    { href: '/settings', label: 'Settings', icon: '⚙' }
+    { href: "/dashboard", label: "Dashboard", icon: "⏱" },
+    { href: "/medications", label: "Medications", icon: "💊" },
+    { href: "/log", label: "History", icon: "📋" },
+    { href: "/analytics", label: "Analytics", icon: "📊" },
+    { href: "/settings", label: "Settings", icon: "⚙" },
   ];
 </script>
 
-<aside class="flex h-screen w-64 flex-col border-r border-glass-border bg-surface-raised">
-  <div class="flex items-center gap-3 border-b border-glass-border p-5">
-    <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">M</div>
+<aside class="border-glass-border bg-surface-raised flex h-screen w-64 flex-col border-r">
+  <div class="border-glass-border flex items-center gap-3 border-b p-5">
+    <div
+      class="bg-accent flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold text-white"
+    >
+      M
+    </div>
     <span class="text-lg font-semibold">MedTracker</span>
   </div>
   <nav class="flex-1 space-y-1 p-3">
     {#each navItems as item}
       {@const active = $page.url.pathname.startsWith(item.href)}
-      <a href={item.href}
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors {active ? 'bg-accent/15 text-accent' : 'text-text-secondary hover:bg-glass-hover hover:text-text-primary'}"
-        aria-current={active ? 'page' : undefined}>
+      <a
+        href={item.href}
+        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors {active
+          ? 'bg-accent/15 text-accent'
+          : 'text-text-secondary hover:bg-glass-hover hover:text-text-primary'}"
+        aria-current={active ? "page" : undefined}
+      >
         <span class="text-base">{item.icon}</span>
         {item.label}
       </a>
     {/each}
   </nav>
-  <div class="border-t border-glass-border p-4">
+  <div class="border-glass-border border-t p-4">
     <div class="flex items-center gap-3">
-      <div class="flex h-8 w-8 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">{user.name.charAt(0).toUpperCase()}</div>
+      <div
+        class="bg-accent/20 text-accent flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
+      >
+        {user.name.charAt(0).toUpperCase()}
+      </div>
       <div class="min-w-0 flex-1">
         <p class="truncate text-sm font-medium">{user.name}</p>
-        <p class="truncate text-xs text-text-muted">{user.email}</p>
+        <p class="text-text-muted truncate text-xs">{user.email}</p>
       </div>
     </div>
   </div>
@@ -1802,7 +1792,7 @@ Create `src/routes/+layout.svelte`:
 
 ```svelte
 <script lang="ts">
-  import '../app.css';
+  import "../app.css";
   let { children } = $props();
 </script>
 
@@ -1815,7 +1805,7 @@ Create `src/routes/(app)/+layout.svelte`:
 
 ```svelte
 <script lang="ts">
-  import Sidebar from '$components/Sidebar.svelte';
+  import Sidebar from "$components/Sidebar.svelte";
   let { data, children } = $props();
 </script>
 
@@ -1947,9 +1937,7 @@ export async function getActiveMedications(userId: string) {
   return db
     .select()
     .from(medications)
-    .where(
-      and(eq(medications.userId, userId), eq(medications.isArchived, false)),
-    )
+    .where(and(eq(medications.userId, userId), eq(medications.isArchived, false)))
     .orderBy(medications.sortOrder);
 }
 
@@ -1985,11 +1973,7 @@ export async function createMedication(userId: string, input: MedicationInput) {
   return med;
 }
 
-export async function updateMedication(
-  userId: string,
-  id: string,
-  input: MedicationInput,
-) {
+export async function updateMedication(userId: string, id: string, input: MedicationInput) {
   const before = await getMedicationById(userId, id);
   if (!before) return null;
   const [updated] = await db
@@ -2049,11 +2033,11 @@ Create `src/lib/components/ui/GlassCard.svelte`:
 
 ```svelte
 <script lang="ts">
-  import type { Snippet } from 'svelte';
-  let { children, class: className = '' }: { children: Snippet; class?: string } = $props();
+  import type { Snippet } from "svelte";
+  let { children, class: className = "" }: { children: Snippet; class?: string } = $props();
 </script>
 
-<div class="rounded-xl border border-glass-border bg-glass p-6 backdrop-blur-xl {className}">
+<div class="border-glass-border bg-glass rounded-xl border p-6 backdrop-blur-xl {className}">
   {@render children()}
 </div>
 ```
@@ -2062,16 +2046,40 @@ Create `src/lib/components/ui/Input.svelte`:
 
 ```svelte
 <script lang="ts">
-  let { label, name, type = 'text', value = '', error = '', required = false, placeholder = '', ...rest }:
-    { label: string; name: string; type?: string; value?: string; error?: string; required?: boolean; placeholder?: string; [key: string]: unknown } = $props();
+  let {
+    label,
+    name,
+    type = "text",
+    value = "",
+    error = "",
+    required = false,
+    placeholder = "",
+    ...rest
+  }: {
+    label: string;
+    name: string;
+    type?: string;
+    value?: string;
+    error?: string;
+    required?: boolean;
+    placeholder?: string;
+    [key: string]: unknown;
+  } = $props();
 </script>
 
 <div>
   <label for={name} class="mb-1 block text-sm font-medium">{label}</label>
-  <input id={name} {name} {type} {value} {required} {placeholder}
-    class="w-full rounded-lg border border-glass-border bg-surface-raised px-4 py-2.5 text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-    {...rest} />
-  {#if error}<p class="mt-1 text-sm text-danger">{error}</p>{/if}
+  <input
+    id={name}
+    {name}
+    {type}
+    {value}
+    {required}
+    {placeholder}
+    class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+    {...rest}
+  />
+  {#if error}<p class="text-danger mt-1 text-sm">{error}</p>{/if}
 </div>
 ```
 
@@ -2087,22 +2095,26 @@ Create `src/lib/components/MedicationCard.svelte`:
 
 ```svelte
 <script lang="ts">
-  import type { Medication } from '$lib/types';
+  import type { Medication } from "$lib/types";
   let { medication }: { medication: Medication } = $props();
 </script>
 
-<a href="/medications/{medication.id}"
-  class="flex items-center gap-4 rounded-xl border border-glass-border bg-glass p-4 backdrop-blur-xl transition-colors hover:bg-glass-hover">
+<a
+  href="/medications/{medication.id}"
+  class="border-glass-border bg-glass hover:bg-glass-hover flex items-center gap-4 rounded-xl border p-4 backdrop-blur-xl transition-colors"
+>
   <div class="h-10 w-10 rounded-lg" style="background-color: {medication.colour}"></div>
   <div class="min-w-0 flex-1">
     <p class="font-medium">{medication.name}</p>
-    <p class="text-sm text-text-secondary">
+    <p class="text-text-secondary text-sm">
       {medication.dosageAmount}{medication.dosageUnit} &middot; {medication.form}
-      <span class="ml-2 rounded-full bg-glass px-2 py-0.5 text-xs">{medication.category}</span>
+      <span class="bg-glass ml-2 rounded-full px-2 py-0.5 text-xs">{medication.category}</span>
     </p>
   </div>
   {#if medication.inventoryCount !== null && medication.inventoryAlertThreshold !== null && medication.inventoryCount <= medication.inventoryAlertThreshold}
-    <span class="rounded-full bg-warning/15 px-2 py-1 text-xs font-medium text-warning">Low: {medication.inventoryCount}</span>
+    <span class="bg-warning/15 text-warning rounded-full px-2 py-1 text-xs font-medium"
+      >Low: {medication.inventoryCount}</span
+    >
   {/if}
 </a>
 ```
@@ -2145,16 +2157,23 @@ Create `src/lib/components/TimeSince.svelte`:
 
 ```svelte
 <script lang="ts">
-  import { formatTimeSince } from '$lib/utils/time';
+  import { formatTimeSince } from "$lib/utils/time";
   let { date }: { date: Date } = $props();
   let display = $state(formatTimeSince(date));
 
   $effect(() => {
     display = formatTimeSince(date);
-    const interval = setInterval(() => { display = formatTimeSince(date); }, 60_000);
-    const onVisibility = () => { if (document.visibilityState === 'visible') display = formatTimeSince(date); };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility); };
+    const interval = setInterval(() => {
+      display = formatTimeSince(date);
+    }, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") display = formatTimeSince(date);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   });
 </script>
 

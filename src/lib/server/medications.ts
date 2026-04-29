@@ -11,15 +11,11 @@ export async function getActiveMedications(userId: string) {
   return db
     .select()
     .from(medications)
-    .where(
-      and(eq(medications.userId, userId), eq(medications.isArchived, false)),
-    )
+    .where(and(eq(medications.userId, userId), eq(medications.isArchived, false)))
     .orderBy(medications.sortOrder);
 }
 
-export async function getMedicationsWithStats(
-  userId: string,
-): Promise<MedicationWithStats[]> {
+export async function getMedicationsWithStats(userId: string): Promise<MedicationWithStats[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
@@ -31,12 +27,8 @@ export async function getMedicationsWithStats(
     .select({
       medicationId: doseLogs.medicationId,
       lastTakenAt: max(doseLogs.takenAt),
-      weeklyDoseCount: count(
-        sql`CASE WHEN ${doseLogs.takenAt} >= ${sevenDaysAgo} THEN 1 END`,
-      ),
-      thirtyDayDoseCount: count(
-        sql`CASE WHEN ${doseLogs.takenAt} >= ${thirtyDaysAgo} THEN 1 END`,
-      ),
+      weeklyDoseCount: count(sql`CASE WHEN ${doseLogs.takenAt} >= ${sevenDaysAgo} THEN 1 END`),
+      thirtyDayDoseCount: count(sql`CASE WHEN ${doseLogs.takenAt} >= ${thirtyDaysAgo} THEN 1 END`),
     })
     .from(doseLogs)
     .where(eq(doseLogs.userId, userId))
@@ -102,11 +94,7 @@ export async function createMedication(userId: string, input: MedicationInput) {
   return med;
 }
 
-export async function updateMedication(
-  userId: string,
-  id: string,
-  input: MedicationInput,
-) {
+export async function updateMedication(userId: string, id: string, input: MedicationInput) {
   const before = await getMedicationById(userId, id);
   if (!before) return null;
   const [updated] = await db
@@ -134,11 +122,7 @@ export async function updateMedication(
   return updated;
 }
 
-export async function swapSortOrder(
-  userId: string,
-  medId1: string,
-  medId2: string,
-) {
+export async function swapSortOrder(userId: string, medId1: string, medId2: string) {
   const [m1] = await db
     .select({ sortOrder: medications.sortOrder })
     .from(medications)
@@ -150,14 +134,8 @@ export async function swapSortOrder(
     .where(and(eq(medications.id, medId2), eq(medications.userId, userId)))
     .limit(1);
   if (!m1 || !m2) return;
-  await db
-    .update(medications)
-    .set({ sortOrder: m2.sortOrder })
-    .where(eq(medications.id, medId1));
-  await db
-    .update(medications)
-    .set({ sortOrder: m1.sortOrder })
-    .where(eq(medications.id, medId2));
+  await db.update(medications).set({ sortOrder: m2.sortOrder }).where(eq(medications.id, medId1));
+  await db.update(medications).set({ sortOrder: m1.sortOrder }).where(eq(medications.id, medId2));
 }
 
 export async function archiveMedication(userId: string, id: string) {
@@ -184,8 +162,6 @@ export async function getArchivedMedications(userId: string) {
   return db
     .select()
     .from(medications)
-    .where(
-      and(eq(medications.userId, userId), eq(medications.isArchived, true)),
-    )
+    .where(and(eq(medications.userId, userId), eq(medications.isArchived, true)))
     .orderBy(medications.name);
 }

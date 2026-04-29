@@ -85,9 +85,7 @@ export function computeScheduleSlots(
     const intervalMs = intervalHours * 60 * 60 * 1000;
 
     const lastDose = lastDoseByMedication[med.id];
-    const anchor = lastDose
-      ? new Date(lastDose.getTime())
-      : new Date(dayStartUtc.getTime());
+    const anchor = lastDose ? new Date(lastDose.getTime()) : new Date(dayStartUtc.getTime());
 
     const expectedTimes: Date[] = [];
 
@@ -120,9 +118,7 @@ export function computeScheduleSlots(
 
     for (const expected of expectedTimes) {
       const matchedDose = medDoses.find(
-        (d) =>
-          Math.abs(new Date(d.takenAt).getTime() - expected.getTime()) <=
-          MATCH_TOLERANCE_MS,
+        (d) => Math.abs(new Date(d.takenAt).getTime() - expected.getTime()) <= MATCH_TOLERANCE_MS,
       );
 
       let status: ScheduleSlotStatus;
@@ -156,10 +152,7 @@ export function computeScheduleSlots(
  * Group schedule slots into time-of-day sections.
  * Only returns groups that have at least one slot.
  */
-export function groupSlotsByTimeOfDay(
-  slots: ScheduleSlot[],
-  timezone: string,
-): TimeOfDayGroup[] {
+export function groupSlotsByTimeOfDay(slots: ScheduleSlot[], timezone: string): TimeOfDayGroup[] {
   const groups: Record<TimeOfDay, ScheduleSlot[]> = {
     morning: [],
     afternoon: [],
@@ -175,8 +168,7 @@ export function groupSlotsByTimeOfDay(
 
   for (const key of Object.keys(groups) as TimeOfDay[]) {
     groups[key].sort(
-      (a, b) =>
-        new Date(a.expectedTime).getTime() - new Date(b.expectedTime).getTime(),
+      (a, b) => new Date(a.expectedTime).getTime() - new Date(b.expectedTime).getTime(),
     );
   }
 

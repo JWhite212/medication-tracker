@@ -1,9 +1,4 @@
-import {
-  createCipheriv,
-  createDecipheriv,
-  randomBytes,
-  createHash,
-} from "crypto";
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
 import { env } from "$env/dynamic/private";
 
 // AES-256-GCM symmetric encryption for sensitive at-rest secrets
@@ -24,20 +19,14 @@ const IV_LENGTH = 12;
 function getKey(): Buffer {
   const raw = env.ENCRYPTION_KEY;
   if (!raw) {
-    throw new Error(
-      "ENCRYPTION_KEY env var is required for encryptSecret/decryptSecret",
-    );
+    throw new Error("ENCRYPTION_KEY env var is required for encryptSecret/decryptSecret");
   }
   // SHA-256 always produces 32 bytes — the right size for AES-256.
   return createHash("sha256").update(raw).digest();
 }
 
 function toB64Url(buf: Buffer): string {
-  return buf
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function fromB64Url(s: string): Buffer {

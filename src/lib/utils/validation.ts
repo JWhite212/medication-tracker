@@ -35,16 +35,7 @@ export const medicationSchema = z.object({
     .optional()
     .or(z.literal("")),
   pattern: z
-    .enum([
-      "solid",
-      "split",
-      "gradient",
-      "stripes",
-      "h-stripes",
-      "dots",
-      "checkerboard",
-      "radial",
-    ])
+    .enum(["solid", "split", "gradient", "stripes", "h-stripes", "dots", "checkerboard", "radial"])
     .default("solid"),
   scheduleType: z.enum(["scheduled", "as_needed"]).default("scheduled"),
   notes: z.string().max(1000).optional(),
@@ -99,9 +90,7 @@ const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
 
 export const settingsSchema = z.object({
   name: z.string().min(1).max(100),
-  timezone: z
-    .string()
-    .refine((tz) => validTimezones.has(tz), "Invalid timezone"),
+  timezone: z.string().refine((tz) => validTimezones.has(tz), "Invalid timezone"),
 });
 
 export const passwordChangeSchema = z
@@ -116,9 +105,7 @@ export const passwordChangeSchema = z
   });
 
 export const appearanceSchema = z.object({
-  accentColor: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex colour"),
+  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex colour"),
   dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]),
   timeFormat: z.enum(["12h", "24h"]),
   uiDensity: z.enum(["comfortable", "compact"]),
@@ -155,10 +142,9 @@ export const pushSubscriptionSchema = z.object({
     .string()
     .url()
     .max(2048)
-    .refine(
-      (url) => ALLOWED_PUSH_ORIGINS.some((origin) => url.startsWith(origin)),
-      { message: "Endpoint must be a recognized push service" },
-    ),
+    .refine((url) => ALLOWED_PUSH_ORIGINS.some((origin) => url.startsWith(origin)), {
+      message: "Endpoint must be a recognized push service",
+    }),
   keys: z.object({
     p256dh: z.string().min(1).max(256),
     auth: z.string().min(1).max(64),

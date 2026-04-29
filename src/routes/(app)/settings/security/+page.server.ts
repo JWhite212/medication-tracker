@@ -52,8 +52,7 @@ export const actions: Actions = {
   changePassword: async ({ request, locals }) => {
     const formData = Object.fromEntries(await request.formData());
     const parsed = passwordChangeSchema.safeParse(formData);
-    if (!parsed.success)
-      return fail(400, { passwordErrors: parsed.error.flatten().fieldErrors });
+    if (!parsed.success) return fail(400, { passwordErrors: parsed.error.flatten().fieldErrors });
 
     const reauth = await confirmReauth(
       locals.user!.id,
@@ -81,9 +80,7 @@ export const actions: Actions = {
       const [targetSession] = await db
         .select({ id: sessions.id })
         .from(sessions)
-        .where(
-          and(eq(sessions.id, sessionId), eq(sessions.userId, locals.user!.id)),
-        )
+        .where(and(eq(sessions.id, sessionId), eq(sessions.userId, locals.user!.id)))
         .limit(1);
       if (targetSession) {
         await lucia.invalidateSession(sessionId);
@@ -96,11 +93,7 @@ export const actions: Actions = {
     const formData = await request.formData();
     const currentPassword = String(formData.get("currentPassword") ?? "");
 
-    const reauthOk = await requiresPasswordReauth(
-      locals.user!.id,
-      currentPassword,
-      "enable_2fa",
-    );
+    const reauthOk = await requiresPasswordReauth(locals.user!.id, currentPassword, "enable_2fa");
     if (!reauthOk)
       return fail(400, {
         totpError: "Incorrect password — re-enter to enable 2FA",
@@ -126,8 +119,7 @@ export const actions: Actions = {
       .from(users)
       .where(eq(users.id, locals.user!.id))
       .limit(1);
-    if (!user?.totpSecret)
-      return fail(400, { totpError: "Setup required first" });
+    if (!user?.totpSecret) return fail(400, { totpError: "Setup required first" });
     if (!verifyTOTPCode(user.totpSecret, code))
       return fail(400, { totpError: "Invalid code — try again" });
 
@@ -145,11 +137,7 @@ export const actions: Actions = {
     const code = String(formData.code ?? "");
     const currentPassword = String(formData.currentPassword ?? "");
 
-    const reauthOk = await requiresPasswordReauth(
-      locals.user!.id,
-      currentPassword,
-      "disable_2fa",
-    );
+    const reauthOk = await requiresPasswordReauth(locals.user!.id, currentPassword, "disable_2fa");
     if (!reauthOk) return fail(400, { totpError: "Incorrect password" });
 
     const [user] = await db

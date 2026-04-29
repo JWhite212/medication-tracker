@@ -41,13 +41,7 @@ export async function generateCsvReport(
     })
     .from(doseLogs)
     .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
-    .where(
-      and(
-        eq(doseLogs.userId, userId),
-        gte(doseLogs.takenAt, from),
-        lte(doseLogs.takenAt, to),
-      ),
-    )
+    .where(and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, from), lte(doseLogs.takenAt, to)))
     .orderBy(desc(doseLogs.takenAt));
 
   const header = [
@@ -67,9 +61,7 @@ export async function generateCsvReport(
       timeZone: timezone,
     }).format(dt);
     const time = formatUserTime(dt, timezone, timeFormat);
-    const sideEffects =
-      dose.sideEffects?.map((e) => `${e.name} (${e.severity})`).join("; ") ??
-      "";
+    const sideEffects = dose.sideEffects?.map((e) => `${e.name} (${e.severity})`).join("; ") ?? "";
 
     return [
       escapeCsvCell(date),

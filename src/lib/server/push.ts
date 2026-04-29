@@ -39,9 +39,7 @@ export async function sendPushNotification(
               ? (err as { statusCode: number }).statusCode
               : undefined;
           if (statusCode === 410 || statusCode === 404) {
-            await db
-              .delete(pushSubscriptions)
-              .where(eq(pushSubscriptions.id, sub.id));
+            await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id));
           }
           throw err;
         }),

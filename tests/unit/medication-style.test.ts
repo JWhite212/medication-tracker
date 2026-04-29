@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  getMedicationBackground,
-  PATTERN_OPTIONS,
-} from "$lib/utils/medication-style";
+import { getMedicationBackground, PATTERN_OPTIONS } from "$lib/utils/medication-style";
 
 describe("PATTERN_OPTIONS", () => {
   it("has 8 pattern choices", () => {
@@ -23,18 +20,12 @@ describe("getMedicationBackground", () => {
   });
 
   it("returns primary colour when secondary is null regardless of pattern", () => {
-    expect(getMedicationBackground("#6366f1", null, "gradient")).toBe(
-      "#6366f1",
-    );
-    expect(getMedicationBackground("#6366f1", undefined, "stripes")).toBe(
-      "#6366f1",
-    );
+    expect(getMedicationBackground("#6366f1", null, "gradient")).toBe("#6366f1");
+    expect(getMedicationBackground("#6366f1", undefined, "stripes")).toBe("#6366f1");
   });
 
   it("returns primary colour for solid pattern even with secondary", () => {
-    expect(getMedicationBackground("#6366f1", "#ec4899", "solid")).toBe(
-      "#6366f1",
-    );
+    expect(getMedicationBackground("#6366f1", "#ec4899", "solid")).toBe("#6366f1");
   });
 
   it("returns linear-gradient for gradient pattern", () => {
@@ -87,8 +78,6 @@ describe("getMedicationBackground", () => {
   });
 
   it("returns primary colour for unknown pattern", () => {
-    expect(getMedicationBackground("#6366f1", "#ec4899", "unknown")).toBe(
-      "#6366f1",
-    );
+    expect(getMedicationBackground("#6366f1", "#ec4899", "unknown")).toBe("#6366f1");
   });
 });

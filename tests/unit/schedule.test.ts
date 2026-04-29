@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  classifyHour,
-  computeScheduleSlots,
-  groupSlotsByTimeOfDay,
-} from "$lib/utils/schedule";
+import { classifyHour, computeScheduleSlots, groupSlotsByTimeOfDay } from "$lib/utils/schedule";
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 
 function makeMed(overrides: Partial<Medication> = {}): Medication {
@@ -31,9 +27,7 @@ function makeMed(overrides: Partial<Medication> = {}): Medication {
   };
 }
 
-function makeDose(
-  overrides: Partial<DoseLogWithMedication> = {},
-): DoseLogWithMedication {
+function makeDose(overrides: Partial<DoseLogWithMedication> = {}): DoseLogWithMedication {
   return {
     id: "dose-1",
     userId: "user-1",
@@ -86,15 +80,7 @@ describe("computeScheduleSlots", () => {
   it("produces 3 slots for an 8-hour interval with no prior doses", () => {
     const meds = [makeMed()];
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = computeScheduleSlots(
-      meds,
-      [],
-      {},
-      dayStart,
-      dayEnd,
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, [], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(3);
     expect(slots[0].expectedTime).toBe("2026-04-16T00:00:00.000Z");
     expect(slots[1].expectedTime).toBe("2026-04-16T08:00:00.000Z");
@@ -105,15 +91,7 @@ describe("computeScheduleSlots", () => {
     const meds = [makeMed()];
     const lastDose = { "med-1": new Date("2026-04-15T22:00:00Z") };
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = computeScheduleSlots(
-      meds,
-      [],
-      lastDose,
-      dayStart,
-      dayEnd,
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, [], lastDose, dayStart, dayEnd, timezone, now);
     // 22:00 + 8h = 06:00, 06:00 + 8h = 14:00, 14:00 + 8h = 22:00
     expect(slots).toHaveLength(3);
     expect(slots[0].expectedTime).toBe("2026-04-16T06:00:00.000Z");
@@ -128,15 +106,7 @@ describe("computeScheduleSlots", () => {
       takenAt: new Date("2026-04-16T06:30:00Z"),
     });
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = computeScheduleSlots(
-      meds,
-      [dose],
-      lastDose,
-      dayStart,
-      dayEnd,
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, [dose], lastDose, dayStart, dayEnd, timezone, now);
     expect(slots[0].status).toBe("taken");
     expect(slots[0].matchedDoseId).toBe("dose-1");
   });
@@ -145,15 +115,7 @@ describe("computeScheduleSlots", () => {
     const meds = [makeMed()];
     const lastDose = { "med-1": new Date("2026-04-15T22:00:00Z") };
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = computeScheduleSlots(
-      meds,
-      [],
-      lastDose,
-      dayStart,
-      dayEnd,
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, [], lastDose, dayStart, dayEnd, timezone, now);
     expect(slots[0].status).toBe("overdue"); // 06:00 is past
     expect(slots[1].status).toBe("upcoming"); // 14:00 is future
     expect(slots[2].status).toBe("upcoming"); // 22:00 is future
@@ -162,30 +124,14 @@ describe("computeScheduleSlots", () => {
   it("skips non-scheduled medications", () => {
     const meds = [makeMed({ scheduleType: "prn" })];
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = computeScheduleSlots(
-      meds,
-      [],
-      {},
-      dayStart,
-      dayEnd,
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, [], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(0);
   });
 
   it("skips medications without interval hours", () => {
     const meds = [makeMed({ scheduleIntervalHours: null })];
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = computeScheduleSlots(
-      meds,
-      [],
-      {},
-      dayStart,
-      dayEnd,
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, [], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(0);
   });
 
@@ -233,15 +179,7 @@ describe("groupSlotsByTimeOfDay", () => {
     const dayEnd = new Date("2026-04-17T00:00:00Z");
     const now = new Date("2026-04-16T01:00:00Z");
     const meds = [makeMed({ scheduleIntervalHours: "6" })];
-    const slots = computeScheduleSlots(
-      meds,
-      [],
-      {},
-      dayStart,
-      dayEnd,
-      "UTC",
-      now,
-    );
+    const slots = computeScheduleSlots(meds, [], {}, dayStart, dayEnd, "UTC", now);
     // Expected at 00:00, 06:00, 12:00, 18:00
     const groups = groupSlotsByTimeOfDay(slots, "UTC");
     const keys = groups.map((g) => g.key);
@@ -257,15 +195,7 @@ describe("groupSlotsByTimeOfDay", () => {
     const now = new Date("2026-04-16T01:00:00Z");
     // 24h interval -> only 1 slot at midnight (night)
     const meds = [makeMed({ scheduleIntervalHours: "24" })];
-    const slots = computeScheduleSlots(
-      meds,
-      [],
-      {},
-      dayStart,
-      dayEnd,
-      "UTC",
-      now,
-    );
+    const slots = computeScheduleSlots(meds, [], {}, dayStart, dayEnd, "UTC", now);
     const groups = groupSlotsByTimeOfDay(slots, "UTC");
     expect(groups).toHaveLength(1);
     expect(groups[0].key).toBe("night");

@@ -17,10 +17,7 @@ async function hashToken(token: string): Promise<string> {
 export const load: PageServerLoad = async ({ url }) => {
   const token = url.searchParams.get("token");
   if (!token) {
-    error(
-      400,
-      "Missing password reset token. Please request a new reset link.",
-    );
+    error(400, "Missing password reset token. Please request a new reset link.");
   }
   return { token };
 };
@@ -68,9 +65,7 @@ export const actions: Actions = {
     }
 
     if (record.expiresAt < new Date()) {
-      await db
-        .delete(passwordResetTokens)
-        .where(eq(passwordResetTokens.id, record.id));
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, record.id));
       return fail(400, {
         error: "This reset link has expired. Please request a new one.",
         token,
@@ -88,9 +83,7 @@ export const actions: Actions = {
     // outlive the password change.
     await db.delete(sessions).where(eq(sessions.userId, record.userId));
 
-    await db
-      .delete(passwordResetTokens)
-      .where(eq(passwordResetTokens.id, record.id));
+    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, record.id));
 
     redirect(302, "/auth/login");
   },

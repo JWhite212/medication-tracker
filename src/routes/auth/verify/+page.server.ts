@@ -23,13 +23,8 @@ export const load: PageServerLoad = async ({ url }) => {
 
   if (!record) return { verified: false, error: "Invalid or expired token" };
 
-  await db
-    .update(users)
-    .set({ emailVerified: true })
-    .where(eq(users.id, record.userId));
-  await db
-    .delete(emailVerificationTokens)
-    .where(eq(emailVerificationTokens.id, record.id));
+  await db.update(users).set({ emailVerified: true }).where(eq(users.id, record.userId));
+  await db.delete(emailVerificationTokens).where(eq(emailVerificationTokens.id, record.id));
 
   return { verified: true };
 };

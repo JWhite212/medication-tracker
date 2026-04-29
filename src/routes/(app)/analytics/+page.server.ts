@@ -20,22 +20,17 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
   const fromParam = url.searchParams.get("from");
   const toParam = url.searchParams.get("to");
   const customRange: DateRange | undefined =
-    fromParam && toParam
-      ? { from: new Date(fromParam), to: new Date(toParam) }
-      : undefined;
+    fromParam && toParam ? { from: new Date(fromParam), to: new Date(toParam) } : undefined;
 
   const periodParam = url.searchParams.get("period");
   const period =
-    periodParam && VALID_PERIODS.has(periodParam)
-      ? Number(periodParam)
-      : preferences.heatmapPeriod;
+    periodParam && VALID_PERIODS.has(periodParam) ? Number(periodParam) : preferences.heatmapPeriod;
 
   const now = Date.now();
   const previousRange: DateRange = customRange
     ? {
         from: new Date(
-          customRange.from!.getTime() -
-            (customRange.to!.getTime() - customRange.from!.getTime()),
+          customRange.from!.getTime() - (customRange.to!.getTime() - customRange.from!.getTime()),
         ),
         to: customRange.from!,
       }
@@ -44,23 +39,16 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
         to: new Date(now - period * 86400000),
       };
 
-  const [
-    dailyCounts,
-    medStats,
-    hourly,
-    dayOfWeek,
-    sideEffects,
-    prevDailyCounts,
-    prevMedStats,
-  ] = await Promise.all([
-    getDailyDoseCounts(userId, period, timezone, customRange),
-    getPerMedicationStats(userId, period, timezone, customRange),
-    getHourlyDistribution(userId, period, timezone, customRange),
-    getDayOfWeekDistribution(userId, period, timezone, customRange),
-    getSideEffectStats(userId, period, timezone, customRange),
-    getDailyDoseCounts(userId, period, timezone, previousRange),
-    getPerMedicationStats(userId, period, timezone, previousRange),
-  ]);
+  const [dailyCounts, medStats, hourly, dayOfWeek, sideEffects, prevDailyCounts, prevMedStats] =
+    await Promise.all([
+      getDailyDoseCounts(userId, period, timezone, customRange),
+      getPerMedicationStats(userId, period, timezone, customRange),
+      getHourlyDistribution(userId, period, timezone, customRange),
+      getDayOfWeekDistribution(userId, period, timezone, customRange),
+      getSideEffectStats(userId, period, timezone, customRange),
+      getDailyDoseCounts(userId, period, timezone, previousRange),
+      getPerMedicationStats(userId, period, timezone, previousRange),
+    ]);
 
   const streak = calculateStreak(
     dailyCounts.map((d) => d.date),
@@ -72,25 +60,18 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
 
   const avgAdherence =
     medStats.length > 0
-      ? Math.round(
-          medStats.reduce((a, s) => a + s.adherence, 0) / medStats.length,
-        )
+      ? Math.round(medStats.reduce((a, s) => a + s.adherence, 0) / medStats.length)
       : 0;
   const prevAvgAdherence =
     prevMedStats.length > 0
-      ? Math.round(
-          prevMedStats.reduce((a, s) => a + s.adherence, 0) /
-            prevMedStats.length,
-        )
+      ? Math.round(prevMedStats.reduce((a, s) => a + s.adherence, 0) / prevMedStats.length)
       : 0;
 
   const trends = {
     doses: calculateTrend(totalDoses, prevTotalDoses),
     adherence: calculateTrend(avgAdherence, prevAvgAdherence),
     perMedication: medStats.map((stat) => {
-      const prev = prevMedStats.find(
-        (p) => p.medicationId === stat.medicationId,
-      );
+      const prev = prevMedStats.find((p) => p.medicationId === stat.medicationId);
       return {
         medicationId: stat.medicationId,
         trend: calculateTrend(stat.adherence, prev?.adherence ?? 0),

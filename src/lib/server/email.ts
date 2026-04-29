@@ -17,11 +17,7 @@ function getBaseUrl(requestOrigin?: string): string {
   return env.PUBLIC_BASE_URL ?? requestOrigin ?? "http://localhost:5173";
 }
 
-export async function sendVerificationEmail(
-  email: string,
-  token: string,
-  requestOrigin: string,
-) {
+export async function sendVerificationEmail(email: string, token: string, requestOrigin: string) {
   const verifyUrl = `${getBaseUrl(requestOrigin)}/auth/verify?token=${encodeURIComponent(token)}`;
   await getResend().emails.send({
     from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
@@ -32,11 +28,7 @@ export async function sendVerificationEmail(
   });
 }
 
-export async function sendPasswordResetEmail(
-  email: string,
-  token: string,
-  requestOrigin: string,
-) {
+export async function sendPasswordResetEmail(email: string, token: string, requestOrigin: string) {
   const resetUrl = `${getBaseUrl(requestOrigin)}/auth/reset-password?token=${encodeURIComponent(token)}`;
   await getResend().emails.send({
     from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
@@ -62,11 +54,7 @@ export async function sendLowInventoryEmail(
   });
 }
 
-export async function sendReminderEmail(
-  email: string,
-  medicationName: string,
-  lastTaken: string,
-) {
+export async function sendReminderEmail(email: string, medicationName: string, lastTaken: string) {
   await getResend().emails.send({
     from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
     to: email,

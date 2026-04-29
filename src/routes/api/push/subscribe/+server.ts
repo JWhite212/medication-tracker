@@ -10,11 +10,7 @@ import type { RequestHandler } from "@sveltejs/kit";
 export const POST: RequestHandler = async ({ request, locals }) => {
   if (!locals.user) throw error(401);
 
-  const { allowed } = await checkRateLimit(
-    `push-sub:${locals.user.id}`,
-    10,
-    60_000,
-  );
+  const { allowed } = await checkRateLimit(`push-sub:${locals.user.id}`, 10, 60_000);
   if (!allowed) throw error(429, "Too many requests");
 
   const body = await request.json();

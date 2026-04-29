@@ -155,9 +155,7 @@ describe("sideEffects validation", () => {
   });
 
   it("accepts valid sideEffects JSON in doseEditSchema", () => {
-    const effects = JSON.stringify([
-      { name: "Dizziness", severity: "moderate" },
-    ]);
+    const effects = JSON.stringify([{ name: "Dizziness", severity: "moderate" }]);
     const result = doseEditSchema.safeParse({
       doseId: "dose123",
       takenAt: "2026-04-16T10:00",

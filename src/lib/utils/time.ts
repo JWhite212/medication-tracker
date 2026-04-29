@@ -12,13 +12,34 @@ export function formatTimeSince(date: Date): string {
   return `${diffDays}d ago`;
 }
 
-export function formatTime(date: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-US", {
+export type TimeFormat = "12h" | "24h";
+
+/**
+ * Render a date in the user's timezone and preferred clock format. This
+ * is the canonical formatter — pass it the user's `preferences.timeFormat`
+ * everywhere a time string is shown (dashboard, timeline, history,
+ * analytics, exports, email).
+ */
+export function formatUserTime(
+  date: Date,
+  timezone: string,
+  timeFormat: TimeFormat = "12h",
+): string {
+  return new Intl.DateTimeFormat("en-GB", {
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
+    hour12: timeFormat === "12h",
     timeZone: timezone,
   }).format(date);
+}
+
+/**
+ * @deprecated Use formatUserTime() and pass the user's timeFormat
+ * preference. Kept as a thin wrapper to avoid breaking call sites that
+ * haven't been threaded with the preference yet.
+ */
+export function formatTime(date: Date, timezone: string): string {
+  return formatUserTime(date, timezone, "12h");
 }
 
 /**

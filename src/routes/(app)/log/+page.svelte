@@ -95,7 +95,7 @@
         </div>
         <div class="space-y-2 pb-4">
           {#each group.doses as dose (dose.id)}
-            <TimelineEntry {dose} timezone={data.timezone} onedit={(d) => (editingDose = d)} />
+            <TimelineEntry {dose} timezone={data.timezone} timeFormat={data.preferences.timeFormat as '12h' | '24h'} onedit={(d) => (editingDose = d)} />
           {/each}
         </div>
       {/each}

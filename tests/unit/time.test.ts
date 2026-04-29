@@ -45,16 +45,18 @@ describe("formatTimeSince", () => {
 });
 
 describe("formatTime", () => {
+  // formatUserTime uses en-GB which renders "am"/"pm" lowercase.
+  // formatTime is a thin wrapper that delegates with "12h".
   it("formats time in 12-hour format", () => {
     const date = new Date("2026-04-15T14:30:00Z");
     const result = formatTime(date, "UTC");
-    expect(result).toBe("2:30 PM");
+    expect(result).toBe("2:30 pm");
   });
 
   it("formats time with timezone", () => {
     const date = new Date("2026-04-15T14:30:00Z");
     const result = formatTime(date, "America/New_York");
-    expect(result).toBe("10:30 AM");
+    expect(result).toBe("10:30 am");
   });
 });
 

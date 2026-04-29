@@ -26,6 +26,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   const format =
     url.searchParams.get("format") ?? preferences.exportFormat ?? "pdf";
   const dateStr = fromDate.toISOString().split("T")[0];
+  const timeFormat = preferences.timeFormat as "12h" | "24h";
 
   if (format === "csv") {
     const csv = await generateCsvReport(
@@ -33,6 +34,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
       locals.user.timezone,
       fromDate,
       toDate,
+      timeFormat,
     );
     return new Response(csv, {
       headers: {
@@ -47,6 +49,8 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     locals.user.timezone,
     fromDate,
     toDate,
+    locals.user.name,
+    timeFormat,
   );
 
   return new Response(pdf, {

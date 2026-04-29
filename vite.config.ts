@@ -10,20 +10,27 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "html", "lcov", "json-summary"],
       reportsDirectory: "./coverage",
-      include: ["src/**/*.{ts,svelte}"],
+      // Scope to library code that's unit-testable. Route files
+      // (SvelteKit pages and server endpoints) are exercised via E2E
+      // tests, not units, so including them here just inflates the
+      // denominator with files we never intended to unit test.
+      include: ["src/lib/**/*.{ts,svelte}"],
       exclude: [
-        "src/**/*.test.ts",
-        "src/service-worker.ts",
-        "src/app.html",
-        "src/app.d.ts",
+        "src/lib/**/*.test.ts",
         "src/lib/server/db/schema.ts",
-        "src/routes/**/+layout.ts",
-        "src/routes/**/+layout.svelte",
-        "src/routes/**/+error.svelte",
+        "src/lib/server/db/index.ts",
       ],
-      // Thresholds intentionally absent — Phase 2 collects a baseline.
-      // Phase 3 adds regression-only thresholds once the test suite
-      // expands to cover doses, analytics, and auth flows.
+      // Regression-only thresholds. Numbers were measured at the end
+      // of Phase 3 and intentionally sit a few points below current to
+      // tolerate legitimate refactor noise. CI fails if any metric
+      // drops below these — meaningful coverage growth bumps the floor
+      // when the next phase lands.
+      thresholds: {
+        statements: 13,
+        branches: 14,
+        functions: 9,
+        lines: 17,
+      },
     },
   },
 });

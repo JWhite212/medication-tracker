@@ -1,17 +1,55 @@
 # MedTracker
 
-A personal medication tracking web application built with SvelteKit, designed for quick dose logging, live timers, adherence analytics, and inventory management. Server-first architecture with a dark-mode glassmorphism UI.
+A full-stack medication tracker focused on fast dose logging, live
+timers, adherence analytics, secure auth, and exportable history.
+Built with SvelteKit 2 (Svelte 5 runes), TypeScript, Drizzle ORM,
+and Postgres.
 
+[![CI](https://github.com/JWhite212/medication-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/JWhite212/medication-tracker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/Node-%3E%3D20-brightgreen)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/Node-22-brightgreen)](https://nodejs.org)
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev)
 [![Deploy](https://img.shields.io/badge/Vercel-deployed-black?logo=vercel)](https://vercel.com)
 
-[Features](#features) · [Tech Stack](#tech-stack) · [Architecture](#architecture) · [Getting Started](#getting-started) · [Testing](#testing) · [Project Structure](#project-structure) · [Design System](#design-system) · [Deployment](#deployment) · [Roadmap](#roadmap) · [Author](#author) · [License](#license)
+## Table of contents
 
-![MedTracker dashboard](docs/screenshots/hero-dashboard.png)
+1. [Overview](#overview)
+2. [Live demo](#live-demo)
+3. [Screenshots](#screenshots)
+4. [Core features](#core-features)
+5. [Feature status](#feature-status)
+6. [Technical highlights](#technical-highlights)
+7. [Architecture](#architecture)
+8. [Security and privacy](#security-and-privacy)
+9. [Database design](#database-design)
+10. [Testing strategy](#testing-strategy)
+11. [Local development](#local-development)
+12. [Environment variables](#environment-variables)
+13. [Known limitations](#known-limitations)
+14. [Roadmap](#roadmap)
+15. [What I learned](#what-i-learned)
+16. [License](#license)
+
+## Overview
+
+MedTracker is a personal medication tracking web app. It is a
+**tracking tool**, not medical advice — see the disclaimer surfaced
+across the UI and the [medical disclaimer note](#medical-disclaimer)
+below. The project is built as a portfolio piece: the goal is to
+show end-to-end full-stack judgement, not to add yet another feature.
+
+Read the long-form story in [`docs/case-study.md`](docs/case-study.md).
+
+## Live demo
+
+- App: <https://medication-tracker-jw.vercel.app>
+- The demo account (Phase 4c) is `demo@medtracker.app`. It's seeded
+  with a realistic profile so screenshots and quick walkthroughs
+  reflect a populated state.
 
 ## Screenshots
+
+![MedTracker dashboard](docs/screenshots/hero-dashboard.png)
 
 |                                                  |                                                        |
 | ------------------------------------------------ | ------------------------------------------------------ |
@@ -20,247 +58,218 @@ A personal medication tracking web application built with SvelteKit, designed fo
 | ![History](docs/screenshots/history.png)         | ![Analytics](docs/screenshots/analytics.png)           |
 | _History_                                        | _Analytics_                                            |
 
-## Features
+## Core features
 
-### Dose Logging
+- **Quick log** — single-tap dose logging with optimistic UI and
+  audit trail.
+- **Live timers** — per-medication "last taken" + "next due"
+  countdowns recomputed every minute, with a `visibilitychange`
+  catch-up.
+- **Adherence analytics** — heatmap, daily counts, per-medication
+  rollups, hourly + day-of-week distribution, side-effect frequency.
+- **Reminders** — opt-in email and Web Push, dispatched by Vercel
+  Cron with idempotent dedupe keys (see [ADR 0005](docs/adr/0005-reminder-deduplication.md)).
+- **Exports** — PDF (with adherence summary, medication list,
+  side-effect frequency, medical disclaimer) or CSV (formula-injection
+  safe).
+- **Auth** — email + password (Argon2id) and OAuth (Google, GitHub).
+  TOTP 2FA with secrets encrypted at rest.
 
-- **Quick Log** — one-tap dose logging from the dashboard for any active medication
-- **Dose timeline** — chronological feed of today's doses with live "time since" counters (client-side intervals, no WebSocket)
-- **Dose editing** — edit or delete logged doses via modal, with quantity tracking
-- **Multi-quantity** — log multiple doses at once (e.g. 2 tablets)
+## Feature status
 
-### Medication Management
+Honest about what's complete vs. what's planned:
 
-- **Full CRUD** — create, view, edit, and archive medications
-- **Rich metadata** — name, dosage amount/unit, form (tablet, capsule, liquid, etc.), category (prescription, OTC, supplement)
-- **Dual-colour system** — primary + optional secondary colour per medication with 8 visual patterns (solid, split, gradient, diagonal stripes, horizontal stripes, polka dots, checkerboard, radial)
-- **Live preview** — see how colour/pattern combinations render as cards, dots, and pills before saving
-- **Schedule types** — scheduled (with configurable interval in hours) or as-needed (PRN)
-- **Inventory tracking** — current stock count with low-stock alert thresholds, auto-decrements on dose log
-- **Sort ordering and archival** — organise active medications, archive inactive ones
+| Feature                          | Status                                                                                                                |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Email/password auth              | Complete                                                                                                              |
+| OAuth (Google, GitHub)           | Complete; account-takeover guard in place                                                                             |
+| 2FA (TOTP)                       | Complete; secrets encrypted at rest with AES-256-GCM                                                                  |
+| Dose logging + edit + skip       | Complete; ownership-checked, status-aware                                                                             |
+| Adherence analytics              | Complete; cap-at-100 + overuse split                                                                                  |
+| Email reminders                  | Complete; idempotent via `reminder_events`                                                                            |
+| Web Push reminders               | Complete                                                                                                              |
+| PDF / CSV export                 | Complete; formula-injection escape, en-GB time format                                                                 |
+| Drug interaction notice          | Experimental, behind `INTERACTIONS_ENABLED` flag                                                                      |
+| Medical disclaimer               | Surfaced on landing, register, medication form, analytics, exports                                                    |
+| Re-auth gate (sensitive actions) | Complete for change-password, enable/disable 2FA, delete account; **planned** for full export and revoke-all-sessions |
+| Medication scheduling            | Interval-based today; **planned** richer fixed-time / day-of-week / PRN model                                         |
+| Demo account + seed              | **Planned** in PR 4c                                                                                                  |
+| End-to-end tests                 | **Planned**; unit tests cover security primitives                                                                     |
 
-### Analytics
+## Technical highlights
 
-- **Streak tracking** — consecutive days with at least one logged dose
-- **Per-medication adherence** — calculates expected vs actual doses over 30 days for scheduled medications
-- **Activity heatmap** — 90-day dose activity visualisation
-- **Time-of-day distribution** — hourly bar chart showing when doses are typically taken
-- All analytics respect the user's configured timezone
-
-### Settings
-
-- **Profile** — display name and timezone (full IANA timezone list)
-- **Appearance** — accent colour, time format (12h/24h), display density (comfortable/compact), reduced motion toggle
-- **Notifications** — email reminders for overdue doses and low inventory alerts (via Resend)
-- **Data management** — export dose history as PDF or CSV, account deletion with confirmation
-- **Security** — password changes, active session management with revocation, sign out
-
-### Authentication
-
-- **Email/password** — registration with email verification, password reset flow
-- **OAuth** — optional Google and GitHub sign-in (via Arctic)
-- **Session management** — Lucia v3 with database-backed sessions, secure cookies
-- **Rate limiting** — built-in rate limiting on auth endpoints
-
-### Data Integrity
-
-- **Audit logging** — all create/update/delete operations recorded with JSONB diffs
-- **Input validation** — every form action validated through Zod schemas
-- **User scoping** — all database queries scoped by `user_id`
-- **UTC timestamps** — stored with timezone, displayed in user's local timezone via `Intl.DateTimeFormat`
-
-## Tech Stack
-
-| Layer            | Technology                                                                                    |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| Framework        | [SvelteKit](https://svelte.dev/docs/kit) with Svelte 5 runes                                  |
-| Styling          | [Tailwind CSS v4](https://tailwindcss.com) — dark-mode-first, glassmorphism design system     |
-| Database         | [PostgreSQL](https://www.postgresql.org) via [Neon](https://neon.tech) serverless driver      |
-| ORM              | [Drizzle ORM](https://orm.drizzle.team) with type-safe schema                                 |
-| Auth             | [Lucia v3](https://lucia-auth.com) + [Arctic](https://arcticjs.dev) for OAuth                 |
-| Validation       | [Zod](https://zod.dev)                                                                        |
-| Email            | [Resend](https://resend.com)                                                                  |
-| PDF Export       | [PDFKit](http://pdfkit.org)                                                                   |
-| Password Hashing | [Argon2](https://github.com/nicolo-ribaudo/tc39-proposal-secure-argon2) via `@node-rs/argon2` |
-| Testing          | [Vitest](https://vitest.dev) + [Playwright](https://playwright.dev)                           |
-| Deployment       | [Vercel](https://vercel.com) (via `@sveltejs/adapter-vercel`)                                 |
+- **Server-first SvelteKit** — every mutation is a form action; no
+  client-side data fetching for write paths. See [ADR 0003](docs/adr/0003-server-first-form-actions.md).
+- **AES-256-GCM at rest** for TOTP secrets with versioned payload
+  format (`v1:iv:tag:ct`) and a one-shot migration script
+  (`scripts/encrypt-totp-secrets.ts`).
+- **Idempotent reminder dispatch** via unique `dedupe_key` rows in
+  `reminder_events`. See [ADR 0005](docs/adr/0005-reminder-deduplication.md).
+- **Centralised time formatting** — `formatUserTime(date, tz, '12h'|'24h')`
+  threaded through dashboard, timeline, log, exports, emails so
+  everything agrees.
+- **Hardened CSV escaping** — `escapeCsvCell` neutralises formula
+  injection prefixes (`= + - @ \t \r`) plus standard CSV escape
+  rules; CRLF line endings per RFC 4180.
+- **Coverage thresholds as regression floors** — measured baseline
+  in `vite.config.ts`, set just below current so legitimate refactor
+  noise doesn't fail CI but real regressions do.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  U[User browser<br/>Svelte 5 runes] -->|form actions<br/>use:enhance| SK[SvelteKit<br/>+page.server.ts]
-  SK -->|session check| LU[Lucia v3<br/>hooks.server.ts]
-  SK -->|typed queries| DR[Drizzle ORM]
-  DR --> PG[(Neon Postgres<br/>users · medications<br/>doseLogs · sessions<br/>auditLogs)]
-  SK -->|OAuth| AR[Arctic<br/>Google / GitHub]
-  SK -->|verification<br/>password reset| RS[Resend email]
-  VC[Vercel Cron<br/>09:00 daily] -->|Bearer CRON_SECRET| SK
-  SK -->|overdue alerts| RS
-  SK -->|PDF / CSV<br/>/api/export| U
+```
++-------------------+
+|  Browser / PWA    | <-- service worker for offline shell + push
++---------+---------+
+          |
+          v
++---------+---------+         +--------------------+
+|  SvelteKit edge   |  -->    |  Resend (email)    |
+|  (Vercel)         |         +--------------------+
+|                   |
+|  - Loaders        |         +--------------------+
+|  - Form actions   |  -->    |  Web Push          |
+|  - API endpoints  |         +--------------------+
+|  - Cron handler   |
++---------+---------+         +--------------------+
+          |                   |  OpenFDA labels    |
+          | Drizzle ORM       |  (feature-flagged) |
+          v                   +--------------------+
++---------+---------+
+| Postgres (Neon)   |
+| users · sessions  |
+| medications       |
+| dose_logs (status)|
+| reminder_events   |
+| reauth_tokens     |
+| audit_logs ...    |
++-------------------+
 ```
 
-## Getting Started
+The architectural decisions are recorded in [`docs/adr/`](docs/adr/).
 
-### Prerequisites
+## Security and privacy
 
-- [Node.js](https://nodejs.org) >= 20
-- A [Neon](https://neon.tech) PostgreSQL database (or any PostgreSQL instance)
-- (Optional) [Resend](https://resend.com) account for email features
-- (Optional) Google and/or GitHub OAuth credentials
+- **Passwords** hashed with Argon2id (`@node-rs/argon2`).
+- **Sessions** are server-side rows; revocable from settings, all
+  invalidated after a password reset.
+- **TOTP secrets** encrypted at rest (AES-256-GCM, see Phase 1).
+- **OAuth** refuses auto-link to a password-bearing account
+  (account-takeover prevention).
+- **Re-auth gate** for sensitive actions writes a row to
+  `reauth_tokens` for audit.
+- **Rate limits** on login and password reset (`rate_limits` table).
+- **CSRF** by SvelteKit form action default; OAuth state cookie
+  with `secure: !dev`.
+- **At rest**: Neon Postgres encrypted by the provider; SSL
+  required (`?sslmode=require` in `DATABASE_URL`).
 
-### Installation
+### Medical disclaimer
+
+> MedTracker is a personal tracking tool. It does not provide
+> medical advice, dosage recommendations, diagnosis, or emergency
+> guidance. Always follow advice from a qualified healthcare
+> professional.
+
+## Database design
+
+See [`docs/database.md`](docs/database.md) for the full table-by-table
+reference, indexes, and migration workflow. Quick summary:
+
+| Table                                                | Purpose                                                |
+| ---------------------------------------------------- | ------------------------------------------------------ |
+| `users`, `sessions`, `oauth_accounts`                | Auth core                                              |
+| `email_verification_tokens`, `password_reset_tokens` | Email flows (hashed tokens)                            |
+| `medications`                                        | User-owned; colours, pattern, schedule                 |
+| `dose_logs`                                          | One row per logged dose; `status` taken/skipped/missed |
+| `audit_logs`                                         | Append-only diff log                                   |
+| `user_preferences`                                   | Per-user UI/format/reminder settings                   |
+| `rate_limits`                                        | Sliding-window login + reset rate limit                |
+| `push_subscriptions`                                 | Web Push endpoints                                     |
+| `reminder_events`                                    | Idempotency key for cron dispatch                      |
+| `reauth_tokens`                                      | Sensitive-action re-auth audit                         |
+
+## Testing strategy
+
+- **Unit tests** — Vitest. Coverage scoped to `src/lib/**` so
+  routes (which need E2E) don't inflate the denominator. Provider:
+  v8. Reporters: text, html, lcov, json-summary.
+- **Coverage thresholds** — baseline measured at end of Phase 3,
+  thresholds set just below to fail CI on regression.
+- **E2E** — Playwright; the smoke spec is a placeholder for now,
+  the full journey + axe-core a11y suite is on the roadmap.
+- **CI** — GitHub Actions: install → check → lint → format-check
+  → test (with coverage upload) → build. See `.github/workflows/ci.yml`.
+
+```bash
+npm test                # unit tests
+npm run test:coverage   # unit tests with v8 coverage
+npm run test:e2e        # Playwright (requires dev server)
+```
+
+## Local development
 
 ```bash
 git clone https://github.com/JWhite212/medication-tracker.git
 cd medication-tracker
 npm install
+cp .env.example .env    # fill in DATABASE_URL at minimum
+
+npm run db:migrate      # apply Drizzle migrations
+npm run dev             # start dev server on :5173
 ```
 
-### Environment Variables
+Other handy commands:
 
-Create a `.env` file in the project root:
+| Command               | Purpose                          |
+| --------------------- | -------------------------------- |
+| `npm run check`       | Type-check (svelte-check)        |
+| `npm run lint`        | ESLint                           |
+| `npm run format`      | Prettier --write                 |
+| `npm run db:generate` | Diff schema → new migration file |
+| `npm run db:studio`   | Open Drizzle Studio              |
 
-```env
-# Required
-DATABASE_URL=postgresql://user:password@host/database?sslmode=require
+## Environment variables
 
-# Email (required for verification, password reset, and reminders)
-RESEND_API_KEY=re_xxxxxxxxxxxxx
-EMAIL_FROM="MedTracker <noreply@yourdomain.com>"
+The full annotated list lives in [`.env.example`](.env.example).
+Required: `DATABASE_URL`. Everything else is optional and disables
+the corresponding feature when unset (OAuth, email, push,
+interactions).
 
-# OAuth (optional — app works with email/password only)
-GOOGLE_CLIENT_ID=xxxxxxxxxxxxx.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxx
-GITHUB_CLIENT_ID=Iv1.xxxxxxxxxxxxx
-GITHUB_CLIENT_SECRET=xxxxxxxxxxxxx
+## Known limitations
 
-# Cron endpoint protection (required if using scheduled reminders)
-CRON_SECRET=a-random-secret-string
-```
-
-### Database Setup
-
-Push the schema to your database:
-
-```bash
-npx drizzle-kit push
-```
-
-To generate migration files (for version-controlled migrations):
-
-```bash
-npx drizzle-kit generate
-```
-
-### Development
-
-```bash
-npm run dev
-```
-
-The app runs at [http://localhost:5173](http://localhost:5173).
-
-### Production Build
-
-```bash
-npm run build
-npm run preview   # preview locally
-```
-
-## Testing
-
-```bash
-# Run all unit tests
-npx vitest run
-
-# Run a specific test file
-npx vitest run tests/unit/time.test.ts
-
-# Run in watch mode
-npx vitest
-```
-
-## Project Structure
-
-```
-src/
-├── routes/
-│   ├── +page.svelte                  # Landing page
-│   ├── auth/                         # Login, register, password reset, OAuth callbacks
-│   ├── (app)/                        # Authenticated route group (auth guard in layout)
-│   │   ├── dashboard/                # Main dashboard with quick log + timeline
-│   │   ├── medications/              # Medication list, detail, create/edit
-│   │   ├── log/                      # Full dose history with pagination + filters
-│   │   ├── analytics/                # Streaks, adherence, heatmap, hourly chart
-│   │   └── settings/                 # Profile, appearance, notifications, data, security
-│   └── api/
-│       └── export/                   # PDF/CSV export endpoint
-├── lib/
-│   ├── server/                       # Server-only code (never imported from client)
-│   │   ├── db/schema.ts              # Drizzle table definitions
-│   │   ├── auth/                     # Lucia setup, OAuth providers
-│   │   ├── analytics.ts              # Streak, adherence, heatmap, hourly queries
-│   │   ├── doses.ts                  # Dose query helpers
-│   │   ├── audit.ts                  # Audit log with JSONB diff tracking
-│   │   ├── email.ts                  # Resend email helpers
-│   │   ├── export-csv.ts             # CSV export generation
-│   │   └── preferences.ts            # User preferences CRUD
-│   ├── components/                   # Svelte 5 components (runes syntax)
-│   │   ├── ui/                       # Reusable primitives (GlassCard, Input, Modal, Toast, Tooltip)
-│   │   ├── MedicationForm.svelte     # Dual-colour picker, pattern grid, tooltips
-│   │   ├── MedicationCard.svelte     # Medication list item with pattern rendering
-│   │   ├── QuickLogBar.svelte        # One-tap dose logging strip
-│   │   ├── TimelineEntry.svelte      # Dose timeline item with live timer
-│   │   ├── Heatmap.svelte            # 90-day activity heatmap
-│   │   └── AdherenceChart.svelte     # Per-medication adherence bars
-│   ├── utils/
-│   │   ├── validation.ts             # All Zod schemas
-│   │   ├── medication-style.ts       # Pattern rendering utility (CSS backgrounds)
-│   │   └── time.ts                   # Time formatting helpers
-│   └── types.ts                      # Shared TypeScript types
-└── app.css                           # Tailwind v4 theme + design tokens
-```
-
-## Design System
-
-The UI uses a dark-mode glassmorphism design system built with Tailwind CSS v4 custom theme tokens:
-
-- `glass` / `glass-border` / `glass-hover` — frosted glass surfaces with backdrop blur
-- `surface` / `surface-raised` / `surface-overlay` — layered surface elevation
-- `text-primary` / `text-secondary` / `text-muted` — typographic hierarchy
-- `accent` / `success` / `warning` / `danger` — semantic colour palette
-
-All components use Svelte 5 runes (`$props()`, `$state()`, `$derived()`, `$effect()`).
-
-## Deployment
-
-The app is configured for Vercel deployment via `@sveltejs/adapter-vercel`. Set all environment variables in your Vercel project settings.
-
-For scheduled medication reminders, configure a Vercel Cron Job pointing to `/api/cron/reminders` with the `CRON_SECRET` header.
+- **Schedule model** is interval-based today (`scheduleIntervalHours`).
+  Fixed-time schedules and day-of-week patterns are designed but not
+  yet shipped — see PR 4d on the roadmap.
+- **End-to-end tests** are stubbed; the unit suite covers crypto,
+  TOTP, CSV escape, and analytics primitives but not full user
+  journeys.
+- **Drug interactions** require a deliberate `INTERACTIONS_ENABLED=true`
+  to turn on, and even then the warning panel is labelled
+  "Experimental" — false positives are expected.
 
 ## Roadmap
 
-- [ ] Full 2FA / TOTP flow (schema fields + settings UI skeleton are already in place)
-- [ ] Drug-drug interaction warnings
-- [ ] Weight-based and renal-impairment dosing support
-- [ ] Real-time multi-device dose sync (WebSocket / Server-Sent Events)
-- [ ] Recurring per-dose reminders (not just daily overdue digests)
-- [ ] Native push notifications via PWA / web push
-- [ ] Refill-projection improvements (learning per-medication usage)
-- [ ] Caregiver shared-access mode (read-only delegated accounts)
-- [ ] Mobile wrapper (Capacitor) for App Store / Play Store distribution
-- [ ] Medication photo recognition for faster add-medication flow
+Tracked across four implementation phases, with the source plan in
+[`.claude/PRPs/plans/improvements-broad.plan.md`](.claude/PRPs/plans/improvements-broad.plan.md):
 
-## Author
+- **Phase 1 hardening** — ownership guards, status column, reminder
+  dedup, secure cookies, TOTP encryption, re-auth gate, session
+  invalidation, CSV/PDF safety. **Done.**
+- **Phase 2 repo quality** — ESLint, Prettier, CI, coverage,
+  Drizzle scripts, env documentation. **Done.**
+- **Phase 3 tests** — unit tests for crypto, TOTP, CSV, analytics,
+  interactions; coverage thresholds. **Done.**
+- **Phase 4 polish** — keyboard shortcuts fix, interactions feature
+  flag, medical disclaimer (4a). README, ADRs, case study (4b).
+  Demo seed account (4c). Schedule refactor (4d).
 
-**Jamie White** — early-career software engineer (UK).
+## What I learned
 
-- GitHub: [@JWhite212](https://github.com/JWhite212)
-- Email: [jamiecs@live.co.uk](mailto:jamiecs@live.co.uk)
-- Portfolio: [jamie-white-portfolio.vercel.app](https://jamie-white-portfolio.vercel.app)
-- Case study: [jamie-white-portfolio.vercel.app/projects/medication-tracker](https://jamie-white-portfolio.vercel.app/projects/medication-tracker)
+Captured in [`docs/case-study.md`](docs/case-study.md) §7. Tl;dr:
+server-first removes a class of bugs, CI surfaces what's load-bearing,
+and a small correct schema beats a clever ORM.
 
 ## License
 
-MIT
+[MIT](LICENSE)

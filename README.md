@@ -42,7 +42,7 @@ Read the long-form story in [`docs/case-study.md`](docs/case-study.md).
 
 ## Live demo
 
-- App: <https://medication-tracker-jw.vercel.app>
+- App: <https://medication-tracker.jamiewhite.site/>
 - Demo account: `demo@medtracker.app` / `demo-medtracker-2026`.
   Seeded with five medications and ~30 days of dose history so the
   dashboard, log, and analytics pages reflect a populated state.

@@ -9,9 +9,14 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Gitleaks needs full history to scan diffs across the PR range.
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -21,6 +26,21 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Dependency audit
+        # Surface high/critical advisories without blocking PRs. Several
+        # transitive deps (e.g. via sharp) periodically post warnings we
+        # cannot fix directly — keep this as a visible signal, then flip
+        # to required once the dep tree is consistently clean.
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+      - name: Secret scan (gitleaks)
+        # Catches accidental commits of .env files, API keys, tokens, etc.
+        # Fast (~5s on this repo). Runs before build so we fail early.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Type check
         run: npm run check
@@ -38,13 +58,43 @@ jobs:
         env:
           DATABASE_URL: postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require
 
+      - name: Coverage summary
+        # Emit a small markdown table to the run summary so reviewers can
+        # see coverage percentages at a glance without downloading the
+        # artifact. Reads coverage/coverage-summary.json (produced by the
+        # `json-summary` reporter in vite.config.ts).
+        if: always()
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = 'coverage/coverage-summary.json';
+            if (!fs.existsSync(path)) {
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '### Coverage\n\n_No coverage summary found._\n');
+              process.exit(0);
+            }
+            const total = JSON.parse(fs.readFileSync(path, 'utf8')).total;
+            const fmt = (m) => m && typeof m.pct === 'number' ? m.pct.toFixed(2) + '%' : 'n/a';
+            const md = [
+              '### Coverage',
+              '',
+              '| Metric | Coverage |',
+              '| --- | --- |',
+              '| Statements | ' + fmt(total.statements) + ' |',
+              '| Branches | ' + fmt(total.branches) + ' |',
+              '| Functions | ' + fmt(total.functions) + ' |',
+              '| Lines | ' + fmt(total.lines) + ' |',
+              '',
+            ].join('\n');
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
+          "
+
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage
           path: coverage
-          retention-days: 14
+          retention-days: 30
 
       - name: Build
         # SvelteKit's analyse step loads server modules at build time,

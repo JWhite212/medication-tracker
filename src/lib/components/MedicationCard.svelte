@@ -108,7 +108,7 @@
 
     {#if medication.sparkline && medication.sparkline.length > 1}
       <div class="text-text-muted mt-2 flex items-center gap-2">
-        <span class="text-[10px] uppercase tracking-wider">14d</span>
+        <span class="text-[10px] tracking-wider uppercase">14d</span>
         <div class="flex-1" style="color: {medication.colour}">
           <Sparkline
             values={medication.sparkline}

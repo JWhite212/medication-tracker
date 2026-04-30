@@ -132,6 +132,14 @@ export const dataSchema = z.object({
   exportFormat: z.enum(["pdf", "csv"]),
 });
 
+export const logFilterSchema = z.object({
+  status: z.enum(["any", "taken", "skipped", "missed"]).default("any"),
+  withSideEffects: z.coerce.boolean().default(false),
+  q: z.string().trim().max(100).optional(),
+});
+
+export type LogFilter = z.infer<typeof logFilterSchema>;
+
 const ALLOWED_PUSH_ORIGINS = [
   "https://fcm.googleapis.com",
   "https://updates.push.services.mozilla.com",

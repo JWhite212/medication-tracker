@@ -16,9 +16,7 @@
   const maxDayCount = $derived(
     Math.max(...data.dayOfWeek.map((d: { count: number }) => d.count), 1),
   );
-  const maxHourCount = $derived(
-    Math.max(...data.hourly.map((h: { count: number }) => h.count), 1),
-  );
+  const maxHourCount = $derived(Math.max(...data.hourly.map((h: { count: number }) => h.count), 1));
   const PERIODS = [
     { value: 7, label: "7d" },
     { value: 30, label: "30d" },

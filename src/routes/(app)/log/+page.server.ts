@@ -1,11 +1,17 @@
 import { fail } from "@sveltejs/kit";
-import { desc, eq, and, gte, lte } from "drizzle-orm";
+import { desc, eq, and, gte, lte, sql, ilike } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
-import { doseEditSchema } from "$lib/utils/validation";
+import { doseEditSchema, logFilterSchema } from "$lib/utils/validation";
 import { updateDose, deleteDose } from "$lib/server/doses";
 import { parseDateTimeLocal } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
+
+// Escape SQL LIKE wildcards so user input doesn't accidentally match
+// everything via `%` or `_`. Backslash must come first.
+function escapeLikePattern(input: string): string {
+  return input.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
 
 export const load: PageServerLoad = async ({ locals, url, parent }) => {
   const userId = locals.user!.id;
@@ -17,10 +23,26 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
 
+  const filters = logFilterSchema.safeParse({
+    status: url.searchParams.get("status") ?? "any",
+    withSideEffects: url.searchParams.get("withSideEffects") === "1" ? "true" : "false",
+    q: url.searchParams.get("q") ?? undefined,
+  });
+  const f = filters.success
+    ? filters.data
+    : ({ status: "any", withSideEffects: false, q: undefined } as const);
+
   const conditions = [eq(doseLogs.userId, userId)];
   if (medFilter) conditions.push(eq(doseLogs.medicationId, medFilter));
   if (from) conditions.push(gte(doseLogs.takenAt, new Date(from)));
   if (to) conditions.push(lte(doseLogs.takenAt, new Date(to)));
+  if (f.status !== "any") conditions.push(eq(doseLogs.status, f.status));
+  if (f.withSideEffects) {
+    conditions.push(sql`jsonb_array_length(coalesce(${doseLogs.sideEffects}, '[]'::jsonb)) > 0`);
+  }
+  if (f.q) {
+    conditions.push(ilike(doseLogs.notes, `%${escapeLikePattern(f.q)}%`));
+  }
 
   const [rows, meds] = await Promise.all([
     db
@@ -69,7 +91,14 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
     medications: meds,
     page,
     hasMore,
-    filters: { medication: medFilter, from, to },
+    filters: {
+      medication: medFilter,
+      from,
+      to,
+      status: f.status,
+      withSideEffects: f.withSideEffects,
+      q: f.q ?? "",
+    },
     timezone: locals.user!.timezone,
   };
 };

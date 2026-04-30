@@ -33,6 +33,14 @@ Server-first SvelteKit app (Svelte 5 runes). Pages load via `+page.server.ts`, m
 - Audit log (`src/lib/server/audit.ts`) records all create/update/delete with JSONB diffs
 - Inventory auto-decrements on dose log, auto-restores on delete
 
+## Gotchas
+
+- Drizzle `numeric` columns return as **string** in JS, not number. `medications.scheduleIntervalHours` and `dosageAmount` must be `Number(...)` before arithmetic.
+- `medications.inventoryCount` is in **doses**, not raw units. `dose_logs.quantity` defaults to 1; inventory decrements by `quantity` per log, restores on delete.
+- `scheduleType` / `scheduleIntervalHours` columns are marked DEPRECATED in `schema.ts` but still populated and read — the canonical source is the `medication_schedules` table (phase 4d).
+- "Days until refill" prefers the schedule rate (`24/intervalHours`) over the 30-day historical average for `scheduleType === "scheduled"`. PRN meds use the historical average.
+- Tests that touch the database mock the `db` import (see `tests/unit/csv.test.ts`); CI runs with a placeholder `DATABASE_URL`.
+
 ## Styling
 
 Tailwind CSS v4 with custom theme in `src/app.css`. Dark-mode-first. Key tokens: `glass`, `glass-border`, `surface`, `surface-raised`, `text-primary`, `text-secondary`, `accent`.

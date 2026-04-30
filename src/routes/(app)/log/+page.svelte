@@ -4,6 +4,7 @@
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import EmptyState from "$components/EmptyState.svelte";
   import { goto } from "$app/navigation";
+  import { onDestroy } from "svelte";
   import type { DoseLogWithMedication } from "$lib/types";
   import emptyDoseHistory from "$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.png";
 
@@ -20,6 +21,13 @@
   });
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
+  onDestroy(() => {
+    if (searchTimer) {
+      clearTimeout(searchTimer);
+      searchTimer = null;
+    }
+  });
+
   function updateFilter(key: string, value: string) {
     const url = new URL(window.location.href);
     if (value) url.searchParams.set(key, value);
@@ -30,7 +38,10 @@
 
   function handleSearch(value: string) {
     searchInput = value;
-    if (searchTimer) clearTimeout(searchTimer);
+    if (searchTimer) {
+      clearTimeout(searchTimer);
+      searchTimer = null;
+    }
     searchTimer = setTimeout(() => updateFilter("q", value), 300);
   }
 

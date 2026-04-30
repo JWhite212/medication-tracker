@@ -206,6 +206,49 @@ describe("buildInsights", () => {
     expect(insights.find((i) => i.id === "streak")?.text).toContain("7 days");
   });
 
+  it("emits worst-day when one DoW has notably fewer doses than the average", () => {
+    const insights = buildInsights({
+      ...baseInputs,
+      dayOfWeek: [
+        { dayOfWeek: 0, count: 5 }, // Sun
+        { dayOfWeek: 1, count: 5 }, // Mon
+        { dayOfWeek: 2, count: 5 }, // Tue
+        { dayOfWeek: 3, count: 5 }, // Wed
+        { dayOfWeek: 4, count: 5 }, // Thu
+        { dayOfWeek: 5, count: 5 }, // Fri
+        { dayOfWeek: 6, count: 0 }, // Sat — well below 70% of avg
+      ],
+    });
+    const wd = insights.find((i) => i.id === "worst-day");
+    expect(wd).toBeDefined();
+    expect(wd?.text).toContain("Saturday");
+  });
+
+  it("does not emit worst-day when distribution is roughly even", () => {
+    const insights = buildInsights({
+      ...baseInputs,
+      dayOfWeek: Array.from({ length: 7 }, (_, dow) => ({ dayOfWeek: dow, count: 4 })),
+    });
+    expect(insights.find((i) => i.id === "worst-day")).toBeUndefined();
+  });
+
+  it("emits refill-warning when at least one med needs refilling", () => {
+    const single = buildInsights({ ...baseInputs, refillCriticalCount: 1 });
+    const sInsight = single.find((i) => i.id === "refill-warning");
+    expect(sInsight).toBeDefined();
+    expect(sInsight?.severity).toBe("warning");
+    expect(sInsight?.text).toMatch(/1 medication needs/);
+
+    const multiple = buildInsights({ ...baseInputs, refillCriticalCount: 3 });
+    const mInsight = multiple.find((i) => i.id === "refill-warning");
+    expect(mInsight?.text).toMatch(/3 medications need/);
+  });
+
+  it("does not emit refill-warning when refillCriticalCount is 0", () => {
+    const insights = buildInsights({ ...baseInputs, refillCriticalCount: 0 });
+    expect(insights.find((i) => i.id === "refill-warning")).toBeUndefined();
+  });
+
   it("emits side-effects insight when count >= 3", () => {
     const insights = buildInsights({
       ...baseInputs,

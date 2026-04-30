@@ -4,6 +4,10 @@
   type Props = {
     values: number[];
     color?: string;
+    // When set, the SVG renders at exactly this pixel width. When
+    // omitted, the SVG fills its container (responsive). The internal
+    // viewBox uses this value or a default of 80 for path coordinates;
+    // viewBox scales to rendered size so visual output is identical.
     width?: number;
     height?: number;
     ariaLabel?: string;
@@ -14,23 +18,29 @@
   let {
     values,
     color = "currentColor",
-    width = 80,
+    width,
     height = 24,
     ariaLabel = "Trend",
     fill = true,
     strokeWidth = 1.5,
   }: Props = $props();
 
-  const shape = $derived(buildSparklineShape(values, width, height, strokeWidth));
+  const viewBoxW = $derived(width ?? 80);
+  const shape = $derived(buildSparklineShape(values, viewBoxW, height, strokeWidth));
+  const sizeStyle = $derived(
+    width !== undefined
+      ? `width: ${width}px; height: ${height}px`
+      : `width: 100%; height: ${height}px`,
+  );
 </script>
 
 <svg
   role="img"
   aria-label={ariaLabel}
-  viewBox="0 0 {width} {height}"
+  viewBox="0 0 {viewBoxW} {height}"
   preserveAspectRatio="none"
   class="block"
-  style="width: 100%; height: {height}px"
+  style={sizeStyle}
 >
   {#if shape.dotX !== null && shape.dotY !== null}
     <circle cx={shape.dotX} cy={shape.dotY} r={Math.max(strokeWidth, 1.5)} fill={color} />

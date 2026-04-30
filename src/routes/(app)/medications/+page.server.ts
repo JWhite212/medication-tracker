@@ -28,7 +28,10 @@ export const load: PageServerLoad = async ({ locals }) => {
       .select({
         medicationId: doseLogs.medicationId,
         date: sql<string>`date(${doseLogs.takenAt} AT TIME ZONE ${tzExpr})`,
-        count: sql<number>`count(*)::int`,
+        // Sum doses, not log rows — quantity can be > 1 and the
+        // sparkline should reflect total doses per day to be consistent
+        // with inventory accounting (CLAUDE.md gotcha).
+        count: sql<number>`coalesce(sum(${doseLogs.quantity}), 0)::int`,
       })
       .from(doseLogs)
       .where(

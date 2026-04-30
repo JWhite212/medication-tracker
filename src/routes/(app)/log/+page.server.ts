@@ -25,7 +25,7 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
 
   const filters = logFilterSchema.safeParse({
     status: url.searchParams.get("status") ?? "any",
-    withSideEffects: url.searchParams.get("withSideEffects") === "1" ? "true" : "false",
+    withSideEffects: url.searchParams.get("withSideEffects") ?? "false",
     q: url.searchParams.get("q") ?? undefined,
   });
   const f = filters.success

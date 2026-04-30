@@ -4,18 +4,11 @@ import { medications, doseLogs } from "$lib/server/db/schema";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import { expectedPerDayForSchedules } from "$lib/server/analytics";
 import type { MedicationSchedule } from "$lib/server/schedules";
-
-export type RefillSeverity = "critical" | "warning" | "watch" | "ok";
-
-export type RefillForecastEntry = {
-  medicationId: string;
-  medicationName: string;
-  colour: string;
-  inventoryCount: number;
-  dailyRate: number;
-  daysUntilRefill: number | null;
-  severity: RefillSeverity;
-};
+// Types live in $lib/types so client components (RefillsCard) can
+// import without crossing the $lib/server boundary. Re-exported here
+// for backward-compatible callers.
+export type { RefillSeverity, RefillForecastEntry } from "$lib/types";
+import type { RefillSeverity, RefillForecastEntry } from "$lib/types";
 
 export const REFILL_THRESHOLDS = {
   critical: 3,
@@ -45,7 +38,10 @@ export function dailyRateFor(
   if (schedules && schedules.length > 0) {
     const scheduledRate = expectedPerDayForSchedules(schedules);
     if (scheduledRate > 0) return scheduledRate;
-    return thirtyDayDoseCount / 30;
+    // Schedule rows exist but contribute nothing (e.g. all-PRN). Try
+    // the legacy column as a safety net before falling to history —
+    // covers partially-migrated meds where the legacy column is
+    // accurate even if schedule_table rows aren't.
   }
   if (legacyScheduleType === "scheduled") {
     const hrs = legacyIntervalHours !== null ? Number(legacyIntervalHours) : NaN;
@@ -79,7 +75,9 @@ export async function getRefillForecast(userId: string): Promise<RefillForecastE
     db
       .select({
         medicationId: doseLogs.medicationId,
-        count: sql<number>`count(*)::int`,
+        // Sum doses, not log rows — quantity can be > 1 and inventoryCount
+        // is measured in doses (see CLAUDE.md gotcha).
+        count: sql<number>`coalesce(sum(${doseLogs.quantity}), 0)::int`,
       })
       .from(doseLogs)
       .where(

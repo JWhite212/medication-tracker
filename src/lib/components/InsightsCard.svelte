@@ -1,6 +1,6 @@
 <script lang="ts">
   import GlassCard from "$components/ui/GlassCard.svelte";
-  import type { Insight } from "$lib/server/analytics";
+  import type { Insight } from "$lib/types";
 
   type Props = { insights: Insight[] };
   let { insights }: Props = $props();

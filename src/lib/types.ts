@@ -43,3 +43,26 @@ export type MedicationTimingStatus = {
   minutesUntilDue: number; // negative if overdue
   lastTakenAt: Date | null;
 };
+
+// Analytics insight returned from buildInsights (server-side) and
+// rendered by InsightsCard (client-side). Lives here so client
+// components don't reach into $lib/server/* — type-only imports are
+// technically erased, but keeping the boundary clean avoids accidental
+// runtime imports and matches SvelteKit conventions.
+export type Insight = {
+  id: string;
+  severity: "info" | "positive" | "warning";
+  text: string;
+};
+
+export type RefillSeverity = "critical" | "warning" | "watch" | "ok";
+
+export type RefillForecastEntry = {
+  medicationId: string;
+  medicationName: string;
+  colour: string;
+  inventoryCount: number;
+  dailyRate: number;
+  daysUntilRefill: number | null;
+  severity: RefillSeverity;
+};

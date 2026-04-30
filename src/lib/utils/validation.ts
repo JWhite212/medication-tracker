@@ -134,7 +134,10 @@ export const dataSchema = z.object({
 
 export const logFilterSchema = z.object({
   status: z.enum(["any", "taken", "skipped", "missed"]).default("any"),
-  withSideEffects: z.coerce.boolean().default(false),
+  // z.coerce.boolean() runs Boolean(value), which mis-parses the string
+  // "false" as true. z.stringbool() correctly handles "true"/"false"/
+  // "1"/"0" coming from query strings.
+  withSideEffects: z.stringbool().default(false),
   q: z.string().trim().max(100).optional(),
 });
 

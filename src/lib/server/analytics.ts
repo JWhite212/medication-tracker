@@ -283,6 +283,19 @@ export type DailyAdherencePoint = {
   adherence: number;
 };
 
+// Computed expected doses/day from the deprecated medications.scheduleType
+// + medications.scheduleIntervalHours columns. Used as fallback when a
+// medication has no rows in the medication_schedules table yet.
+function expectedPerDayFromLegacy(
+  scheduleType: string,
+  scheduleIntervalHours: number | string | null,
+): number {
+  if (scheduleType !== "scheduled") return 0;
+  const hrs = scheduleIntervalHours !== null ? Number(scheduleIntervalHours) : NaN;
+  if (!Number.isFinite(hrs) || hrs <= 0) return 0;
+  return 24 / hrs;
+}
+
 // Daily adherence approximation. Expected-per-day is derived from the
 // current set of schedules, not a per-day historical reconstruction —
 // medications added or archived mid-period are not retro-applied. Good
@@ -293,14 +306,27 @@ export async function getDailyAdherenceSeries(
   timezone: string = "UTC",
   range?: DateRange,
 ): Promise<DailyAdherencePoint[]> {
-  const [dailyCounts, schedulesByMed] = await Promise.all([
+  const [dailyCounts, schedulesByMed, activeMeds] = await Promise.all([
     getDailyDoseCounts(userId, days, timezone, range),
     getSchedulesForUser(userId),
+    db
+      .select({
+        id: medications.id,
+        scheduleType: medications.scheduleType,
+        scheduleIntervalHours: medications.scheduleIntervalHours,
+      })
+      .from(medications)
+      .where(and(eq(medications.userId, userId), eq(medications.isArchived, false))),
   ]);
 
   let expectedPerDay = 0;
-  for (const schedules of schedulesByMed.values()) {
-    expectedPerDay += expectedPerDayForSchedules(schedules);
+  for (const med of activeMeds) {
+    const schedules = schedulesByMed.get(med.id);
+    if (schedules && schedules.length > 0) {
+      expectedPerDay += expectedPerDayForSchedules(schedules);
+    } else {
+      expectedPerDay += expectedPerDayFromLegacy(med.scheduleType, med.scheduleIntervalHours);
+    }
   }
 
   const fromDate =
@@ -374,11 +400,11 @@ export async function getDayOfWeekDistribution(
     .orderBy(sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`);
 }
 
-export type Insight = {
-  id: string;
-  severity: "info" | "positive" | "warning";
-  text: string;
-};
+// Insight type moved to $lib/types so client components (InsightsCard)
+// can import without crossing the $lib/server boundary. Re-exported
+// here for backward-compatible callers.
+export type { Insight } from "$lib/types";
+import type { Insight } from "$lib/types";
 
 export type InsightInputs = {
   totalDoses: number;
@@ -470,7 +496,10 @@ export function buildInsights(input: InsightInputs): Insight[] {
     out.push({
       id: "refill-warning",
       severity: "warning",
-      text: `${input.refillCriticalCount} medication${input.refillCriticalCount === 1 ? "" : "s"} need a refill within 7 days`,
+      text:
+        input.refillCriticalCount === 1
+          ? `1 medication needs a refill within 7 days`
+          : `${input.refillCriticalCount} medications need a refill within 7 days`,
     });
   }
 
@@ -518,40 +547,61 @@ export async function getScheduleVariance(
 
   const schedulesByMed = await getSchedulesForUser(userId);
 
-  const fixedTimesByMed = new Map<string, number[]>();
+  // For each med, store fixed-time targets together with their
+  // daysOfWeek restriction (null = every day). At evaluation time we
+  // only consider targets whose daysOfWeek includes the dose's local
+  // weekday — otherwise a Mon-only schedule would match a Tue dose.
+  type FixedTarget = { minutes: number; daysOfWeek: number[] | null };
+  const fixedTimesByMed = new Map<string, FixedTarget[]>();
   for (const [medId, schedules] of schedulesByMed) {
-    const minutes: number[] = [];
+    const targets: FixedTarget[] = [];
     for (const s of schedules) {
       if (s.scheduleKind !== "fixed_time" || !s.timeOfDay) continue;
       const [hh, mm] = s.timeOfDay.split(":").map(Number);
-      if (Number.isFinite(hh) && Number.isFinite(mm)) minutes.push(hh * 60 + mm);
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
+      const restrictedDays = s.daysOfWeek && s.daysOfWeek.length > 0 ? s.daysOfWeek : null;
+      targets.push({ minutes: hh * 60 + mm, daysOfWeek: restrictedDays });
     }
-    if (minutes.length > 0) fixedTimesByMed.set(medId, minutes);
+    if (targets.length > 0) fixedTimesByMed.set(medId, targets);
   }
 
   if (fixedTimesByMed.size === 0) return null;
 
-  const hourFmt = new Intl.DateTimeFormat("en-GB", {
+  // Format both wall-clock time and weekday in the user's tz so the
+  // dayOfWeek check matches the schedule's local day rather than UTC.
+  const localFmt = new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    weekday: "short",
     timeZone: tz,
   });
+  const weekdayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
 
   let total = 0;
   let count = 0;
   for (const row of rows) {
     const targets = fixedTimesByMed.get(row.medicationId);
     if (!targets) continue;
-    const parts = hourFmt.formatToParts(new Date(row.takenAt));
+    const parts = localFmt.formatToParts(new Date(row.takenAt));
     const hour = Number(parts.find((p) => p.type === "hour")?.value);
     const minute = Number(parts.find((p) => p.type === "minute")?.value);
-    if (!Number.isFinite(hour) || !Number.isFinite(minute)) continue;
+    const weekdayStr = parts.find((p) => p.type === "weekday")?.value ?? "";
+    const weekday = weekdayMap[weekdayStr];
+    if (!Number.isFinite(hour) || !Number.isFinite(minute) || weekday === undefined) continue;
     const taken = hour * 60 + minute;
     let best = Infinity;
     for (const t of targets) {
-      // Compare across midnight: shortest signed delta on a 24h ring.
-      const delta = Math.min(Math.abs(taken - t), 1440 - Math.abs(taken - t));
+      if (t.daysOfWeek !== null && !t.daysOfWeek.includes(weekday)) continue;
+      const delta = Math.min(Math.abs(taken - t.minutes), 1440 - Math.abs(taken - t.minutes));
       if (delta < best) best = delta;
     }
     if (best !== Infinity) {

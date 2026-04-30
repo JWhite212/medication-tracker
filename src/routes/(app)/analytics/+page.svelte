@@ -161,17 +161,12 @@
     {/if}
   </GlassCard>
 
-  {#if data.statusBreakdown.expectedTotal > 0 || data.statusBreakdown.skippedEvents > 0}
-    <GlassCard>
-      <h2 class="mb-4 text-lg font-semibold">Dose Status Breakdown</h2>
-      <StatusBreakdownBar
-        takenEvents={data.statusBreakdown.takenEvents}
-        skippedEvents={data.statusBreakdown.skippedEvents}
-        missedEvents={data.statusBreakdown.missedEvents}
-        expectedTotal={data.statusBreakdown.expectedTotal}
-      />
-    </GlassCard>
-  {/if}
+  <StatusBreakdownBar
+    takenEvents={data.statusBreakdown.takenEvents}
+    skippedEvents={data.statusBreakdown.skippedEvents}
+    missedEvents={data.statusBreakdown.missedEvents}
+    expectedTotal={data.statusBreakdown.expectedTotal}
+  />
 
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Day of Week Distribution</h2>
@@ -182,6 +177,8 @@
             data.dayOfWeek.find((d: { dayOfWeek: number }) => d.dayOfWeek === dow)?.count ?? 0}
           <div class="flex h-full flex-1 flex-col items-center justify-end gap-1">
             <div
+              role="img"
+              aria-label="{DAY_LABELS[dow]}: {count} dose{count === 1 ? '' : 's'}"
               class="w-full rounded-t transition-all {WEEKEND_DOW.has(dow)
                 ? 'bg-accent/40'
                 : 'bg-accent/70'}"
@@ -214,6 +211,10 @@
               {scheduled ? "▼" : ""}
             </div>
             <div
+              role="img"
+              aria-label="{hour.toString().padStart(2, '0')}:00, {count} dose{count === 1
+                ? ''
+                : 's'}{scheduled ? ', scheduled time' : ''}"
               class="bg-accent/70 w-full rounded-t transition-all"
               style="height: {(count / maxHourCount) * 100}%"
               title="{hour.toString().padStart(2, '0')}:00 — {count}{scheduled

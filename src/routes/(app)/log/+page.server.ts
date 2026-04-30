@@ -1,5 +1,6 @@
 import { fail } from "@sveltejs/kit";
 import { desc, eq, and, gte, lte, sql, ilike } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { doseEditSchema, logFilterSchema } from "$lib/utils/validation";
@@ -13,10 +14,14 @@ function escapeLikePattern(input: string): string {
   return input.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
+// Bounds-check pagination so `?page=abc` or `?page=99999999` cannot produce
+// a NaN offset or trigger a multi-million-row scan. Falls back to page 1.
+const pageParamSchema = z.coerce.number().int().min(1).max(1000).catch(1);
+
 export const load: PageServerLoad = async ({ locals, url, parent }) => {
   const userId = locals.user!.id;
   const { preferences } = await parent();
-  const page = Number(url.searchParams.get("page") ?? "1");
+  const page = pageParamSchema.parse(url.searchParams.get("page") ?? 1);
   const limit = preferences.doseLogPageSize;
   const offset = (page - 1) * limit;
   const medFilter = url.searchParams.get("medication");

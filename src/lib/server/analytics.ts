@@ -276,6 +276,70 @@ export async function getDoseStatusBreakdown(
   };
 }
 
+export type DailyAdherencePoint = {
+  date: string;
+  doseCount: number;
+  expected: number;
+  adherence: number;
+};
+
+// Daily adherence approximation. Expected-per-day is derived from the
+// current set of schedules, not a per-day historical reconstruction —
+// medications added or archived mid-period are not retro-applied. Good
+// enough for a sparkline trend; do not treat as authoritative.
+export async function getDailyAdherenceSeries(
+  userId: string,
+  days: number,
+  timezone: string = "UTC",
+  range?: DateRange,
+): Promise<DailyAdherencePoint[]> {
+  const [dailyCounts, schedulesByMed] = await Promise.all([
+    getDailyDoseCounts(userId, days, timezone, range),
+    getSchedulesForUser(userId),
+  ]);
+
+  let expectedPerDay = 0;
+  for (const schedules of schedulesByMed.values()) {
+    expectedPerDay += expectedPerDayForSchedules(schedules);
+  }
+
+  const fromDate =
+    range?.from && range?.to
+      ? range.from
+      : startOfDay(new Date(Date.now() - days * 86400000), timezone);
+  const toDate = range?.to ?? new Date();
+  const span = Math.max(1, Math.round((toDate.getTime() - fromDate.getTime()) / 86400000));
+
+  const tz = validTimezones.has(timezone) ? timezone : "UTC";
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const countByDate = new Map<string, number>();
+  for (const row of dailyCounts) {
+    countByDate.set(row.date, row.count);
+  }
+
+  const series: DailyAdherencePoint[] = [];
+  for (let i = 0; i < span; i++) {
+    const day = new Date(fromDate.getTime() + i * 86400000);
+    const dateKey = formatter.format(day);
+    const doseCount = countByDate.get(dateKey) ?? 0;
+    const adherence =
+      expectedPerDay > 0 ? Math.min(100, Math.round((doseCount / expectedPerDay) * 100)) : 0;
+    series.push({
+      date: dateKey,
+      doseCount,
+      expected: Math.round(expectedPerDay * 10) / 10,
+      adherence,
+    });
+  }
+  return series;
+}
+
 export async function getHourlyDistribution(
   userId: string,
   days: number,
@@ -308,6 +372,126 @@ export async function getDayOfWeekDistribution(
     .where(buildDateFilters(userId, days, timezone, range))
     .groupBy(sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`)
     .orderBy(sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`);
+}
+
+export type Insight = {
+  id: string;
+  severity: "info" | "positive" | "warning";
+  text: string;
+};
+
+export type InsightInputs = {
+  totalDoses: number;
+  prevTotalDoses: number;
+  avgAdherence: number;
+  prevAvgAdherence: number;
+  medStats: Array<{ medicationName: string; adherence: number; expectedTotal: number }>;
+  dayOfWeek: Array<{ dayOfWeek: number; count: number }>;
+  hourly: Array<{ hour: number; count: number }>;
+  sideEffectsCount: number;
+  topSideEffect: string | null;
+  refillCriticalCount: number;
+  streak: number;
+};
+
+const DAY_LABEL_FULL = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+export function buildInsights(input: InsightInputs): Insight[] {
+  const out: Insight[] = [];
+
+  if (input.medStats.length >= 2 && input.prevAvgAdherence > 0) {
+    const delta = input.avgAdherence - input.prevAvgAdherence;
+    if (Math.abs(delta) >= 5) {
+      out.push({
+        id: "adherence-trend",
+        severity: delta > 0 ? "positive" : "warning",
+        text: `Adherence ${delta > 0 ? "improved" : "declined"} ${Math.abs(delta)}% vs. previous period`,
+      });
+    }
+  }
+
+  if (input.medStats.length >= 2) {
+    const sorted = [...input.medStats]
+      .filter((m) => m.expectedTotal > 0)
+      .sort((a, b) => b.adherence - a.adherence);
+    if (sorted.length >= 2) {
+      const top = sorted[0];
+      out.push({
+        id: "highest-adherence-med",
+        severity: "positive",
+        text: `Highest adherence: ${top.medicationName} (${top.adherence}%)`,
+      });
+      const bottom = sorted[sorted.length - 1];
+      if (bottom.adherence < 80) {
+        out.push({
+          id: "lowest-adherence-med",
+          severity: "warning",
+          text: `Lowest adherence: ${bottom.medicationName} (${bottom.adherence}%)`,
+        });
+      }
+    }
+  }
+
+  const totalDow = input.dayOfWeek.reduce((s, d) => s + d.count, 0);
+  if (totalDow >= 7) {
+    const avg = totalDow / 7;
+    const worst = [...input.dayOfWeek].sort((a, b) => a.count - b.count)[0];
+    if (worst && worst.count < avg * 0.7 && worst.count >= 0) {
+      out.push({
+        id: "worst-day",
+        severity: "info",
+        text: `Fewest doses on ${DAY_LABEL_FULL[worst.dayOfWeek]}`,
+      });
+    }
+  }
+
+  const totalHour = input.hourly.reduce((s, h) => s + h.count, 0);
+  if (totalHour >= 5) {
+    const peak = [...input.hourly].sort((a, b) => b.count - a.count)[0];
+    if (peak && peak.count >= totalHour * 0.3) {
+      const hh = peak.hour.toString().padStart(2, "0");
+      out.push({
+        id: "peak-hour",
+        severity: "info",
+        text: `Most consistent dosing time is ${hh}:00`,
+      });
+    }
+  }
+
+  if (input.refillCriticalCount > 0) {
+    out.push({
+      id: "refill-warning",
+      severity: "warning",
+      text: `${input.refillCriticalCount} medication${input.refillCriticalCount === 1 ? "" : "s"} need a refill within 7 days`,
+    });
+  }
+
+  if (input.sideEffectsCount >= 3 && input.topSideEffect) {
+    out.push({
+      id: "side-effects",
+      severity: "info",
+      text: `${input.sideEffectsCount} side effects logged — most common: ${input.topSideEffect}`,
+    });
+  }
+
+  if (input.streak >= 3) {
+    out.push({
+      id: "streak",
+      severity: "positive",
+      text: `Current streak: ${input.streak} days`,
+    });
+  }
+
+  const order = { warning: 0, positive: 1, info: 2 } as const;
+  return out.sort((a, b) => order[a.severity] - order[b.severity]).slice(0, 5);
 }
 
 export async function getSideEffectStats(

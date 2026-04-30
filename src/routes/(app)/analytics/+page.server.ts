@@ -4,6 +4,9 @@ import {
   getHourlyDistribution,
   getDayOfWeekDistribution,
   getSideEffectStats,
+  getDailyAdherenceSeries,
+  getDoseStatusBreakdown,
+  buildInsights,
   calculateStreak,
   calculateTrend,
 } from "$lib/server/analytics";
@@ -39,16 +42,27 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
         to: new Date(now - period * 86400000),
       };
 
-  const [dailyCounts, medStats, hourly, dayOfWeek, sideEffects, prevDailyCounts, prevMedStats] =
-    await Promise.all([
-      getDailyDoseCounts(userId, period, timezone, customRange),
-      getPerMedicationStats(userId, period, timezone, customRange),
-      getHourlyDistribution(userId, period, timezone, customRange),
-      getDayOfWeekDistribution(userId, period, timezone, customRange),
-      getSideEffectStats(userId, period, timezone, customRange),
-      getDailyDoseCounts(userId, period, timezone, previousRange),
-      getPerMedicationStats(userId, period, timezone, previousRange),
-    ]);
+  const [
+    dailyCounts,
+    medStats,
+    hourly,
+    dayOfWeek,
+    sideEffects,
+    dailyAdherence,
+    statusBreakdown,
+    prevDailyCounts,
+    prevMedStats,
+  ] = await Promise.all([
+    getDailyDoseCounts(userId, period, timezone, customRange),
+    getPerMedicationStats(userId, period, timezone, customRange),
+    getHourlyDistribution(userId, period, timezone, customRange),
+    getDayOfWeekDistribution(userId, period, timezone, customRange),
+    getSideEffectStats(userId, period, timezone, customRange),
+    getDailyAdherenceSeries(userId, period, timezone, customRange),
+    getDoseStatusBreakdown(userId, period, timezone, customRange),
+    getDailyDoseCounts(userId, period, timezone, previousRange),
+    getPerMedicationStats(userId, period, timezone, previousRange),
+  ]);
 
   const streak = calculateStreak(
     dailyCounts.map((d) => d.date),
@@ -66,6 +80,25 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     prevMedStats.length > 0
       ? Math.round(prevMedStats.reduce((a, s) => a + s.adherence, 0) / prevMedStats.length)
       : 0;
+
+  const insights = buildInsights({
+    totalDoses,
+    prevTotalDoses,
+    avgAdherence,
+    prevAvgAdherence,
+    medStats: medStats.map((s) => ({
+      medicationName: s.medicationName,
+      adherence: s.adherence,
+      expectedTotal: s.expectedTotal,
+    })),
+    dayOfWeek,
+    hourly,
+    sideEffectsCount: sideEffects.frequency.reduce((s, e) => s + e.count, 0),
+    topSideEffect: sideEffects.frequency[0]?.name ?? null,
+    // Refill count is wired in Step 7 once getRefillForecast lands.
+    refillCriticalCount: 0,
+    streak,
+  });
 
   const trends = {
     doses: calculateTrend(totalDoses, prevTotalDoses),
@@ -85,6 +118,9 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     hourly,
     dayOfWeek,
     sideEffects,
+    dailyAdherence,
+    statusBreakdown,
+    insights,
     streak,
     period,
     totalDoses,

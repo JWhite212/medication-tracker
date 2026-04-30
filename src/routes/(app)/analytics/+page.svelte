@@ -2,12 +2,22 @@
   import GlassCard from "$components/ui/GlassCard.svelte";
   import Heatmap from "$components/Heatmap.svelte";
   import AdherenceChart from "$components/AdherenceChart.svelte";
+  import Sparkline from "$components/Sparkline.svelte";
+  import InsightsCard from "$components/InsightsCard.svelte";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
   import { goto } from "$app/navigation";
 
   let { data } = $props();
 
   const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const WEEKEND_DOW = new Set([0, 6]);
+
+  const maxDayCount = $derived(
+    Math.max(...data.dayOfWeek.map((d: { count: number }) => d.count), 1),
+  );
+  const maxHourCount = $derived(
+    Math.max(...data.hourly.map((h: { count: number }) => h.count), 1),
+  );
   const PERIODS = [
     { value: 7, label: "7d" },
     { value: 30, label: "30d" },
@@ -41,6 +51,8 @@
 
 <div class="mx-auto max-w-3xl space-y-6">
   <MedicalDisclaimer variant="inline" />
+
+  <InsightsCard insights={data.insights} />
 
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <h1 class="text-2xl font-bold">Analytics</h1>
@@ -96,6 +108,16 @@
           </span>
         {/if}
       </div>
+      {#if data.dailyAdherence.length > 1}
+        <div class="text-success mt-2">
+          <Sparkline
+            values={data.dailyAdherence.map((d) => d.adherence)}
+            color="currentColor"
+            height={28}
+            ariaLabel="Daily adherence over period"
+          />
+        </div>
+      {/if}
     </GlassCard>
     <GlassCard class="animate-fade-in-up text-center" style="animation-delay: 160ms">
       <p class="text-warning text-3xl font-bold">
@@ -111,6 +133,16 @@
           </span>
         {/if}
       </div>
+      {#if data.dailyAdherence.length > 1}
+        <div class="text-warning mt-2">
+          <Sparkline
+            values={data.dailyAdherence.map((d) => d.doseCount)}
+            color="currentColor"
+            height={28}
+            ariaLabel="Daily doses over period"
+          />
+        </div>
+      {/if}
     </GlassCard>
   </div>
 
@@ -133,15 +165,17 @@
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Day of Week Distribution</h2>
     <div class="overflow-x-auto">
-      <div class="flex h-32 items-end gap-2" style="min-width: 20rem">
+      <div class="flex h-32 gap-2" style="min-width: 20rem">
         {#each Array.from({ length: 7 }, (_, i) => i) as dow}
           {@const count =
             data.dayOfWeek.find((d: { dayOfWeek: number }) => d.dayOfWeek === dow)?.count ?? 0}
-          {@const maxD = Math.max(...data.dayOfWeek.map((d: { count: number }) => d.count), 1)}
-          <div class="flex flex-1 flex-col items-center gap-1">
+          <div class="flex h-full flex-1 flex-col items-center justify-end gap-1">
             <div
-              class="bg-accent/60 w-full rounded-t transition-all"
-              style="height: {(count / maxD) * 100}%"
+              class="w-full rounded-t transition-all {WEEKEND_DOW.has(dow)
+                ? 'bg-accent/40'
+                : 'bg-accent/70'}"
+              style="height: {(count / maxDayCount) * 100}%"
+              title="{DAY_LABELS[dow]}: {count}"
             ></div>
             <span class="text-text-muted text-[10px]">{DAY_LABELS[dow]}</span>
           </div>
@@ -153,14 +187,14 @@
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Time of Day Distribution</h2>
     <div class="overflow-x-auto">
-      <div class="flex h-32 items-end gap-1" style="min-width: 28rem">
+      <div class="flex h-32 gap-1" style="min-width: 28rem">
         {#each Array.from({ length: 24 }, (_, i) => i) as hour}
           {@const count = data.hourly.find((h: { hour: number }) => h.hour === hour)?.count ?? 0}
-          {@const maxH = Math.max(...data.hourly.map((h: { count: number }) => h.count), 1)}
-          <div class="flex flex-1 flex-col items-center gap-1">
+          <div class="flex h-full flex-1 flex-col items-center justify-end gap-1">
             <div
-              class="bg-accent/60 w-full rounded-t transition-all"
-              style="height: {(count / maxH) * 100}%"
+              class="bg-accent/70 w-full rounded-t transition-all"
+              style="height: {(count / maxHourCount) * 100}%"
+              title="{hour.toString().padStart(2, '0')}:00 — {count}"
             ></div>
             {#if hour % 6 === 0}
               <span class="text-text-muted text-[10px]">{hour}</span>

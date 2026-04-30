@@ -131,12 +131,13 @@ describe("getReadableTextColor", () => {
   });
 
   it("uses secondary colour for non-solid patterns", () => {
-    // Same colours on a stripes pattern: both render, so the safer fg differs
-    // from the solid case (white instead of dark).
+    // Same colours on a stripes pattern: both render. Yellow alone wants dark
+    // text; navy alone wants white. With both, white has the better worst-case
+    // contrast (≈1.32 on yellow) than dark (≈1.19 on navy), so white wins.
     const solid = getReadableTextColor("#fde047", "#1e1b4b", "solid");
     const stripes = getReadableTextColor("#fde047", "#1e1b4b", "stripes");
     expect(solid.color).toBe("#111111");
-    expect(stripes.color).not.toBe(solid.color);
+    expect(stripes.color).toBe("#ffffff");
   });
 
   it("treats null/undefined secondary as single-colour", () => {

@@ -4,7 +4,7 @@ const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
 function relativeLuminance(hex: string): number {
   if (!HEX_RE.test(hex)) {
-    if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
+    if (import.meta.env.DEV) {
       console.warn(`[relativeLuminance] Invalid hex colour: "${hex}". Defaulting to 0.`);
     }
     return 0;
@@ -61,7 +61,7 @@ export function getReadableTextColor(
   const hoverOverlay = useDark ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.18)";
   return {
     color: useDark ? READABLE_DARK : READABLE_LIGHT,
-    textShadow: `-1px -1px 0 ${outline}, 1px -1px 0 ${outline}, -1px 1px 0 ${outline}, 1px 1px 0 ${outline}`,
+    textShadow: `-1px -1px 1px ${outline}, 1px -1px 1px ${outline}, -1px 1px 1px ${outline}, 1px 1px 1px ${outline}`,
     hoverOverlay,
   };
 }

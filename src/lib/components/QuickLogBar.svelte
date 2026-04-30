@@ -62,13 +62,13 @@
             med.colour,
             med.colourSecondary,
             med.pattern,
-          )}; color: {fg.color}; text-shadow: {fg.textShadow};"
+          )}; color: {fg.color}; text-shadow: {fg.textShadow}; --pill-hover: {fg.hoverOverlay};"
         >
           <!-- Minus button (only visible when qty > 1) -->
           {#if getQty(med.id) > 1}
             <button
               type="button"
-              class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-glass-hover hover:opacity-100"
+              class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-[var(--pill-hover)] hover:opacity-100"
               aria-label="Decrease quantity"
               onclick={() => setQty(med.id, getQty(med.id) - 1)}>−</button
             >
@@ -80,7 +80,7 @@
           <!-- Submit button: medication name + dosage -->
           <button
             type="submit"
-            class="flex items-center gap-2 px-4 py-2 transition-all hover:bg-glass-hover active:scale-95"
+            class="flex items-center gap-2 px-4 py-2 transition-all hover:bg-[var(--pill-hover)] active:scale-95"
           >
             <span>{med.name}</span>
             <span class="opacity-70">{med.dosageAmount}{med.dosageUnit}</span>
@@ -89,7 +89,7 @@
           <!-- Plus button -->
           <button
             type="button"
-            class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-glass-hover hover:opacity-100"
+            class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-[var(--pill-hover)] hover:opacity-100"
             aria-label="Increase quantity"
             onclick={() => setQty(med.id, getQty(med.id) + 1)}>+</button
           >

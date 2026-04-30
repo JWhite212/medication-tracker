@@ -155,15 +155,31 @@ describe("getReadableTextColor", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       for (const bad of ["not-a-hex", "", "#zzz", "#12", "rgb(0,0,0)", "blue"]) {
-        let fg!: { color: string; textShadow: string };
+        let fg!: { color: string; textShadow: string; hoverOverlay: string };
         expect(() => {
           fg = getReadableTextColor(bad);
         }).not.toThrow();
         expect(["#111111", "#ffffff"]).toContain(fg.color);
         expect(fg.textShadow).toMatch(/rgba\(/);
+        expect(fg.hoverOverlay).toMatch(/rgba\(/);
       }
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it("returns a darken hover overlay for light pills (visible on white/yellow)", () => {
+    // Light pill → dark text → hover should darken (rgba(0,0,0,...)) so it
+    // remains visible on a near-white background where a white overlay would
+    // disappear into the pill colour.
+    expect(getReadableTextColor("#fde047").hoverOverlay).toContain("rgba(0,0,0");
+    expect(getReadableTextColor("#ffffff").hoverOverlay).toContain("rgba(0,0,0");
+  });
+
+  it("returns a lighten hover overlay for dark pills (visible on indigo/navy)", () => {
+    // Dark pill → white text → hover should lighten so it shows up against a
+    // dark background.
+    expect(getReadableTextColor("#1e1b4b").hoverOverlay).toContain("rgba(255,255,255");
+    expect(getReadableTextColor("#6366f1").hoverOverlay).toContain("rgba(255,255,255");
   });
 });

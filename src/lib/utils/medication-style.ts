@@ -46,7 +46,7 @@ export function getReadableTextColor(
   c1: string,
   c2?: string | null,
   pattern: string = "solid",
-): { color: string; textShadow: string } {
+): { color: string; textShadow: string; hoverOverlay: string } {
   const rendersSecondary = !!c2 && c2 !== c1 && pattern !== "solid";
   const colours = rendersSecondary ? [c1, c2 as string] : [c1];
   const lums = colours.map(relativeLuminance);
@@ -54,9 +54,15 @@ export function getReadableTextColor(
   const darkMin = Math.min(...lums.map((L) => contrastRatio(DARK_LUM, L)));
   const useDark = darkMin >= whiteMin;
   const outline = useDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.6)";
+  // Contrast-aware hover tint: darken light pills (dark text), lighten dark
+  // pills (white text). The shared `bg-glass-hover` token is white-rgba and
+  // becomes invisible on light medication colours, so we derive a per-pill
+  // overlay instead.
+  const hoverOverlay = useDark ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.18)";
   return {
     color: useDark ? READABLE_DARK : READABLE_LIGHT,
     textShadow: `-1px -1px 0 ${outline}, 1px -1px 0 ${outline}, -1px 1px 0 ${outline}, 1px 1px 0 ${outline}`,
+    hoverOverlay,
   };
 }
 

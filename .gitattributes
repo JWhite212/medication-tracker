@@ -1,0 +1,26 @@
+# Normalize line endings: store LF in the repo, auto-detect text on checkin.
+* text=auto eol=lf
+
+# Explicit text files (LF on disk, regardless of platform).
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.svelte    text eol=lf
+*.css       text eol=lf
+*.html      text eol=lf
+
+# Binary assets (no diff, no EOL conversion).
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.svg       binary
+*.ico       binary
+*.pdf       binary
+*.woff      binary
+*.woff2     binary

@@ -6,10 +6,12 @@ import {
   getSideEffectStats,
   getDailyAdherenceSeries,
   getDoseStatusBreakdown,
+  getScheduleVariance,
   buildInsights,
   calculateStreak,
   calculateTrend,
 } from "$lib/server/analytics";
+import { getSchedulesForUser } from "$lib/server/schedules";
 import type { DateRange } from "$lib/server/analytics";
 import type { PageServerLoad } from "./$types";
 
@@ -50,6 +52,8 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     sideEffects,
     dailyAdherence,
     statusBreakdown,
+    scheduleVariance,
+    schedulesByMed,
     prevDailyCounts,
     prevMedStats,
   ] = await Promise.all([
@@ -60,9 +64,22 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     getSideEffectStats(userId, period, timezone, customRange),
     getDailyAdherenceSeries(userId, period, timezone, customRange),
     getDoseStatusBreakdown(userId, period, timezone, customRange),
+    getScheduleVariance(userId, period, timezone, customRange),
+    getSchedulesForUser(userId),
     getDailyDoseCounts(userId, period, timezone, previousRange),
     getPerMedicationStats(userId, period, timezone, previousRange),
   ]);
+
+  // Hours with at least one fixed_time schedule across all meds.
+  const scheduledHours = new Set<number>();
+  for (const schedules of schedulesByMed.values()) {
+    for (const s of schedules) {
+      if (s.scheduleKind === "fixed_time" && s.timeOfDay) {
+        const hour = Number(s.timeOfDay.split(":")[0]);
+        if (Number.isFinite(hour)) scheduledHours.add(hour);
+      }
+    }
+  }
 
   const streak = calculateStreak(
     dailyCounts.map((d) => d.date),
@@ -120,6 +137,8 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     sideEffects,
     dailyAdherence,
     statusBreakdown,
+    scheduleVariance,
+    scheduledHours: [...scheduledHours].sort((a, b) => a - b),
     insights,
     streak,
     period,

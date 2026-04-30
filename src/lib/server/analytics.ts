@@ -494,6 +494,76 @@ export function buildInsights(input: InsightInputs): Insight[] {
   return out.sort((a, b) => order[a.severity] - order[b.severity]).slice(0, 5);
 }
 
+// Mean abs-minute delta between fixed-time scheduled doses and actual
+// taken time. Returns null when no fixed-time schedules or no taken
+// doses fell on a med with such a schedule. Interval and PRN schedules
+// are excluded — they have no anchor time to compare against.
+export async function getScheduleVariance(
+  userId: string,
+  days: number,
+  timezone: string = "UTC",
+  range?: DateRange,
+): Promise<{ avgMinutesOff: number; sampleSize: number } | null> {
+  const tz = validTimezones.has(timezone) ? timezone : "UTC";
+
+  const rows = await db
+    .select({
+      medicationId: doseLogs.medicationId,
+      takenAt: doseLogs.takenAt,
+    })
+    .from(doseLogs)
+    .where(buildDateFilters(userId, days, timezone, range));
+
+  if (rows.length === 0) return null;
+
+  const schedulesByMed = await getSchedulesForUser(userId);
+
+  const fixedTimesByMed = new Map<string, number[]>();
+  for (const [medId, schedules] of schedulesByMed) {
+    const minutes: number[] = [];
+    for (const s of schedules) {
+      if (s.scheduleKind !== "fixed_time" || !s.timeOfDay) continue;
+      const [hh, mm] = s.timeOfDay.split(":").map(Number);
+      if (Number.isFinite(hh) && Number.isFinite(mm)) minutes.push(hh * 60 + mm);
+    }
+    if (minutes.length > 0) fixedTimesByMed.set(medId, minutes);
+  }
+
+  if (fixedTimesByMed.size === 0) return null;
+
+  const hourFmt = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: tz,
+  });
+
+  let total = 0;
+  let count = 0;
+  for (const row of rows) {
+    const targets = fixedTimesByMed.get(row.medicationId);
+    if (!targets) continue;
+    const parts = hourFmt.formatToParts(new Date(row.takenAt));
+    const hour = Number(parts.find((p) => p.type === "hour")?.value);
+    const minute = Number(parts.find((p) => p.type === "minute")?.value);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) continue;
+    const taken = hour * 60 + minute;
+    let best = Infinity;
+    for (const t of targets) {
+      // Compare across midnight: shortest signed delta on a 24h ring.
+      const delta = Math.min(Math.abs(taken - t), 1440 - Math.abs(taken - t));
+      if (delta < best) best = delta;
+    }
+    if (best !== Infinity) {
+      total += best;
+      count++;
+    }
+  }
+
+  if (count === 0) return null;
+  return { avgMinutesOff: Math.round(total / count), sampleSize: count };
+}
+
 export async function getSideEffectStats(
   userId: string,
   days: number,

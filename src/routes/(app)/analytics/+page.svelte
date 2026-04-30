@@ -4,6 +4,7 @@
   import AdherenceChart from "$components/AdherenceChart.svelte";
   import Sparkline from "$components/Sparkline.svelte";
   import InsightsCard from "$components/InsightsCard.svelte";
+  import StatusBreakdownBar from "$components/StatusBreakdownBar.svelte";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
   import { goto } from "$app/navigation";
 
@@ -162,6 +163,18 @@
     {/if}
   </GlassCard>
 
+  {#if data.statusBreakdown.expectedTotal > 0 || data.statusBreakdown.skippedEvents > 0}
+    <GlassCard>
+      <h2 class="mb-4 text-lg font-semibold">Dose Status Breakdown</h2>
+      <StatusBreakdownBar
+        takenEvents={data.statusBreakdown.takenEvents}
+        skippedEvents={data.statusBreakdown.skippedEvents}
+        missedEvents={data.statusBreakdown.missedEvents}
+        expectedTotal={data.statusBreakdown.expectedTotal}
+      />
+    </GlassCard>
+  {/if}
+
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Day of Week Distribution</h2>
     <div class="overflow-x-auto">
@@ -185,16 +198,29 @@
   </GlassCard>
 
   <GlassCard>
-    <h2 class="mb-4 text-lg font-semibold">Time of Day Distribution</h2>
+    <h2 class="mb-2 text-lg font-semibold">Time of Day Distribution</h2>
+    {#if data.scheduledHours.length > 0}
+      <p class="text-text-muted mb-3 text-xs">
+        Triangles mark scheduled times{data.scheduleVariance
+          ? `. Avg ${data.scheduleVariance.avgMinutesOff} min off-schedule (fixed-time meds, n=${data.scheduleVariance.sampleSize})`
+          : ""}
+      </p>
+    {/if}
     <div class="overflow-x-auto">
-      <div class="flex h-32 gap-1" style="min-width: 28rem">
+      <div class="flex h-36 gap-1" style="min-width: 28rem">
         {#each Array.from({ length: 24 }, (_, i) => i) as hour}
           {@const count = data.hourly.find((h: { hour: number }) => h.hour === hour)?.count ?? 0}
+          {@const scheduled = data.scheduledHours.includes(hour)}
           <div class="flex h-full flex-1 flex-col items-center justify-end gap-1">
+            <div class="text-accent flex h-3 items-end text-[10px] leading-none">
+              {scheduled ? "▼" : ""}
+            </div>
             <div
               class="bg-accent/70 w-full rounded-t transition-all"
               style="height: {(count / maxHourCount) * 100}%"
-              title="{hour.toString().padStart(2, '0')}:00 — {count}"
+              title="{hour.toString().padStart(2, '0')}:00 — {count}{scheduled
+                ? ' (scheduled)'
+                : ''}"
             ></div>
             {#if hour % 6 === 0}
               <span class="text-text-muted text-[10px]">{hour}</span>

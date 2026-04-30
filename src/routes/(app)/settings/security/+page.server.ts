@@ -49,16 +49,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
-  changePassword: async ({ request, locals }) => {
+  changePassword: async ({ request, locals, cookies }) => {
     const formData = Object.fromEntries(await request.formData());
     const parsed = passwordChangeSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { passwordErrors: parsed.error.flatten().fieldErrors });
 
-    const reauth = await confirmReauth(
-      locals.user!.id,
-      parsed.data.currentPassword,
-      "change_password",
-    );
+    const userId = locals.user!.id;
+    const reauth = await confirmReauth(userId, parsed.data.currentPassword, "change_password");
     if (!reauth.ok)
       return fail(400, {
         passwordErrors: { currentPassword: ["Incorrect password"] },
@@ -68,8 +65,20 @@ export const actions: Actions = {
     await db
       .update(users)
       .set({ passwordHash: newHash, updatedAt: new Date() })
-      .where(eq(users.id, locals.user!.id));
-    await logAudit(locals.user!.id, "user", locals.user!.id, "update");
+      .where(eq(users.id, userId));
+    await logAudit(userId, "user", userId, "update");
+
+    // Rotate sessions: a successful password change must log out every other
+    // device, but keep the current request authenticated by minting a fresh
+    // session cookie.
+    await lucia.invalidateUserSessions(userId);
+    const session = await lucia.createSession(userId, {});
+    const sessionCookie = lucia.createSessionCookie(session.id);
+    cookies.set(sessionCookie.name, sessionCookie.value, {
+      path: ".",
+      ...sessionCookie.attributes,
+    });
+
     return { passwordSuccess: true };
   },
   revokeSession: async ({ request, locals }) => {

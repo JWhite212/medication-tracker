@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   getDailyDoseCounts,
   getPerMedicationStats,
@@ -18,15 +19,30 @@ import type { PageServerLoad } from "./$types";
 
 const VALID_PERIODS = new Set(["7", "30", "90", "365"]);
 
+// Bounds-check the optional from/to query params. Reject dates earlier than
+// 2020-01-01 or later than now+1day; on garbage input we fall through to
+// `undefined` and the load function uses its default 30-day window.
+const MIN_DATE = new Date("2020-01-01T00:00:00Z");
+const dateParamSchema = z.coerce
+  .date()
+  .min(MIN_DATE)
+  .max(new Date(Date.now() + 86400000))
+  .optional()
+  .catch(undefined);
+
 export const load: PageServerLoad = async ({ locals, parent, url }) => {
   const userId = locals.user!.id;
   const timezone = locals.user!.timezone;
   const { preferences } = await parent();
 
-  const fromParam = url.searchParams.get("from");
-  const toParam = url.searchParams.get("to");
+  const rawFrom = url.searchParams.get("from") ?? undefined;
+  const rawTo = url.searchParams.get("to") ?? undefined;
+  const fromDate = dateParamSchema.parse(rawFrom);
+  const toDate = dateParamSchema.parse(rawTo);
+  const fromParam = fromDate ? (rawFrom ?? null) : null;
+  const toParam = toDate ? (rawTo ?? null) : null;
   const customRange: DateRange | undefined =
-    fromParam && toParam ? { from: new Date(fromParam), to: new Date(toParam) } : undefined;
+    fromDate && toDate ? { from: fromDate, to: toDate } : undefined;
 
   const periodParam = url.searchParams.get("period");
   const period =

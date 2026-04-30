@@ -2,7 +2,7 @@
   import { enhance } from "$app/forms";
   import type { Medication, MedicationTimingStatus } from "$lib/types";
   import { showToast } from "$components/ui/Toast.svelte";
-  import { getMedicationBackground } from "$lib/utils/medication-style";
+  import { getMedicationBackground, getReadableTextColor } from "$lib/utils/medication-style";
   import { formatDueIn } from "$lib/utils/time";
 
   let {
@@ -32,6 +32,7 @@
 <div class="flex flex-wrap gap-2 sm:gap-3">
   {#each medications as med}
     {@const timing = timingMap.get(med.id)}
+    {@const fg = getReadableTextColor(med.colour, med.colourSecondary, med.pattern)}
     <form
       method="POST"
       action="?/logDose"
@@ -52,7 +53,7 @@
 
       <div class="flex flex-col items-center gap-1">
         <div
-          class="flex items-center overflow-hidden rounded-full text-sm font-medium text-white {flashingMeds[
+          class="flex items-center overflow-hidden rounded-full text-sm font-medium {flashingMeds[
             med.id
           ]
             ? 'animate-success-flash'
@@ -61,25 +62,25 @@
             med.colour,
             med.colourSecondary,
             med.pattern,
-          )}"
+          )}; color: {fg.color}; text-shadow: {fg.textShadow}; --pill-hover: {fg.hoverOverlay};"
         >
           <!-- Minus button (only visible when qty > 1) -->
           {#if getQty(med.id) > 1}
             <button
               type="button"
-              class="px-2 py-2 leading-none text-white/70 transition-colors select-none hover:bg-black/10 hover:text-white"
+              class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-[var(--pill-hover)] hover:opacity-100"
               aria-label="Decrease quantity"
               onclick={() => setQty(med.id, getQty(med.id) - 1)}>−</button
             >
 
             <!-- Quantity display -->
-            <span class="px-1 text-white/90 tabular-nums">{getQty(med.id)}×</span>
+            <span class="px-1 tabular-nums opacity-90">{getQty(med.id)}×</span>
           {/if}
 
           <!-- Submit button: medication name + dosage -->
           <button
             type="submit"
-            class="flex items-center gap-2 px-4 py-2 transition-all hover:bg-black/10 active:scale-95"
+            class="flex items-center gap-2 px-4 py-2 transition-all hover:bg-[var(--pill-hover)] active:scale-95"
           >
             <span>{med.name}</span>
             <span class="opacity-70">{med.dosageAmount}{med.dosageUnit}</span>
@@ -88,7 +89,7 @@
           <!-- Plus button -->
           <button
             type="button"
-            class="px-2 py-2 leading-none text-white/70 transition-colors select-none hover:bg-black/10 hover:text-white"
+            class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-[var(--pill-hover)] hover:opacity-100"
             aria-label="Increase quantity"
             onclick={() => setQty(med.id, getQty(med.id) + 1)}>+</button
           >

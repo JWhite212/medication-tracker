@@ -33,16 +33,22 @@ const LIGHT_LUM = 1;
 
 /**
  * Pick a foreground colour with the best worst-case contrast against
- * one or two background colours (for split/gradient patterns). The
- * `textShadow` is a multi-directional 1px outline in the opposite tone
- * so text stays readable across pattern boundaries (stripes, dots, etc.)
- * regardless of which side of the boundary a glyph crosses.
+ * the colours actually rendered for the given pattern. Mirrors the
+ * "secondary is ignored unless the pattern uses it" rule applied by
+ * `getMedicationBackground`, so a saved-but-unused secondary colour
+ * never skews the contrast decision.
+ *
+ * The `textShadow` is a multi-directional 1px outline in the opposite
+ * tone so text stays readable across pattern boundaries (stripes, dots,
+ * etc.) regardless of which side of the boundary a glyph crosses.
  */
 export function getReadableTextColor(
   c1: string,
   c2?: string | null,
+  pattern: string = "solid",
 ): { color: string; textShadow: string } {
-  const colours = c2 && c2 !== c1 ? [c1, c2] : [c1];
+  const rendersSecondary = !!c2 && c2 !== c1 && pattern !== "solid";
+  const colours = rendersSecondary ? [c1, c2 as string] : [c1];
   const lums = colours.map(relativeLuminance);
   const whiteMin = Math.min(...lums.map((L) => contrastRatio(LIGHT_LUM, L)));
   const darkMin = Math.min(...lums.map((L) => contrastRatio(DARK_LUM, L)));

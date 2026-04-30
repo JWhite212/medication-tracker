@@ -32,7 +32,7 @@
 <div class="flex flex-wrap gap-2 sm:gap-3">
   {#each medications as med}
     {@const timing = timingMap.get(med.id)}
-    {@const fg = getReadableTextColor(med.colour, med.colourSecondary)}
+    {@const fg = getReadableTextColor(med.colour, med.colourSecondary, med.pattern)}
     <form
       method="POST"
       action="?/logDose"
@@ -68,7 +68,7 @@
           {#if getQty(med.id) > 1}
             <button
               type="button"
-              class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-black/10 hover:opacity-100"
+              class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-glass-hover hover:opacity-100"
               aria-label="Decrease quantity"
               onclick={() => setQty(med.id, getQty(med.id) - 1)}>−</button
             >
@@ -80,7 +80,7 @@
           <!-- Submit button: medication name + dosage -->
           <button
             type="submit"
-            class="flex items-center gap-2 px-4 py-2 transition-all hover:bg-black/10 active:scale-95"
+            class="flex items-center gap-2 px-4 py-2 transition-all hover:bg-glass-hover active:scale-95"
           >
             <span>{med.name}</span>
             <span class="opacity-70">{med.dosageAmount}{med.dosageUnit}</span>
@@ -89,7 +89,7 @@
           <!-- Plus button -->
           <button
             type="button"
-            class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-black/10 hover:opacity-100"
+            class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-glass-hover hover:opacity-100"
             aria-label="Increase quantity"
             onclick={() => setQty(med.id, getQty(med.id) + 1)}>+</button
           >

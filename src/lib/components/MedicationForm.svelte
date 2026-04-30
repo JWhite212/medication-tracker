@@ -85,7 +85,9 @@
   );
   let showSecondary = $state(selectedColourSecondary !== null);
   let selectedPattern = $state(formValues["pattern"] ?? medication?.pattern ?? "solid");
-  const sampleFg = $derived(getReadableTextColor(selectedColour, selectedColourSecondary));
+  const sampleFg = $derived(
+    getReadableTextColor(selectedColour, selectedColourSecondary, selectedPattern),
+  );
 
   let loading = $state(false);
   let scheduleMode = $state<ScheduleMode>(deriveInitialMode());

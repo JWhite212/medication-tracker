@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   getMedicationBackground,
   getReadableTextColor,
@@ -115,11 +115,28 @@ describe("getReadableTextColor", () => {
   });
 
   it("considers both colours for split/gradient pills and picks the safer fg", () => {
-    // Light yellow + dark navy: white fails on yellow, dark fails on navy.
-    // Either choice is imperfect, but the function must return a stable hex.
-    const fg = getReadableTextColor("#fde047", "#1e1b4b");
+    // Light yellow + dark navy on a non-solid pattern: white fails on yellow,
+    // dark fails on navy. Either choice is imperfect, but the function must
+    // return a stable hex.
+    const fg = getReadableTextColor("#fde047", "#1e1b4b", "split");
     expect(["#111111", "#ffffff"]).toContain(fg.color);
     expect(fg.textShadow).toMatch(/rgba\(/);
+  });
+
+  it("ignores secondary colour when pattern is solid (matches getMedicationBackground)", () => {
+    // Light yellow primary + dark navy secondary on solid: only yellow renders,
+    // so contrast must be computed against yellow alone → dark text.
+    const fg = getReadableTextColor("#fde047", "#1e1b4b", "solid");
+    expect(fg.color).toBe("#111111");
+  });
+
+  it("uses secondary colour for non-solid patterns", () => {
+    // Same colours on a stripes pattern: both render, so the safer fg differs
+    // from the solid case (white instead of dark).
+    const solid = getReadableTextColor("#fde047", "#1e1b4b", "solid");
+    const stripes = getReadableTextColor("#fde047", "#1e1b4b", "stripes");
+    expect(solid.color).toBe("#111111");
+    expect(stripes.color).not.toBe(solid.color);
   });
 
   it("treats null/undefined secondary as single-colour", () => {
@@ -130,5 +147,23 @@ describe("getReadableTextColor", () => {
   it("supports 3-digit hex shorthand", () => {
     expect(getReadableTextColor("#fff").color).toBe("#111111");
     expect(getReadableTextColor("#000").color).toBe("#ffffff");
+  });
+
+  it("does not throw on invalid hex input and returns a stable fallback", () => {
+    // Invalid hex falls back to luminance 0 (black) → white text. Function must
+    // not throw and must always return a usable foreground + outlined shadow.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (const bad of ["not-a-hex", "", "#zzz", "#12", "rgb(0,0,0)", "blue"]) {
+        let fg!: { color: string; textShadow: string };
+        expect(() => {
+          fg = getReadableTextColor(bad);
+        }).not.toThrow();
+        expect(["#111111", "#ffffff"]).toContain(fg.color);
+        expect(fg.textShadow).toMatch(/rgba\(/);
+      }
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

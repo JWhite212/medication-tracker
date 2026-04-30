@@ -3,14 +3,80 @@ import {
   getArchivedMedications,
   swapSortOrder,
 } from "$lib/server/medications";
+import { db } from "$lib/server/db";
+import { doseLogs } from "$lib/server/db/schema";
+import { eq, and, gte, sql } from "drizzle-orm";
+import { getRefillForecast } from "$lib/server/inventory";
+import { startOfDay } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
+const SPARKLINE_DAYS = 14;
+const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
+
 export const load: PageServerLoad = async ({ locals }) => {
-  const [medications, archived] = await Promise.all([
-    getMedicationsWithStats(locals.user!.id),
-    getArchivedMedications(locals.user!.id),
+  const userId = locals.user!.id;
+  const timezone = locals.user!.timezone;
+  const safeTz = validTimezones.has(timezone) ? timezone : "UTC";
+
+  const sparklineFrom = startOfDay(new Date(Date.now() - (SPARKLINE_DAYS - 1) * 86400000), safeTz);
+  const tzExpr = sql.raw(`'${safeTz}'`);
+
+  const [medications, archived, dailyRows, refillForecast] = await Promise.all([
+    getMedicationsWithStats(userId),
+    getArchivedMedications(userId),
+    db
+      .select({
+        medicationId: doseLogs.medicationId,
+        date: sql<string>`date(${doseLogs.takenAt} AT TIME ZONE ${tzExpr})`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(doseLogs)
+      .where(
+        and(
+          eq(doseLogs.userId, userId),
+          eq(doseLogs.status, "taken"),
+          gte(doseLogs.takenAt, sparklineFrom),
+        ),
+      )
+      .groupBy(doseLogs.medicationId, sql`date(${doseLogs.takenAt} AT TIME ZONE ${tzExpr})`),
+    getRefillForecast(userId),
   ]);
-  return { medications, archived };
+
+  const fmtDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: safeTz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const dayKeys: string[] = [];
+  for (let i = 0; i < SPARKLINE_DAYS; i++) {
+    const d = new Date(sparklineFrom.getTime() + i * 86400000);
+    dayKeys.push(fmtDate.format(d));
+  }
+
+  const seriesByMed = new Map<string, Map<string, number>>();
+  for (const row of dailyRows) {
+    let inner = seriesByMed.get(row.medicationId);
+    if (!inner) {
+      inner = new Map();
+      seriesByMed.set(row.medicationId, inner);
+    }
+    inner.set(row.date, Number(row.count));
+  }
+
+  const refillSeverityByMed = new Map(refillForecast.map((r) => [r.medicationId, r.severity]));
+
+  const enriched = medications.map((m) => {
+    const inner = seriesByMed.get(m.id);
+    const sparkline = dayKeys.map((k) => inner?.get(k) ?? 0);
+    return {
+      ...m,
+      sparkline,
+      refillSeverity: refillSeverityByMed.get(m.id) ?? ("ok" as const),
+    };
+  });
+
+  return { medications: enriched, archived };
 };
 
 export const actions: Actions = {

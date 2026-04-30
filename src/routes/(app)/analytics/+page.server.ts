@@ -12,6 +12,7 @@ import {
   calculateTrend,
 } from "$lib/server/analytics";
 import { getSchedulesForUser } from "$lib/server/schedules";
+import { getRefillForecast } from "$lib/server/inventory";
 import type { DateRange } from "$lib/server/analytics";
 import type { PageServerLoad } from "./$types";
 
@@ -70,6 +71,8 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     getPerMedicationStats(userId, period, timezone, previousRange),
   ]);
 
+  const refillForecast = await getRefillForecast(userId);
+
   // Hours with at least one fixed_time schedule across all meds.
   const scheduledHours = new Set<number>();
   for (const schedules of schedulesByMed.values()) {
@@ -112,8 +115,9 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     hourly,
     sideEffectsCount: sideEffects.frequency.reduce((s, e) => s + e.count, 0),
     topSideEffect: sideEffects.frequency[0]?.name ?? null,
-    // Refill count is wired in Step 7 once getRefillForecast lands.
-    refillCriticalCount: 0,
+    refillCriticalCount: refillForecast.filter(
+      (r) => r.severity === "critical" || r.severity === "warning",
+    ).length,
     streak,
   });
 

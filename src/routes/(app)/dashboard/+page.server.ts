@@ -1,5 +1,6 @@
 import { fail } from "@sveltejs/kit";
 import { getActiveMedications } from "$lib/server/medications";
+import { getRefillForecast } from "$lib/server/inventory";
 import {
   getTodaysDoses,
   getLastDosePerMedication,
@@ -18,11 +19,12 @@ import type { MedicationTimingStatus } from "$lib/types";
 
 export const load: PageServerLoad = async ({ locals }) => {
   const user = locals.user!;
-  const [medications, doses, lastDoses, schedulesByMedId] = await Promise.all([
+  const [medications, doses, lastDoses, schedulesByMedId, refillForecast] = await Promise.all([
     getActiveMedications(user.id),
     getTodaysDoses(user.id, user.timezone),
     getLastDosePerMedication(user.id),
     getSchedulesForUser(user.id),
+    getRefillForecast(user.id),
   ]);
 
   const lastDoseMap = new Map(lastDoses.map((d) => [d.medicationId, d.lastTakenAt]));
@@ -73,6 +75,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     scheduleSlots,
     timezone: user.timezone,
     timingStatus,
+    refillForecast,
   };
 };
 

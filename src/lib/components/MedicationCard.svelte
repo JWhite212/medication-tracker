@@ -2,8 +2,16 @@
   import type { MedicationWithStats } from "$lib/types";
   import { getMedicationBackground } from "$lib/utils/medication-style";
   import TimeSince from "$components/TimeSince.svelte";
+  import Sparkline from "$components/Sparkline.svelte";
 
   let { medication }: { medication: MedicationWithStats } = $props();
+
+  function refillChipClass(severity: MedicationWithStats["refillSeverity"]): string {
+    if (severity === "critical") return "bg-danger/15 text-danger";
+    if (severity === "warning") return "bg-warning/15 text-warning";
+    if (severity === "watch") return "bg-accent/15 text-accent";
+    return "";
+  }
 
   const isScheduled = $derived(medication.scheduleType === "scheduled");
   const scheduleHours = $derived(
@@ -54,7 +62,15 @@
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        {#if medication.inventoryCount !== null && medication.inventoryAlertThreshold !== null && medication.inventoryCount <= medication.inventoryAlertThreshold}
+        {#if medication.refillSeverity && medication.refillSeverity !== "ok"}
+          <span
+            class="rounded-full px-2 py-1 text-xs font-medium {refillChipClass(
+              medication.refillSeverity,
+            )}"
+          >
+            {medication.daysUntilRefill ?? 0}d left
+          </span>
+        {:else if medication.inventoryCount !== null && medication.inventoryAlertThreshold !== null && medication.inventoryCount <= medication.inventoryAlertThreshold}
           <span class="bg-warning/15 text-warning rounded-full px-2 py-1 text-xs font-medium"
             >Low: {medication.inventoryCount}</span
           >
@@ -87,6 +103,20 @@
           ></div>
         </div>
         <span class="text-text-muted shrink-0 text-xs tabular-nums">{adherencePercent}%</span>
+      </div>
+    {/if}
+
+    {#if medication.sparkline && medication.sparkline.length > 1}
+      <div class="text-text-muted mt-2 flex items-center gap-2">
+        <span class="text-[10px] uppercase tracking-wider">14d</span>
+        <div class="flex-1" style="color: {medication.colour}">
+          <Sparkline
+            values={medication.sparkline}
+            color="currentColor"
+            height={20}
+            ariaLabel="14-day dose count for {medication.name}"
+          />
+        </div>
       </div>
     {/if}
   </a>

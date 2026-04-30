@@ -29,6 +29,12 @@ export type MedicationWithStats = Medication & {
   weeklyDoseCount: number;
   avgDailyConsumption: number;
   daysUntilRefill: number | null;
+  // 14-day daily-dose count series, oldest → newest. Optional so
+  // existing callers don't need to populate it.
+  sparkline?: number[];
+  // Refill severity tier from src/lib/server/inventory.ts. Optional;
+  // populated only by the Medications-list loader.
+  refillSeverity?: "critical" | "warning" | "watch" | "ok";
 };
 
 export type MedicationTimingStatus = {

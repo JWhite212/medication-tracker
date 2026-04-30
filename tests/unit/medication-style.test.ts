@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { getMedicationBackground, PATTERN_OPTIONS } from "$lib/utils/medication-style";
+import {
+  getMedicationBackground,
+  getReadableTextColor,
+  PATTERN_OPTIONS,
+} from "$lib/utils/medication-style";
 
 describe("PATTERN_OPTIONS", () => {
   it("has 8 pattern choices", () => {
@@ -79,5 +83,52 @@ describe("getMedicationBackground", () => {
 
   it("returns primary colour for unknown pattern", () => {
     expect(getMedicationBackground("#6366f1", "#ec4899", "unknown")).toBe("#6366f1");
+  });
+});
+
+describe("getReadableTextColor", () => {
+  it("uses dark text on a near-white background", () => {
+    expect(getReadableTextColor("#ffffff").color).toBe("#111111");
+  });
+
+  it("uses light text on a near-black background", () => {
+    expect(getReadableTextColor("#000000").color).toBe("#ffffff");
+  });
+
+  it("uses dark text on light yellows where white would fail WCAG", () => {
+    // Yellow #fde047 is a typical light pill colour where white text is unreadable
+    expect(getReadableTextColor("#fde047").color).toBe("#111111");
+  });
+
+  it("uses light text on saturated mid-tones like indigo", () => {
+    expect(getReadableTextColor("#6366f1").color).toBe("#ffffff");
+  });
+
+  it("returns the same outline shadow tone as the chosen text colour family", () => {
+    const onLight = getReadableTextColor("#fde047");
+    expect(onLight.color).toBe("#111111");
+    expect(onLight.textShadow).toContain("rgba(255,255,255");
+
+    const onDark = getReadableTextColor("#1e1b4b");
+    expect(onDark.color).toBe("#ffffff");
+    expect(onDark.textShadow).toContain("rgba(0,0,0");
+  });
+
+  it("considers both colours for split/gradient pills and picks the safer fg", () => {
+    // Light yellow + dark navy: white fails on yellow, dark fails on navy.
+    // Either choice is imperfect, but the function must return a stable hex.
+    const fg = getReadableTextColor("#fde047", "#1e1b4b");
+    expect(["#111111", "#ffffff"]).toContain(fg.color);
+    expect(fg.textShadow).toMatch(/rgba\(/);
+  });
+
+  it("treats null/undefined secondary as single-colour", () => {
+    expect(getReadableTextColor("#6366f1", null).color).toBe("#ffffff");
+    expect(getReadableTextColor("#6366f1", undefined).color).toBe("#ffffff");
+  });
+
+  it("supports 3-digit hex shorthand", () => {
+    expect(getReadableTextColor("#fff").color).toBe("#111111");
+    expect(getReadableTextColor("#000").color).toBe("#ffffff");
   });
 });

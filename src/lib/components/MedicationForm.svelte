@@ -6,7 +6,11 @@
   import Input from "$lib/components/ui/Input.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
-  import { getMedicationBackground, PATTERN_OPTIONS } from "$lib/utils/medication-style";
+  import {
+    getMedicationBackground,
+    getReadableTextColor,
+    PATTERN_OPTIONS,
+  } from "$lib/utils/medication-style";
 
   type ScheduleMode = "interval" | "fixed_time" | "prn";
   const SCHEDULE_MODES = new Set<ScheduleMode>(["interval", "fixed_time", "prn"]);
@@ -81,6 +85,7 @@
   );
   let showSecondary = $state(selectedColourSecondary !== null);
   let selectedPattern = $state(formValues["pattern"] ?? medication?.pattern ?? "solid");
+  const sampleFg = $derived(getReadableTextColor(selectedColour, selectedColourSecondary));
 
   let loading = $state(false);
   let scheduleMode = $state<ScheduleMode>(deriveInitialMode());
@@ -401,12 +406,12 @@
           )}"
         ></div>
         <div
-          class="flex h-8 items-center rounded-full px-4 text-xs font-medium text-white"
+          class="flex h-8 items-center rounded-full px-4 text-xs font-medium"
           style="background: {getMedicationBackground(
             selectedColour,
             selectedColourSecondary,
             selectedPattern,
-          )}"
+          )}; color: {sampleFg.color}; text-shadow: {sampleFg.textShadow};"
         >
           Sample Pill
         </div>

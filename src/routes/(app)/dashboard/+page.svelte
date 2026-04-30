@@ -9,6 +9,7 @@
   import Modal from "$components/ui/Modal.svelte";
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import KeyboardShortcuts from "$components/KeyboardShortcuts.svelte";
+  import RefillsCard from "$components/RefillsCard.svelte";
   import type { DoseLogWithMedication } from "$lib/types";
   import { formatDueIn } from "$lib/utils/time";
   import { getMedicationBackground } from "$lib/utils/medication-style";
@@ -44,6 +45,8 @@
     <h1 class="text-2xl font-bold">Dashboard</h1>
 
     <SummaryStrip doseCount={data.doses.length} {overdueCount} />
+
+    <RefillsCard entries={data.refillForecast} />
 
     <MyDayTimeline
       scheduleSlots={data.scheduleSlots}

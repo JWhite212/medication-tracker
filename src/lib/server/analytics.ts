@@ -276,6 +276,96 @@ export async function getDoseStatusBreakdown(
   };
 }
 
+export type DailyAdherencePoint = {
+  date: string;
+  doseCount: number;
+  expected: number;
+  adherence: number;
+};
+
+// Computed expected doses/day from the deprecated medications.scheduleType
+// + medications.scheduleIntervalHours columns. Used as fallback when a
+// medication has no rows in the medication_schedules table yet.
+function expectedPerDayFromLegacy(
+  scheduleType: string,
+  scheduleIntervalHours: number | string | null,
+): number {
+  if (scheduleType !== "scheduled") return 0;
+  const hrs = scheduleIntervalHours !== null ? Number(scheduleIntervalHours) : NaN;
+  if (!Number.isFinite(hrs) || hrs <= 0) return 0;
+  return 24 / hrs;
+}
+
+// Daily adherence approximation. Expected-per-day is derived from the
+// current set of schedules, not a per-day historical reconstruction —
+// medications added or archived mid-period are not retro-applied. Good
+// enough for a sparkline trend; do not treat as authoritative.
+export async function getDailyAdherenceSeries(
+  userId: string,
+  days: number,
+  timezone: string = "UTC",
+  range?: DateRange,
+): Promise<DailyAdherencePoint[]> {
+  const [dailyCounts, schedulesByMed, activeMeds] = await Promise.all([
+    getDailyDoseCounts(userId, days, timezone, range),
+    getSchedulesForUser(userId),
+    db
+      .select({
+        id: medications.id,
+        scheduleType: medications.scheduleType,
+        scheduleIntervalHours: medications.scheduleIntervalHours,
+      })
+      .from(medications)
+      .where(and(eq(medications.userId, userId), eq(medications.isArchived, false))),
+  ]);
+
+  let expectedPerDay = 0;
+  for (const med of activeMeds) {
+    const schedules = schedulesByMed.get(med.id);
+    if (schedules && schedules.length > 0) {
+      expectedPerDay += expectedPerDayForSchedules(schedules);
+    } else {
+      expectedPerDay += expectedPerDayFromLegacy(med.scheduleType, med.scheduleIntervalHours);
+    }
+  }
+
+  const fromDate =
+    range?.from && range?.to
+      ? range.from
+      : startOfDay(new Date(Date.now() - days * 86400000), timezone);
+  const toDate = range?.to ?? new Date();
+  const span = Math.max(1, Math.round((toDate.getTime() - fromDate.getTime()) / 86400000));
+
+  const tz = validTimezones.has(timezone) ? timezone : "UTC";
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  const countByDate = new Map<string, number>();
+  for (const row of dailyCounts) {
+    countByDate.set(row.date, row.count);
+  }
+
+  const series: DailyAdherencePoint[] = [];
+  for (let i = 0; i < span; i++) {
+    const day = new Date(fromDate.getTime() + i * 86400000);
+    const dateKey = formatter.format(day);
+    const doseCount = countByDate.get(dateKey) ?? 0;
+    const adherence =
+      expectedPerDay > 0 ? Math.min(100, Math.round((doseCount / expectedPerDay) * 100)) : 0;
+    series.push({
+      date: dateKey,
+      doseCount,
+      expected: Math.round(expectedPerDay * 10) / 10,
+      adherence,
+    });
+  }
+  return series;
+}
+
 export async function getHourlyDistribution(
   userId: string,
   days: number,
@@ -308,6 +398,220 @@ export async function getDayOfWeekDistribution(
     .where(buildDateFilters(userId, days, timezone, range))
     .groupBy(sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`)
     .orderBy(sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`);
+}
+
+// Insight type moved to $lib/types so client components (InsightsCard)
+// can import without crossing the $lib/server boundary. Re-exported
+// here for backward-compatible callers.
+export type { Insight } from "$lib/types";
+import type { Insight } from "$lib/types";
+
+export type InsightInputs = {
+  totalDoses: number;
+  prevTotalDoses: number;
+  avgAdherence: number;
+  prevAvgAdherence: number;
+  medStats: Array<{ medicationName: string; adherence: number; expectedTotal: number }>;
+  dayOfWeek: Array<{ dayOfWeek: number; count: number }>;
+  hourly: Array<{ hour: number; count: number }>;
+  sideEffectsCount: number;
+  topSideEffect: string | null;
+  refillCriticalCount: number;
+  streak: number;
+};
+
+const DAY_LABEL_FULL = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+export function buildInsights(input: InsightInputs): Insight[] {
+  const out: Insight[] = [];
+
+  if (input.medStats.length >= 2 && input.prevAvgAdherence > 0) {
+    const delta = input.avgAdherence - input.prevAvgAdherence;
+    if (Math.abs(delta) >= 5) {
+      out.push({
+        id: "adherence-trend",
+        severity: delta > 0 ? "positive" : "warning",
+        text: `Adherence ${delta > 0 ? "improved" : "declined"} ${Math.abs(delta)}% vs. previous period`,
+      });
+    }
+  }
+
+  if (input.medStats.length >= 2) {
+    const sorted = [...input.medStats]
+      .filter((m) => m.expectedTotal > 0)
+      .sort((a, b) => b.adherence - a.adherence);
+    if (sorted.length >= 2) {
+      const top = sorted[0];
+      out.push({
+        id: "highest-adherence-med",
+        severity: "positive",
+        text: `Highest adherence: ${top.medicationName} (${top.adherence}%)`,
+      });
+      const bottom = sorted[sorted.length - 1];
+      if (bottom.adherence < 80) {
+        out.push({
+          id: "lowest-adherence-med",
+          severity: "warning",
+          text: `Lowest adherence: ${bottom.medicationName} (${bottom.adherence}%)`,
+        });
+      }
+    }
+  }
+
+  const totalDow = input.dayOfWeek.reduce((s, d) => s + d.count, 0);
+  if (totalDow >= 7) {
+    const avg = totalDow / 7;
+    const worst = [...input.dayOfWeek].sort((a, b) => a.count - b.count)[0];
+    if (worst && worst.count < avg * 0.7 && worst.count >= 0) {
+      out.push({
+        id: "worst-day",
+        severity: "info",
+        text: `Fewest doses on ${DAY_LABEL_FULL[worst.dayOfWeek]}`,
+      });
+    }
+  }
+
+  const totalHour = input.hourly.reduce((s, h) => s + h.count, 0);
+  if (totalHour >= 5) {
+    const peak = [...input.hourly].sort((a, b) => b.count - a.count)[0];
+    if (peak && peak.count >= totalHour * 0.3) {
+      const hh = peak.hour.toString().padStart(2, "0");
+      out.push({
+        id: "peak-hour",
+        severity: "info",
+        text: `Most consistent dosing time is ${hh}:00`,
+      });
+    }
+  }
+
+  if (input.refillCriticalCount > 0) {
+    out.push({
+      id: "refill-warning",
+      severity: "warning",
+      text:
+        input.refillCriticalCount === 1
+          ? `1 medication needs a refill within 7 days`
+          : `${input.refillCriticalCount} medications need a refill within 7 days`,
+    });
+  }
+
+  if (input.sideEffectsCount >= 3 && input.topSideEffect) {
+    out.push({
+      id: "side-effects",
+      severity: "info",
+      text: `${input.sideEffectsCount} side effects logged — most common: ${input.topSideEffect}`,
+    });
+  }
+
+  if (input.streak >= 3) {
+    out.push({
+      id: "streak",
+      severity: "positive",
+      text: `Current streak: ${input.streak} days`,
+    });
+  }
+
+  const order = { warning: 0, positive: 1, info: 2 } as const;
+  return out.sort((a, b) => order[a.severity] - order[b.severity]).slice(0, 5);
+}
+
+// Mean abs-minute delta between fixed-time scheduled doses and actual
+// taken time. Returns null when no fixed-time schedules or no taken
+// doses fell on a med with such a schedule. Interval and PRN schedules
+// are excluded — they have no anchor time to compare against.
+export async function getScheduleVariance(
+  userId: string,
+  days: number,
+  timezone: string = "UTC",
+  range?: DateRange,
+): Promise<{ avgMinutesOff: number; sampleSize: number } | null> {
+  const tz = validTimezones.has(timezone) ? timezone : "UTC";
+
+  const rows = await db
+    .select({
+      medicationId: doseLogs.medicationId,
+      takenAt: doseLogs.takenAt,
+    })
+    .from(doseLogs)
+    .where(buildDateFilters(userId, days, timezone, range));
+
+  if (rows.length === 0) return null;
+
+  const schedulesByMed = await getSchedulesForUser(userId);
+
+  // For each med, store fixed-time targets together with their
+  // daysOfWeek restriction (null = every day). At evaluation time we
+  // only consider targets whose daysOfWeek includes the dose's local
+  // weekday — otherwise a Mon-only schedule would match a Tue dose.
+  type FixedTarget = { minutes: number; daysOfWeek: number[] | null };
+  const fixedTimesByMed = new Map<string, FixedTarget[]>();
+  for (const [medId, schedules] of schedulesByMed) {
+    const targets: FixedTarget[] = [];
+    for (const s of schedules) {
+      if (s.scheduleKind !== "fixed_time" || !s.timeOfDay) continue;
+      const [hh, mm] = s.timeOfDay.split(":").map(Number);
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
+      const restrictedDays = s.daysOfWeek && s.daysOfWeek.length > 0 ? s.daysOfWeek : null;
+      targets.push({ minutes: hh * 60 + mm, daysOfWeek: restrictedDays });
+    }
+    if (targets.length > 0) fixedTimesByMed.set(medId, targets);
+  }
+
+  if (fixedTimesByMed.size === 0) return null;
+
+  // Format both wall-clock time and weekday in the user's tz so the
+  // dayOfWeek check matches the schedule's local day rather than UTC.
+  const localFmt = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    weekday: "short",
+    timeZone: tz,
+  });
+  const weekdayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+
+  let total = 0;
+  let count = 0;
+  for (const row of rows) {
+    const targets = fixedTimesByMed.get(row.medicationId);
+    if (!targets) continue;
+    const parts = localFmt.formatToParts(new Date(row.takenAt));
+    const hour = Number(parts.find((p) => p.type === "hour")?.value);
+    const minute = Number(parts.find((p) => p.type === "minute")?.value);
+    const weekdayStr = parts.find((p) => p.type === "weekday")?.value ?? "";
+    const weekday = weekdayMap[weekdayStr];
+    if (!Number.isFinite(hour) || !Number.isFinite(minute) || weekday === undefined) continue;
+    const taken = hour * 60 + minute;
+    let best = Infinity;
+    for (const t of targets) {
+      if (t.daysOfWeek !== null && !t.daysOfWeek.includes(weekday)) continue;
+      const delta = Math.min(Math.abs(taken - t.minutes), 1440 - Math.abs(taken - t.minutes));
+      if (delta < best) best = delta;
+    }
+    if (best !== Infinity) {
+      total += best;
+      count++;
+    }
+  }
+
+  if (count === 0) return null;
+  return { avgMinutesOff: Math.round(total / count), sampleSize: count };
 }
 
 export async function getSideEffectStats(

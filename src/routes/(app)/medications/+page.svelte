@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import MedicationCard from "$lib/components/MedicationCard.svelte";
+  import EmptyState from "$components/EmptyState.svelte";
   import emptyMedications from "$lib/assets/397d3a76-85b0-43ee-a0c2-981053e4040c.png";
 
   let { data } = $props();
@@ -21,23 +22,13 @@
   </div>
 
   {#if data.medications.length === 0}
-    <div
-      class="border-glass-border bg-glass flex flex-col items-center rounded-xl border p-8 text-center backdrop-blur-xl sm:p-12"
-    >
-      <img
-        src={emptyMedications}
-        alt="No medications yet — add your first medication to start tracking doses"
-        width="320"
-        height="240"
-        class="w-full max-w-xs"
-      />
-      <a
-        href="/medications/new"
-        class="bg-accent text-accent-fg mt-4 rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-      >
-        + Add your first medication
-      </a>
-    </div>
+    <EmptyState
+      illustration={emptyMedications}
+      illustrationAlt="No medications yet — add your first medication to start tracking doses"
+      title="No medications yet"
+      body="Add a medication to start tracking doses, set reminders, and view adherence."
+      action={{ href: "/medications/new", label: "+ Add your first medication" }}
+    />
   {:else}
     <div class="space-y-3">
       {#each data.medications as medication, i (medication.id)}

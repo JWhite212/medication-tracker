@@ -32,6 +32,14 @@ Server-first SvelteKit app (Svelte 5 runes). Pages load via `+page.server.ts`, m
 - All DB queries scoped by `user_id` — never trust client-provided user context
 - Audit log (`src/lib/server/audit.ts`) records all create/update/delete with JSONB diffs
 - Inventory auto-decrements on dose log, auto-restores on delete
+- Refill forecasting lives in `src/lib/server/inventory.ts` — single source of truth for daily-rate selection (schedules first, legacy columns next, 30-day history for PRN). Both `dashboard/+page.server.ts` and `medications/+page.server.ts` consume it. The same module owns severity classification (`critical ≤3d`, `warning ≤7d`, `watch ≤14d`).
+- Analytics insights are deterministic — `buildInsights` in `src/lib/server/analytics.ts` is a pure function over already-computed stats. Add new rules by writing a small predicate that returns `Insight | null`; never inject prescriptive medical wording.
+
+## Reusable Components
+
+- **`Sparkline.svelte`** — inline-SVG line trend, no chart library. Pure path generation lives in `src/lib/utils/sparkline.ts:buildSparklineShape` so it's unit-testable. Used on Analytics stat cards (adherence + dose volume) and per-medication on the Medications list.
+- **`EmptyState.svelte`** — standardised empty-state card. Props: `illustration`, `illustrationAlt`, `title`, `body`, `action` (`{ href?, label, onclick? }`). Used on Log and Medications; hold the line on consistency when wiring it into more pages.
+- **`InsightsCard.svelte`** / **`StatusBreakdownBar.svelte`** / **`RefillsCard.svelte`** — analytics + dashboard surfaces; render nothing when their dataset is empty (don't wrap them in `{#if}` at the call site).
 
 ## Gotchas
 
@@ -40,6 +48,9 @@ Server-first SvelteKit app (Svelte 5 runes). Pages load via `+page.server.ts`, m
 - `scheduleType` / `scheduleIntervalHours` columns are marked DEPRECATED in `schema.ts` but still populated and read — the canonical source is the `medication_schedules` table (phase 4d).
 - "Days until refill" prefers the schedule rate (`24/intervalHours`) over the 30-day historical average for `scheduleType === "scheduled"`. PRN meds use the historical average.
 - Tests that touch the database mock the `db` import (see `tests/unit/csv.test.ts`); CI runs with a placeholder `DATABASE_URL`.
+- `jsonb_array_length(...)` returns 0 for an empty array `[]` — not null. When filtering "with side effects" use `jsonb_array_length(coalesce(side_effects, '[]'::jsonb)) > 0` so both null and empty arrays are excluded.
+- SQL `ilike` with user-provided text must escape `%` and `_` (and backslash) before wrapping in `%...%` — see `escapeLikePattern` in `src/routes/(app)/log/+page.server.ts`. Without escaping, a stray `%` in a search term matches everything.
+- CSS percentage heights resolve against the parent's _defined_ height. Inside a `flex` container with `items-end`, child columns get content-driven height — so a `height: X%` bar inside collapses to 0. Fix: give the column wrapper `h-full` (or `h-32` etc.) and use `justify-end` on the column itself rather than `items-end` on the parent. See `analytics/+page.svelte` distribution charts for the pattern.
 
 ## Styling
 

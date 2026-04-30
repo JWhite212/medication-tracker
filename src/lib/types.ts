@@ -29,6 +29,12 @@ export type MedicationWithStats = Medication & {
   weeklyDoseCount: number;
   avgDailyConsumption: number;
   daysUntilRefill: number | null;
+  // 14-day daily-dose count series, oldest → newest. Optional so
+  // existing callers don't need to populate it.
+  sparkline?: number[];
+  // Refill severity tier from src/lib/server/inventory.ts. Optional;
+  // populated only by the Medications-list loader.
+  refillSeverity?: "critical" | "warning" | "watch" | "ok";
 };
 
 export type MedicationTimingStatus = {
@@ -36,4 +42,27 @@ export type MedicationTimingStatus = {
   status: "ok" | "due_soon" | "due_now" | "overdue";
   minutesUntilDue: number; // negative if overdue
   lastTakenAt: Date | null;
+};
+
+// Analytics insight returned from buildInsights (server-side) and
+// rendered by InsightsCard (client-side). Lives here so client
+// components don't reach into $lib/server/* — type-only imports are
+// technically erased, but keeping the boundary clean avoids accidental
+// runtime imports and matches SvelteKit conventions.
+export type Insight = {
+  id: string;
+  severity: "info" | "positive" | "warning";
+  text: string;
+};
+
+export type RefillSeverity = "critical" | "warning" | "watch" | "ok";
+
+export type RefillForecastEntry = {
+  medicationId: string;
+  medicationName: string;
+  colour: string;
+  inventoryCount: number;
+  dailyRate: number;
+  daysUntilRefill: number | null;
+  severity: RefillSeverity;
 };

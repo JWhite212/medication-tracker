@@ -45,7 +45,10 @@ export const oauthAccounts = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
   },
-  (table) => [primaryKey({ columns: [table.provider, table.providerUserId] })],
+  (table) => [
+    primaryKey({ columns: [table.provider, table.providerUserId] }),
+    index("oauth_accounts_user_idx").on(table.userId),
+  ],
 );
 
 export const medications = pgTable(
@@ -73,10 +76,14 @@ export const medications = pgTable(
     inventoryAlertThreshold: integer("inventory_alert_threshold"),
     sortOrder: integer("sort_order").notNull().default(0),
     isArchived: boolean("is_archived").notNull().default(false),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("medications_user_archived_idx").on(table.userId, table.isArchived)],
+  (table) => [
+    index("medications_user_archived_idx").on(table.userId, table.isArchived),
+    index("medications_user_name_idx").on(table.userId, table.name),
+  ],
 );
 
 export const doseLogs = pgTable(

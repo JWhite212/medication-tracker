@@ -50,6 +50,13 @@
       "when": 1777496469480,
       "tag": "0006_phase_4d_schedules",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777552581984,
+      "tag": "0007_fearless_monster_badoon",
+      "breakpoints": true
     }
   ]
 }

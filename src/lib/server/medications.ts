@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and, sql, max, count } from "drizzle-orm";
+import { eq, and, sql, max, count, inArray } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { medications, doseLogs } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
@@ -22,7 +22,8 @@ export async function getMedicationsWithStats(userId: string): Promise<Medicatio
   const meds = await getActiveMedications(userId);
   if (meds.length === 0) return [];
 
-  // Aggregate dose stats per medication in a single query
+  // Scope to active meds so archived rows don't hit the aggregate.
+  const medIds = meds.map((m) => m.id);
   const stats = await db
     .select({
       medicationId: doseLogs.medicationId,
@@ -31,7 +32,7 @@ export async function getMedicationsWithStats(userId: string): Promise<Medicatio
       thirtyDayDoseCount: count(sql`CASE WHEN ${doseLogs.takenAt} >= ${thirtyDaysAgo} THEN 1 END`),
     })
     .from(doseLogs)
-    .where(eq(doseLogs.userId, userId))
+    .where(and(eq(doseLogs.userId, userId), inArray(doseLogs.medicationId, medIds)))
     .groupBy(doseLogs.medicationId);
 
   const statsMap = new Map(
@@ -146,7 +147,7 @@ export async function swapSortOrder(userId: string, medId1: string, medId2: stri
 export async function archiveMedication(userId: string, id: string) {
   await db
     .update(medications)
-    .set({ isArchived: true, updatedAt: new Date() })
+    .set({ isArchived: true, archivedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(medications.id, id), eq(medications.userId, userId)));
   await logAudit(userId, "medication", id, "update", {
     isArchived: { from: false, to: true },
@@ -156,7 +157,7 @@ export async function archiveMedication(userId: string, id: string) {
 export async function unarchiveMedication(userId: string, id: string) {
   await db
     .update(medications)
-    .set({ isArchived: false, updatedAt: new Date() })
+    .set({ isArchived: false, archivedAt: null, updatedAt: new Date() })
     .where(and(eq(medications.id, id), eq(medications.userId, userId)));
   await logAudit(userId, "medication", id, "update", {
     isArchived: { from: true, to: false },

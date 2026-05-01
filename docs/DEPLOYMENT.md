@@ -146,13 +146,23 @@ git push origin main           # Vercel auto-deploys
 For schema changes:
 
 ```bash
-npx drizzle-kit generate                          # locally, commits new SQL
-DATABASE_URL="$DATABASE_URL" npm run db:migrate   # run against Neon
-git push origin main                              # ship the code that uses it
+npx drizzle-kit generate       # locally, commits new SQL under drizzle/
+git push origin main           # ship code + migration together
 ```
 
-Always ship the migration before (or atomically with) the code that
-depends on it — Vercel does not gate deploys on migrations.
+Production deploys auto-apply pending migrations via the `vercel-build`
+script (`scripts/vercel-build.mjs`), which runs `npx drizzle-kit migrate`
+against the production `DATABASE_URL` before invoking `vite build`.
+Drizzle records each applied migration in `drizzle.__drizzle_migrations`,
+so re-runs are no-ops once everything is up to date. Preview deploys
+skip migrations to avoid coupling preview branches to production schema.
+
+If you ever need to apply migrations manually (e.g. a one-shot fix
+outside the deploy cycle):
+
+```bash
+DATABASE_URL="$DATABASE_URL" npm run db:migrate   # run against Neon
+```
 
 ## 10. Rotating secrets
 

@@ -17,6 +17,8 @@
     timeFormat?: TimeFormat;
     onedit?: (dose: DoseLogWithMedication) => void;
   } = $props();
+
+  let deleting = $state(false);
 </script>
 
 <div
@@ -76,9 +78,11 @@
         method="POST"
         action="?/deleteDose"
         use:enhance={() => {
+          deleting = true;
           return async ({ result, update }) => {
             if (result.type === "success") showToast("Dose removed", "success");
             await update();
+            deleting = false;
           };
         }}
       >
@@ -86,10 +90,18 @@
         <button
           type="submit"
           onclick={(e) => e.stopPropagation()}
-          class="text-text-muted hover:text-danger text-xs"
+          class="text-text-muted hover:text-danger text-xs disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="Delete dose"
+          disabled={deleting}
         >
-          &times;
+          {#if deleting}
+            <span
+              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent align-middle"
+              aria-hidden="true"
+            ></span>
+          {:else}
+            &times;
+          {/if}
         </button>
       </form>
     </div>

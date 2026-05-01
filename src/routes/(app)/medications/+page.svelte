@@ -42,8 +42,9 @@
                 disabled={i === 0}
                 aria-label="Move {medication.name} up"
                 class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
-                >&#9650;</button
               >
+                <span aria-hidden="true">&#9650;</span>
+              </button>
             </form>
             <form method="POST" action="?/reorder" use:enhance>
               <input type="hidden" name="medicationId" value={medication.id} />
@@ -53,8 +54,9 @@
                 disabled={i === data.medications.length - 1}
                 aria-label="Move {medication.name} down"
                 class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
-                >&#9660;</button
               >
+                <span aria-hidden="true">&#9660;</span>
+              </button>
             </form>
           </div>
           <div class="flex-1">

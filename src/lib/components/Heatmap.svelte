@@ -26,6 +26,7 @@
     return cols;
   });
 
+  let wrapper = $state<HTMLDivElement | null>(null);
   let tooltip = $state<{ text: string; x: number; y: number } | null>(null);
 
   function intensity(count: number): string {
@@ -38,11 +39,13 @@
   }
 
   function showTooltip(e: MouseEvent, date: string, count: number) {
-    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    if (!wrapper) return;
+    const cellRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const wrapperRect = wrapper.getBoundingClientRect();
     tooltip = {
       text: `${date}: ${count} dose${count !== 1 ? "s" : ""}`,
-      x: rect.left,
-      y: rect.top - 28,
+      x: cellRect.left - wrapperRect.left,
+      y: cellRect.top - wrapperRect.top - 28,
     };
   }
 
@@ -51,7 +54,7 @@
   }
 </script>
 
-<div class="relative overflow-x-auto">
+<div bind:this={wrapper} class="relative overflow-x-auto">
   <div class="flex gap-[1px]">
     {#each weeks as week, weekIdx}
       <div class="flex flex-col gap-[1px]">
@@ -59,12 +62,12 @@
           {@const cell = week.find((c) => c.row === rowIdx)}
           {#if cell}
             <div
-              class="animate-fade-in h-[11px] w-[11px] cursor-default rounded-[2px] transition-opacity hover:opacity-80 {intensity(
+              class="heatmap-cell animate-fade-in h-[11px] w-[11px] cursor-default rounded-[2px] transition-opacity hover:opacity-80 {intensity(
                 cell.count,
               )}"
               style="animation-delay: {weekIdx * 15}ms"
               role="img"
-              aria-label="{cell.date}: {cell.count} doses"
+              aria-label="{cell.date}: {cell.count} doses logged"
               onmouseenter={(e) => showTooltip(e, cell.date, cell.count)}
               onmouseleave={hideTooltip}
             ></div>
@@ -78,10 +81,18 @@
 
   {#if tooltip}
     <div
-      class="pointer-events-none fixed z-30 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow"
+      class="pointer-events-none absolute z-30 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow"
       style="left: {tooltip.x}px; top: {tooltip.y}px;"
     >
       {tooltip.text}
     </div>
   {/if}
 </div>
+
+<style>
+  @media (prefers-reduced-motion: reduce) {
+    .heatmap-cell {
+      animation-delay: 0ms !important;
+    }
+  }
+</style>

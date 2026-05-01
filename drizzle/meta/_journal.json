@@ -57,6 +57,13 @@
       "when": 1777552581984,
       "tag": "0007_fearless_monster_badoon",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777649411771,
+      "tag": "0008_phase_2_lifecycle_dates",
+      "breakpoints": true
     }
   ]
 }

@@ -23,6 +23,8 @@ function makeMed(overrides: Partial<Medication> = {}): Medication {
     sortOrder: 0,
     isArchived: false,
     archivedAt: null,
+    startedAt: new Date("2026-01-01T00:00:00Z"),
+    endedAt: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
     ...overrides,
@@ -43,6 +45,8 @@ function makeIntervalSchedule(
     intervalHours,
     daysOfWeek: null,
     sortOrder: 0,
+    effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+    effectiveTo: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     ...overrides,
   };
@@ -63,6 +67,8 @@ function makeFixedTimeSchedule(
     intervalHours: null,
     daysOfWeek,
     sortOrder,
+    effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+    effectiveTo: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
   };
 }
@@ -77,6 +83,8 @@ function makePrnSchedule(medicationId: string): MedicationSchedule {
     intervalHours: null,
     daysOfWeek: null,
     sortOrder: 0,
+    effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+    effectiveTo: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
   };
 }

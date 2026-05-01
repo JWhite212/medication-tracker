@@ -20,6 +20,8 @@ function intervalSchedule(hours: number, medId = "m"): MedicationSchedule {
     intervalHours: String(hours),
     daysOfWeek: null,
     sortOrder: 0,
+    effectiveFrom: new Date(),
+    effectiveTo: null,
     createdAt: new Date(),
   };
 }
@@ -34,6 +36,8 @@ function fixedTimeSchedule(time: string, daysOfWeek: number[] | null = null): Me
     intervalHours: null,
     daysOfWeek,
     sortOrder: 0,
+    effectiveFrom: new Date(),
+    effectiveTo: null,
     createdAt: new Date(),
   };
 }
@@ -48,6 +52,8 @@ function prnSchedule(): MedicationSchedule {
     intervalHours: null,
     daysOfWeek: null,
     sortOrder: 0,
+    effectiveFrom: new Date(),
+    effectiveTo: null,
     createdAt: new Date(),
   };
 }

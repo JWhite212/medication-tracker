@@ -1,4 +1,4 @@
-import { sql, eq, and, isNotNull, ne } from "drizzle-orm";
+import { sql, eq, and, isNotNull, ne, inArray, max } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
   medications,
@@ -15,7 +15,7 @@ import { localTimeOnDateToUtc, getLocalDateString, getLocalDayOfWeek } from "$li
 const FIXED_TIME_TOLERANCE_MS = 60 * 60 * 1000;
 
 export async function checkOverdueMedications() {
-  const rows = await db
+  const scheduleRows = await db
     .select({
       scheduleId: medicationSchedules.id,
       scheduleKind: medicationSchedules.scheduleKind,
@@ -27,14 +27,6 @@ export async function checkOverdueMedications() {
       userId: medications.userId,
       userEmail: users.email,
       userTimezone: users.timezone,
-      lastTakenAt: sql<Date | null>`(
-        SELECT ${doseLogs.takenAt}
-        FROM ${doseLogs}
-        WHERE ${doseLogs.medicationId} = ${medications.id}
-          AND ${doseLogs.status} = 'taken'
-        ORDER BY ${doseLogs.takenAt} DESC
-        LIMIT 1
-      )`,
     })
     .from(medicationSchedules)
     .innerJoin(medications, eq(medicationSchedules.medicationId, medications.id))
@@ -48,12 +40,37 @@ export async function checkOverdueMedications() {
       ),
     );
 
+  // Fetch the most recent taken dose per medication in one grouped query
+  // instead of running a correlated subquery per schedule row.
+  const medicationIds = Array.from(new Set(scheduleRows.map((r) => r.medicationId)));
+  const lastTakenByMedication = new Map<string, Date>();
+  if (medicationIds.length > 0) {
+    const lastTakenRows = await db
+      .select({
+        medicationId: doseLogs.medicationId,
+        lastTakenAt: max(doseLogs.takenAt),
+      })
+      .from(doseLogs)
+      .where(and(inArray(doseLogs.medicationId, medicationIds), eq(doseLogs.status, "taken")))
+      .groupBy(doseLogs.medicationId);
+
+    for (const r of lastTakenRows) {
+      if (r.lastTakenAt !== null) {
+        lastTakenByMedication.set(r.medicationId, new Date(r.lastTakenAt));
+      }
+    }
+  }
+
   const now = new Date();
   // A single overdue medication should produce one email per cron run
   // even when multiple schedules say so.
   const notified = new Set<string>();
 
-  for (const row of rows) {
+  for (const scheduleRow of scheduleRows) {
+    const row = {
+      ...scheduleRow,
+      lastTakenAt: lastTakenByMedication.get(scheduleRow.medicationId) ?? null,
+    };
     if (!isScheduleOverdue(row, now)) continue;
     if (notified.has(row.medicationId)) continue;
     notified.add(row.medicationId);

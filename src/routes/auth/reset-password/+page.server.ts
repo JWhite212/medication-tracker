@@ -1,20 +1,12 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { createId } from "@paralleldrive/cuid2";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { hashToken } from "$lib/server/auth/token";
 import { db } from "$lib/server/db";
 import { users, passwordResetTokens } from "$lib/server/db/schema";
 import { sendPasswordResetEmail } from "$lib/server/email";
 import { eq } from "drizzle-orm";
 import type { Actions, PageServerLoad } from "./$types";
-
-async function hashToken(token: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(token);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 export const load: PageServerLoad = async ({ locals, url }) => {
   if (locals.user) redirect(302, "/dashboard");

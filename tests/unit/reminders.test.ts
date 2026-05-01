@@ -11,6 +11,12 @@ const lastTakenRows: Array<{ medicationId: string; lastTakenAt: Date | null }> =
 // then the dose-log aggregate.
 let selectCallIndex = 0;
 
+// Queue of return values for db.insert(...).returning() calls.
+// Default per call (when queue is empty): [{ id: "evt" }] meaning row
+// inserted (dedupe key was new). Push [] for a specific call to
+// simulate a unique-constraint conflict (dedupe key already seen).
+const reminderEventInsertResults: Array<Array<{ id: string }>> = [];
+
 vi.mock("$lib/server/db", () => ({
   db: {
     select: () => {
@@ -29,6 +35,15 @@ vi.mock("$lib/server/db", () => ({
         then: (onFulfilled: (v: unknown) => unknown) => resolver().then(onFulfilled),
       });
       chain.groupBy = resolver;
+      return chain;
+    },
+    insert: () => {
+      const result = reminderEventInsertResults.shift() ?? [{ id: "evt" }];
+      const chain: Record<string, unknown> = {};
+      const passthrough = () => chain;
+      chain.values = passthrough;
+      chain.onConflictDoNothing = passthrough;
+      chain.returning = () => Promise.resolve(result);
       return chain;
     },
   },
@@ -57,6 +72,7 @@ beforeEach(() => {
   lastTakenRows.length = 0;
   sentEmails.length = 0;
   sentPushes.length = 0;
+  reminderEventInsertResults.length = 0;
   selectCallIndex = 0;
 });
 
@@ -136,11 +152,14 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
     expect(sentPushes).toHaveLength(0);
   });
 
-  it("dedupes per medication when multiple schedules say overdue", async () => {
+  it("fires once per (schedule, slot) — different schedule timings produce separate notifications", async () => {
     const now = Date.now();
     const eightHoursAgo = new Date(now - 8 * 3600 * 1000);
 
-    // Two interval schedules for the SAME medication, both overdue.
+    // Two interval schedules for the SAME medication with DIFFERENT
+    // intervals → two distinct overdue slots → two distinct dedupe
+    // keys → two notifications. (Per-schedule semantics under the
+    // new reminder_events dedupe scheme.)
     scheduleRows.push(
       {
         scheduleId: "s1",
@@ -171,9 +190,36 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
 
     await checkOverdueMedications();
 
-    // One email/push per medication, not per schedule.
-    expect(sentEmails).toHaveLength(1);
-    expect(sentPushes).toHaveLength(1);
+    expect(sentEmails).toHaveLength(2);
+    expect(sentPushes).toHaveLength(2);
+  });
+
+  it("dedupes a repeat run via reminder_events conflict (insert returns no row)", async () => {
+    const now = Date.now();
+    const eightHoursAgo = new Date(now - 8 * 3600 * 1000);
+
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userTimezone: "UTC",
+    });
+    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+
+    // Simulate a unique-constraint conflict on dedupe_key: the insert
+    // returns an empty array, meaning "row already existed; skip notify".
+    reminderEventInsertResults.push([]);
+
+    await checkOverdueMedications();
+
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(0);
   });
 
   it("does not query dose_logs when there are no schedule rows", async () => {

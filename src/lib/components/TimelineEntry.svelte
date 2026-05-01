@@ -103,7 +103,7 @@
             ? 'bg-danger/15 text-danger'
             : effect.severity === 'moderate'
               ? 'bg-warning/15 text-warning'
-              : 'bg-text-secondary/15 text-text-secondary'}"
+              : 'bg-text-secondary/30 text-text-primary'}"
         >
           {effect.name}
         </span>

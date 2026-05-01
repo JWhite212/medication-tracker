@@ -120,7 +120,7 @@
                 class="rounded px-2 py-0.5 text-xs font-medium transition-colors {effect.severity ===
                 opt.value
                   ? opt.value === 'mild'
-                    ? 'bg-text-secondary/20 text-text-primary'
+                    ? 'bg-text-secondary/30 text-text-primary'
                     : opt.value === 'moderate'
                       ? 'bg-warning/20 text-warning'
                       : 'bg-danger/20 text-danger'

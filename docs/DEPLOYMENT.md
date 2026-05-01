@@ -154,6 +154,23 @@ git push origin main                              # ship the code that uses it
 Always ship the migration before (or atomically with) the code that
 depends on it — Vercel does not gate deploys on migrations.
 
+### If `drizzle-kit migrate` hangs
+
+`drizzle-kit migrate` defaults to the `@neondatabase/serverless`
+WebSocket driver and can stall indefinitely with the warning
+`'@neondatabase/serverless' can only connect to remote Neon/Vercel
+Postgres/Supabase instances through a websocket`.
+
+Fall back to the HTTP-driver one-shot in `scripts/migrate-once.mjs`:
+
+```bash
+DATABASE_URL="$DATABASE_URL" node scripts/migrate-once.mjs
+```
+
+Same migration files, same idempotent
+`drizzle.__drizzle_migrations` tracking — just a different driver
+that doesn't need a WebSocket constructor wired up.
+
 ## 10. Rotating secrets
 
 - **`CRON_SECRET`** — update in Vercel env vars, redeploy. Zero user

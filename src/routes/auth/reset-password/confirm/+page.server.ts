@@ -2,17 +2,9 @@ import { error, fail, redirect } from "@sveltejs/kit";
 import { db } from "$lib/server/db";
 import { users, passwordResetTokens, sessions } from "$lib/server/db/schema";
 import { hashPassword } from "$lib/server/auth/password";
+import { hashToken } from "$lib/server/auth/token";
 import { eq } from "drizzle-orm";
 import type { Actions, PageServerLoad } from "./$types";
-
-async function hashToken(token: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(token);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 export const load: PageServerLoad = async ({ url }) => {
   const token = url.searchParams.get("token");

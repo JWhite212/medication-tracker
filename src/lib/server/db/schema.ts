@@ -77,12 +77,18 @@ export const medications = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
     isArchived: boolean("is_archived").notNull().default(false),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // Lifecycle window. Analytics treats days outside [startedAt, endedAt]
+    // as "not expected" — a med added yesterday no longer shows 0%
+    // adherence for days before it was added.
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("medications_user_archived_idx").on(table.userId, table.isArchived),
     index("medications_user_name_idx").on(table.userId, table.name),
+    index("medications_user_started_idx").on(table.userId, table.startedAt),
   ],
 );
 
@@ -132,11 +138,16 @@ export const medicationSchedules = pgTable(
     intervalHours: numeric("interval_hours"),
     daysOfWeek: jsonb("days_of_week").$type<number[]>(),
     sortOrder: integer("sort_order").notNull().default(0),
+    // Lifecycle window for the schedule itself — lets a user change a
+    // dosing schedule without back-filling adherence under the new rate.
+    effectiveFrom: timestamp("effective_from", { withTimezone: true }).notNull().defaultNow(),
+    effectiveTo: timestamp("effective_to", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("medication_schedules_med_idx").on(table.medicationId),
     index("medication_schedules_user_idx").on(table.userId),
+    index("medication_schedules_med_effective_idx").on(table.medicationId, table.effectiveFrom),
   ],
 );
 

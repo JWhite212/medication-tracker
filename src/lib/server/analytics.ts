@@ -5,6 +5,7 @@ import { startOfDay } from "$lib/utils/time";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import type { DoseLogStatus } from "$lib/server/db/schema";
+import { clampEffectiveDays, isActiveOn } from "$lib/server/analytics/lifecycle";
 
 /**
  * Sum expected doses per day across a medication's schedule rows.
@@ -132,10 +133,8 @@ export async function getPerMedicationStats(
 ) {
   const whereClauseAll = buildDateFilters(userId, days, timezone, range, "any");
 
-  const effectiveDays =
-    range?.from && range?.to
-      ? Math.max(1, Math.round((range.to.getTime() - range.from.getTime()) / 86400000))
-      : days;
+  const rangeFrom = range?.from ?? new Date(Date.now() - days * 86400000);
+  const rangeTo = range?.to ?? new Date();
 
   const [rows, schedulesByMed] = await Promise.all([
     db
@@ -145,6 +144,8 @@ export async function getPerMedicationStats(
         colour: medications.colour,
         scheduleIntervalHours: medications.scheduleIntervalHours,
         scheduleType: medications.scheduleType,
+        startedAt: medications.startedAt,
+        endedAt: medications.endedAt,
         status: doseLogs.status,
         events: sql<number>`count(*)::int`,
         quantity: sql<number>`coalesce(sum(${doseLogs.quantity}), 0)::int`,
@@ -161,6 +162,8 @@ export async function getPerMedicationStats(
         medications.colour,
         medications.scheduleIntervalHours,
         medications.scheduleType,
+        medications.startedAt,
+        medications.endedAt,
         doseLogs.status,
       ),
     getSchedulesForUser(userId),
@@ -172,6 +175,8 @@ export async function getPerMedicationStats(
     colour: string;
     scheduleIntervalHours: string | null;
     scheduleType: string;
+    startedAt: Date;
+    endedAt: Date | null;
     takenEvents: number;
     takenQuantity: number;
     skippedEvents: number;
@@ -184,6 +189,8 @@ export async function getPerMedicationStats(
       colour: row.colour,
       scheduleIntervalHours: row.scheduleIntervalHours,
       scheduleType: row.scheduleType,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
       takenEvents: 0,
       takenQuantity: 0,
       skippedEvents: 0,
@@ -218,6 +225,10 @@ export async function getPerMedicationStats(
           : b.scheduleIntervalHours
             ? 24 / Number(b.scheduleIntervalHours)
             : 0;
+      // Clamp the analytics window against this medication's lifecycle
+      // so a med added yesterday isn't penalised for the days before it
+      // existed.
+      const effectiveDays = clampEffectiveDays(rangeFrom, rangeTo, b.startedAt, b.endedAt);
       const expectedTotal = Math.round(expectedPerDay * effectiveDays);
       return {
         medicationId: b.medicationId,
@@ -314,20 +325,23 @@ export async function getDailyAdherenceSeries(
         id: medications.id,
         scheduleType: medications.scheduleType,
         scheduleIntervalHours: medications.scheduleIntervalHours,
+        startedAt: medications.startedAt,
+        endedAt: medications.endedAt,
       })
       .from(medications)
       .where(and(eq(medications.userId, userId), eq(medications.isArchived, false))),
   ]);
 
-  let expectedPerDay = 0;
-  for (const med of activeMeds) {
+  // Per-medication expected-per-day so we can include only meds that
+  // were active on a given day.
+  const expectedByMed = activeMeds.map((med) => {
     const schedules = schedulesByMed.get(med.id);
-    if (schedules && schedules.length > 0) {
-      expectedPerDay += expectedPerDayForSchedules(schedules);
-    } else {
-      expectedPerDay += expectedPerDayFromLegacy(med.scheduleType, med.scheduleIntervalHours);
-    }
-  }
+    const perDay =
+      schedules && schedules.length > 0
+        ? expectedPerDayForSchedules(schedules)
+        : expectedPerDayFromLegacy(med.scheduleType, med.scheduleIntervalHours);
+    return { startedAt: med.startedAt, endedAt: med.endedAt, perDay };
+  });
 
   const fromDate =
     range?.from && range?.to
@@ -354,6 +368,11 @@ export async function getDailyAdherenceSeries(
     const day = new Date(fromDate.getTime() + i * 86400000);
     const dateKey = formatter.format(day);
     const doseCount = countByDate.get(dateKey) ?? 0;
+    // Sum expected only across meds active on this specific day.
+    const expectedPerDay = expectedByMed.reduce(
+      (acc, m) => acc + (isActiveOn(day, m.startedAt, m.endedAt) ? m.perDay : 0),
+      0,
+    );
     const adherence =
       expectedPerDay > 0 ? Math.min(100, Math.round((doseCount / expectedPerDay) * 100)) : 0;
     series.push({

@@ -14,7 +14,7 @@ const config = {
         "script-src": ["self"],
         "style-src": ["self", "unsafe-inline"],
         "img-src": ["self", "data:", "https:"],
-        "connect-src": ["self"],
+        "connect-src": ["self", "https://vitals.vercel-insights.com"],
         "font-src": ["self"],
         "worker-src": ["self"],
         "manifest-src": ["self"],

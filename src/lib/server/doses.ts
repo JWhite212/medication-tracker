@@ -131,22 +131,28 @@ export async function deleteDose(userId: string, doseId: string) {
 
   if (!dose) return false;
 
-  // Inventory restore + delete in parallel
-  await Promise.all([
-    db
-      .update(medications)
-      .set({
-        inventoryCount: sql`${medications.inventoryCount} + ${dose.quantity}`,
-      })
-      .where(
-        and(
-          eq(medications.id, dose.medicationId),
-          eq(medications.userId, userId),
-          isNotNull(medications.inventoryCount),
+  // Skipped/missed doses never decremented inventory, so don't restore.
+  const shouldRestoreInventory = dose.status === "taken";
+  const ops: Promise<unknown>[] = [
+    db.delete(doseLogs).where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId))),
+  ];
+  if (shouldRestoreInventory) {
+    ops.push(
+      db
+        .update(medications)
+        .set({
+          inventoryCount: sql`${medications.inventoryCount} + ${dose.quantity}`,
+        })
+        .where(
+          and(
+            eq(medications.id, dose.medicationId),
+            eq(medications.userId, userId),
+            isNotNull(medications.inventoryCount),
+          ),
         ),
-      ),
-    db.delete(doseLogs).where(eq(doseLogs.id, doseId)),
-  ]);
+    );
+  }
+  await Promise.all(ops);
   await logAudit(userId, "dose_log", doseId, "delete");
   return true;
 }
@@ -184,8 +190,15 @@ export async function updateDose(
     .returning();
 
   const parallel: Promise<unknown>[] = [doseUpdatePromise];
-  if (updates.quantity !== undefined && updates.quantity !== existing.quantity) {
-    const diff = updates.quantity - existing.quantity;
+  // Only taken doses ever decremented inventory, so only taken doses
+  // get a quantity-diff adjustment. Editing a skipped dose's quantity
+  // is bookkeeping only.
+  const inventoryAffectingChange =
+    existing.status === "taken" &&
+    updates.quantity !== undefined &&
+    updates.quantity !== existing.quantity;
+  if (inventoryAffectingChange) {
+    const diff = updates.quantity! - existing.quantity;
     parallel.push(
       db
         .update(medications)

@@ -1,4 +1,5 @@
 import { sql, eq, and, isNotNull, ne, inArray, max } from "drizzle-orm";
+import { createId } from "@paralleldrive/cuid2";
 import { db } from "$lib/server/db";
 import {
   medications,
@@ -6,13 +7,44 @@ import {
   users,
   userPreferences,
   medicationSchedules,
+  reminderEvents,
 } from "$lib/server/db/schema";
 import { sendReminderEmail, sendLowInventoryEmail } from "./email";
 import { sendPushNotification } from "./push";
 import { formatTimeSince } from "$lib/utils/time";
-import { localTimeOnDateToUtc, getLocalDateString, getLocalDayOfWeek } from "$lib/utils/schedule";
+import {
+  computeOverdueSlot,
+  buildOverdueDedupeKey,
+  buildLowInventoryDedupeKey,
+  type ReminderType,
+} from "./reminders/domain";
 
-const FIXED_TIME_TOLERANCE_MS = 60 * 60 * 1000;
+export {
+  computeOverdueSlot,
+  isScheduleOverdue,
+  buildOverdueDedupeKey,
+  buildLowInventoryDedupeKey,
+} from "./reminders/domain";
+
+async function tryRecordReminderEvent(input: {
+  userId: string;
+  medicationId: string;
+  reminderType: ReminderType;
+  dedupeKey: string;
+}): Promise<boolean> {
+  const inserted = await db
+    .insert(reminderEvents)
+    .values({
+      id: createId(),
+      userId: input.userId,
+      medicationId: input.medicationId,
+      reminderType: input.reminderType,
+      dedupeKey: input.dedupeKey,
+    })
+    .onConflictDoNothing({ target: reminderEvents.dedupeKey })
+    .returning({ id: reminderEvents.id });
+  return inserted.length === 1;
+}
 
 export async function checkOverdueMedications() {
   const scheduleRows = await db
@@ -62,18 +94,29 @@ export async function checkOverdueMedications() {
   }
 
   const now = new Date();
-  // A single overdue medication should produce one email per cron run
-  // even when multiple schedules say so.
-  const notified = new Set<string>();
 
   for (const scheduleRow of scheduleRows) {
     const row = {
       ...scheduleRow,
       lastTakenAt: lastTakenByMedication.get(scheduleRow.medicationId) ?? null,
     };
-    if (!isScheduleOverdue(row, now)) continue;
-    if (notified.has(row.medicationId)) continue;
-    notified.add(row.medicationId);
+    const slot = computeOverdueSlot(row, now);
+    if (!slot) continue;
+
+    const dedupeKey = buildOverdueDedupeKey(
+      row.userId,
+      row.medicationId,
+      row.scheduleKind,
+      row.scheduleId,
+      slot,
+    );
+    const recorded = await tryRecordReminderEvent({
+      userId: row.userId,
+      medicationId: row.medicationId,
+      reminderType: "overdue",
+      dedupeKey,
+    });
+    if (!recorded) continue;
 
     const sinceLabel = row.lastTakenAt ? formatTimeSince(new Date(row.lastTakenAt)) : "never";
 
@@ -94,51 +137,12 @@ export async function checkOverdueMedications() {
   }
 }
 
-type OverdueRow = {
-  scheduleKind: string;
-  intervalHours: string | null;
-  timeOfDay: string | null;
-  daysOfWeek: number[] | null;
-  userTimezone: string;
-  lastTakenAt: Date | null;
-};
-
-function isScheduleOverdue(row: OverdueRow, now: Date): boolean {
-  if (row.scheduleKind === "interval") {
-    if (!row.intervalHours || !row.lastTakenAt) return false;
-    const intervalMs = Number(row.intervalHours) * 3600000;
-    const elapsed = now.getTime() - new Date(row.lastTakenAt).getTime();
-    return elapsed > intervalMs;
-  }
-
-  if (row.scheduleKind === "fixed_time") {
-    if (!row.timeOfDay) return false;
-    const tz = row.userTimezone || "UTC";
-    const todayStr = getLocalDateString(now, tz);
-    const slotUtc = localTimeOnDateToUtc(todayStr, row.timeOfDay, tz);
-
-    // Slot still in the future — not overdue.
-    if (slotUtc.getTime() > now.getTime()) return false;
-
-    if (row.daysOfWeek && row.daysOfWeek.length > 0) {
-      const dow = getLocalDayOfWeek(slotUtc, tz);
-      if (!row.daysOfWeek.includes(dow)) return false;
-    }
-
-    if (row.lastTakenAt) {
-      const last = new Date(row.lastTakenAt).getTime();
-      if (Math.abs(last - slotUtc.getTime()) <= FIXED_TIME_TOLERANCE_MS) return false;
-    }
-    return true;
-  }
-
-  return false;
-}
-
 export async function checkLowInventoryMedications() {
   const lowMeds = await db
     .select({
+      medicationId: medications.id,
       medicationName: medications.name,
+      userId: medications.userId,
       inventoryCount: medications.inventoryCount,
       inventoryAlertThreshold: medications.inventoryAlertThreshold,
       userEmail: users.email,
@@ -157,6 +161,15 @@ export async function checkLowInventoryMedications() {
     );
 
   for (const med of lowMeds) {
+    const dedupeKey = buildLowInventoryDedupeKey(med.userId, med.medicationId, med.inventoryCount!);
+    const recorded = await tryRecordReminderEvent({
+      userId: med.userId,
+      medicationId: med.medicationId,
+      reminderType: "low_inventory",
+      dedupeKey,
+    });
+    if (!recorded) continue;
+
     await sendLowInventoryEmail(
       med.userEmail,
       med.medicationName,

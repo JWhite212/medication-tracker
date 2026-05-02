@@ -1,6 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { eq, and, asc } from "drizzle-orm";
-import { db } from "$lib/server/db";
+import { db, dbTx } from "$lib/server/db";
 import { medicationSchedules, medications } from "$lib/server/db/schema";
 import type { ScheduleInput } from "$lib/utils/validation";
 import type { InferSelectModel } from "drizzle-orm";
@@ -50,9 +50,8 @@ export async function getSchedulesForMedication(
     .orderBy(asc(medicationSchedules.sortOrder));
 }
 
-// Delete-then-insert. Neon HTTP driver does not support real
-// transactions, so this is best-effort atomic — the window between
-// the delete and the insert is one HTTP round-trip.
+// Delete-then-insert wrapped in a transaction (below) so a failed
+// insert rolls back the delete and the original schedule rows survive.
 export async function replaceSchedulesForMedication(
   medicationId: string,
   userId: string,
@@ -68,30 +67,38 @@ export async function replaceSchedulesForMedication(
     .limit(1);
   if (!owner) throw new MedicationOwnershipError();
 
-  await db
-    .delete(medicationSchedules)
-    .where(
-      and(
-        eq(medicationSchedules.medicationId, medicationId),
-        eq(medicationSchedules.userId, userId),
-      ),
-    );
+  // Delete-then-insert in a single transaction — if the insert fails
+  // (e.g. constraint violation), the original schedule rows are
+  // restored on rollback.
+  const rows =
+    schedules.length === 0
+      ? []
+      : schedules.map((s, idx) => ({
+          id: createId(),
+          medicationId,
+          userId,
+          scheduleKind: s.scheduleKind,
+          timeOfDay: s.scheduleKind === "fixed_time" ? s.timeOfDay : null,
+          intervalHours: s.scheduleKind === "interval" ? String(s.intervalHours) : null,
+          daysOfWeek:
+            s.scheduleKind === "fixed_time" && s.daysOfWeek && s.daysOfWeek.length > 0
+              ? s.daysOfWeek
+              : null,
+          sortOrder: idx,
+        }));
 
-  if (schedules.length === 0) return;
+  await dbTx.transaction(async (tx) => {
+    await tx
+      .delete(medicationSchedules)
+      .where(
+        and(
+          eq(medicationSchedules.medicationId, medicationId),
+          eq(medicationSchedules.userId, userId),
+        ),
+      );
 
-  const rows = schedules.map((s, idx) => ({
-    id: createId(),
-    medicationId,
-    userId,
-    scheduleKind: s.scheduleKind,
-    timeOfDay: s.scheduleKind === "fixed_time" ? s.timeOfDay : null,
-    intervalHours: s.scheduleKind === "interval" ? String(s.intervalHours) : null,
-    daysOfWeek:
-      s.scheduleKind === "fixed_time" && s.daysOfWeek && s.daysOfWeek.length > 0
-        ? s.daysOfWeek
-        : null,
-    sortOrder: idx,
-  }));
-
-  await db.insert(medicationSchedules).values(rows);
+    if (rows.length > 0) {
+      await tx.insert(medicationSchedules).values(rows);
+    }
+  });
 }

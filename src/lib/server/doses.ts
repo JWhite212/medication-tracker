@@ -1,6 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { eq, and, gte, desc, sql, isNotNull, max } from "drizzle-orm";
-import { db } from "$lib/server/db";
+import { db, dbTx } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
 import { startOfDay } from "$lib/utils/time";
@@ -70,34 +70,40 @@ export async function logDose(
   const id = createId();
   const now = new Date();
 
-  const [dose] = await db
-    .insert(doseLogs)
-    .values({
-      id,
-      userId,
-      medicationId,
-      quantity,
-      takenAt: takenAt ?? now,
-      loggedAt: now,
-      notes: notes ?? null,
-      sideEffects: sideEffects ?? null,
-      status: "taken",
-    })
-    .returning();
+  // Insert + inventory decrement in a single transaction — partial
+  // failure rolls back both. Audit log runs after the tx commits; a
+  // rollback throws past it, so rolled-back writes are not audited.
+  const dose = await dbTx.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(doseLogs)
+      .values({
+        id,
+        userId,
+        medicationId,
+        quantity,
+        takenAt: takenAt ?? now,
+        loggedAt: now,
+        notes: notes ?? null,
+        sideEffects: sideEffects ?? null,
+        status: "taken",
+      })
+      .returning();
 
-  // Atomic inventory decrement
-  await db
-    .update(medications)
-    .set({
-      inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${quantity})`,
-    })
-    .where(
-      and(
-        eq(medications.id, medicationId),
-        eq(medications.userId, userId),
-        isNotNull(medications.inventoryCount),
-      ),
-    );
+    await tx
+      .update(medications)
+      .set({
+        inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${quantity})`,
+      })
+      .where(
+        and(
+          eq(medications.id, medicationId),
+          eq(medications.userId, userId),
+          isNotNull(medications.inventoryCount),
+        ),
+      );
+
+    return inserted;
+  });
 
   await logAudit(userId, "dose_log", id, "create");
   return dose;
@@ -132,13 +138,14 @@ export async function deleteDose(userId: string, doseId: string) {
   if (!dose) return false;
 
   // Skipped/missed doses never decremented inventory, so don't restore.
+  // Delete + (conditional) inventory restore in a single transaction —
+  // either both happen or neither does.
   const shouldRestoreInventory = dose.status === "taken";
-  const ops: Promise<unknown>[] = [
-    db.delete(doseLogs).where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId))),
-  ];
-  if (shouldRestoreInventory) {
-    ops.push(
-      db
+  await dbTx.transaction(async (tx) => {
+    await tx.delete(doseLogs).where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)));
+
+    if (shouldRestoreInventory) {
+      await tx
         .update(medications)
         .set({
           inventoryCount: sql`${medications.inventoryCount} + ${dose.quantity}`,
@@ -149,10 +156,9 @@ export async function deleteDose(userId: string, doseId: string) {
             eq(medications.userId, userId),
             isNotNull(medications.inventoryCount),
           ),
-        ),
-    );
-  }
-  await Promise.all(ops);
+        );
+    }
+  });
   await logAudit(userId, "dose_log", doseId, "delete");
   return true;
 }
@@ -175,21 +181,6 @@ export async function updateDose(
 
   if (!existing) return null;
 
-  // Inventory adjustment + dose update in parallel
-  const doseUpdatePromise = db
-    .update(doseLogs)
-    .set({
-      ...(updates.takenAt && { takenAt: updates.takenAt }),
-      ...(updates.quantity && { quantity: updates.quantity }),
-      ...(updates.notes !== undefined && { notes: updates.notes || null }),
-      ...(updates.sideEffects !== undefined && {
-        sideEffects: updates.sideEffects ?? null,
-      }),
-    })
-    .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
-    .returning();
-
-  const parallel: Promise<unknown>[] = [doseUpdatePromise];
   // Only taken doses ever decremented inventory, so only taken doses
   // get a quantity-diff adjustment. Editing a skipped dose's quantity
   // is bookkeeping only.
@@ -197,10 +188,26 @@ export async function updateDose(
     existing.status === "taken" &&
     updates.quantity !== undefined &&
     updates.quantity !== existing.quantity;
-  if (inventoryAffectingChange) {
-    const diff = updates.quantity! - existing.quantity;
-    parallel.push(
-      db
+
+  // Dose update + (optional) inventory diff in a single transaction
+  // so a partial failure rolls back both.
+  const updated = await dbTx.transaction(async (tx) => {
+    const [u] = await tx
+      .update(doseLogs)
+      .set({
+        ...(updates.takenAt && { takenAt: updates.takenAt }),
+        ...(updates.quantity && { quantity: updates.quantity }),
+        ...(updates.notes !== undefined && { notes: updates.notes || null }),
+        ...(updates.sideEffects !== undefined && {
+          sideEffects: updates.sideEffects ?? null,
+        }),
+      })
+      .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
+      .returning();
+
+    if (inventoryAffectingChange) {
+      const diff = updates.quantity! - existing.quantity;
+      await tx
         .update(medications)
         .set({
           inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${diff})`,
@@ -211,11 +218,11 @@ export async function updateDose(
             eq(medications.userId, userId),
             isNotNull(medications.inventoryCount),
           ),
-        ),
-    );
-  }
-  await Promise.all(parallel);
-  const [updated] = await doseUpdatePromise;
+        );
+    }
+
+    return u;
+  });
 
   const changes = computeChanges(existing, updated);
   if (changes) await logAudit(userId, "dose_log", doseId, "update", changes);

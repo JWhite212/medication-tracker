@@ -9,8 +9,12 @@ const selectRows: Array<Record<string, unknown>> = [];
 // "medication not owned by this user".
 const ownerRows: Array<{ id: string }> = [{ id: "med-A" }];
 
-vi.mock("$lib/server/db", () => ({
-  db: {
+// Same chainable surface for `db` (HTTP, used by reads + ownership
+// check) and `tx` (yielded by dbTx.transaction). Since
+// replaceSchedulesForMedication now wraps its delete-then-insert in
+// a transaction, the mock must expose dbTx as well.
+function buildClient() {
+  return {
     select: (shape?: Record<string, unknown>) => ({
       from: () => ({
         where: () => ({
@@ -32,6 +36,13 @@ vi.mock("$lib/server/db", () => ({
         return Promise.resolve();
       },
     }),
+  };
+}
+
+vi.mock("$lib/server/db", () => ({
+  db: buildClient(),
+  dbTx: {
+    transaction: <T>(cb: (tx: ReturnType<typeof buildClient>) => Promise<T>) => cb(buildClient()),
   },
 }));
 

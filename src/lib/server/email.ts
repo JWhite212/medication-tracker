@@ -20,7 +20,7 @@ function getBaseUrl(requestOrigin?: string): string {
 export async function sendVerificationEmail(email: string, token: string, requestOrigin: string) {
   const verifyUrl = `${getBaseUrl(requestOrigin)}/auth/verify?token=${encodeURIComponent(token)}`;
   await getResend().emails.send({
-    from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
+    from: env.EMAIL_FROM ?? "MedTracker <noreply@jamiewhite.site>",
     to: email,
     subject: "Verify your email",
     html: `<p>Click <a href="${verifyUrl}">here</a> to verify your email address.</p>
@@ -31,7 +31,7 @@ export async function sendVerificationEmail(email: string, token: string, reques
 export async function sendPasswordResetEmail(email: string, token: string, requestOrigin: string) {
   const resetUrl = `${getBaseUrl(requestOrigin)}/auth/reset-password?token=${encodeURIComponent(token)}`;
   await getResend().emails.send({
-    from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
+    from: env.EMAIL_FROM ?? "MedTracker <noreply@jamiewhite.site>",
     to: email,
     subject: "Reset your password",
     html: `<p>Click <a href="${resetUrl}">here</a> to reset your password.</p>
@@ -46,7 +46,7 @@ export async function sendLowInventoryEmail(
   threshold: number,
 ) {
   await getResend().emails.send({
-    from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
+    from: env.EMAIL_FROM ?? "MedTracker <noreply@jamiewhite.site>",
     to: email,
     subject: `Low inventory: ${medicationName}`,
     html: `<p><strong>${escHtml(medicationName)}</strong> has ${count} doses remaining (threshold: ${threshold}).</p>
@@ -56,7 +56,7 @@ export async function sendLowInventoryEmail(
 
 export async function sendReminderEmail(email: string, medicationName: string, lastTaken: string) {
   await getResend().emails.send({
-    from: env.EMAIL_FROM ?? "MedTracker <noreply@yourdomain.com>",
+    from: env.EMAIL_FROM ?? "MedTracker <noreply@jamiewhite.site>",
     to: email,
     subject: `Reminder: ${medicationName}`,
     html: `<p>You haven't taken <strong>${escHtml(medicationName)}</strong> since ${escHtml(lastTaken)}.</p>

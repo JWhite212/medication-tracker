@@ -27,7 +27,10 @@ export const load: PageServerLoad = async ({ locals }) => {
     getRefillForecast(user.id),
   ]);
 
-  const lastDoseMap = new Map(lastDoses.map((d) => [d.medicationId, d.lastTakenAt]));
+  // lastEventAt advances on both "taken" and "skipped" so a Skip clears
+  // the overdue badge; lastTakenAt anchors slot projection so historical
+  // taken doses stay visible on My Day.
+  const lastEventMap = new Map(lastDoses.map((d) => [d.medicationId, d.lastEventAt]));
 
   const now = new Date();
 
@@ -40,19 +43,20 @@ export const load: PageServerLoad = async ({ locals }) => {
         m.scheduleIntervalHours !== undefined,
     )
     .map((m) => {
-      const lastTakenAt = lastDoseMap.get(m.id) ?? null;
+      const lastEventAt = lastEventMap.get(m.id) ?? null;
       const { status, minutesUntilDue } = computeTimingStatus(
         Number(m.scheduleIntervalHours),
-        lastTakenAt,
+        lastEventAt,
         now,
       );
-      return { medicationId: m.id, status, minutesUntilDue, lastTakenAt };
+      return { medicationId: m.id, status, minutesUntilDue };
     });
 
-  // Schedule slots for My Day timeline
+  // Schedule slots for My Day timeline — anchor from last *taken* dose
+  // so the day's already-taken slots stay in the projection.
   const lastDoseByMedication: Record<string, Date> = {};
   for (const d of lastDoses) {
-    lastDoseByMedication[d.medicationId] = d.lastTakenAt;
+    if (d.lastTakenAt) lastDoseByMedication[d.medicationId] = d.lastTakenAt;
   }
 
   const dayStart = startOfDay(now, user.timezone);

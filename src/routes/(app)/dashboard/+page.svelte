@@ -19,6 +19,10 @@
 
   const overdueCount = $derived(data.timingStatus.filter((t) => t.status === "overdue").length);
 
+  // "Doses today" counts only doses actually taken — skipped events
+  // appear in the timeline below but should not inflate the count.
+  const takenTodayCount = $derived(data.doses.filter((d) => d.status === "taken").length);
+
   const overdueMeds = $derived(
     data.timingStatus
       .filter((t) => t.status === "overdue")
@@ -44,7 +48,7 @@
   <div class="mx-auto w-full max-w-2xl space-y-6">
     <h1 class="text-2xl font-bold">Dashboard</h1>
 
-    <SummaryStrip doseCount={data.doses.length} {overdueCount} />
+    <SummaryStrip doseCount={takenTodayCount} {overdueCount} />
 
     <RefillsCard entries={data.refillForecast} />
 

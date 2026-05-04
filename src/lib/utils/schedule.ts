@@ -1,7 +1,7 @@
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
 
-export type ScheduleSlotStatus = "taken" | "upcoming" | "overdue";
+export type ScheduleSlotStatus = "taken" | "skipped" | "upcoming" | "overdue";
 
 export interface ScheduleSlot {
   medicationId: string;
@@ -255,7 +255,7 @@ export function computeScheduleSlots(
 
       let status: ScheduleSlotStatus;
       if (matchedDose) {
-        status = "taken";
+        status = matchedDose.status === "skipped" ? "skipped" : "taken";
       } else if (expected.getTime() <= now.getTime()) {
         status = "overdue";
       } else {

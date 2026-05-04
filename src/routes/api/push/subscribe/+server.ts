@@ -9,8 +9,9 @@ import type { RequestHandler } from "@sveltejs/kit";
 
 export const POST: RequestHandler = async ({ request, locals }) => {
   if (!locals.user) throw error(401);
+  const userId = locals.user.id;
 
-  const { allowed } = await checkRateLimit(`push-sub:${locals.user.id}`, 10, 60_000);
+  const { allowed } = await checkRateLimit(`push-sub:${userId}`, 10, 60_000);
   if (!allowed) throw error(429, "Too many requests");
 
   const body = await request.json();
@@ -19,22 +20,21 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
   const { endpoint, keys } = parsed.data;
 
-  // Reject if endpoint already belongs to a different user
-  const existing = await db
-    .select({ userId: pushSubscriptions.userId })
-    .from(pushSubscriptions)
-    .where(eq(pushSubscriptions.endpoint, endpoint))
-    .limit(1);
-
-  if (existing.length > 0 && existing[0].userId !== locals.user.id) {
-    throw error(409, "Endpoint already registered");
-  }
-
-  await db
+  // Atomic upsert: INSERT, and on unique conflict only UPDATE when the
+  // existing row already belongs to the current user. If a different
+  // user owns the endpoint the conflict's WHERE filters the UPDATE out
+  // so RETURNING produces no row — that's the conflict signal.
+  //
+  // SELECT-then-INSERT cannot solve this race in PostgreSQL because
+  // SELECT ... FOR UPDATE does not place a gap lock on a missing row,
+  // so two concurrent inserts of the same endpoint can both pass the
+  // ownership check. Pushing the ownership filter into the conflict
+  // clause makes it a single atomic statement.
+  const upsert = await db
     .insert(pushSubscriptions)
     .values({
       id: createId(),
-      userId: locals.user.id,
+      userId,
       endpoint,
       p256dh: keys.p256dh,
       auth: keys.auth,
@@ -42,7 +42,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     .onConflictDoUpdate({
       target: pushSubscriptions.endpoint,
       set: { p256dh: keys.p256dh, auth: keys.auth },
-    });
+      // setWhere = SQL `WHERE` clause appended to `DO UPDATE SET ...`,
+      // so the update only applies if the existing row already belongs
+      // to this user. If a different user owns it, RETURNING is empty.
+      setWhere: eq(pushSubscriptions.userId, userId),
+    })
+    .returning({ id: pushSubscriptions.id });
+
+  if (upsert.length === 0) {
+    throw error(409, "Endpoint already registered");
+  }
 
   return json({ success: true });
 };

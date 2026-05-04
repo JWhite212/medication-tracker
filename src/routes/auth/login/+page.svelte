@@ -35,6 +35,11 @@
         An account with that email already exists. Please sign in with your password, then link your
         OAuth provider from settings.
       </div>
+    {:else if data.oauthError === "oauth_email_unverified"}
+      <div class="bg-warning/10 text-warning mb-4 rounded-lg p-3 text-sm" role="alert">
+        Your social-login provider returned an unverified email address. Verify the email with your
+        provider and try again.
+      </div>
     {/if}
 
     {#if errors.form}
@@ -61,7 +66,7 @@
           name="email"
           type="email"
           required
-          value={form?.email ?? data.prefillEmail ?? ""}
+          value={form?.email ?? ""}
           class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="you@example.com"
         />

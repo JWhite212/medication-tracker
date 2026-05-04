@@ -64,6 +64,13 @@
       "when": 1777649411771,
       "tag": "0008_phase_2_lifecycle_dates",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777910230417,
+      "tag": "0009_totp_replay_protection",
+      "breakpoints": true
     }
   ]
 }

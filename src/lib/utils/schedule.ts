@@ -255,7 +255,12 @@ export function computeScheduleSlots(
 
       let status: ScheduleSlotStatus;
       if (matchedDose) {
-        status = matchedDose.status === "skipped" ? "skipped" : "taken";
+        if (matchedDose.status === "skipped") status = "skipped";
+        // A "missed" dose row hasn't actually been consumed, so the slot
+        // is still unfulfilled — render it as overdue, not green-check
+        // taken.
+        else if (matchedDose.status === "missed") status = "overdue";
+        else status = "taken";
       } else if (expected.getTime() <= now.getTime()) {
         status = "overdue";
       } else {

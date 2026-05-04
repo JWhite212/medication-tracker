@@ -51,14 +51,12 @@
         {#if dose.status === "skipped"}
           <span
             class="bg-warning/15 text-warning ml-2 rounded-full px-2 py-0.5 text-xs font-semibold tracking-wider uppercase"
-            aria-label="Skipped dose"
           >
             Skipped
           </span>
         {:else if dose.status === "missed"}
           <span
             class="bg-danger/15 text-danger ml-2 rounded-full px-2 py-0.5 text-xs font-semibold tracking-wider uppercase"
-            aria-label="Missed dose"
           >
             Missed
           </span>

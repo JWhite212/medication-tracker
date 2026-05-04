@@ -125,25 +125,28 @@ export function formatDueIn(ms: number): string {
 /**
  * Compute the timing status for a scheduled medication.
  * @param intervalHours - the schedule interval in hours
- * @param lastTakenAt   - when the medication was last taken (or null if never)
+ * @param lastEventAt   - when the medication was last *handled* — taken
+ *                        OR skipped. Both advance the clock so the user
+ *                        can dismiss an overdue slot by skipping it.
+ *                        `null` if the schedule has never been touched.
  * @param now           - current timestamp (for testability)
  * @returns status and minutesUntilDue (negative if overdue)
  */
 export function computeTimingStatus(
   intervalHours: number,
-  lastTakenAt: Date | null,
+  lastEventAt: Date | null,
   now: Date = new Date(),
 ): {
   status: "ok" | "due_soon" | "due_now" | "overdue";
   minutesUntilDue: number;
 } {
-  if (!lastTakenAt) {
-    // Never taken — treat as overdue
+  if (!lastEventAt) {
+    // Never handled — treat as overdue
     return { status: "overdue", minutesUntilDue: -1 };
   }
 
   const intervalMs = intervalHours * 60 * 60 * 1000;
-  const nextDueAt = lastTakenAt.getTime() + intervalMs;
+  const nextDueAt = lastEventAt.getTime() + intervalMs;
   const msUntilDue = nextDueAt - now.getTime();
   const minutesUntilDue = Math.round(msUntilDue / 60_000);
 

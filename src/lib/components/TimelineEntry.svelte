@@ -24,7 +24,7 @@
 <div
   class="group border-glass-border bg-glass hover:bg-glass-hover rounded-lg border p-4 backdrop-blur-xl transition-colors {onedit
     ? 'cursor-pointer'
-    : ''}"
+    : ''} {dose.status !== 'taken' ? 'opacity-60' : ''}"
   role="listitem"
   onclick={() => onedit?.(dose)}
 >
@@ -41,11 +41,26 @@
 
     <div class="min-w-0 flex-1">
       <p class="font-medium">
-        {dose.medication.name}
+        <span class={dose.status === "skipped" ? "line-through decoration-1" : ""}>
+          {dose.medication.name}
+        </span>
         <span class="text-text-secondary text-sm">
           {dose.medication.dosageAmount}{dose.medication.dosageUnit}
-          {#if dose.quantity > 1}&times; {dose.quantity}{/if}
+          {#if dose.status === "taken" && dose.quantity > 1}&times; {dose.quantity}{/if}
         </span>
+        {#if dose.status === "skipped"}
+          <span
+            class="bg-warning/15 text-warning ml-2 rounded-full px-2 py-0.5 text-xs font-semibold tracking-wider uppercase"
+          >
+            Skipped
+          </span>
+        {:else if dose.status === "missed"}
+          <span
+            class="bg-danger/15 text-danger ml-2 rounded-full px-2 py-0.5 text-xs font-semibold tracking-wider uppercase"
+          >
+            Missed
+          </span>
+        {/if}
       </p>
     </div>
 

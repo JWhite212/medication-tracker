@@ -1,7 +1,7 @@
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
 
-export type ScheduleSlotStatus = "taken" | "upcoming" | "overdue";
+export type ScheduleSlotStatus = "taken" | "skipped" | "upcoming" | "overdue";
 
 export interface ScheduleSlot {
   medicationId: string;
@@ -255,7 +255,12 @@ export function computeScheduleSlots(
 
       let status: ScheduleSlotStatus;
       if (matchedDose) {
-        status = "taken";
+        if (matchedDose.status === "skipped") status = "skipped";
+        // A "missed" dose row hasn't actually been consumed, so the slot
+        // is still unfulfilled — render it as overdue, not green-check
+        // taken.
+        else if (matchedDose.status === "missed") status = "overdue";
+        else status = "taken";
       } else if (expected.getTime() <= now.getTime()) {
         status = "overdue";
       } else {

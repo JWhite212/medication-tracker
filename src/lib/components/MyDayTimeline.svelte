@@ -31,7 +31,10 @@
             {#each group.slots as slot (`${slot.medicationId}-${slot.expectedTime}`)}
               {@const expectedDate = new Date(slot.expectedTime)}
               <div
-                class="hover:bg-glass-hover flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors"
+                class="hover:bg-glass-hover flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors {slot.status ===
+                'skipped'
+                  ? 'opacity-60'
+                  : ''}"
               >
                 <!-- Status indicator -->
                 {#if slot.status === "taken"}
@@ -49,6 +52,24 @@
                       stroke-linejoin="round"
                     >
                       <polyline points="2,6 5,9 10,3" />
+                    </svg>
+                  </span>
+                {:else if slot.status === "skipped"}
+                  <span
+                    class="bg-warning/20 text-warning flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+                    aria-label="Skipped"
+                  >
+                    <svg
+                      class="h-3 w-3"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <line x1="3" y1="3" x2="9" y2="9" />
+                      <line x1="9" y1="3" x2="3" y2="9" />
                     </svg>
                   </span>
                 {:else if slot.status === "overdue"}
@@ -98,8 +119,8 @@
                   {formatUserTime(expectedDate, timezone, timeFormat)}
                 </span>
 
-                <!-- Quick-log button for non-taken slots -->
-                {#if slot.status !== "taken"}
+                <!-- Quick-log button for non-resolved slots -->
+                {#if slot.status !== "taken" && slot.status !== "skipped"}
                   <form
                     method="POST"
                     action="?/logDose"

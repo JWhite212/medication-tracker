@@ -208,6 +208,54 @@ describe("computeScheduleSlots — interval kind", () => {
     expect(slots[2].status).toBe("upcoming");
   });
 
+  it("marks slot as skipped when matched dose has status=skipped", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([makeIntervalSchedule("med-1", "8")]);
+    const lastDose = { "med-1": new Date("2026-04-15T22:00:00Z") };
+    const skip = makeDose({
+      id: "dose-skip-1",
+      takenAt: new Date("2026-04-16T06:30:00Z"),
+      status: "skipped",
+    });
+    const now = new Date("2026-04-16T10:00:00Z");
+    const slots = computeScheduleSlots(
+      meds,
+      sched,
+      [skip],
+      lastDose,
+      dayStart,
+      dayEnd,
+      timezone,
+      now,
+    );
+    expect(slots[0].status).toBe("skipped");
+    expect(slots[0].matchedDoseId).toBe("dose-skip-1");
+  });
+
+  it("marks slot as overdue (not taken) when matched dose has status=missed", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([makeIntervalSchedule("med-1", "8")]);
+    const lastDose = { "med-1": new Date("2026-04-15T22:00:00Z") };
+    const missed = makeDose({
+      id: "dose-missed-1",
+      takenAt: new Date("2026-04-16T06:30:00Z"),
+      status: "missed",
+    });
+    const now = new Date("2026-04-16T10:00:00Z");
+    const slots = computeScheduleSlots(
+      meds,
+      sched,
+      [missed],
+      lastDose,
+      dayStart,
+      dayEnd,
+      timezone,
+      now,
+    );
+    expect(slots[0].status).toBe("overdue");
+    expect(slots[0].matchedDoseId).toBe("dose-missed-1");
+  });
+
   it("produces correct number of slots for various intervals", () => {
     const now = new Date("2026-04-16T01:00:00Z");
     const meds = [makeMed()];

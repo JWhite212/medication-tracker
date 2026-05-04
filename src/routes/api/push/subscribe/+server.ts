@@ -1,17 +1,11 @@
 import { json, error } from "@sveltejs/kit";
-import { dbTx } from "$lib/server/db";
+import { db } from "$lib/server/db";
 import { pushSubscriptions } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { pushSubscriptionSchema } from "$lib/utils/validation";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import type { RequestHandler } from "@sveltejs/kit";
-
-class EndpointConflictError extends Error {
-  constructor() {
-    super("endpoint_conflict");
-  }
-}
 
 export const POST: RequestHandler = async ({ request, locals }) => {
   if (!locals.user) throw error(401);
@@ -26,42 +20,34 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
   const { endpoint, keys } = parsed.data;
 
-  // Wrap ownership check + upsert in a single transaction so a concurrent
-  // request from another user cannot insert the same endpoint between
-  // SELECT and INSERT and produce a row with one user's id but another
-  // user's keys. SELECT ... FOR UPDATE locks the existing row, if any.
-  try {
-    await dbTx.transaction(async (tx) => {
-      const existing = await tx
-        .select({ userId: pushSubscriptions.userId })
-        .from(pushSubscriptions)
-        .where(eq(pushSubscriptions.endpoint, endpoint))
-        .for("update")
-        .limit(1);
+  // Atomic upsert: INSERT, and on unique conflict only UPDATE when the
+  // existing row already belongs to the current user. If a different
+  // user owns the endpoint the conflict's WHERE filters the UPDATE out
+  // so RETURNING produces no row — that's the conflict signal.
+  //
+  // SELECT-then-INSERT cannot solve this race in PostgreSQL because
+  // SELECT ... FOR UPDATE does not place a gap lock on a missing row,
+  // so two concurrent inserts of the same endpoint can both pass the
+  // ownership check. Pushing the ownership filter into the conflict
+  // clause makes it a single atomic statement.
+  const upsert = await db
+    .insert(pushSubscriptions)
+    .values({
+      id: createId(),
+      userId,
+      endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+    })
+    .onConflictDoUpdate({
+      target: pushSubscriptions.endpoint,
+      set: { p256dh: keys.p256dh, auth: keys.auth },
+      where: eq(pushSubscriptions.userId, userId),
+    })
+    .returning({ id: pushSubscriptions.id });
 
-      if (existing.length > 0 && existing[0].userId !== userId) {
-        throw new EndpointConflictError();
-      }
-
-      await tx
-        .insert(pushSubscriptions)
-        .values({
-          id: createId(),
-          userId,
-          endpoint,
-          p256dh: keys.p256dh,
-          auth: keys.auth,
-        })
-        .onConflictDoUpdate({
-          target: pushSubscriptions.endpoint,
-          set: { p256dh: keys.p256dh, auth: keys.auth },
-        });
-    });
-  } catch (err) {
-    if (err instanceof EndpointConflictError) {
-      throw error(409, "Endpoint already registered");
-    }
-    throw err;
+  if (upsert.length === 0) {
+    throw error(409, "Endpoint already registered");
   }
 
   return json({ success: true });

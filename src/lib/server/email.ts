@@ -1,5 +1,10 @@
 import { Resend } from "resend";
 import { env } from "$env/dynamic/private";
+// SvelteKit's $env/dynamic/private excludes any variable that starts
+// with the PUBLIC_ prefix, so PUBLIC_BASE_URL must come from the
+// public module. The value is genuinely public anyway (the site's
+// own URL).
+import { env as publicEnv } from "$env/dynamic/public";
 import { dev } from "$app/environment";
 
 function getResend() {
@@ -22,8 +27,7 @@ function escHtml(s: string): string {
 // env.ts already enforces PUBLIC_BASE_URL in production. In dev we fall
 // back to localhost so the dev server works without extra config.
 function getBaseUrl(): string {
-  // `env` from $env/dynamic/private is typed loosely; coerce explicitly.
-  const raw = (env.PUBLIC_BASE_URL ?? "") as string;
+  const raw = (publicEnv.PUBLIC_BASE_URL ?? "") as string;
   if (raw.length > 0) return raw.replace(/\/$/, "");
   if (dev) return "http://localhost:5173";
   throw new Error("PUBLIC_BASE_URL is not configured. Outbound emails cannot build a safe link.");

@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { env } from "$env/dynamic/private";
+import { dev } from "$app/environment";
 
 function getResend() {
   return new Resend(env.RESEND_API_KEY);
@@ -13,12 +14,23 @@ function escHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function getBaseUrl(requestOrigin?: string): string {
-  return env.PUBLIC_BASE_URL ?? requestOrigin ?? "http://localhost:5173";
+// Always derive the public base URL from PUBLIC_BASE_URL, never from
+// the inbound request. Email links must NOT be influenced by Host or
+// Origin headers — both are attacker-controlled and would otherwise
+// enable token-leak account takeover.
+//
+// env.ts already enforces PUBLIC_BASE_URL in production. In dev we fall
+// back to localhost so the dev server works without extra config.
+function getBaseUrl(): string {
+  // `env` from $env/dynamic/private is typed loosely; coerce explicitly.
+  const raw = (env.PUBLIC_BASE_URL ?? "") as string;
+  if (raw.length > 0) return raw.replace(/\/$/, "");
+  if (dev) return "http://localhost:5173";
+  throw new Error("PUBLIC_BASE_URL is not configured. Outbound emails cannot build a safe link.");
 }
 
-export async function sendVerificationEmail(email: string, token: string, requestOrigin: string) {
-  const verifyUrl = `${getBaseUrl(requestOrigin)}/auth/verify?token=${encodeURIComponent(token)}`;
+export async function sendVerificationEmail(email: string, token: string) {
+  const verifyUrl = `${getBaseUrl()}/auth/verify?token=${encodeURIComponent(token)}`;
   await getResend().emails.send({
     from: env.EMAIL_FROM ?? "MedTracker <noreply@jamiewhite.site>",
     to: email,
@@ -28,8 +40,8 @@ export async function sendVerificationEmail(email: string, token: string, reques
   });
 }
 
-export async function sendPasswordResetEmail(email: string, token: string, requestOrigin: string) {
-  const resetUrl = `${getBaseUrl(requestOrigin)}/auth/reset-password?token=${encodeURIComponent(token)}`;
+export async function sendPasswordResetEmail(email: string, token: string) {
+  const resetUrl = `${getBaseUrl()}/auth/reset-password?token=${encodeURIComponent(token)}`;
   await getResend().emails.send({
     from: env.EMAIL_FROM ?? "MedTracker <noreply@jamiewhite.site>",
     to: email,

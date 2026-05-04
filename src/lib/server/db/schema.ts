@@ -5,6 +5,7 @@ import {
   timestamp,
   numeric,
   integer,
+  bigint,
   jsonb,
   index,
   primaryKey,
@@ -18,6 +19,10 @@ export const users = pgTable("users", {
   avatarUrl: text("avatar_url"),
   timezone: text("timezone").notNull().default("UTC"),
   totpSecret: text("totp_secret"),
+  // Highest TOTP step ever accepted for this user. Replay guard:
+  // a code can only be consumed if its step strictly exceeds this
+  // value (RFC 6238 §5.2). Null = no TOTP code has been consumed yet.
+  totpLastCounter: bigint("totp_last_counter", { mode: "number" }),
   twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   emailVerified: boolean("email_verified").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

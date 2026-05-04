@@ -17,7 +17,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ request, url, getClientAddress }) => {
+  default: async ({ request, getClientAddress }) => {
     const ip = getClientAddress();
     const { allowed, retryAfterMs } = await checkRateLimit(`reset:${ip}`, 3, 15 * 60 * 1000);
     if (!allowed) {
@@ -56,8 +56,9 @@ export const actions: Actions = {
         expiresAt,
       });
 
-      const baseUrl = url.origin;
-      await sendPasswordResetEmail(user.email, token, baseUrl);
+      // sendPasswordResetEmail derives the base URL from PUBLIC_BASE_URL
+      // only — never from request headers — so the link can't be poisoned.
+      await sendPasswordResetEmail(user.email, token);
     }
 
     // Always return success — don't reveal whether the email exists

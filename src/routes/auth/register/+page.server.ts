@@ -100,7 +100,7 @@ export const actions: Actions = {
         tokenHash,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
-      await sendVerificationEmail(email, rawToken, request.headers.get("origin") ?? "");
+      await sendVerificationEmail(email, rawToken);
     } catch {
       // Email verification failure should not block registration
     }

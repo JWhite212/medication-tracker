@@ -21,6 +21,15 @@ interface OAuthUserInfo {
   avatarUrl: string | null;
 }
 
+// Sentinel thrown when the IdP says the email is not verified. Caught
+// in the GET handler and translated into a user-facing redirect.
+class UnverifiedOAuthEmailError extends Error {
+  constructor() {
+    super("oauth_email_unverified");
+    this.name = "UnverifiedOAuthEmailError";
+  }
+}
+
 async function getGoogleUser(code: string, codeVerifier: string): Promise<OAuthUserInfo> {
   const google = getGoogle();
   if (!google) error(503, "OAuth not configured");
@@ -29,6 +38,12 @@ async function getGoogleUser(code: string, codeVerifier: string): Promise<OAuthU
     headers: { Authorization: `Bearer ${tokens.accessToken()}` },
   });
   const data = await response.json();
+  // Trusting `email` without `email_verified` is the classic Sign-in-
+  // with-Google account-takeover bug. Google Workspace tenants can
+  // issue tokens for unverified custom-domain emails — reject them.
+  if (data.email_verified !== true) {
+    throw new UnverifiedOAuthEmailError();
+  }
   return {
     id: data.sub,
     email: data.email,
@@ -48,11 +63,19 @@ async function getGitHubUser(code: string): Promise<OAuthUserInfo> {
   const emailResponse = await fetch("https://api.github.com/user/emails", {
     headers: { Authorization: `Bearer ${tokens.accessToken()}` },
   });
-  const emails = await emailResponse.json();
-  const primaryEmail = emails.find((e: { primary: boolean }) => e.primary)?.email ?? data.email;
+  const emails = (await emailResponse.json()) as Array<{
+    email: string;
+    primary: boolean;
+    verified: boolean;
+  }>;
+  // Require primary AND verified. GitHub blocks setting an unverified
+  // email as primary today, but defending against future regressions
+  // costs nothing.
+  const primary = emails.find((e) => e.primary && e.verified);
+  if (!primary) throw new UnverifiedOAuthEmailError();
   return {
     id: String(data.id),
-    email: primaryEmail,
+    email: primary.email,
     name: data.name ?? data.login,
     avatarUrl: data.avatar_url ?? null,
   };
@@ -101,15 +124,22 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   cookies.delete("oauth_state", { path: "/" });
 
   let oauthUser: OAuthUserInfo;
-  if (provider === "google") {
-    const codeVerifier = cookies.get("google_code_verifier");
-    if (!codeVerifier) error(400, "Missing code verifier");
-    oauthUser = await getGoogleUser(code, codeVerifier);
-    cookies.delete("google_code_verifier", { path: "/" });
-  } else if (provider === "github") {
-    oauthUser = await getGitHubUser(code);
-  } else {
-    error(400, "Unsupported provider");
+  try {
+    if (provider === "google") {
+      const codeVerifier = cookies.get("google_code_verifier");
+      if (!codeVerifier) error(400, "Missing code verifier");
+      oauthUser = await getGoogleUser(code, codeVerifier);
+      cookies.delete("google_code_verifier", { path: "/" });
+    } else if (provider === "github") {
+      oauthUser = await getGitHubUser(code);
+    } else {
+      error(400, "Unsupported provider");
+    }
+  } catch (err) {
+    if (err instanceof UnverifiedOAuthEmailError) {
+      redirect(302, "/auth/login?error=oauth_email_unverified");
+    }
+    throw err;
   }
 
   const [existingOAuth] = await db
@@ -131,37 +161,32 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   }
 
   const [existingUser] = await db
-    .select({ id: users.id, passwordHash: users.passwordHash })
+    .select({ id: users.id })
     .from(users)
     .where(eq(users.email, oauthUser.email))
     .limit(1);
-  let userId: string;
 
   if (existingUser) {
-    // Refuse auto-linking to accounts that have a password set.
-    // This prevents account takeover via OAuth providers that allow
-    // unverified emails matching an existing password-based account.
-    if (existingUser.passwordHash) {
-      redirect(
-        302,
-        "/auth/login?error=oauth_email_conflict&email=" + encodeURIComponent(oauthUser.email),
-      );
-    }
-    userId = existingUser.id;
-    await db
-      .update(users)
-      .set({ avatarUrl: oauthUser.avatarUrl, emailVerified: true })
-      .where(eq(users.id, userId));
-  } else {
-    userId = createId();
-    await db.insert(users).values({
-      id: userId,
-      email: oauthUser.email,
-      name: oauthUser.name,
-      avatarUrl: oauthUser.avatarUrl,
-      emailVerified: true,
-    });
+    // Refuse to auto-link an unfamiliar OAuth identity to a pre-existing
+    // account just because the email matches. Even with email_verified
+    // checks at the IdP, multiple verified-by-different-providers paths
+    // can collide on the same address (Booking.com / Trello-class
+    // takeover patterns). The user must log in via the original method
+    // and explicitly link the new provider from settings.
+    redirect(
+      302,
+      "/auth/login?error=oauth_email_conflict&email=" + encodeURIComponent(oauthUser.email),
+    );
   }
+
+  const userId = createId();
+  await db.insert(users).values({
+    id: userId,
+    email: oauthUser.email,
+    name: oauthUser.name,
+    avatarUrl: oauthUser.avatarUrl,
+    emailVerified: true,
+  });
 
   await db.insert(oauthAccounts).values({ provider, providerUserId: oauthUser.id, userId });
 

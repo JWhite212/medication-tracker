@@ -233,16 +233,19 @@ export async function getLastDosePerMedication(
   userId: string,
 ): Promise<Array<{ medicationId: string; lastTakenAt: Date | null; lastEventAt: Date }>> {
   // lastTakenAt anchors the schedule projection (only "taken" events count).
-  // lastEventAt drives "is this overdue?" timing — both "taken" and
-  // "skipped" advance the clock so the user can dismiss an overdue slot
-  // by skipping it.
+  // lastEventAt drives "is this overdue?" timing — "taken" and "skipped"
+  // advance the clock so the user can dismiss an overdue slot by skipping
+  // it. "missed" is excluded so a (future) auto-mark-missed job can't
+  // silently push the clock past an unhandled slot.
   const rows = await db
     .select({
       medicationId: doseLogs.medicationId,
       lastTakenAt: sql<
         string | null
       >`max(${doseLogs.takenAt}) filter (where ${doseLogs.status} = 'taken')`,
-      lastEventAt: max(doseLogs.takenAt),
+      lastEventAt: sql<
+        string | null
+      >`max(${doseLogs.takenAt}) filter (where ${doseLogs.status} in ('taken', 'skipped'))`,
     })
     .from(doseLogs)
     .where(eq(doseLogs.userId, userId))

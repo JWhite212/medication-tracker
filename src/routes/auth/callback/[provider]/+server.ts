@@ -173,10 +173,10 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     // can collide on the same address (Booking.com / Trello-class
     // takeover patterns). The user must log in via the original method
     // and explicitly link the new provider from settings.
-    redirect(
-      302,
-      "/auth/login?error=oauth_email_conflict&email=" + encodeURIComponent(oauthUser.email),
-    );
+    //
+    // Don't echo the email back in the URL — it would leak PII into
+    // browser history, referrer headers, and any URL-aware logging.
+    redirect(302, "/auth/login?error=oauth_email_conflict");
   }
 
   const userId = createId();

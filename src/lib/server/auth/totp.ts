@@ -1,4 +1,4 @@
-import { createTOTPKeyURI, verifyTOTP } from "@oslojs/otp";
+import { createTOTPKeyURI, verifyHOTP, verifyTOTP } from "@oslojs/otp";
 import { encodeBase32UpperCase, decodeBase32 } from "@oslojs/encoding";
 import QRCode from "qrcode";
 import { and, eq, isNull, lt, or } from "drizzle-orm";
@@ -51,9 +51,17 @@ export function currentTOTPStep(): number {
 // users.totp_last_counter so the same step can never be accepted twice
 // for the same user (RFC 6238 §5.2).
 //
-// The compare-and-set is a single conditional UPDATE so concurrent
-// attempts on the same step lose the race deterministically — at most
-// one returns true.
+// Verify and consume must reference the *same* step. We compute it
+// once up-front and verify the code as an HOTP value against that
+// counter — if we used verifyTOTP() (which calls Date.now() internally)
+// alongside a separately-computed step for the UPDATE, a request that
+// crossed a 30-second boundary between the two calls could verify
+// against step N and stamp step N+1, falsely rejecting the user's
+// next legitimate code as a replay.
+//
+// The compare-and-set itself is a single conditional UPDATE so two
+// concurrent attempts on the same step lose the race deterministically
+// — at most one returns true.
 export async function verifyAndConsumeTOTPCode(userId: string, code: string): Promise<boolean> {
   const [row] = await db
     .select({ totpSecret: users.totpSecret })
@@ -62,9 +70,10 @@ export async function verifyAndConsumeTOTPCode(userId: string, code: string): Pr
     .limit(1);
   if (!row?.totpSecret) return false;
 
-  if (!verifyTOTPCode(row.totpSecret, code)) return false;
-
   const step = currentTOTPStep();
+  const decoded = decodeBase32(decryptSecret(row.totpSecret));
+  if (!verifyHOTP(decoded, BigInt(step), TOTP_DIGITS, code)) return false;
+
   const updated = await db
     .update(users)
     .set({ totpLastCounter: step })

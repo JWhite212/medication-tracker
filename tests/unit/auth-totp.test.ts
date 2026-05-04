@@ -9,35 +9,43 @@ vi.mock("$env/dynamic/private", () => ({
 }));
 
 // totp.ts imports $lib/server/db for the replay-protection
-// compare-and-set. Stub it out — each test installs its own behavior
-// by mutating dbState below.
+// compare-and-set. The mock simulates the actual WHERE predicate
+// (totp_last_counter IS NULL OR totp_last_counter < step) so a
+// regression that drops the conditional UPDATE would make the replay
+// test fail rather than silently pass.
 const dbState: {
-  selectResult: Array<{ totpSecret: string | null }>;
-  updateResult: Array<{ id: string }>;
-  lastUpdateSet: { totpLastCounter?: number } | null;
+  user: { totpSecret: string | null; totpLastCounter: number | null } | null;
+  lastStampedCounter: number | null;
 } = {
-  selectResult: [],
-  updateResult: [],
-  lastUpdateSet: null,
+  user: null,
+  lastStampedCounter: null,
 };
 
 vi.mock("$lib/server/db", () => {
   const select = () => ({
     from: () => ({
       where: () => ({
-        limit: async () => dbState.selectResult,
+        limit: async () => (dbState.user ? [{ totpSecret: dbState.user.totpSecret }] : []),
       }),
     }),
   });
   const update = () => ({
-    set: (vals: { totpLastCounter?: number }) => {
-      dbState.lastUpdateSet = vals;
-      return {
-        where: () => ({
-          returning: async () => dbState.updateResult,
-        }),
-      };
-    },
+    set: (vals: { totpLastCounter?: number | null }) => ({
+      where: () => ({
+        returning: async () => {
+          if (!dbState.user) return [];
+          const newStep = vals.totpLastCounter;
+          if (newStep === undefined || newStep === null) return [];
+          const existing = dbState.user.totpLastCounter;
+          // Mirror the production WHERE: only update if the existing
+          // counter is null OR strictly less than the new step.
+          if (existing !== null && existing >= newStep) return [];
+          dbState.user.totpLastCounter = newStep;
+          dbState.lastStampedCounter = newStep;
+          return [{ id: "user-1" }];
+        },
+      }),
+    }),
   });
   return {
     db: { select, update },
@@ -76,9 +84,8 @@ describe("totp", () => {
   });
 
   beforeEach(() => {
-    dbState.selectResult = [];
-    dbState.updateResult = [];
-    dbState.lastUpdateSet = null;
+    dbState.user = null;
+    dbState.lastStampedCounter = null;
   });
 
   it("generateTOTPSecret returns a base32 string of 32 chars (160 bits)", () => {
@@ -124,43 +131,46 @@ describe("verifyAndConsumeTOTPCode", () => {
   });
 
   beforeEach(() => {
-    dbState.selectResult = [];
-    dbState.updateResult = [];
-    dbState.lastUpdateSet = null;
+    dbState.user = null;
+    dbState.lastStampedCounter = null;
   });
 
   it("returns false when the user has no totp secret", async () => {
-    dbState.selectResult = [];
+    dbState.user = null;
     expect(await verifyAndConsumeTOTPCode("user-1", "123456")).toBe(false);
   });
 
   it("accepts a valid code and stamps the current step", async () => {
     const secret = generateTOTPSecret();
-    dbState.selectResult = [{ totpSecret: encryptTOTPSecret(secret) }];
-    dbState.updateResult = [{ id: "user-1" }];
+    dbState.user = { totpSecret: encryptTOTPSecret(secret), totpLastCounter: null };
     const code = currentCode(secret);
 
     expect(await verifyAndConsumeTOTPCode("user-1", code)).toBe(true);
-    expect(dbState.lastUpdateSet?.totpLastCounter).toBe(currentTOTPStep());
+    expect(dbState.lastStampedCounter).toBe(currentTOTPStep());
+    expect(dbState.user.totpLastCounter).toBe(currentTOTPStep());
   });
 
-  it("rejects when the conditional update finds the same step already consumed", async () => {
+  it("rejects a second consume of the same code (replay)", async () => {
     const secret = generateTOTPSecret();
-    dbState.selectResult = [{ totpSecret: encryptTOTPSecret(secret) }];
-    // Simulate the WHERE clause filtering the UPDATE out (counter
-    // already advanced) — concurrent attempt or replay of the same code.
-    dbState.updateResult = [];
+    dbState.user = { totpSecret: encryptTOTPSecret(secret), totpLastCounter: null };
     const code = currentCode(secret);
 
+    // First consume: stamps the counter.
+    expect(await verifyAndConsumeTOTPCode("user-1", code)).toBe(true);
+    // Second consume of the same step must be rejected by the WHERE
+    // predicate. If the production UPDATE drops the conditional, the
+    // mock would let this through and this assertion would fail —
+    // which is the regression signal the test is meant to provide.
     expect(await verifyAndConsumeTOTPCode("user-1", code)).toBe(false);
   });
 
   it("rejects an invalid code without touching the counter", async () => {
     const secret = generateTOTPSecret();
-    dbState.selectResult = [{ totpSecret: encryptTOTPSecret(secret) }];
+    dbState.user = { totpSecret: encryptTOTPSecret(secret), totpLastCounter: null };
     const invalid = nextInvalidCode(currentCode(secret));
 
     expect(await verifyAndConsumeTOTPCode("user-1", invalid)).toBe(false);
-    expect(dbState.lastUpdateSet).toBeNull();
+    expect(dbState.lastStampedCounter).toBeNull();
+    expect(dbState.user.totpLastCounter).toBeNull();
   });
 });

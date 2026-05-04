@@ -111,7 +111,15 @@ export const actions: Actions = {
     const secret = generateTOTPSecret();
     await db
       .update(users)
-      .set({ totpSecret: encryptTOTPSecret(secret) })
+      .set({
+        totpSecret: encryptTOTPSecret(secret),
+        // Reset the replay guard for the brand-new secret. Keeping a
+        // stale counter from a prior secret would, in the worst case,
+        // delay first-use; clearing it here keeps the disable path's
+        // counter intact so a still-valid secret never has its replay
+        // guard relaxed mid-flight.
+        totpLastCounter: null,
+      })
       .where(eq(users.id, locals.user!.id));
     const uri = getTOTPUri(secret, locals.user!.email);
     const qrCode = await generateQRDataUrl(uri);
@@ -147,12 +155,15 @@ export const actions: Actions = {
     const ok = await verifyAndConsumeTOTPCode(locals.user!.id, code);
     if (!ok) return fail(400, { totpError: "Invalid code" });
 
+    // Do NOT clear totpLastCounter here. While the secret is still
+    // valid, lowering the replay guard would let a code from the same
+    // step be reused. setupTwoFactor() resets it when issuing a new
+    // secret, which is the only point where a fresh counter is safe.
     await db
       .update(users)
       .set({
         twoFactorEnabled: false,
         totpSecret: null,
-        totpLastCounter: null,
         updatedAt: new Date(),
       })
       .where(eq(users.id, locals.user!.id));

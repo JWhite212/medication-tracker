@@ -42,7 +42,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     .onConflictDoUpdate({
       target: pushSubscriptions.endpoint,
       set: { p256dh: keys.p256dh, auth: keys.auth },
-      where: eq(pushSubscriptions.userId, userId),
+      // setWhere = SQL `WHERE` clause appended to `DO UPDATE SET ...`,
+      // so the update only applies if the existing row already belongs
+      // to this user. If a different user owns it, RETURNING is empty.
+      setWhere: eq(pushSubscriptions.userId, userId),
     })
     .returning({ id: pushSubscriptions.id });
 

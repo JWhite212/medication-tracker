@@ -85,6 +85,44 @@
     </p>
   {/if}
 
+  {#if data.preferences.emailReminders && !data.emailVerified}
+    <!-- Verify-email hint kept in its own card so the resend form does
+         not nest inside the preferences form. -->
+    <GlassCard>
+      <div
+        class="border-warning/30 bg-warning/5 text-warning rounded-lg border px-4 py-3 text-sm"
+        role="status"
+      >
+        <p>Verify your email to enable email reminders.</p>
+        {#if form?.resendOk}
+          <p class="text-success mt-2">
+            {#if form?.alreadyVerified}
+              Email already verified.
+            {:else}
+              Verification email sent. Check your inbox (and spam folder).
+            {/if}
+          </p>
+        {:else if form?.resendError}
+          <p class="text-danger mt-2">{form.resendError}</p>
+        {/if}
+        <form method="POST" action="?/resendVerification" use:enhance class="mt-2">
+          <button type="submit" class="text-warning underline transition-colors hover:no-underline">
+            Resend verification email
+          </button>
+        </form>
+      </div>
+    </GlassCard>
+  {:else if data.preferences.emailReminders && !data.emailConfigured}
+    <GlassCard>
+      <div
+        class="border-glass-border bg-surface-raised text-text-secondary rounded-lg border px-4 py-3 text-sm"
+        role="status"
+      >
+        Email is not configured on this deployment, so email reminders won't be sent.
+      </div>
+    </GlassCard>
+  {/if}
+
   <GlassCard>
     <form method="POST" use:enhance class="space-y-6">
       <div class="flex items-center justify-between">

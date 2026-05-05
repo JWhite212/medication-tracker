@@ -58,7 +58,12 @@ export const actions: Actions = {
 
       // sendPasswordResetEmail derives the base URL from PUBLIC_BASE_URL
       // only — never from request headers — so the link can't be poisoned.
-      await sendPasswordResetEmail(user.email, token);
+      const result = await sendPasswordResetEmail(user.email, token);
+      if (!result.ok) {
+        // Log the typed reason but never the token; the response is
+        // still "success" so we don't reveal whether the email exists.
+        console.warn(`password reset email skipped (${result.reason}): ${result.message}`);
+      }
     }
 
     // Always return success — don't reveal whether the email exists

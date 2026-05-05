@@ -55,8 +55,9 @@ const sentPushes: Array<{ userId: string; tag: string }> = [];
 vi.mock("$lib/server/email", () => ({
   sendReminderEmail: async (to: string, medicationName: string, sinceLabel: string) => {
     sentEmails.push({ to, medicationName, sinceLabel });
+    return { ok: true, id: "evt-email" };
   },
-  sendLowInventoryEmail: async () => {},
+  sendLowInventoryEmail: async () => ({ ok: true, id: "evt-low" }),
 }));
 
 vi.mock("$lib/server/push", () => ({
@@ -91,6 +92,7 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
       medicationName: "Ibuprofen",
       userId: "u1",
       userEmail: "user@example.com",
+      userEmailVerified: true,
       userTimezone: "UTC",
     });
     lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
@@ -118,6 +120,7 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
       medicationName: "Ibuprofen",
       userId: "u1",
       userEmail: "user@example.com",
+      userEmailVerified: true,
       userTimezone: "UTC",
     });
     lastTakenRows.push({ medicationId: "med-A", lastTakenAt: oneHourAgo });
@@ -142,6 +145,7 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
       medicationName: "Ibuprofen",
       userId: "u1",
       userEmail: "user@example.com",
+      userEmailVerified: true,
       userTimezone: "UTC",
     });
     // No row in lastTakenRows — simulates "never taken".
@@ -171,6 +175,7 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
         medicationName: "Ibuprofen",
         userId: "u1",
         userEmail: "user@example.com",
+        userEmailVerified: true,
         userTimezone: "UTC",
       },
       {
@@ -183,6 +188,7 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
         medicationName: "Ibuprofen",
         userId: "u1",
         userEmail: "user@example.com",
+        userEmailVerified: true,
         userTimezone: "UTC",
       },
     );
@@ -208,6 +214,7 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
       medicationName: "Ibuprofen",
       userId: "u1",
       userEmail: "user@example.com",
+      userEmailVerified: true,
       userTimezone: "UTC",
     });
     lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
@@ -230,5 +237,31 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
     expect(sentEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(0);
     expect(selectCallIndex).toBe(1);
+  });
+
+  it("skips the email send for unverified users but still fires push", async () => {
+    const now = Date.now();
+    const eightHoursAgo = new Date(now - 8 * 3600 * 1000);
+
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: false,
+      userTimezone: "UTC",
+    });
+    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+
+    await checkOverdueMedications();
+
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(1);
+    expect(sentPushes[0].tag).toBe("overdue-med-A");
   });
 });

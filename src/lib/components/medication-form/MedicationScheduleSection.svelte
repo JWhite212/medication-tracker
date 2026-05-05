@@ -46,6 +46,7 @@
     <button
       type="button"
       onclick={() => (mode = "interval")}
+      aria-pressed={mode === "interval"}
       class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
       'interval'
         ? 'border-accent bg-accent/15 text-accent'
@@ -56,6 +57,7 @@
     <button
       type="button"
       onclick={() => (mode = "fixed_time")}
+      aria-pressed={mode === "fixed_time"}
       class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
       'fixed_time'
         ? 'border-accent bg-accent/15 text-accent'
@@ -66,6 +68,7 @@
     <button
       type="button"
       onclick={() => (mode = "prn")}
+      aria-pressed={mode === "prn"}
       class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
       'prn'
         ? 'border-accent bg-accent/15 text-accent'

@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { warnings }: { warnings: string[] } = $props();
+  let { warnings = [] }: { warnings?: string[] } = $props();
 </script>
 
 {#if warnings.length > 0}

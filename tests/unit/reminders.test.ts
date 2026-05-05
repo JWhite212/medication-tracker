@@ -122,7 +122,8 @@ vi.mock("$lib/server/push", () => ({
   },
 }));
 
-const { checkOverdueMedications } = await import("../../src/lib/server/reminders");
+const { checkOverdueMedications, checkLowInventoryMedications } =
+  await import("../../src/lib/server/reminders");
 
 beforeEach(() => {
   scheduleRows.length = 0;
@@ -357,5 +358,72 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
     expect(updateCaptures[0].emailStatus).toBe("sent");
     expect(updateCaptures[0].pushStatus).toBe("not_configured");
     expect(updateCaptures[0].status).toBe("sent");
+  });
+});
+
+describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
+  // The mock's first select() call returns scheduleRows regardless of
+  // which function is under test, so push low-inventory-shaped rows
+  // into the same array.
+  function pushLowInventoryRow(overrides: Partial<Record<string, unknown>> = {}): void {
+    scheduleRows.push({
+      medicationId: "med-LI",
+      medicationName: "Vitamin D",
+      userId: "u1",
+      inventoryCount: 3,
+      inventoryAlertThreshold: 7,
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+      ...overrides,
+    });
+  }
+
+  it("respects lowInventoryEmailAlerts=false, push opt-in: push fires, email skipped", async () => {
+    pushLowInventoryRow({
+      userLowInventoryEmailAlerts: false,
+      userLowInventoryPushAlerts: true,
+    });
+
+    await checkLowInventoryMedications();
+
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(1);
+    expect(sentPushes[0].tag).toBe("low-inventory-med-LI");
+    expect(updateCaptures[0].emailStatus).toBe("not_configured");
+    expect(updateCaptures[0].pushStatus).toBe("sent");
+    expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("respects lowInventoryPushAlerts=false: only email fires", async () => {
+    pushLowInventoryRow({
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+    });
+
+    await checkLowInventoryMedications();
+
+    expect(sentEmails).toHaveLength(0); // mock tracks reminder emails only
+    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("skips claim entirely when push opt-in is true but no active subscriptions", async () => {
+    pushSubscribersByUser = {}; // no subscriptions for u1
+    pushLowInventoryRow({
+      userLowInventoryEmailAlerts: false,
+      userLowInventoryPushAlerts: true,
+    });
+
+    await checkLowInventoryMedications();
+
+    // No claim, no dispatch, no completeReminder. The next cron tick
+    // after the user subscribes will record + send.
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures).toHaveLength(0);
   });
 });

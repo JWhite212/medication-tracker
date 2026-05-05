@@ -106,24 +106,21 @@ export const passwordChangeSchema = z
     path: ["confirmPassword"],
   });
 
+// HTML form checkboxes only submit when checked, so each field
+// accepts an optional "on" string and transforms to a boolean. Shared
+// across appearance and notification schemas.
+const checkboxField = z
+  .string()
+  .optional()
+  .transform((v) => v === "on");
+
 export const appearanceSchema = z.object({
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex colour"),
   dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]),
   timeFormat: z.enum(["12h", "24h"]),
   uiDensity: z.enum(["comfortable", "compact"]),
-  reducedMotion: z
-    .string()
-    .optional()
-    .transform((v) => v === "on"),
+  reducedMotion: checkboxField,
 });
-
-// Channel-specific notification preferences. HTML form checkboxes
-// only submit when checked, so each field accepts an optional "on"
-// string and transforms to a boolean.
-const checkboxField = z
-  .string()
-  .optional()
-  .transform((v) => v === "on");
 
 export const notificationSchema = z.object({
   overdueEmailReminders: checkboxField,

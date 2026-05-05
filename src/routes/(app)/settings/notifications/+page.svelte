@@ -85,7 +85,7 @@
     </p>
   {/if}
 
-  {#if (data.preferences.overdueEmailReminders || data.preferences.lowInventoryEmailAlerts) && !data.emailVerified}
+  {#if data.emailConfigured && (data.preferences.overdueEmailReminders || data.preferences.lowInventoryEmailAlerts) && !data.emailVerified}
     <!-- Verify-email hint kept in its own card so the resend form does
          not nest inside the preferences form. -->
     <GlassCard>

@@ -136,31 +136,52 @@ export async function checkOverdueMedications() {
     if (!claim) continue;
 
     const emailConfigured = emailGloballyConfigured && row.userEmailVerified;
-    const pushConfigured = await hasPushSubscriptions(row.userId);
-
     const sinceLabel = row.lastTakenAt ? formatTimeSince(new Date(row.lastTakenAt)) : "never";
 
     let emailResult: EmailResult | null = null;
-    if (emailConfigured) {
-      emailResult = await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
-    }
-
     let pushResult: PushResult | null = null;
-    if (pushConfigured) {
-      pushResult = await sendPushNotification(row.userId, {
-        title: `${row.medicationName} overdue`,
-        body: row.lastTakenAt
-          ? `Last taken ${formatTimeSince(new Date(row.lastTakenAt))} ago`
-          : "Not yet taken",
-        url: "/dashboard",
-        tag: `overdue-${row.medicationId}`,
-      });
+    let pushConfigured = false;
+    let dispatchError: string | null = null;
+
+    // After a successful claim, every code path MUST reach
+    // completeReminder — otherwise the row stays at status='pending'
+    // and the retry predicate (which targets 'failed' or stale
+    // 'pending') won't pick it up promptly. A thrown error from
+    // hasPushSubscriptions, the email senders, or sendPushNotification
+    // is converted into a failed channel result here.
+    //
+    // Email is dispatched first so a transient failure inside the
+    // push channel (e.g. the subscription lookup hitting a DB blip)
+    // doesn't poison an already-successful email send.
+    try {
+      if (emailConfigured) {
+        emailResult = await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
+      }
+      pushConfigured = await hasPushSubscriptions(row.userId);
+      if (pushConfigured) {
+        pushResult = await sendPushNotification(row.userId, {
+          title: `${row.medicationName} overdue`,
+          body: row.lastTakenAt
+            ? `Last taken ${formatTimeSince(new Date(row.lastTakenAt))} ago`
+            : "Not yet taken",
+          url: "/dashboard",
+          tag: `overdue-${row.medicationId}`,
+        });
+      }
+    } catch (err) {
+      dispatchError = err instanceof Error ? err.message : "non-Error thrown during dispatch";
+      if (emailConfigured && emailResult === null) {
+        emailResult = { ok: false, reason: "provider_error", message: dispatchError };
+      }
+      if (pushConfigured && pushResult === null) {
+        pushResult = { ok: false, reason: "all_failed", message: dispatchError };
+      }
     }
 
     await completeReminder(claim.id, {
       emailStatus: emailStatusFromResult(emailResult),
       pushStatus: pushStatusFromResult(pushResult),
-      lastError: summariseError(emailResult, pushResult),
+      lastError: dispatchError ?? summariseError(emailResult, pushResult),
     });
   }
 }
@@ -219,19 +240,38 @@ export async function checkLowInventoryMedications() {
     });
     if (!claim) continue;
 
-    const emailResult: EmailResult = await sendLowInventoryEmail(
-      med.userEmail,
-      med.medicationName,
-      med.inventoryCount!,
-      med.inventoryAlertThreshold!,
-    );
+    let emailResult: EmailResult | null = null;
+    let dispatchError: string | null = null;
+
+    // Same try/catch contract as the overdue path: if the email send
+    // throws (the typed result already absorbs Resend errors, but DB
+    // dependencies inside the path could still throw), promote to a
+    // failed result so completeReminder still runs and the row can
+    // retry.
+    try {
+      emailResult = await sendLowInventoryEmail(
+        med.userEmail,
+        med.medicationName,
+        med.inventoryCount!,
+        med.inventoryAlertThreshold!,
+      );
+    } catch (err) {
+      dispatchError = err instanceof Error ? err.message : "non-Error thrown during dispatch";
+      // The check mirrors the overdue path's pattern. The throw must
+      // have happened before the assignment landed, so emailResult is
+      // null here — but explicit-is-better-than-implicit and it
+      // satisfies no-useless-assignment.
+      if (emailResult === null) {
+        emailResult = { ok: false, reason: "provider_error", message: dispatchError };
+      }
+    }
 
     // Low-inventory does not currently send push. Push channel stays
     // not_configured for these rows.
     await completeReminder(claim.id, {
       emailStatus: emailStatusFromResult(emailResult),
       pushStatus: "not_configured",
-      lastError: summariseError(emailResult, null),
+      lastError: dispatchError ?? summariseError(emailResult, null),
     });
   }
 }

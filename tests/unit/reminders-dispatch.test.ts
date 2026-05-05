@@ -12,7 +12,7 @@ let nextClaimReturning: Array<{ id: string; attemptCount: number }> = [
   { id: "evt-1", attemptCount: 1 },
 ];
 
-const updateCalls: Array<{ payload: Record<string, unknown> }> = [];
+const updateCalls: Array<{ payload: Record<string, unknown>; predicate: unknown }> = [];
 
 vi.mock("$lib/server/db", () => ({
   db: {
@@ -40,14 +40,32 @@ vi.mock("$lib/server/db", () => ({
         captured = payload;
         return chain;
       };
-      chain.where = () => {
-        updateCalls.push({ payload: captured });
+      chain.where = (predicate: unknown) => {
+        updateCalls.push({ payload: captured, predicate });
         return Promise.resolve();
       };
       return chain;
     },
   },
 }));
+
+// Drizzle SQL objects expose their template chunks as `.queryChunks`,
+// each chunk being either a string fragment, a column reference, or a
+// param. Stringifying the tree is enough to assert which columns and
+// literals the predicate references, but we need a circular-safe
+// replacer because Drizzle column nodes hold a back-pointer to their
+// table.
+function chunksContain(sqlObj: unknown, needle: string): boolean {
+  const seen = new WeakSet<object>();
+  const json = JSON.stringify(sqlObj, (_key, value) => {
+    if (typeof value === "object" && value !== null) {
+      if (seen.has(value)) return undefined;
+      seen.add(value);
+    }
+    return value;
+  });
+  return json.includes(needle);
+}
 
 const { claimReminderSlot, completeReminder, deriveOverallStatus, MAX_ATTEMPTS, RETRY_DELAY_MS } =
   await import("../../src/lib/server/reminders/dispatch");
@@ -72,10 +90,32 @@ describe("claimReminderSlot", () => {
     expect(claimCalls[0].values.dedupeKey).toBe("key-1");
     expect(claimCalls[0].values.status).toBe("pending");
     expect(claimCalls[0].values.attemptCount).toBe(1);
-    expect(claimCalls[0].conflict).not.toBeNull();
-    expect(claimCalls[0].conflict?.target).toBeDefined();
-    expect(claimCalls[0].conflict?.set).toBeDefined();
-    expect(claimCalls[0].conflict?.setWhere).toBeDefined();
+
+    const conflict = claimCalls[0].conflict;
+    expect(conflict).not.toBeNull();
+    expect(conflict?.target).toBeDefined();
+
+    // The retry-state update must flip the row to pending, increment
+    // attempt_count, refresh last_attempt_at, and clear last_error so a
+    // successful retry doesn't carry the previous failure forward.
+    const setPayload = conflict?.set as Record<string, unknown>;
+    expect(setPayload.status).toBe("pending");
+    expect(setPayload.lastError).toBeNull();
+    expect(setPayload.attemptCount).toBeDefined();
+    expect(setPayload.lastAttemptAt).toBeDefined();
+    // attemptCount and lastAttemptAt are SQL expressions, not literals.
+    expect(typeof setPayload.attemptCount).not.toBe("number");
+    expect(typeof setPayload.lastAttemptAt).not.toBe("string");
+
+    // The setWhere predicate must encode the cooldown + max-attempts
+    // guard AND must accept stale 'pending' rows for lease recovery.
+    const setWhere = conflict?.setWhere;
+    expect(setWhere).toBeDefined();
+    expect(chunksContain(setWhere, "status")).toBe(true);
+    expect(chunksContain(setWhere, "attempt_count")).toBe(true);
+    expect(chunksContain(setWhere, "last_attempt_at")).toBe(true);
+    expect(chunksContain(setWhere, "failed")).toBe(true);
+    expect(chunksContain(setWhere, "pending")).toBe(true);
   });
 
   it("returns null when the database refused the upsert (row exists, not retryable)", async () => {
@@ -96,7 +136,7 @@ describe("claimReminderSlot", () => {
 });
 
 describe("completeReminder", () => {
-  it("writes the derived overall status plus channel statuses", async () => {
+  it("writes the derived overall status plus channel statuses against the claimed row id", async () => {
     await completeReminder("evt-1", {
       emailStatus: "sent",
       pushStatus: "failed",
@@ -109,6 +149,10 @@ describe("completeReminder", () => {
     expect(payload.pushStatus).toBe("failed");
     expect(payload.lastError).toBe("push:all_failed=boom");
     expect(payload.lastAttemptAt).toBeInstanceOf(Date);
+    // Predicate captured by the mock proves the UPDATE targets the
+    // specific evt id we claimed, not a global match.
+    expect(updateCalls[0].predicate).toBeDefined();
+    expect(chunksContain(updateCalls[0].predicate, "evt-1")).toBe(true);
   });
 
   it("derives status=failed when every configured channel failed", async () => {

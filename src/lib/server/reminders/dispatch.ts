@@ -41,8 +41,13 @@ export type CompleteInput = {
  * send for this attempt, or `null` when the row exists but is not
  * retryable.
  *
- * Retryable = `status = 'failed'` AND `attempt_count < MAX_ATTEMPTS`
- * AND `last_attempt_at < now() - RETRY_DELAY_MS`.
+ * Retryable when `attempt_count < MAX_ATTEMPTS` AND
+ * `last_attempt_at < now() - RETRY_DELAY_MS` AND status is one of:
+ *   - `failed`: explicit retry-after-cooldown, the original case.
+ *   - `pending`: lease recovery. If a worker crashed mid-dispatch, the
+ *     row would stay `pending` forever; treating a stale pending as
+ *     abandoned (older than the same threshold) lets the next cron
+ *     tick reclaim it instead of leaking the slot.
  */
 export async function claimReminderSlot(input: {
   userId: string;
@@ -75,7 +80,7 @@ export async function claimReminderSlot(input: {
         lastAttemptAt: sql`now()`,
         lastError: null,
       },
-      setWhere: sql`${reminderEvents.status} = 'failed' AND ${reminderEvents.attemptCount} < ${MAX_ATTEMPTS} AND ${reminderEvents.lastAttemptAt} < ${retryThreshold}`,
+      setWhere: sql`(${reminderEvents.status} = 'failed' OR ${reminderEvents.status} = 'pending') AND ${reminderEvents.attemptCount} < ${MAX_ATTEMPTS} AND ${reminderEvents.lastAttemptAt} < ${retryThreshold}`,
     })
     .returning({ id: reminderEvents.id, attemptCount: reminderEvents.attemptCount });
 

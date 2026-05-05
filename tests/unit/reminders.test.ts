@@ -98,13 +98,28 @@ const pushResults: Array<
 > = [];
 const sentPushes: Array<{ userId: string; tag: string }> = [];
 let pushSubscribersByUser: Record<string, boolean> = {};
+// Tests opt into throwing behaviour by setting these to an Error.
+let nextPushSubsThrows: Error | null = null;
+let nextSendPushThrows: Error | null = null;
 
 vi.mock("$lib/server/push", () => ({
   sendPushNotification: async (userId: string, payload: { tag: string }) => {
+    if (nextSendPushThrows) {
+      const err = nextSendPushThrows;
+      nextSendPushThrows = null;
+      throw err;
+    }
     sentPushes.push({ userId, tag: payload.tag });
     return pushResults.shift() ?? { ok: true, deliveredCount: 1 };
   },
-  hasPushSubscriptions: async (userId: string) => Boolean(pushSubscribersByUser[userId]),
+  hasPushSubscriptions: async (userId: string) => {
+    if (nextPushSubsThrows) {
+      const err = nextPushSubsThrows;
+      nextPushSubsThrows = null;
+      throw err;
+    }
+    return Boolean(pushSubscribersByUser[userId]);
+  },
 }));
 
 const { checkOverdueMedications } = await import("../../src/lib/server/reminders");
@@ -120,6 +135,8 @@ beforeEach(() => {
   updateCaptures.length = 0;
   selectCallIndex = 0;
   pushSubscribersByUser = { u1: true };
+  nextPushSubsThrows = null;
+  nextSendPushThrows = null;
 });
 
 function pushDefaultOverdueRow(): void {
@@ -248,5 +265,37 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
     expect(updateCaptures[0].pushStatus).toBe("not_configured");
     expect(updateCaptures[0].emailStatus).toBe("sent");
     expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("still calls completeReminder when hasPushSubscriptions throws", async () => {
+    pushDefaultOverdueRow();
+    nextPushSubsThrows = new Error("transient db error");
+
+    await checkOverdueMedications();
+
+    expect(updateCaptures).toHaveLength(1);
+    // Email succeeded before the throw — keep its sent status.
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    // pushConfigured was never set true (the probe threw), so the row
+    // is marked not_configured; the throw is captured in lastError so
+    // operators can see what happened.
+    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    expect(updateCaptures[0].status).toBe("sent");
+    expect(updateCaptures[0].lastError).toContain("transient db error");
+  });
+
+  it("still calls completeReminder when sendPushNotification throws after hasPushSubscriptions=true", async () => {
+    pushDefaultOverdueRow();
+    nextSendPushThrows = new Error("push transport down");
+
+    await checkOverdueMedications();
+
+    expect(updateCaptures).toHaveLength(1);
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    // We knew push was configured (probe returned true), so the throw
+    // counts as a delivery failure for that channel.
+    expect(updateCaptures[0].pushStatus).toBe("failed");
+    expect(updateCaptures[0].status).toBe("sent");
+    expect(updateCaptures[0].lastError).toContain("push transport down");
   });
 });

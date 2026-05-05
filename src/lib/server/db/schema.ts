@@ -10,6 +10,7 @@ import {
   index,
   primaryKey,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -230,6 +231,9 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export type ReminderStatus = "pending" | "sent" | "failed";
+export type ReminderChannelStatus = "not_configured" | "pending" | "sent" | "failed";
+
 export const reminderEvents = pgTable(
   "reminder_events",
   {
@@ -241,10 +245,32 @@ export const reminderEvents = pgTable(
       .notNull()
       .references(() => medications.id, { onDelete: "cascade" }),
     reminderType: text("reminder_type").notNull(),
+    // sentAt is the time the row was first inserted. lastAttemptAt
+    // advances on every retry. The dedupe key gives idempotency; the
+    // status fields make "row exists" no longer mean "send succeeded".
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
     dedupeKey: text("dedupe_key").notNull().unique(),
+    status: text("status").notNull().default("pending").$type<ReminderStatus>(),
+    emailStatus: text("email_status")
+      .notNull()
+      .default("not_configured")
+      .$type<ReminderChannelStatus>(),
+    pushStatus: text("push_status")
+      .notNull()
+      .default("not_configured")
+      .$type<ReminderChannelStatus>(),
+    attemptCount: integer("attempt_count").notNull().default(1),
+    lastError: text("last_error"),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("reminder_events_user_sent_idx").on(table.userId, table.sentAt)],
+  (table) => [
+    index("reminder_events_user_sent_idx").on(table.userId, table.sentAt),
+    // Partial index — only failed rows are eligible for retry, so we
+    // only index those.
+    index("reminder_events_retryable_idx")
+      .on(table.status, table.lastAttemptAt)
+      .where(sql`${table.status} = 'failed'`),
+  ],
 );
 
 export const reauthTokens = pgTable(

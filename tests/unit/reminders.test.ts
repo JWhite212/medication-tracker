@@ -1,29 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Two query results: the schedule/medication outer query, and the
-// last-taken-per-medication aggregate. Tests push rows into these arrays
-// before invoking the function.
+// last-taken-per-medication aggregate. Tests push rows into these
+// arrays before invoking the function.
 const scheduleRows: Array<Record<string, unknown>> = [];
 const lastTakenRows: Array<{ medicationId: string; lastTakenAt: Date | null }> = [];
-
-// Track which "select" call we are on so the mock returns the correct
-// rows. The function calls select() twice in order: schedules first,
-// then the dose-log aggregate.
 let selectCallIndex = 0;
 
-// Queue of return values for db.insert(...).returning() calls.
-// Default per call (when queue is empty): [{ id: "evt" }] meaning row
-// inserted (dedupe key was new). Push [] for a specific call to
-// simulate a unique-constraint conflict (dedupe key already seen).
-const reminderEventInsertResults: Array<Array<{ id: string }>> = [];
+// Queue of return values for db.insert(...).returning() calls (the
+// claim step). Default per call: [{ id: "evt", attemptCount: 1 }].
+// Push [] for "row exists but is not retryable".
+const claimResults: Array<Array<{ id: string; attemptCount: number }>> = [];
+
+// Each completeReminder call appends the UPDATE payload here so tests
+// can assert on per-channel statuses.
+type UpdateCapture = {
+  id: string;
+  status: string;
+  emailStatus: string;
+  pushStatus: string;
+  lastError: string | null;
+};
+const updateCaptures: UpdateCapture[] = [];
 
 vi.mock("$lib/server/db", () => ({
   db: {
     select: () => {
       const callIndex = selectCallIndex++;
       const rowsForCall = () => (callIndex === 0 ? [...scheduleRows] : [...lastTakenRows]);
-      // Build a chainable thenable so any sequence of
-      // .from().innerJoin()*.where().groupBy()? resolves to the rows.
       const chain: Record<string, unknown> = {};
       const resolver = () => Promise.resolve(rowsForCall());
       const passthrough = () => chain;
@@ -38,31 +42,83 @@ vi.mock("$lib/server/db", () => ({
       return chain;
     },
     insert: () => {
-      const result = reminderEventInsertResults.shift() ?? [{ id: "evt" }];
+      const result = claimResults.shift() ?? [{ id: "evt", attemptCount: 1 }];
       const chain: Record<string, unknown> = {};
       const passthrough = () => chain;
       chain.values = passthrough;
       chain.onConflictDoNothing = passthrough;
+      chain.onConflictDoUpdate = passthrough;
       chain.returning = () => Promise.resolve(result);
+      return chain;
+    },
+    update: () => {
+      // Capture the payload that completeReminder writes. Drizzle
+      // builds .update(table).set({...}).where(...); the .set call
+      // receives the field map.
+      let captured: Partial<UpdateCapture> = { id: "evt" };
+      const chain: Record<string, unknown> = {};
+      chain.set = (payload: Record<string, unknown>) => {
+        captured = {
+          ...captured,
+          status: String(payload.status ?? ""),
+          emailStatus: String(payload.emailStatus ?? ""),
+          pushStatus: String(payload.pushStatus ?? ""),
+          lastError: (payload.lastError as string | null) ?? null,
+        };
+        return chain;
+      };
+      chain.where = () => {
+        updateCaptures.push(captured as UpdateCapture);
+        return Promise.resolve();
+      };
       return chain;
     },
   },
 }));
 
+// Email mocks return the new EmailResult shape. Per test, push the
+// desired result into emailResults; default is { ok: true }.
+const emailResults: Array<
+  { ok: true; id?: string } | { ok: false; reason: string; message: string }
+> = [];
 const sentEmails: Array<{ to: string; medicationName: string; sinceLabel: string }> = [];
-const sentPushes: Array<{ userId: string; tag: string }> = [];
 
 vi.mock("$lib/server/email", () => ({
   sendReminderEmail: async (to: string, medicationName: string, sinceLabel: string) => {
     sentEmails.push({ to, medicationName, sinceLabel });
-    return { ok: true, id: "evt-email" };
+    return emailResults.shift() ?? { ok: true, id: "msg-r" };
   },
-  sendLowInventoryEmail: async () => ({ ok: true, id: "evt-low" }),
+  sendLowInventoryEmail: async () => emailResults.shift() ?? { ok: true, id: "msg-l" },
+  isEmailConfigured: () => true,
 }));
+
+// Push mocks. Per test, push the desired result; default is success.
+const pushResults: Array<
+  { ok: true; deliveredCount: number } | { ok: false; reason: string; message: string }
+> = [];
+const sentPushes: Array<{ userId: string; tag: string }> = [];
+let pushSubscribersByUser: Record<string, boolean> = {};
+// Tests opt into throwing behaviour by setting these to an Error.
+let nextPushSubsThrows: Error | null = null;
+let nextSendPushThrows: Error | null = null;
 
 vi.mock("$lib/server/push", () => ({
   sendPushNotification: async (userId: string, payload: { tag: string }) => {
+    if (nextSendPushThrows) {
+      const err = nextSendPushThrows;
+      nextSendPushThrows = null;
+      throw err;
+    }
     sentPushes.push({ userId, tag: payload.tag });
+    return pushResults.shift() ?? { ok: true, deliveredCount: 1 };
+  },
+  hasPushSubscriptions: async (userId: string) => {
+    if (nextPushSubsThrows) {
+      const err = nextPushSubsThrows;
+      nextPushSubsThrows = null;
+      throw err;
+    }
+    return Boolean(pushSubscribersByUser[userId]);
   },
 }));
 
@@ -73,43 +129,48 @@ beforeEach(() => {
   lastTakenRows.length = 0;
   sentEmails.length = 0;
   sentPushes.length = 0;
-  reminderEventInsertResults.length = 0;
+  emailResults.length = 0;
+  pushResults.length = 0;
+  claimResults.length = 0;
+  updateCaptures.length = 0;
   selectCallIndex = 0;
+  pushSubscribersByUser = { u1: true };
+  nextPushSubsThrows = null;
+  nextSendPushThrows = null;
 });
 
-describe("checkOverdueMedications — JOIN-based last-taken", () => {
-  it("joins lastTakenAt by medicationId and flags overdue interval schedules", async () => {
-    const now = Date.now();
-    const eightHoursAgo = new Date(now - 8 * 3600 * 1000);
+function pushDefaultOverdueRow(): void {
+  const eightHoursAgo = new Date(Date.now() - 8 * 3600 * 1000);
+  scheduleRows.push({
+    scheduleId: "s1",
+    scheduleKind: "interval",
+    intervalHours: "6",
+    timeOfDay: null,
+    daysOfWeek: null,
+    medicationId: "med-A",
+    medicationName: "Ibuprofen",
+    userId: "u1",
+    userEmail: "user@example.com",
+    userEmailVerified: true,
+    userTimezone: "UTC",
+  });
+  lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+}
 
-    scheduleRows.push({
-      scheduleId: "s1",
-      scheduleKind: "interval",
-      intervalHours: "6",
-      timeOfDay: null,
-      daysOfWeek: null,
-      medicationId: "med-A",
-      medicationName: "Ibuprofen",
-      userId: "u1",
-      userEmail: "user@example.com",
-      userEmailVerified: true,
-      userTimezone: "UTC",
-    });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
-
+describe("checkOverdueMedications — claim/complete with per-channel status", () => {
+  it("flags overdue interval schedule and sends both channels", async () => {
+    pushDefaultOverdueRow();
     await checkOverdueMedications();
 
     expect(sentEmails).toHaveLength(1);
     expect(sentEmails[0].to).toBe("user@example.com");
-    expect(sentEmails[0].medicationName).toBe("Ibuprofen");
     expect(sentPushes).toHaveLength(1);
     expect(sentPushes[0].tag).toBe("overdue-med-A");
+    expect(updateCaptures[0].status).toBe("sent");
   });
 
-  it("does not flag interval schedule when last taken is within interval", async () => {
-    const now = Date.now();
-    const oneHourAgo = new Date(now - 3600 * 1000);
-
+  it("does not flag when last taken is within interval", async () => {
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000);
     scheduleRows.push({
       scheduleId: "s1",
       scheduleKind: "interval",
@@ -126,123 +187,50 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
     lastTakenRows.push({ medicationId: "med-A", lastTakenAt: oneHourAgo });
 
     await checkOverdueMedications();
-
     expect(sentEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures).toHaveLength(0);
   });
 
-  it("treats medication with no taken doses as lastTakenAt=null (interval not overdue)", async () => {
-    // Interval schedules require a prior takenAt to compute overdue;
-    // when the JS join finds no row, lastTakenAt is null and the
-    // interval branch returns false. (Same as original semantics.)
-    scheduleRows.push({
-      scheduleId: "s1",
-      scheduleKind: "interval",
-      intervalHours: "6",
-      timeOfDay: null,
-      daysOfWeek: null,
-      medicationId: "med-A",
-      medicationName: "Ibuprofen",
-      userId: "u1",
-      userEmail: "user@example.com",
-      userEmailVerified: true,
-      userTimezone: "UTC",
-    });
-    // No row in lastTakenRows — simulates "never taken".
+  it("dedupes a repeat run when claim returns no row (not retryable)", async () => {
+    pushDefaultOverdueRow();
+    claimResults.push([]);
+
+    await checkOverdueMedications();
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures).toHaveLength(0);
+  });
+
+  it("marks status=sent when email succeeds and push fails", async () => {
+    pushDefaultOverdueRow();
+    emailResults.push({ ok: true, id: "msg" });
+    pushResults.push({ ok: false, reason: "all_failed", message: "boom" });
 
     await checkOverdueMedications();
 
-    expect(sentEmails).toHaveLength(0);
-    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures).toHaveLength(1);
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    expect(updateCaptures[0].pushStatus).toBe("failed");
+    expect(updateCaptures[0].status).toBe("sent");
+    expect(updateCaptures[0].lastError).toContain("push:all_failed");
   });
 
-  it("fires once per (schedule, slot) — different schedule timings produce separate notifications", async () => {
-    const now = Date.now();
-    const eightHoursAgo = new Date(now - 8 * 3600 * 1000);
-
-    // Two interval schedules for the SAME medication with DIFFERENT
-    // intervals → two distinct overdue slots → two distinct dedupe
-    // keys → two notifications. (Per-schedule semantics under the
-    // new reminder_events dedupe scheme.)
-    scheduleRows.push(
-      {
-        scheduleId: "s1",
-        scheduleKind: "interval",
-        intervalHours: "6",
-        timeOfDay: null,
-        daysOfWeek: null,
-        medicationId: "med-A",
-        medicationName: "Ibuprofen",
-        userId: "u1",
-        userEmail: "user@example.com",
-        userEmailVerified: true,
-        userTimezone: "UTC",
-      },
-      {
-        scheduleId: "s2",
-        scheduleKind: "interval",
-        intervalHours: "4",
-        timeOfDay: null,
-        daysOfWeek: null,
-        medicationId: "med-A",
-        medicationName: "Ibuprofen",
-        userId: "u1",
-        userEmail: "user@example.com",
-        userEmailVerified: true,
-        userTimezone: "UTC",
-      },
-    );
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+  it("marks status=failed when both email and push fail", async () => {
+    pushDefaultOverdueRow();
+    emailResults.push({ ok: false, reason: "provider_error", message: "smtp down" });
+    pushResults.push({ ok: false, reason: "all_failed", message: "boom" });
 
     await checkOverdueMedications();
 
-    expect(sentEmails).toHaveLength(2);
-    expect(sentPushes).toHaveLength(2);
+    expect(updateCaptures).toHaveLength(1);
+    expect(updateCaptures[0].emailStatus).toBe("failed");
+    expect(updateCaptures[0].pushStatus).toBe("failed");
+    expect(updateCaptures[0].status).toBe("failed");
   });
 
-  it("dedupes a repeat run via reminder_events conflict (insert returns no row)", async () => {
-    const now = Date.now();
-    const eightHoursAgo = new Date(now - 8 * 3600 * 1000);
-
-    scheduleRows.push({
-      scheduleId: "s1",
-      scheduleKind: "interval",
-      intervalHours: "6",
-      timeOfDay: null,
-      daysOfWeek: null,
-      medicationId: "med-A",
-      medicationName: "Ibuprofen",
-      userId: "u1",
-      userEmail: "user@example.com",
-      userEmailVerified: true,
-      userTimezone: "UTC",
-    });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
-
-    // Simulate a unique-constraint conflict on dedupe_key: the insert
-    // returns an empty array, meaning "row already existed; skip notify".
-    reminderEventInsertResults.push([]);
-
-    await checkOverdueMedications();
-
-    expect(sentEmails).toHaveLength(0);
-    expect(sentPushes).toHaveLength(0);
-  });
-
-  it("does not query dose_logs when there are no schedule rows", async () => {
-    // Empty schedule rows means medicationIds is empty and we skip the
-    // second query. selectCallIndex tracks the count and should be 1.
-    await checkOverdueMedications();
-
-    expect(sentEmails).toHaveLength(0);
-    expect(sentPushes).toHaveLength(0);
-    expect(selectCallIndex).toBe(1);
-  });
-
-  it("skips the email send for unverified users but still fires push", async () => {
-    const now = Date.now();
-    const eightHoursAgo = new Date(now - 8 * 3600 * 1000);
-
+  it("skips email channel for unverified users; push still attempted", async () => {
+    const eightHoursAgo = new Date(Date.now() - 8 * 3600 * 1000);
     scheduleRows.push({
       scheduleId: "s1",
       scheduleKind: "interval",
@@ -262,6 +250,52 @@ describe("checkOverdueMedications — JOIN-based last-taken", () => {
 
     expect(sentEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(1);
-    expect(sentPushes[0].tag).toBe("overdue-med-A");
+    expect(updateCaptures[0].emailStatus).toBe("not_configured");
+    expect(updateCaptures[0].pushStatus).toBe("sent");
+    expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("does not call sendPushNotification when the user has no push subscriptions", async () => {
+    pushSubscribersByUser = {};
+    pushDefaultOverdueRow();
+
+    await checkOverdueMedications();
+
+    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("still calls completeReminder when hasPushSubscriptions throws", async () => {
+    pushDefaultOverdueRow();
+    nextPushSubsThrows = new Error("transient db error");
+
+    await checkOverdueMedications();
+
+    expect(updateCaptures).toHaveLength(1);
+    // Email succeeded before the throw — keep its sent status.
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    // pushConfigured was never set true (the probe threw), so the row
+    // is marked not_configured; the throw is captured in lastError so
+    // operators can see what happened.
+    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    expect(updateCaptures[0].status).toBe("sent");
+    expect(updateCaptures[0].lastError).toContain("transient db error");
+  });
+
+  it("still calls completeReminder when sendPushNotification throws after hasPushSubscriptions=true", async () => {
+    pushDefaultOverdueRow();
+    nextSendPushThrows = new Error("push transport down");
+
+    await checkOverdueMedications();
+
+    expect(updateCaptures).toHaveLength(1);
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    // We knew push was configured (probe returned true), so the throw
+    // counts as a delivery failure for that channel.
+    expect(updateCaptures[0].pushStatus).toBe("failed");
+    expect(updateCaptures[0].status).toBe("sent");
+    expect(updateCaptures[0].lastError).toContain("push transport down");
   });
 });

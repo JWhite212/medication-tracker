@@ -320,17 +320,57 @@ reference, indexes, and migration workflow. Quick summary:
   v8. Reporters: text, html, lcov, json-summary.
 - **Coverage thresholds** — baseline measured at end of Phase 3,
   thresholds set just below to fail CI on regression.
-- **E2E** — Playwright; the smoke spec is a placeholder for now,
-  the full journey + axe-core a11y suite is on the roadmap.
+- **E2E** — Playwright. Real product journeys for auth,
+  medication lifecycle, dose logging, analytics, history filters,
+  exports, and an axe-core accessibility scan. A deterministic
+  seed (`scripts/seed-e2e.ts`) creates a fixed user, three
+  medications, and 14 days of synthetic history; tests reuse the
+  seeded session via Playwright `storageState`. Teardown removes
+  any user under the `@e2e.medtracker.test` domain.
 - **CI** — GitHub Actions: install → check → lint → format-check
   → test (with coverage upload) → secret scan (Gitleaks) →
-  `npm audit` → build. See `.github/workflows/ci.yml`.
+  `npm audit` → build → optional E2E job (gated on the `RUN_E2E`
+  repo variable and the `E2E_DATABASE_URL` secret). See
+  `.github/workflows/ci.yml`.
 
 ```bash
 npm test                # unit tests
 npm run test:coverage   # unit tests with v8 coverage
-npm run test:e2e        # Playwright (requires dev server)
+npm run test:e2e        # Playwright (requires dev server + DB)
 ```
+
+### Running E2E tests locally
+
+E2E tests need a real database. Use a separate Neon branch (or
+local Postgres) so the suite can seed and tear down without
+touching personal data.
+
+```bash
+# 1. Point at a test database. Either DATABASE_URL or
+#    E2E_DATABASE_URL works; the seed script prefers the latter.
+export E2E_DATABASE_URL="postgresql://user:pass@host/dbname?sslmode=require"
+
+# 2. Apply the schema once.
+npm run db:push
+
+# 3. Install Chromium for Playwright (one-off).
+npm run playwright:install
+
+# 4. Run the suite. Global setup re-seeds the user automatically;
+#    you don't need to run seed:e2e by hand.
+npm run test:e2e
+
+# 5. Inspect the HTML report after a failure.
+npx playwright show-report
+
+# Single file:
+npx playwright test tests/e2e/dose-logging.test.ts
+```
+
+The deterministic seed user is `e2e-seeded@e2e.medtracker.test`
+(password `e2e-medtracker-2026`). Both values are intentionally
+fixed; the account only ever exists in test databases under a
+domain that cannot resolve to a real mailbox.
 
 ## Local development
 

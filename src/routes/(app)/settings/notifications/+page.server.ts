@@ -44,12 +44,16 @@ export const actions: Actions = {
 
     const changes = computeChanges(
       {
-        emailReminders: before.emailReminders,
-        lowInventoryAlerts: before.lowInventoryAlerts,
+        overdueEmailReminders: before.overdueEmailReminders,
+        overduePushReminders: before.overduePushReminders,
+        lowInventoryEmailAlerts: before.lowInventoryEmailAlerts,
+        lowInventoryPushAlerts: before.lowInventoryPushAlerts,
       },
       {
-        emailReminders: updated.emailReminders,
-        lowInventoryAlerts: updated.lowInventoryAlerts,
+        overdueEmailReminders: updated.overdueEmailReminders,
+        overduePushReminders: updated.overduePushReminders,
+        lowInventoryEmailAlerts: updated.lowInventoryEmailAlerts,
+        lowInventoryPushAlerts: updated.lowInventoryPushAlerts,
       },
     );
     if (changes)

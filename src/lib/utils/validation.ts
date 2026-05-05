@@ -117,15 +117,19 @@ export const appearanceSchema = z.object({
     .transform((v) => v === "on"),
 });
 
+// Channel-specific notification preferences. HTML form checkboxes
+// only submit when checked, so each field accepts an optional "on"
+// string and transforms to a boolean.
+const checkboxField = z
+  .string()
+  .optional()
+  .transform((v) => v === "on");
+
 export const notificationSchema = z.object({
-  emailReminders: z
-    .string()
-    .optional()
-    .transform((v) => v === "on"),
-  lowInventoryAlerts: z
-    .string()
-    .optional()
-    .transform((v) => v === "on"),
+  overdueEmailReminders: checkboxField,
+  overduePushReminders: checkboxField,
+  lowInventoryEmailAlerts: checkboxField,
+  lowInventoryPushAlerts: checkboxField,
 });
 
 export const dataSchema = z.object({

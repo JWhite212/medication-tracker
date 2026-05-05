@@ -153,6 +153,8 @@ function pushDefaultOverdueRow(): void {
     userEmail: "user@example.com",
     userEmailVerified: true,
     userTimezone: "UTC",
+    userOverdueEmailReminders: true,
+    userOverduePushReminders: true,
   });
   lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
 }
@@ -243,6 +245,8 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userEmail: "user@example.com",
       userEmailVerified: false,
       userTimezone: "UTC",
+      userOverdueEmailReminders: true,
+      userOverduePushReminders: true,
     });
     lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
 
@@ -297,5 +301,61 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
     expect(updateCaptures[0].pushStatus).toBe("failed");
     expect(updateCaptures[0].status).toBe("sent");
     expect(updateCaptures[0].lastError).toContain("push transport down");
+  });
+
+  it("respects overdueEmailReminders=false: push fires, email skipped", async () => {
+    const eightHoursAgo = new Date(Date.now() - 8 * 3600 * 1000);
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+      userOverdueEmailReminders: false,
+      userOverduePushReminders: true,
+    });
+    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+
+    await checkOverdueMedications();
+
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(1);
+    expect(updateCaptures[0].emailStatus).toBe("not_configured");
+    expect(updateCaptures[0].pushStatus).toBe("sent");
+    expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("respects overduePushReminders=false: email fires, push skipped", async () => {
+    const eightHoursAgo = new Date(Date.now() - 8 * 3600 * 1000);
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+      userOverdueEmailReminders: true,
+      userOverduePushReminders: false,
+    });
+    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+
+    await checkOverdueMedications();
+
+    expect(sentEmails).toHaveLength(1);
+    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    expect(updateCaptures[0].status).toBe("sent");
   });
 });

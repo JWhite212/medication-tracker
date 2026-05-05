@@ -50,6 +50,33 @@ export async function getSchedulesForMedication(
     .orderBy(asc(medicationSchedules.sortOrder));
 }
 
+/**
+ * Build the row payload used by both `replaceSchedulesForMedication`
+ * (delete-then-insert) and `createMedicationWithSchedules` (insert
+ * fresh under a brand-new medication id). Single source of truth for
+ * the per-kind field shape so a schema tweak (e.g. a new column on a
+ * fixed-time row) only updates one place.
+ */
+export function buildScheduleRows(
+  userId: string,
+  medicationId: string,
+  schedules: ScheduleInput[],
+): Array<typeof medicationSchedules.$inferInsert> {
+  return schedules.map((s, idx) => ({
+    id: createId(),
+    medicationId,
+    userId,
+    scheduleKind: s.scheduleKind,
+    timeOfDay: s.scheduleKind === "fixed_time" ? s.timeOfDay : null,
+    intervalHours: s.scheduleKind === "interval" ? String(s.intervalHours) : null,
+    daysOfWeek:
+      s.scheduleKind === "fixed_time" && s.daysOfWeek && s.daysOfWeek.length > 0
+        ? s.daysOfWeek
+        : null,
+    sortOrder: idx,
+  }));
+}
+
 // Delete-then-insert wrapped in a transaction (below) so a failed
 // insert rolls back the delete and the original schedule rows survive.
 export async function replaceSchedulesForMedication(
@@ -67,26 +94,11 @@ export async function replaceSchedulesForMedication(
     .limit(1);
   if (!owner) throw new MedicationOwnershipError();
 
+  const rows = buildScheduleRows(userId, medicationId, schedules);
+
   // Delete-then-insert in a single transaction — if the insert fails
   // (e.g. constraint violation), the original schedule rows are
   // restored on rollback.
-  const rows =
-    schedules.length === 0
-      ? []
-      : schedules.map((s, idx) => ({
-          id: createId(),
-          medicationId,
-          userId,
-          scheduleKind: s.scheduleKind,
-          timeOfDay: s.scheduleKind === "fixed_time" ? s.timeOfDay : null,
-          intervalHours: s.scheduleKind === "interval" ? String(s.intervalHours) : null,
-          daysOfWeek:
-            s.scheduleKind === "fixed_time" && s.daysOfWeek && s.daysOfWeek.length > 0
-              ? s.daysOfWeek
-              : null,
-          sortOrder: idx,
-        }));
-
   await dbTx.transaction(async (tx) => {
     await tx
       .delete(medicationSchedules)

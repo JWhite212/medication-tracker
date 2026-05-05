@@ -1,7 +1,6 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { medicationSchema, schedulesSchema } from "$lib/utils/validation";
-import { createMedication } from "$lib/server/medications";
-import { replaceSchedulesForMedication } from "$lib/server/schedules";
+import { createMedicationWithSchedules } from "$lib/server/medications";
 import type { Actions } from "./$types";
 
 function parseSchedules(raw: unknown) {
@@ -33,8 +32,10 @@ export const actions: Actions = {
       });
     }
 
-    const med = await createMedication(locals.user!.id, parsed.data);
-    await replaceSchedulesForMedication(med.id, locals.user!.id, schedulesParsed.data);
+    // Single-transaction service: medication + schedules + audit
+    // commit or roll back together, so a failed schedule insert
+    // cannot leave an orphaned medication row.
+    await createMedicationWithSchedules(locals.user!.id, parsed.data, schedulesParsed.data);
     redirect(302, "/medications");
   },
 };

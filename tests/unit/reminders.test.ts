@@ -122,7 +122,8 @@ vi.mock("$lib/server/push", () => ({
   },
 }));
 
-const { checkOverdueMedications } = await import("../../src/lib/server/reminders");
+const { checkOverdueMedications, checkLowInventoryMedications } =
+  await import("../../src/lib/server/reminders");
 
 beforeEach(() => {
   scheduleRows.length = 0;
@@ -153,6 +154,8 @@ function pushDefaultOverdueRow(): void {
     userEmail: "user@example.com",
     userEmailVerified: true,
     userTimezone: "UTC",
+    userOverdueEmailReminders: true,
+    userOverduePushReminders: true,
   });
   lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
 }
@@ -243,6 +246,8 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userEmail: "user@example.com",
       userEmailVerified: false,
       userTimezone: "UTC",
+      userOverdueEmailReminders: true,
+      userOverduePushReminders: true,
     });
     lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
 
@@ -276,10 +281,10 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
     expect(updateCaptures).toHaveLength(1);
     // Email succeeded before the throw — keep its sent status.
     expect(updateCaptures[0].emailStatus).toBe("sent");
-    // pushConfigured was never set true (the probe threw), so the row
-    // is marked not_configured; the throw is captured in lastError so
-    // operators can see what happened.
-    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    // The user opted into push, so a probe-time throw is treated as
+    // a delivery failure (not "not_configured"). That keeps the row
+    // retryable instead of consuming the dedupe slot.
+    expect(updateCaptures[0].pushStatus).toBe("failed");
     expect(updateCaptures[0].status).toBe("sent");
     expect(updateCaptures[0].lastError).toContain("transient db error");
   });
@@ -297,5 +302,163 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
     expect(updateCaptures[0].pushStatus).toBe("failed");
     expect(updateCaptures[0].status).toBe("sent");
     expect(updateCaptures[0].lastError).toContain("push transport down");
+  });
+
+  it("respects overdueEmailReminders=false: push fires, email skipped", async () => {
+    const eightHoursAgo = new Date(Date.now() - 8 * 3600 * 1000);
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+      userOverdueEmailReminders: false,
+      userOverduePushReminders: true,
+    });
+    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+
+    await checkOverdueMedications();
+
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(1);
+    expect(updateCaptures[0].emailStatus).toBe("not_configured");
+    expect(updateCaptures[0].pushStatus).toBe("sent");
+    expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("marks push as failed (not not_configured) when probe throws on a push-only row", async () => {
+    // Push-only configuration: emailReminders off, push opted in.
+    // If hasPushSubscriptions itself throws, the catch block must
+    // promote push to failed using the opt-in intent so the slot is
+    // retryable. Earlier code used the post-probe pushConfigured
+    // flag, which is still false in this path, leaving push at
+    // not_configured and the slot consumed without delivery.
+    const eightHoursAgo = new Date(Date.now() - 8 * 3600 * 1000);
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+      userOverdueEmailReminders: false,
+      userOverduePushReminders: true,
+    });
+    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    nextPushSubsThrows = new Error("transient db error");
+
+    await checkOverdueMedications();
+
+    expect(updateCaptures).toHaveLength(1);
+    expect(updateCaptures[0].emailStatus).toBe("not_configured");
+    expect(updateCaptures[0].pushStatus).toBe("failed");
+    expect(updateCaptures[0].status).toBe("failed");
+    expect(updateCaptures[0].lastError).toContain("transient db error");
+  });
+
+  it("respects overduePushReminders=false: email fires, push skipped", async () => {
+    const eightHoursAgo = new Date(Date.now() - 8 * 3600 * 1000);
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+      userOverdueEmailReminders: true,
+      userOverduePushReminders: false,
+    });
+    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+
+    await checkOverdueMedications();
+
+    expect(sentEmails).toHaveLength(1);
+    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    expect(updateCaptures[0].status).toBe("sent");
+  });
+});
+
+describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
+  // The mock's first select() call returns scheduleRows regardless of
+  // which function is under test, so push low-inventory-shaped rows
+  // into the same array.
+  function pushLowInventoryRow(overrides: Partial<Record<string, unknown>> = {}): void {
+    scheduleRows.push({
+      medicationId: "med-LI",
+      medicationName: "Vitamin D",
+      userId: "u1",
+      inventoryCount: 3,
+      inventoryAlertThreshold: 7,
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+      ...overrides,
+    });
+  }
+
+  it("respects lowInventoryEmailAlerts=false, push opt-in: push fires, email skipped", async () => {
+    pushLowInventoryRow({
+      userLowInventoryEmailAlerts: false,
+      userLowInventoryPushAlerts: true,
+    });
+
+    await checkLowInventoryMedications();
+
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(1);
+    expect(sentPushes[0].tag).toBe("low-inventory-med-LI");
+    expect(updateCaptures[0].emailStatus).toBe("not_configured");
+    expect(updateCaptures[0].pushStatus).toBe("sent");
+    expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("respects lowInventoryPushAlerts=false: only email fires", async () => {
+    pushLowInventoryRow({
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+    });
+
+    await checkLowInventoryMedications();
+
+    expect(sentEmails).toHaveLength(0); // mock tracks reminder emails only
+    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures[0].emailStatus).toBe("sent");
+    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("skips claim entirely when push opt-in is true but no active subscriptions", async () => {
+    pushSubscribersByUser = {}; // no subscriptions for u1
+    pushLowInventoryRow({
+      userLowInventoryEmailAlerts: false,
+      userLowInventoryPushAlerts: true,
+    });
+
+    await checkLowInventoryMedications();
+
+    // No claim, no dispatch, no completeReminder. The next cron tick
+    // after the user subscribes will record + send.
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures).toHaveLength(0);
   });
 });

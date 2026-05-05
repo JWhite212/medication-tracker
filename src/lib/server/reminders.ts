@@ -1,4 +1,4 @@
-import { sql, eq, and, isNotNull, ne, inArray, max } from "drizzle-orm";
+import { sql, eq, or, and, isNotNull, ne, inArray, max } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
   medications,
@@ -57,10 +57,10 @@ function summariseError(email: EmailResult | null, push: PushResult | null): str
 }
 
 export async function checkOverdueMedications() {
-  // P3 will split email/push prefs; for now the existing
-  // `emailReminders` toggle gates this entire pipeline. emailVerified
-  // is selected so the email channel can be skipped for unverified
-  // users while push still attempts.
+  // SQL filter: include rows where at least one channel is enabled.
+  // Per-channel gating happens inside the loop below so a user with
+  // email-only or push-only still gets exactly the channels they
+  // asked for.
   const scheduleRows = await db
     .select({
       scheduleId: medicationSchedules.id,
@@ -74,6 +74,8 @@ export async function checkOverdueMedications() {
       userEmail: users.email,
       userEmailVerified: users.emailVerified,
       userTimezone: users.timezone,
+      userOverdueEmailReminders: userPreferences.overdueEmailReminders,
+      userOverduePushReminders: userPreferences.overduePushReminders,
     })
     .from(medicationSchedules)
     .innerJoin(medications, eq(medicationSchedules.medicationId, medications.id))
@@ -83,7 +85,10 @@ export async function checkOverdueMedications() {
       and(
         eq(medications.isArchived, false),
         ne(medicationSchedules.scheduleKind, "prn"),
-        eq(userPreferences.emailReminders, true),
+        or(
+          eq(userPreferences.overdueEmailReminders, true),
+          eq(userPreferences.overduePushReminders, true),
+        ),
       ),
     );
 
@@ -135,7 +140,8 @@ export async function checkOverdueMedications() {
     });
     if (!claim) continue;
 
-    const emailConfigured = emailGloballyConfigured && row.userEmailVerified;
+    const emailConfigured =
+      row.userOverdueEmailReminders && emailGloballyConfigured && row.userEmailVerified;
     const sinceLabel = row.lastTakenAt ? formatTimeSince(new Date(row.lastTakenAt)) : "never";
 
     let emailResult: EmailResult | null = null;
@@ -157,7 +163,11 @@ export async function checkOverdueMedications() {
       if (emailConfigured) {
         emailResult = await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
       }
-      pushConfigured = await hasPushSubscriptions(row.userId);
+      // Push channel is configured when the user has opted in AND has
+      // an active subscription on at least one device.
+      if (row.userOverduePushReminders) {
+        pushConfigured = await hasPushSubscriptions(row.userId);
+      }
       if (pushConfigured) {
         pushResult = await sendPushNotification(row.userId, {
           title: `${row.medicationName} overdue`,
@@ -173,7 +183,13 @@ export async function checkOverdueMedications() {
       if (emailConfigured && emailResult === null) {
         emailResult = { ok: false, reason: "provider_error", message: dispatchError };
       }
-      if (pushConfigured && pushResult === null) {
+      // Use the opt-in intent (not pushConfigured) so a throw from
+      // hasPushSubscriptions itself still marks the channel as
+      // failed. Otherwise a probe-time DB blip would resolve the row
+      // to status=sent with both channels not_configured, consuming
+      // the dedupe slot for that overdue window with nothing
+      // delivered.
+      if (row.userOverduePushReminders && pushResult === null) {
         pushResult = { ok: false, reason: "all_failed", message: dispatchError };
       }
     }
@@ -196,6 +212,8 @@ export async function checkLowInventoryMedications() {
       inventoryAlertThreshold: medications.inventoryAlertThreshold,
       userEmail: users.email,
       userEmailVerified: users.emailVerified,
+      userLowInventoryEmailAlerts: userPreferences.lowInventoryEmailAlerts,
+      userLowInventoryPushAlerts: userPreferences.lowInventoryPushAlerts,
     })
     .from(medications)
     .innerJoin(users, eq(medications.userId, users.id))
@@ -205,7 +223,10 @@ export async function checkLowInventoryMedications() {
         eq(medications.isArchived, false),
         isNotNull(medications.inventoryCount),
         isNotNull(medications.inventoryAlertThreshold),
-        eq(userPreferences.lowInventoryAlerts, true),
+        or(
+          eq(userPreferences.lowInventoryEmailAlerts, true),
+          eq(userPreferences.lowInventoryPushAlerts, true),
+        ),
         sql`${medications.inventoryCount} <= ${medications.inventoryAlertThreshold}`,
       ),
     );
@@ -213,20 +234,34 @@ export async function checkLowInventoryMedications() {
   const emailGloballyConfigured = isEmailConfigured();
 
   for (const med of lowMeds) {
-    // Skip BEFORE claiming when no channel would fire. Low-inventory's
-    // dedupe key is (user, medication, inventoryCount), so a row
-    // claimed with no configured channels would resolve to status=sent
-    // and suppress the alert forever (same count, same key, no
-    // retry). Skipping the claim means the next cron tick after the
-    // user verifies (or after the operator configures email) records
-    // and sends.
-    if (!med.userEmailVerified) {
-      console.warn(`low-inventory skipped for med=${med.medicationId}: user email not verified`);
-      continue;
+    const emailWillFire =
+      med.userLowInventoryEmailAlerts && emailGloballyConfigured && med.userEmailVerified;
+    const pushOptIn = med.userLowInventoryPushAlerts;
+
+    // Determine whether push CAN actually fire (opt-in AND active
+    // subscription) BEFORE the pre-claim gate. Treating opt-in alone
+    // as sufficient would let us claim the row, send nothing, and
+    // complete as 'sent' — and because the dedupe key is (user,
+    // medication, inventoryCount), the user re-subscribing later
+    // would still hit the suppressed key for that count.
+    //
+    // If hasPushSubscriptions itself throws, skip the iteration: no
+    // row is claimed, and the next cron tick retries cleanly.
+    let pushWillFire = false;
+    if (pushOptIn) {
+      try {
+        pushWillFire = await hasPushSubscriptions(med.userId);
+      } catch (err) {
+        console.warn(
+          `low-inventory push probe failed for med=${med.medicationId}: ${err instanceof Error ? err.message : "non-Error"}`,
+        );
+        continue;
+      }
     }
-    if (!emailGloballyConfigured) {
+
+    if (!emailWillFire && !pushWillFire) {
       console.warn(
-        `low-inventory skipped for med=${med.medicationId}: email not configured on this deployment`,
+        `low-inventory skipped for med=${med.medicationId}: no enabled channel can fire`,
       );
       continue;
     }
@@ -241,37 +276,42 @@ export async function checkLowInventoryMedications() {
     if (!claim) continue;
 
     let emailResult: EmailResult | null = null;
+    let pushResult: PushResult | null = null;
     let dispatchError: string | null = null;
 
-    // Same try/catch contract as the overdue path: if the email send
-    // throws (the typed result already absorbs Resend errors, but DB
-    // dependencies inside the path could still throw), promote to a
-    // failed result so completeReminder still runs and the row can
-    // retry.
+    // Same try/catch contract as the overdue path. Email goes first so
+    // a transient push failure can't poison an already-sent email.
     try {
-      emailResult = await sendLowInventoryEmail(
-        med.userEmail,
-        med.medicationName,
-        med.inventoryCount!,
-        med.inventoryAlertThreshold!,
-      );
+      if (emailWillFire) {
+        emailResult = await sendLowInventoryEmail(
+          med.userEmail,
+          med.medicationName,
+          med.inventoryCount!,
+          med.inventoryAlertThreshold!,
+        );
+      }
+      if (pushWillFire) {
+        pushResult = await sendPushNotification(med.userId, {
+          title: `Low inventory: ${med.medicationName}`,
+          body: `${med.inventoryCount} doses remaining (threshold ${med.inventoryAlertThreshold}).`,
+          url: "/medications",
+          tag: `low-inventory-${med.medicationId}`,
+        });
+      }
     } catch (err) {
       dispatchError = err instanceof Error ? err.message : "non-Error thrown during dispatch";
-      // The check mirrors the overdue path's pattern. The throw must
-      // have happened before the assignment landed, so emailResult is
-      // null here — but explicit-is-better-than-implicit and it
-      // satisfies no-useless-assignment.
-      if (emailResult === null) {
+      if (emailWillFire && emailResult === null) {
         emailResult = { ok: false, reason: "provider_error", message: dispatchError };
+      }
+      if (pushWillFire && pushResult === null) {
+        pushResult = { ok: false, reason: "all_failed", message: dispatchError };
       }
     }
 
-    // Low-inventory does not currently send push. Push channel stays
-    // not_configured for these rows.
     await completeReminder(claim.id, {
       emailStatus: emailStatusFromResult(emailResult),
-      pushStatus: "not_configured",
-      lastError: dispatchError ?? summariseError(emailResult, null),
+      pushStatus: pushStatusFromResult(pushResult),
+      lastError: dispatchError ?? summariseError(emailResult, pushResult),
     });
   }
 }

@@ -182,8 +182,19 @@ export const userPreferences = pgTable("user_preferences", {
   timeFormat: text("time_format").notNull().default("12h"),
   uiDensity: text("ui_density").notNull().default("comfortable"),
   reducedMotion: boolean("reduced_motion").notNull().default(false),
+  // DEPRECATED — read from `overdueEmailReminders` instead. Will be
+  // removed in a follow-up after one prod cycle. Backfilled into
+  // `overdueEmailReminders` by 0011_phase_3_split_notification_prefs.
   emailReminders: boolean("email_reminders").notNull().default(true),
+  // DEPRECATED — read from `lowInventoryEmailAlerts` instead.
   lowInventoryAlerts: boolean("low_inventory_alerts").notNull().default(true),
+  // Channel-specific preferences split out from the legacy two
+  // toggles. Each reminder type (overdue, low-inventory) can be
+  // independently configured per channel (email, push).
+  overdueEmailReminders: boolean("overdue_email_reminders").notNull().default(true),
+  overduePushReminders: boolean("overdue_push_reminders").notNull().default(true),
+  lowInventoryEmailAlerts: boolean("low_inventory_email_alerts").notNull().default(true),
+  lowInventoryPushAlerts: boolean("low_inventory_push_alerts").notNull().default(false),
   doseLogPageSize: integer("dose_log_page_size").notNull().default(20),
   heatmapPeriod: integer("heatmap_period").notNull().default(90),
   exportFormat: text("export_format").notNull().default("pdf"),

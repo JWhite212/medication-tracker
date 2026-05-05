@@ -230,14 +230,28 @@ export async function checkLowInventoryMedications() {
       med.userLowInventoryEmailAlerts && emailGloballyConfigured && med.userEmailVerified;
     const pushOptIn = med.userLowInventoryPushAlerts;
 
-    // Skip BEFORE claiming when no channel would fire. Low-inventory's
-    // dedupe key is (user, medication, inventoryCount), so a claimed
-    // row with no configured channels would resolve to status=sent
-    // and suppress the alert forever — same count, same key, no
-    // retry. Skipping the claim means the next cron tick after the
-    // user verifies / configures email / opts into push records and
-    // sends.
-    if (!emailWillFire && !pushOptIn) {
+    // Determine whether push CAN actually fire (opt-in AND active
+    // subscription) BEFORE the pre-claim gate. Treating opt-in alone
+    // as sufficient would let us claim the row, send nothing, and
+    // complete as 'sent' — and because the dedupe key is (user,
+    // medication, inventoryCount), the user re-subscribing later
+    // would still hit the suppressed key for that count.
+    //
+    // If hasPushSubscriptions itself throws, skip the iteration: no
+    // row is claimed, and the next cron tick retries cleanly.
+    let pushWillFire = false;
+    if (pushOptIn) {
+      try {
+        pushWillFire = await hasPushSubscriptions(med.userId);
+      } catch (err) {
+        console.warn(
+          `low-inventory push probe failed for med=${med.medicationId}: ${err instanceof Error ? err.message : "non-Error"}`,
+        );
+        continue;
+      }
+    }
+
+    if (!emailWillFire && !pushWillFire) {
       console.warn(
         `low-inventory skipped for med=${med.medicationId}: no enabled channel can fire`,
       );
@@ -255,7 +269,6 @@ export async function checkLowInventoryMedications() {
 
     let emailResult: EmailResult | null = null;
     let pushResult: PushResult | null = null;
-    let pushConfigured = false;
     let dispatchError: string | null = null;
 
     // Same try/catch contract as the overdue path. Email goes first so
@@ -269,8 +282,7 @@ export async function checkLowInventoryMedications() {
           med.inventoryAlertThreshold!,
         );
       }
-      pushConfigured = pushOptIn && (await hasPushSubscriptions(med.userId));
-      if (pushConfigured) {
+      if (pushWillFire) {
         pushResult = await sendPushNotification(med.userId, {
           title: `Low inventory: ${med.medicationName}`,
           body: `${med.inventoryCount} doses remaining (threshold ${med.inventoryAlertThreshold}).`,
@@ -283,7 +295,7 @@ export async function checkLowInventoryMedications() {
       if (emailWillFire && emailResult === null) {
         emailResult = { ok: false, reason: "provider_error", message: dispatchError };
       }
-      if (pushConfigured && pushResult === null) {
+      if (pushWillFire && pushResult === null) {
         pushResult = { ok: false, reason: "all_failed", message: dispatchError };
       }
     }

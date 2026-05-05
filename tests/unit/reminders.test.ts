@@ -281,10 +281,10 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
     expect(updateCaptures).toHaveLength(1);
     // Email succeeded before the throw — keep its sent status.
     expect(updateCaptures[0].emailStatus).toBe("sent");
-    // pushConfigured was never set true (the probe threw), so the row
-    // is marked not_configured; the throw is captured in lastError so
-    // operators can see what happened.
-    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    // The user opted into push, so a probe-time throw is treated as
+    // a delivery failure (not "not_configured"). That keeps the row
+    // retryable instead of consuming the dedupe slot.
+    expect(updateCaptures[0].pushStatus).toBe("failed");
     expect(updateCaptures[0].status).toBe("sent");
     expect(updateCaptures[0].lastError).toContain("transient db error");
   });
@@ -330,6 +330,41 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
     expect(updateCaptures[0].emailStatus).toBe("not_configured");
     expect(updateCaptures[0].pushStatus).toBe("sent");
     expect(updateCaptures[0].status).toBe("sent");
+  });
+
+  it("marks push as failed (not not_configured) when probe throws on a push-only row", async () => {
+    // Push-only configuration: emailReminders off, push opted in.
+    // If hasPushSubscriptions itself throws, the catch block must
+    // promote push to failed using the opt-in intent so the slot is
+    // retryable. Earlier code used the post-probe pushConfigured
+    // flag, which is still false in this path, leaving push at
+    // not_configured and the slot consumed without delivery.
+    const eightHoursAgo = new Date(Date.now() - 8 * 3600 * 1000);
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+      userOverdueEmailReminders: false,
+      userOverduePushReminders: true,
+    });
+    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    nextPushSubsThrows = new Error("transient db error");
+
+    await checkOverdueMedications();
+
+    expect(updateCaptures).toHaveLength(1);
+    expect(updateCaptures[0].emailStatus).toBe("not_configured");
+    expect(updateCaptures[0].pushStatus).toBe("failed");
+    expect(updateCaptures[0].status).toBe("failed");
+    expect(updateCaptures[0].lastError).toContain("transient db error");
   });
 
   it("respects overduePushReminders=false: email fires, push skipped", async () => {

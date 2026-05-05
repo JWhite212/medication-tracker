@@ -165,7 +165,9 @@ export async function checkOverdueMedications() {
       }
       // Push channel is configured when the user has opted in AND has
       // an active subscription on at least one device.
-      pushConfigured = row.userOverduePushReminders && (await hasPushSubscriptions(row.userId));
+      if (row.userOverduePushReminders) {
+        pushConfigured = await hasPushSubscriptions(row.userId);
+      }
       if (pushConfigured) {
         pushResult = await sendPushNotification(row.userId, {
           title: `${row.medicationName} overdue`,
@@ -181,7 +183,13 @@ export async function checkOverdueMedications() {
       if (emailConfigured && emailResult === null) {
         emailResult = { ok: false, reason: "provider_error", message: dispatchError };
       }
-      if (pushConfigured && pushResult === null) {
+      // Use the opt-in intent (not pushConfigured) so a throw from
+      // hasPushSubscriptions itself still marks the channel as
+      // failed. Otherwise a probe-time DB blip would resolve the row
+      // to status=sent with both channels not_configured, consuming
+      // the dedupe slot for that overdue window with nothing
+      // delivered.
+      if (row.userOverduePushReminders && pushResult === null) {
         pushResult = { ok: false, reason: "all_failed", message: dispatchError };
       }
     }

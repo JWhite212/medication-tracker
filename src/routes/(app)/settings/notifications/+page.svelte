@@ -125,75 +125,79 @@
 
   <GlassCard>
     <form method="POST" use:enhance class="space-y-6">
-      <div>
-        <p class="text-text-muted mb-3 text-xs font-medium tracking-wider uppercase">
+      <fieldset class="m-0 border-0 p-0">
+        <legend class="text-text-muted mb-3 text-xs font-medium tracking-wider uppercase">
           Overdue dose reminders
-        </p>
+        </legend>
         <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium">Email</p>
-              <p class="text-text-muted text-xs">Receive email when a medication dose is overdue</p>
-            </div>
+          <label class="flex cursor-pointer items-center justify-between">
+            <span>
+              <span class="block text-sm font-medium">Email</span>
+              <span class="text-text-muted block text-xs">
+                Receive email when a medication dose is overdue
+              </span>
+            </span>
             <input
               type="checkbox"
               name="overdueEmailReminders"
               checked={data.preferences.overdueEmailReminders}
               class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
             />
-          </div>
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium">Push</p>
-              <p class="text-text-muted text-xs">
+          </label>
+          <label class="flex cursor-pointer items-center justify-between">
+            <span>
+              <span class="block text-sm font-medium">Push</span>
+              <span class="text-text-muted block text-xs">
                 Send a push notification on this device when a dose is overdue
-              </p>
-            </div>
+              </span>
+            </span>
             <input
               type="checkbox"
               name="overduePushReminders"
               checked={data.preferences.overduePushReminders}
               class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
             />
-          </div>
+          </label>
         </div>
-      </div>
+      </fieldset>
 
       <div class="border-glass-border border-t"></div>
 
-      <div>
-        <p class="text-text-muted mb-3 text-xs font-medium tracking-wider uppercase">
+      <fieldset class="m-0 border-0 p-0">
+        <legend class="text-text-muted mb-3 text-xs font-medium tracking-wider uppercase">
           Low inventory alerts
-        </p>
+        </legend>
         <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium">Email</p>
-              <p class="text-text-muted text-xs">
+          <label class="flex cursor-pointer items-center justify-between">
+            <span>
+              <span class="block text-sm font-medium">Email</span>
+              <span class="text-text-muted block text-xs">
                 Email me when medication stock falls below the threshold
-              </p>
-            </div>
+              </span>
+            </span>
             <input
               type="checkbox"
               name="lowInventoryEmailAlerts"
               checked={data.preferences.lowInventoryEmailAlerts}
               class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
             />
-          </div>
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium">Push</p>
-              <p class="text-text-muted text-xs">Send a push notification when stock is low</p>
-            </div>
+          </label>
+          <label class="flex cursor-pointer items-center justify-between">
+            <span>
+              <span class="block text-sm font-medium">Push</span>
+              <span class="text-text-muted block text-xs">
+                Send a push notification when stock is low
+              </span>
+            </span>
             <input
               type="checkbox"
               name="lowInventoryPushAlerts"
               checked={data.preferences.lowInventoryPushAlerts}
               class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
             />
-          </div>
+          </label>
         </div>
-      </div>
+      </fieldset>
 
       <button
         type="submit"

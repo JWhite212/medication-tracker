@@ -40,7 +40,15 @@ export const actions: Actions = {
     if (!parsed.success) return fail(400, { errors: parsed.error.flatten().fieldErrors });
 
     const before = await getOrCreatePreferences(locals.user!.id);
-    const updated = await updatePreferences(locals.user!.id, parsed.data);
+    // Dual-write the legacy columns until they are dropped (one prod
+    // cycle after this PR). If a rollback happens before then, the
+    // previous release reads `email_reminders` / `low_inventory_alerts`
+    // and these mirror the user's most recent split-prefs choice.
+    const updated = await updatePreferences(locals.user!.id, {
+      ...parsed.data,
+      emailReminders: parsed.data.overdueEmailReminders,
+      lowInventoryAlerts: parsed.data.lowInventoryEmailAlerts,
+    });
 
     const changes = computeChanges(
       {

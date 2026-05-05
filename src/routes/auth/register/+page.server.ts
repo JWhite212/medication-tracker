@@ -90,7 +90,10 @@ export const actions: Actions = {
 
     await logAudit(userId, "user", userId, "create");
 
-    // Send email verification (non-blocking — failure doesn't prevent registration)
+    // Verification email is non-blocking by policy: a registered user
+    // can still reach /dashboard, log doses, and verify later via a
+    // resend link. We surface "verify your email" hints in feature
+    // paths that genuinely require it (email reminders, etc.).
     try {
       const rawToken = crypto.randomUUID();
       const tokenHash = encodeHexLowerCase(sha256(new TextEncoder().encode(rawToken)));
@@ -100,9 +103,17 @@ export const actions: Actions = {
         tokenHash,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
-      await sendVerificationEmail(email, rawToken);
-    } catch {
-      // Email verification failure should not block registration
+      const result = await sendVerificationEmail(email, rawToken);
+      if (!result.ok) {
+        // Log the reason but never the token. Registration continues.
+        console.warn(`verification email skipped (${result.reason}): ${result.message}`);
+      }
+    } catch (err) {
+      // Token persistence failure or unexpected throw — still
+      // non-blocking, but worth a server-side breadcrumb.
+      console.warn(
+        `verification email path threw: ${err instanceof Error ? err.message : "non-Error"}`,
+      );
     }
 
     const session = await lucia.createSession(userId, {});

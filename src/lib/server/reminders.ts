@@ -47,6 +47,10 @@ async function tryRecordReminderEvent(input: {
 }
 
 export async function checkOverdueMedications() {
+  // P3 will split email/push prefs; for now the existing
+  // `emailReminders` toggle gates this entire pipeline. emailVerified
+  // is selected so the email send (but not the push send) can be
+  // skipped for unverified users — see the per-row branch below.
   const scheduleRows = await db
     .select({
       scheduleId: medicationSchedules.id,
@@ -58,6 +62,7 @@ export async function checkOverdueMedications() {
       medicationName: medications.name,
       userId: medications.userId,
       userEmail: users.email,
+      userEmailVerified: users.emailVerified,
       userTimezone: users.timezone,
     })
     .from(medicationSchedules)
@@ -120,7 +125,16 @@ export async function checkOverdueMedications() {
 
     const sinceLabel = row.lastTakenAt ? formatTimeSince(new Date(row.lastTakenAt)) : "never";
 
-    await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
+    if (row.userEmailVerified) {
+      const emailResult = await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
+      if (!emailResult.ok) {
+        console.warn(
+          `overdue email skipped for med=${row.medicationId} (${emailResult.reason}): ${emailResult.message}`,
+        );
+      }
+    } else {
+      console.warn(`overdue email skipped for med=${row.medicationId}: user email not verified`);
+    }
 
     try {
       await sendPushNotification(row.userId, {
@@ -132,7 +146,7 @@ export async function checkOverdueMedications() {
         tag: `overdue-${row.medicationId}`,
       });
     } catch {
-      // Push failure should not block email sending
+      // Push failure should not block the rest of the loop.
     }
   }
 }
@@ -146,6 +160,7 @@ export async function checkLowInventoryMedications() {
       inventoryCount: medications.inventoryCount,
       inventoryAlertThreshold: medications.inventoryAlertThreshold,
       userEmail: users.email,
+      userEmailVerified: users.emailVerified,
     })
     .from(medications)
     .innerJoin(users, eq(medications.userId, users.id))
@@ -170,11 +185,23 @@ export async function checkLowInventoryMedications() {
     });
     if (!recorded) continue;
 
-    await sendLowInventoryEmail(
+    if (!med.userEmailVerified) {
+      console.warn(
+        `low-inventory email skipped for med=${med.medicationId}: user email not verified`,
+      );
+      continue;
+    }
+
+    const emailResult = await sendLowInventoryEmail(
       med.userEmail,
       med.medicationName,
       med.inventoryCount!,
       med.inventoryAlertThreshold!,
     );
+    if (!emailResult.ok) {
+      console.warn(
+        `low-inventory email skipped for med=${med.medicationId} (${emailResult.reason}): ${emailResult.message}`,
+      );
+    }
   }
 }

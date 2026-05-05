@@ -100,6 +100,23 @@
         />
       </div>
 
+      {#if data.preferences.emailReminders && !data.emailVerified}
+        <div
+          class="border-warning/30 bg-warning/5 text-warning rounded-lg border px-4 py-3 text-sm"
+          role="status"
+        >
+          Verify your email to enable email reminders.
+          <a href="/auth/verify" class="underline hover:no-underline">Resend verification email</a>.
+        </div>
+      {:else if data.preferences.emailReminders && !data.emailConfigured}
+        <div
+          class="border-glass-border bg-surface-raised text-text-secondary rounded-lg border px-4 py-3 text-sm"
+          role="status"
+        >
+          Email is not configured on this deployment, so email reminders won't be sent.
+        </div>
+      {/if}
+
       <div class="border-glass-border border-t"></div>
 
       <div class="flex items-center justify-between">

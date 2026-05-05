@@ -176,6 +176,19 @@ export async function checkLowInventoryMedications() {
     );
 
   for (const med of lowMeds) {
+    // Check verified email BEFORE recording the dedupe row. The
+    // low-inventory dedupe key is `(user, medication, inventoryCount)`,
+    // so a row recorded for an unverified user would suppress the
+    // alert forever once the user verifies — same count, same key,
+    // ON CONFLICT DO NOTHING. Skipping unverified users entirely
+    // means the next cron tick after they verify records and sends.
+    if (!med.userEmailVerified) {
+      console.warn(
+        `low-inventory email skipped for med=${med.medicationId}: user email not verified`,
+      );
+      continue;
+    }
+
     const dedupeKey = buildLowInventoryDedupeKey(med.userId, med.medicationId, med.inventoryCount!);
     const recorded = await tryRecordReminderEvent({
       userId: med.userId,
@@ -184,13 +197,6 @@ export async function checkLowInventoryMedications() {
       dedupeKey,
     });
     if (!recorded) continue;
-
-    if (!med.userEmailVerified) {
-      console.warn(
-        `low-inventory email skipped for med=${med.medicationId}: user email not verified`,
-      );
-      continue;
-    }
 
     const emailResult = await sendLowInventoryEmail(
       med.userEmail,

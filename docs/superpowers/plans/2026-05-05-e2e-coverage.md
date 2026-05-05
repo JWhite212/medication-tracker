@@ -29,7 +29,7 @@
 - Create: `tests/e2e/accessibility.test.ts`
 - Modify: `tests/e2e/smoke.test.ts` (keep, but trim duplication)
 - Modify: `playwright.config.ts` (projects: setup -> tests, html reporter, trace on first retry, retries=1 in CI)
-- Modify: `.github/workflows/ci.yml` (new `e2e` job that installs Chromium and runs `npm run test:e2e`, gated by `E2E_DATABASE_URL` secret)
+- Modify: `.github/workflows/ci.yml` (new `e2e` job: installs Chromium and runs `npm run test:e2e`. Two gates: the repo variable `RUN_E2E` must be `'true'` to enable the job, and the `E2E_DATABASE_URL` secret must be present so the seed step can connect)
 - Modify: `.gitignore` (add `tests/e2e/.auth/`)
 - Modify: `package.json` (add `seed:e2e` and `playwright:install` scripts; add `@axe-core/playwright` dev dep)
 - Modify: `README.md` (Testing section: how to run E2E locally and in CI, env var requirements)

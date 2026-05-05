@@ -9,25 +9,34 @@
 // and preferences.
 //
 // Reads E2E_DATABASE_URL when set, otherwise falls back to DATABASE_URL.
-// The environment variable must be set before importing the db module.
+// The DB module is instantiated lazily inside getDb() so importing
+// this file from Playwright's global-setup/global-teardown does not
+// construct the Neon driver before the env-var guard runs.
 
 import { eq, like, or } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
-
-if (process.env.E2E_DATABASE_URL && !process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = process.env.E2E_DATABASE_URL;
-}
-
-const { db } = await import("../src/lib/server/db");
-const { users, medications, doseLogs, userPreferences, medicationSchedules } =
-  await import("../src/lib/server/db/schema");
-const { hashPassword } = await import("../src/lib/server/auth/password");
+import {
+  users,
+  medications,
+  doseLogs,
+  userPreferences,
+  medicationSchedules,
+} from "../src/lib/server/db/schema";
+import { hashPassword } from "../src/lib/server/auth/password";
 
 export const E2E_EMAIL = "e2e-seeded@e2e.medtracker.test";
 export const E2E_PASSWORD = "e2e-medtracker-2026";
 export const E2E_NAME = "E2E Seeded";
 export const E2E_TZ = "Europe/London";
 export const E2E_EMAIL_PATTERN = "%@e2e.medtracker.test";
+
+async function getDb() {
+  if (process.env.E2E_DATABASE_URL && !process.env.DATABASE_URL) {
+    process.env.DATABASE_URL = process.env.E2E_DATABASE_URL;
+  }
+  const mod = await import("../src/lib/server/db");
+  return mod.db;
+}
 
 type SeedSchedule =
   | { kind: "interval"; intervalHours: string }
@@ -95,19 +104,21 @@ const SEED_MEDS: SeedMed[] = [
 ];
 
 export async function deleteE2EUsers(): Promise<number> {
-  const matches = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(or(eq(users.email, E2E_EMAIL), like(users.email, E2E_EMAIL_PATTERN)));
-  for (const u of matches) {
-    await db.delete(users).where(eq(users.id, u.id));
-  }
-  return matches.length;
+  const db = await getDb();
+  // Single cascading DELETE replaces the previous select+loop. The ON
+  // DELETE CASCADE on the user-id foreign keys clears medications,
+  // doses, sessions, etc. in the same statement.
+  const deleted = await db
+    .delete(users)
+    .where(or(eq(users.email, E2E_EMAIL), like(users.email, E2E_EMAIL_PATTERN)))
+    .returning({ id: users.id });
+  return deleted.length;
 }
 
 export async function seedE2EUser(): Promise<{ userId: string; email: string }> {
   await deleteE2EUsers();
 
+  const db = await getDb();
   const userId = createId();
   const passwordHash = await hashPassword(E2E_PASSWORD);
 

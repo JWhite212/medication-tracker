@@ -6,11 +6,16 @@ import { login, SEEDED_EMAIL, SEEDED_PASSWORD } from "./helpers/auth";
 // surfaced in the report but don't gate the build — the site is still
 // being polished and chasing every Tailwind contrast warning would
 // produce noise without value.
-const BLOCKING_SEVERITY = ["serious", "critical"] as const;
+type BlockingSeverity = "serious" | "critical";
+const BLOCKING_SEVERITY: readonly BlockingSeverity[] = ["serious", "critical"];
+
+function isBlocking(impact: string | null | undefined): impact is BlockingSeverity {
+  return impact != null && (BLOCKING_SEVERITY as readonly string[]).includes(impact);
+}
 
 async function scan(page: import("@playwright/test").Page, label: string): Promise<void> {
   const results = await new AxeBuilder({ page }).analyze();
-  const blocking = results.violations.filter((v) => BLOCKING_SEVERITY.includes(v.impact as never));
+  const blocking = results.violations.filter((v) => isBlocking(v.impact));
   if (blocking.length > 0) {
     const lines = blocking.map(
       (v) => `  - [${v.impact}] ${v.id}: ${v.help} (${v.nodes.length} nodes)`,

@@ -122,7 +122,7 @@ Honest about what's complete vs. what's planned:
 | Re-auth gate (sensitive actions) | Complete for change-password, enable/disable 2FA, delete account; **planned** for full export and revoke-all-sessions |
 | Medication scheduling            | Interval, fixed-time, and PRN; multi-row schedules with optional day-of-week filters                                  |
 | Demo account + seed              | Complete; `npm run seed:demo` (4c)                                                                                    |
-| End-to-end tests                 | **Planned**; unit tests cover security primitives                                                                     |
+| End-to-end tests                 | Complete; Playwright journeys for auth, medication lifecycle, dose logging, analytics, history filters, exports, axe  |
 
 ## Technical highlights
 
@@ -433,9 +433,10 @@ Six honest takeaways:
 
 ## Known limitations
 
-- **End-to-end tests** are stubbed; the unit suite covers crypto,
-  TOTP, CSV escape, hashToken, analytics, and inventory primitives
-  but not full user journeys.
+- **End-to-end tests on CI** are gated on a `RUN_E2E` repo variable
+  plus an `E2E_DATABASE_URL` secret pointing at a Neon test branch.
+  Until both are set the suite still runs locally (`npm run test:e2e`)
+  but the CI job is a no-op.
 - **Drug interactions** require a deliberate `INTERACTIONS_ENABLED=true`
   to turn on, and even then the warning panel is labelled
   "Experimental" — false positives are expected.

@@ -2,15 +2,26 @@
 // truth (e.g. "did inventory actually decrement"). All reads are
 // scoped by userId.
 
-if (process.env.E2E_DATABASE_URL && !process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = process.env.E2E_DATABASE_URL;
-}
-
 import { eq, and } from "drizzle-orm";
-import { db } from "../../../src/lib/server/db";
 import { users, medications, doseLogs } from "../../../src/lib/server/db/schema";
 
+// ESM hoists `import` statements above any top-level statements, so
+// the env-var assignment must live inside a runtime initializer to
+// take effect before the Neon driver is instantiated. Cache the
+// module so we only pay the dynamic-import cost once.
+let dbPromise: Promise<typeof import("../../../src/lib/server/db").db> | null = null;
+async function getDb() {
+  if (!dbPromise) {
+    if (process.env.E2E_DATABASE_URL && !process.env.DATABASE_URL) {
+      process.env.DATABASE_URL = process.env.E2E_DATABASE_URL;
+    }
+    dbPromise = import("../../../src/lib/server/db").then((m) => m.db);
+  }
+  return dbPromise;
+}
+
 export async function getUserIdByEmail(email: string): Promise<string | null> {
+  const db = await getDb();
   const [row] = await db
     .select({ id: users.id })
     .from(users)
@@ -23,6 +34,7 @@ export async function getInventoryCount(
   userId: string,
   medicationName: string,
 ): Promise<number | null> {
+  const db = await getDb();
   const [row] = await db
     .select({ inventoryCount: medications.inventoryCount })
     .from(medications)
@@ -36,6 +48,7 @@ export async function countDoseLogs(
   medicationName: string,
   status?: "taken" | "skipped" | "missed",
 ): Promise<number> {
+  const db = await getDb();
   const [med] = await db
     .select({ id: medications.id })
     .from(medications)

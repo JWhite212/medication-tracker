@@ -82,8 +82,12 @@ test.describe("medication lifecycle", () => {
     await expect(page).toHaveURL(/\/medications$/);
 
     // The Archived disclosure is a <details> on the medications list.
-    const archived = page.locator("details", { hasText: /^Archived/ });
-    await archived.first().click();
+    // Click the <summary> directly (more reliable than clicking the
+    // <details> wrapper, which only toggles when the click resolves
+    // to the summary).
+    const archived = page.locator("details", { hasText: /^Archived/ }).first();
+    await archived.locator("summary").first().click();
+    await expect(archived).toHaveAttribute("open", "");
     await expect(archived.getByText(name)).toBeVisible();
   });
 });

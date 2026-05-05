@@ -1,9 +1,5 @@
 import { defineConfig } from "@playwright/test";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const SEEDED_STORAGE_STATE = resolve(__dirname, "tests/e2e/.auth/seeded.json");
+import { SEEDED_STORAGE_STATE } from "./tests/e2e/global-setup";
 
 export default defineConfig({
   testDir: "tests/e2e",

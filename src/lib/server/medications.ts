@@ -1,9 +1,10 @@
 import { createId } from "@paralleldrive/cuid2";
 import { eq, and, sql, max, count, inArray } from "drizzle-orm";
-import { db } from "$lib/server/db";
-import { medications, doseLogs } from "$lib/server/db/schema";
+import { db, dbTx } from "$lib/server/db";
+import { auditLogs, medications, doseLogs, medicationSchedules } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
-import type { MedicationInput } from "$lib/utils/validation";
+import { buildScheduleRows } from "./schedules";
+import type { MedicationInput, ScheduleInput } from "$lib/utils/validation";
 import type { MedicationWithStats } from "$lib/types";
 import { calculateDaysUntilRefill } from "$lib/utils/time";
 
@@ -98,6 +99,59 @@ export async function createMedication(userId: string, input: MedicationInput) {
     .returning();
   await logAudit(userId, "medication", id, "create");
   return med;
+}
+
+/**
+ * Create a medication and its initial schedule rows in a single
+ * transaction. Replaces the previous "create then replace
+ * schedules" pattern in /medications/new — that flow could leave a
+ * medication row with no schedules if the schedule insert failed,
+ * which the analytics and dashboard then choke on.
+ *
+ * The audit row is written through the same transaction, so a
+ * partial failure rolls back medication + schedules + audit
+ * atomically.
+ */
+export async function createMedicationWithSchedules(
+  userId: string,
+  input: MedicationInput,
+  schedules: ScheduleInput[],
+) {
+  const id = createId();
+  const scheduleRows = buildScheduleRows(userId, id, schedules);
+
+  return dbTx.transaction(async (tx) => {
+    const [med] = await tx
+      .insert(medications)
+      .values({
+        id,
+        userId,
+        name: input.name,
+        dosageAmount: input.dosageAmount,
+        dosageUnit: input.dosageUnit,
+        form: input.form,
+        category: input.category,
+        colour: input.colour,
+        colourSecondary: input.colourSecondary || null,
+        pattern: input.pattern ?? "solid",
+        scheduleType: input.scheduleType ?? "scheduled",
+        notes: input.notes ?? null,
+        scheduleIntervalHours: input.scheduleIntervalHours ?? null,
+        inventoryCount: input.inventoryCount ?? null,
+        inventoryAlertThreshold: input.inventoryAlertThreshold ?? null,
+      })
+      .returning();
+
+    if (scheduleRows.length > 0) {
+      await tx.insert(medicationSchedules).values(scheduleRows);
+    }
+
+    await tx
+      .insert(auditLogs)
+      .values({ id: createId(), userId, entityType: "medication", entityId: id, action: "create" });
+
+    return med;
+  });
 }
 
 export async function updateMedication(userId: string, id: string, input: MedicationInput) {

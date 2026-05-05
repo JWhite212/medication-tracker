@@ -18,14 +18,17 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "playwright:install": "playwright install --with-deps chromium",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "seed:demo": "tsx scripts/seed-demo.ts",
+    "seed:e2e": "tsx scripts/seed-e2e.ts",
     "encrypt:totp": "tsx scripts/encrypt-totp-secrets.ts"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.59.1",
     "@sveltejs/adapter-vercel": "^6.3.3",

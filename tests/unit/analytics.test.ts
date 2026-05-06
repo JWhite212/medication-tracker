@@ -8,8 +8,10 @@ import {
   calculateOveruse,
   calculateTrend,
   buildInsights,
+  expectedPerDayForSchedules,
 } from "$lib/server/analytics";
 import type { InsightInputs } from "$lib/server/analytics";
+import type { MedicationSchedule } from "$lib/server/schedules";
 
 const baseInputs: InsightInputs = {
   totalDoses: 0,
@@ -278,5 +280,68 @@ describe("buildInsights", () => {
     });
     expect(insights.length).toBeLessThanOrEqual(5);
     expect(insights[0].severity).toBe("warning");
+  });
+});
+
+function schedule(overrides: Partial<MedicationSchedule>): MedicationSchedule {
+  return {
+    id: overrides.id ?? "s1",
+    medicationId: overrides.medicationId ?? "m1",
+    userId: overrides.userId ?? "u1",
+    scheduleKind: overrides.scheduleKind ?? "interval",
+    timeOfDay: overrides.timeOfDay ?? null,
+    intervalHours: overrides.intervalHours ?? null,
+    daysOfWeek: overrides.daysOfWeek ?? null,
+    sortOrder: overrides.sortOrder ?? 0,
+    createdAt: overrides.createdAt ?? new Date(0),
+  } as MedicationSchedule;
+}
+
+describe("expectedPerDayForSchedules", () => {
+  it("returns 0 for an empty schedule list", () => {
+    expect(expectedPerDayForSchedules([])).toBe(0);
+  });
+
+  it("treats a PRN row as 0 doses/day", () => {
+    expect(expectedPerDayForSchedules([schedule({ scheduleKind: "prn" })])).toBe(0);
+  });
+
+  it("computes 24 / intervalHours for an interval row", () => {
+    expect(
+      expectedPerDayForSchedules([schedule({ scheduleKind: "interval", intervalHours: "8" })]),
+    ).toBeCloseTo(3, 5);
+  });
+
+  it("ignores an interval row with a non-positive interval", () => {
+    expect(
+      expectedPerDayForSchedules([schedule({ scheduleKind: "interval", intervalHours: "0" })]),
+    ).toBe(0);
+  });
+
+  it("counts an unrestricted fixed-time row as 1 dose/day", () => {
+    expect(
+      expectedPerDayForSchedules([schedule({ scheduleKind: "fixed_time", timeOfDay: "09:00" })]),
+    ).toBe(1);
+  });
+
+  it("scales a fixed-time row by daysOfWeek length / 7", () => {
+    expect(
+      expectedPerDayForSchedules([
+        schedule({
+          scheduleKind: "fixed_time",
+          timeOfDay: "09:00",
+          daysOfWeek: [1, 3, 5],
+        }),
+      ]),
+    ).toBeCloseTo(3 / 7, 5);
+  });
+
+  it("sums contributions from heterogeneous schedule rows", () => {
+    const total = expectedPerDayForSchedules([
+      schedule({ id: "a", scheduleKind: "interval", intervalHours: "12" }),
+      schedule({ id: "b", scheduleKind: "fixed_time", timeOfDay: "20:00" }),
+      schedule({ id: "c", scheduleKind: "prn" }),
+    ]);
+    expect(total).toBeCloseTo(2 + 1, 5);
   });
 });

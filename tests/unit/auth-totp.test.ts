@@ -58,6 +58,8 @@ const {
   verifyTOTPCode,
   verifyAndConsumeTOTPCode,
   currentTOTPStep,
+  getTOTPUri,
+  generateQRDataUrl,
 } = await import("../../src/lib/server/auth/totp");
 
 function currentCode(secret: string): string {
@@ -172,5 +174,32 @@ describe("verifyAndConsumeTOTPCode", () => {
     expect(await verifyAndConsumeTOTPCode("user-1", invalid)).toBe(false);
     expect(dbState.lastStampedCounter).toBeNull();
     expect(dbState.user.totpLastCounter).toBeNull();
+  });
+});
+
+describe("getTOTPUri", () => {
+  it("emits an otpauth URI containing issuer, label, and the secret", () => {
+    const secret = generateTOTPSecret();
+    const uri = getTOTPUri(secret, "user@example.com");
+    expect(uri.startsWith("otpauth://totp/")).toBe(true);
+    // Issuer and label are URL-encoded inside the path/query.
+    expect(uri).toContain("MedTracker");
+    expect(uri).toContain("user%40example.com");
+    expect(uri).toContain(`secret=${secret}`);
+    expect(uri).toContain("period=30");
+    expect(uri).toContain("digits=6");
+  });
+});
+
+describe("generateQRDataUrl", () => {
+  it("produces a base64 PNG data URL for the given otpauth URI", async () => {
+    const secret = generateTOTPSecret();
+    const uri = getTOTPUri(secret, "user@example.com");
+    const dataUrl = await generateQRDataUrl(uri);
+    expect(dataUrl.startsWith("data:image/png;base64,")).toBe(true);
+    // Round-trip the base64 payload to confirm it decodes to a non-trivial blob.
+    const b64 = dataUrl.replace(/^data:image\/png;base64,/, "");
+    const buf = Buffer.from(b64, "base64");
+    expect(buf.length).toBeGreaterThan(50);
   });
 });

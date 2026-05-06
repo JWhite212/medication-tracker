@@ -3,11 +3,11 @@ import { z } from "zod";
 import { medicationSchema, schedulesSchema } from "$lib/utils/validation";
 import {
   getMedicationById,
-  updateMedication,
+  updateMedicationWithSchedules,
   archiveMedication,
   unarchiveMedication,
 } from "$lib/server/medications";
-import { getSchedulesForMedication, replaceSchedulesForMedication } from "$lib/server/schedules";
+import { getSchedulesForMedication } from "$lib/server/schedules";
 import {
   getInventoryHistory,
   refillMedication,
@@ -66,9 +66,13 @@ export const actions: Actions = {
       });
     }
 
-    const result = await updateMedication(locals.user!.id, params.id, parsed.data);
+    const result = await updateMedicationWithSchedules(
+      locals.user!.id,
+      params.id,
+      parsed.data,
+      schedulesParsed.data,
+    );
     if (!result) error(404, "Medication not found");
-    await replaceSchedulesForMedication(params.id, locals.user!.id, schedulesParsed.data);
     redirect(302, "/medications");
   },
   archive: async ({ locals, params }) => {

@@ -9,6 +9,24 @@
   let pushEnabled = $state(false);
   let pushLoading = $state(false);
 
+  // Local two-way bound state seeded from the server payload.
+  // Plain `checked={...}` is a one-way binding in Svelte 5 — clicking
+  // the checkbox flipped the DOM value but the next reactive tick
+  // re-synced the DOM back to the original prop, so toggles felt
+  // unresponsive. bind:checked makes the visible state the source of
+  // truth for what the form submits.
+  let overdueEmail = $state(data.preferences.overdueEmailReminders);
+  let overduePush = $state(data.preferences.overduePushReminders);
+  let lowInvEmail = $state(data.preferences.lowInventoryEmailAlerts);
+  let lowInvPush = $state(data.preferences.lowInventoryPushAlerts);
+
+  $effect(() => {
+    overdueEmail = data.preferences.overdueEmailReminders;
+    overduePush = data.preferences.overduePushReminders;
+    lowInvEmail = data.preferences.lowInventoryEmailAlerts;
+    lowInvPush = data.preferences.lowInventoryPushAlerts;
+  });
+
   $effect(() => {
     pushSupported =
       !!data.vapidPublicKey && "serviceWorker" in navigator && "PushManager" in window;
@@ -87,13 +105,12 @@
 
   {#if data.emailConfigured && (data.preferences.overdueEmailReminders || data.preferences.lowInventoryEmailAlerts) && !data.emailVerified}
     <!-- Verify-email hint kept in its own card so the resend form does
-         not nest inside the preferences form. -->
+         not nest inside the preferences form. The interactive form sits
+         OUTSIDE the role="status" announcement so screen readers don't
+         re-announce the button when its surrounding text re-renders. -->
     <GlassCard>
-      <div
-        class="border-warning/30 bg-warning/5 text-warning rounded-lg border px-4 py-3 text-sm"
-        role="status"
-      >
-        <p>Verify your email to enable email reminders.</p>
+      <div class="border-warning/30 bg-warning/5 rounded-lg border px-4 py-3 text-sm">
+        <p class="text-warning" role="status">Verify your email to enable email reminders.</p>
         {#if form?.resendOk}
           <p class="text-success mt-2">
             {#if form?.alreadyVerified}
@@ -106,7 +123,10 @@
           <p class="text-danger mt-2">{form.resendError}</p>
         {/if}
         <form method="POST" action="?/resendVerification" use:enhance class="mt-2">
-          <button type="submit" class="text-warning underline transition-colors hover:no-underline">
+          <button
+            type="submit"
+            class="text-warning cursor-pointer underline transition-colors hover:no-underline"
+          >
             Resend verification email
           </button>
         </form>
@@ -140,7 +160,7 @@
             <input
               type="checkbox"
               name="overdueEmailReminders"
-              checked={data.preferences.overdueEmailReminders}
+              bind:checked={overdueEmail}
               class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
             />
           </label>
@@ -154,7 +174,7 @@
             <input
               type="checkbox"
               name="overduePushReminders"
-              checked={data.preferences.overduePushReminders}
+              bind:checked={overduePush}
               class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
             />
           </label>
@@ -178,7 +198,7 @@
             <input
               type="checkbox"
               name="lowInventoryEmailAlerts"
-              checked={data.preferences.lowInventoryEmailAlerts}
+              bind:checked={lowInvEmail}
               class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
             />
           </label>
@@ -192,7 +212,7 @@
             <input
               type="checkbox"
               name="lowInventoryPushAlerts"
-              checked={data.preferences.lowInventoryPushAlerts}
+              bind:checked={lowInvPush}
               class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
             />
           </label>

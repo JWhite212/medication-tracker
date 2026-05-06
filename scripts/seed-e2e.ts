@@ -138,8 +138,6 @@ export async function seedE2EUser(): Promise<{ userId: string; email: string }> 
     dateFormat: "DD/MM/YYYY",
     uiDensity: "comfortable",
     reducedMotion: false,
-    emailReminders: false,
-    lowInventoryAlerts: false,
     overdueEmailReminders: false,
     overduePushReminders: false,
     lowInventoryEmailAlerts: false,

@@ -21,19 +21,20 @@ and Postgres.
 6. [Feature status](#feature-status)
 7. [Technical highlights](#technical-highlights)
 8. [Architecture](#architecture)
-9. [Engineering decisions](#engineering-decisions)
-10. [Security and privacy](#security-and-privacy)
-11. [Accessibility](#accessibility)
-12. [Performance](#performance)
-13. [Database design](#database-design)
-14. [Testing strategy](#testing-strategy)
-15. [Local development](#local-development)
-16. [Environment variables](#environment-variables)
-17. [What I learned](#what-i-learned)
-18. [Known limitations](#known-limitations)
-19. [Known follow-ups](#known-follow-ups)
-20. [Roadmap](#roadmap)
-21. [License](#license)
+9. [For technical reviewers](#for-technical-reviewers)
+10. [Engineering decisions](#engineering-decisions)
+11. [Security and privacy](#security-and-privacy)
+12. [Accessibility](#accessibility)
+13. [Performance](#performance)
+14. [Database design](#database-design)
+15. [Testing strategy](#testing-strategy)
+16. [Local development](#local-development)
+17. [Environment variables](#environment-variables)
+18. [What I learned](#what-i-learned)
+19. [Known limitations](#known-limitations)
+20. [Known follow-ups](#known-follow-ups)
+21. [Roadmap](#roadmap)
+22. [License](#license)
 
 ## Overview
 
@@ -107,22 +108,26 @@ runbook in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 Honest about what's complete vs. what's planned:
 
-| Feature                          | Status                                                                                                                |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Email/password auth              | Complete                                                                                                              |
-| OAuth (Google, GitHub)           | Complete; account-takeover guard in place                                                                             |
-| 2FA (TOTP)                       | Complete; secrets encrypted at rest with AES-256-GCM                                                                  |
-| Dose logging + edit + skip       | Complete; ownership-checked, status-aware                                                                             |
-| Adherence analytics              | Complete; cap-at-100 + overuse split                                                                                  |
-| Email reminders                  | Complete; idempotent via `reminder_events`                                                                            |
-| Web Push reminders               | Complete                                                                                                              |
-| PDF / CSV export                 | Complete; formula-injection escape, en-GB time format                                                                 |
-| Drug interaction notice          | Experimental, behind `INTERACTIONS_ENABLED` flag                                                                      |
-| Medical disclaimer               | Surfaced on landing, register, medication form, analytics, exports                                                    |
-| Re-auth gate (sensitive actions) | Complete for change-password, enable/disable 2FA, delete account; **planned** for full export and revoke-all-sessions |
-| Medication scheduling            | Interval, fixed-time, and PRN; multi-row schedules with optional day-of-week filters                                  |
-| Demo account + seed              | Complete; `npm run seed:demo` (4c)                                                                                    |
-| End-to-end tests                 | Complete; Playwright journeys for auth, medication lifecycle, dose logging, analytics, history filters, exports, axe  |
+| Feature                          | Status                                                                                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Email/password auth              | Complete                                                                                                                              |
+| OAuth (Google, GitHub)           | Complete; account-takeover guard in place                                                                                             |
+| 2FA (TOTP)                       | Complete; secrets encrypted at rest with AES-256-GCM                                                                                  |
+| Dose logging + edit + skip       | Complete; ownership-checked, status-aware                                                                                             |
+| Adherence analytics              | Complete; cap-at-100 + overuse split                                                                                                  |
+| Email reminders                  | Complete; typed `EmailResult`, per-channel status, retry-after-cooldown via `reminder_events`                                         |
+| Web Push reminders               | Complete; per-channel opt-in, claim/complete dispatch                                                                                 |
+| Notification preferences         | Complete; split into 4 channel-specific toggles (overdue email/push, low-inventory email/push)                                        |
+| PDF / CSV export                 | Complete; formula-injection escape, en-GB time format, audit log CSV                                                                  |
+| Inventory event history          | Complete; refill workflow, per-event timeline on `/medications/[id]`                                                                  |
+| Drug interaction notice          | Experimental, behind `INTERACTIONS_ENABLED` flag                                                                                      |
+| Medical disclaimer               | Surfaced on landing, register, medication form, analytics, exports                                                                    |
+| Re-auth gate (sensitive actions) | Complete for change-password, enable/disable 2FA, delete account, wipe dose history, wipe archived medications, revoke other sessions |
+| Medication scheduling            | Interval, fixed-time, and PRN; multi-row schedules with optional day-of-week filters                                                  |
+| Atomic medication creation       | Complete; `createMedicationWithSchedules` runs medication + schedules + audit in one transaction                                      |
+| Privacy & data controls          | Complete; `/settings/privacy` with stored/not-stored copy, scoped wipes, session revocation, audit-log CSV                            |
+| Demo account + seed              | Complete; `npm run seed:demo` (4c)                                                                                                    |
+| End-to-end tests                 | Complete; Playwright journeys for auth, medication lifecycle, dose logging, analytics, history filters, exports, axe                  |
 
 ## Technical highlights
 
@@ -178,6 +183,49 @@ Honest about what's complete vs. what's planned:
 ```
 
 The architectural decisions are recorded in [`docs/adr/`](docs/adr/).
+
+## For technical reviewers
+
+Short, opinionated tour of the eight files I'd start with as a reviewer
+who has 30 minutes:
+
+1. [`src/lib/server/db/schema.ts`](src/lib/server/db/schema.ts) - the
+   complete data model in one file. Foreign keys, indexes, and the
+   reminder/inventory event status fields all live here. Skim to
+   ground every later trace in concrete tables.
+2. [`src/lib/server/doses.ts`](src/lib/server/doses.ts) - dose
+   lifecycle (log, skip, edit, delete) with transactional inventory
+   adjustments. Demonstrates the `dbTx.transaction` + audit pattern
+   that the rest of the service layer follows.
+3. [`src/lib/server/reminders.ts`](src/lib/server/reminders.ts) - the
+   cron entrypoints. Shows the claim/complete dispatch flow, the
+   per-channel split, and how email-not-verified is gated separately
+   from push subscriptions.
+4. [`src/lib/server/reminders/domain.ts`](src/lib/server/reminders/domain.ts) -
+   pure overdue-slot computation and dedupe-key generation. Decoupled
+   from DB so it's exhaustively tested.
+5. [`src/lib/server/analytics.ts`](src/lib/server/analytics.ts) -
+   adherence and insight generation. Pure functions over already-
+   computed stats; new rules are one-line predicates.
+6. [`src/lib/server/email.ts`](src/lib/server/email.ts) - typed
+   `EmailResult` discriminated union with `mapResendError`. Senders
+   never throw on provider errors; runtime exceptions fold into
+   `provider_error`. Tokens, recipients, and HTML payloads never
+   appear in error messages.
+7. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) - the CI
+   gate. Type-check, lint, format, unit tests with coverage floors,
+   secret scan, build, and a gated E2E job that runs Playwright
+   against a Neon test branch.
+8. [`tests/e2e/`](tests/e2e/) - Playwright journeys covering auth,
+   medication lifecycle, dose logging, analytics, history filters,
+   exports, and an axe-core accessibility scan. Deterministic
+   `seed-e2e.ts` user; storageState reused via Playwright projects.
+
+The corresponding tests live alongside under `tests/unit/` (309+ unit
+tests) and `tests/e2e/` (8 spec files). The test suite has been the
+forcing function for most of the architectural choices above - several
+P5-P8 bugs were caught only because their unit tests pinned the
+contract first.
 
 ## Engineering decisions
 

@@ -92,6 +92,13 @@
       "when": 1778025867530,
       "tag": "0012_phase_8_inventory_events",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778052346261,
+      "tag": "0013_phase_4_drop_legacy_pref_cols",
+      "breakpoints": true
     }
   ]
 }

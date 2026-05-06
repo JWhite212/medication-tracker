@@ -27,6 +27,19 @@
   body {
     @apply bg-surface text-text-primary font-sans antialiased;
   }
+
+  /*
+   * Tailwind v4 sets cursor: default on <button> in preflight (a
+   * deliberate change from v3). That made every clickable button in
+   * the app — Save Changes, Resend verification email, etc. — feel
+   * unclickable: the pointer never changed on hover, so users
+   * assumed the button was disabled. Restore the v3 behaviour
+   * explicitly, and keep not-allowed on disabled buttons.
+   */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
 }
 
 [data-density="compact"] main {

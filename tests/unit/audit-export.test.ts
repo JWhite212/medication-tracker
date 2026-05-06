@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildAuditCsv } from "../../src/lib/server/audit-export";
+// Import from the pure module so the test runs without DATABASE_URL
+// — `audit-export.ts` re-exports the same symbol but pulls in the
+// Neon driver via its DB query.
+import { buildAuditCsv } from "../../src/lib/server/audit-csv";
 
 describe("buildAuditCsv", () => {
   it("emits the canonical header row even when there are no events", () => {

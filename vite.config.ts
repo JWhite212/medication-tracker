@@ -20,16 +20,17 @@ export default defineConfig({
         "src/lib/server/db/schema.ts",
         "src/lib/server/db/index.ts",
       ],
-      // Regression-only thresholds. Numbers were measured at the end
-      // of Phase 3 and intentionally sit a few points below current to
-      // tolerate legitimate refactor noise. CI fails if any metric
-      // drops below these — meaningful coverage growth bumps the floor
-      // when the next phase lands.
+      // Regression-only thresholds. Bumped after the P1-P9 work
+      // landed — actuals are now ~30/36/25/37 across the four
+      // metrics, so the floor sits at the brief's target of
+      // 30/25/25/30. CI fails if any metric drops below these;
+      // meaningful coverage growth bumps the floor again when more
+      // service-layer tests land.
       thresholds: {
-        statements: 13,
-        branches: 14,
-        functions: 9,
-        lines: 17,
+        statements: 30,
+        branches: 25,
+        functions: 25,
+        lines: 30,
       },
     },
   },

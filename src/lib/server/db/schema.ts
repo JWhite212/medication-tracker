@@ -182,15 +182,10 @@ export const userPreferences = pgTable("user_preferences", {
   timeFormat: text("time_format").notNull().default("12h"),
   uiDensity: text("ui_density").notNull().default("comfortable"),
   reducedMotion: boolean("reduced_motion").notNull().default(false),
-  // DEPRECATED — read from `overdueEmailReminders` instead. Will be
-  // removed in a follow-up after one prod cycle. Backfilled into
-  // `overdueEmailReminders` by 0011_phase_3_split_notification_prefs.
-  emailReminders: boolean("email_reminders").notNull().default(true),
-  // DEPRECATED — read from `lowInventoryEmailAlerts` instead.
-  lowInventoryAlerts: boolean("low_inventory_alerts").notNull().default(true),
-  // Channel-specific preferences split out from the legacy two
-  // toggles. Each reminder type (overdue, low-inventory) can be
-  // independently configured per channel (email, push).
+  // Channel-specific preferences. Replaced the legacy
+  // email_reminders / low_inventory_alerts columns in migration 0011
+  // and the legacy columns were dropped in 0013 once the dual-write
+  // window had elapsed.
   overdueEmailReminders: boolean("overdue_email_reminders").notNull().default(true),
   overduePushReminders: boolean("overdue_push_reminders").notNull().default(true),
   lowInventoryEmailAlerts: boolean("low_inventory_email_alerts").notNull().default(true),

@@ -3,7 +3,7 @@ import { eq, and, sql, max, count, inArray } from "drizzle-orm";
 import { db, dbTx } from "$lib/server/db";
 import { auditLogs, medications, doseLogs, medicationSchedules } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
-import { buildScheduleRows } from "./schedules";
+import { buildScheduleRows, MedicationOwnershipError } from "./schedules";
 import type { MedicationInput, ScheduleInput } from "$lib/utils/validation";
 import type { MedicationWithStats } from "$lib/types";
 import { calculateDaysUntilRefill } from "$lib/utils/time";
@@ -180,6 +180,76 @@ export async function updateMedication(userId: string, id: string, input: Medica
   const changes = computeChanges(before, updated);
   if (changes) await logAudit(userId, "medication", id, "update", changes);
   return updated;
+}
+
+/**
+ * Update a medication and replace its schedule rows in a single
+ * transaction. Mirrors createMedicationWithSchedules for the edit
+ * flow: previously updateMedication and replaceSchedulesForMedication
+ * ran in two separate transactions, so a failure between them could
+ * leave the medication row updated against stale schedules (or fresh
+ * schedules under an unchanged medication on partial rollback).
+ *
+ * Returns null when the medication is not owned by the user; throws
+ * MedicationOwnershipError if the FK guard inside the transaction
+ * fails (defence-in-depth — the caller should already filter).
+ */
+export async function updateMedicationWithSchedules(
+  userId: string,
+  id: string,
+  input: MedicationInput,
+  schedules: ScheduleInput[],
+) {
+  const before = await getMedicationById(userId, id);
+  if (!before) return null;
+  const scheduleRows = buildScheduleRows(userId, id, schedules);
+
+  return dbTx.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(medications)
+      .set({
+        name: input.name,
+        dosageAmount: input.dosageAmount,
+        dosageUnit: input.dosageUnit,
+        form: input.form,
+        category: input.category,
+        colour: input.colour,
+        colourSecondary: input.colourSecondary || null,
+        pattern: input.pattern ?? "solid",
+        scheduleType: input.scheduleType ?? "scheduled",
+        notes: input.notes ?? null,
+        scheduleIntervalHours: input.scheduleIntervalHours ?? null,
+        inventoryCount: input.inventoryCount ?? null,
+        inventoryAlertThreshold: input.inventoryAlertThreshold ?? null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(medications.id, id), eq(medications.userId, userId)))
+      .returning();
+
+    if (!updated) throw new MedicationOwnershipError();
+
+    await tx
+      .delete(medicationSchedules)
+      .where(and(eq(medicationSchedules.medicationId, id), eq(medicationSchedules.userId, userId)));
+
+    if (scheduleRows.length > 0) {
+      await tx.insert(medicationSchedules).values(scheduleRows);
+    }
+
+    const changes = computeChanges(before, updated);
+    if (changes) {
+      await tx.insert(auditLogs).values({
+        id: createId(),
+        userId,
+        entityType: "medication",
+        entityId: id,
+        action: "update",
+        changes,
+      });
+    }
+
+    return updated;
+  });
 }
 
 export async function swapSortOrder(userId: string, medId1: string, medId2: string) {

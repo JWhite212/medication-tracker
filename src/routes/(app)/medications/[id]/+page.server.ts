@@ -1,4 +1,5 @@
 import { fail, redirect, error } from "@sveltejs/kit";
+import { z } from "zod";
 import { medicationSchema, schedulesSchema } from "$lib/utils/validation";
 import {
   getMedicationById,
@@ -7,14 +8,26 @@ import {
   unarchiveMedication,
 } from "$lib/server/medications";
 import { getSchedulesForMedication, replaceSchedulesForMedication } from "$lib/server/schedules";
+import {
+  getInventoryHistory,
+  refillMedication,
+  InvalidRefillQuantityError,
+  MedicationNotFoundError,
+} from "$lib/server/inventory-events";
 import type { Actions, PageServerLoad } from "./$types";
+
+const refillSchema = z.object({
+  quantity: z.coerce.number().int().positive().max(100_000),
+  note: z.string().max(200).optional().or(z.literal("")),
+});
 
 export const load: PageServerLoad = async ({ locals, params }) => {
   const userId = locals.user!.id;
   const medication = await getMedicationById(userId, params.id);
   if (!medication) error(404, "Medication not found");
   const schedules = await getSchedulesForMedication(params.id, userId);
-  return { medication, schedules };
+  const inventoryHistory = await getInventoryHistory(userId, params.id);
+  return { medication, schedules, inventoryHistory };
 };
 
 function parseSchedules(raw: unknown) {
@@ -58,5 +71,29 @@ export const actions: Actions = {
   unarchive: async ({ locals, params }) => {
     await unarchiveMedication(locals.user!.id, params.id);
     redirect(302, "/medications");
+  },
+  refill: async ({ request, locals, params }) => {
+    const formData = Object.fromEntries(await request.formData());
+    const parsed = refillSchema.safeParse(formData);
+    if (!parsed.success) {
+      return fail(400, { refillError: "Quantity must be a positive whole number." });
+    }
+    try {
+      const { newCount } = await refillMedication(
+        locals.user!.id,
+        params.id,
+        parsed.data.quantity,
+        parsed.data.note || null,
+      );
+      return { refillOk: true, newCount };
+    } catch (err) {
+      if (err instanceof MedicationNotFoundError) {
+        return fail(404, { refillError: "Medication not found." });
+      }
+      if (err instanceof InvalidRefillQuantityError) {
+        return fail(400, { refillError: "Quantity must be a positive whole number." });
+      }
+      throw err;
+    }
   },
 };

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { medications, doseLogs } from "$lib/server/db/schema";
+import { medications, doseLogs, inventoryEvents } from "$lib/server/db/schema";
 
 // What db.select(...).limit(1) returns. Tests prime this before calling
 // the function under test to simulate "the dose row that exists in the DB".
@@ -16,6 +16,7 @@ let failOnUpdateOf: unknown | null = null;
 // Operations recorded by the mock so tests can assert what was called.
 const updates: Array<{ table: unknown }> = [];
 const deletes: Array<{ table: unknown }> = [];
+const inserts: Array<{ table: unknown; values: unknown }> = [];
 
 // logAudit calls observed via the audit module mock — used to verify
 // that audit-log writes do NOT happen on a rolled-back transaction.
@@ -65,11 +66,12 @@ function buildChainable() {
       deletes.push({ table });
       return { where: () => Promise.resolve() };
     },
-    insert: () => ({
+    insert: (table: unknown) => ({
       // Some call sites do .values(...) standalone; logDose chains
       // .values(...).returning() expecting an inserted-row array. The
       // values() return value supports both shapes.
-      values: () => {
+      values: (rows: unknown) => {
+        inserts.push({ table, values: rows });
         const valuesChain = {
           returning: () => Promise.resolve([{ id: "stub" }]),
           then: (onFulfilled: (v: unknown) => unknown) =>
@@ -97,6 +99,7 @@ beforeEach(() => {
   failOnUpdateOf = null;
   updates.length = 0;
   deletes.length = 0;
+  inserts.length = 0;
   auditCalls.length = 0;
 });
 
@@ -214,5 +217,83 @@ describe("transactional atomicity (Phase 2.1)", () => {
     );
 
     expect(auditCalls).toEqual([]);
+  });
+});
+
+describe("inventory event recording", () => {
+  it("logs a dose_taken event when a TAKEN dose is recorded against tracked inventory", async () => {
+    nextSelectRow = { id: "m1", inventoryCount: 30 };
+    await logDose("u1", "m1", 1);
+
+    const events = inserts.filter((i) => i.table === inventoryEvents);
+    expect(events).toHaveLength(1);
+    const row = events[0].values as Record<string, unknown>;
+    expect(row.eventType).toBe("dose_taken");
+    expect(row.previousCount).toBe(30);
+    expect(row.newCount).toBe(29);
+    expect(row.quantityChange).toBe(-1);
+  });
+
+  it("does NOT record an event when the medication has no inventory tracking", async () => {
+    nextSelectRow = { id: "m1", inventoryCount: null };
+    await logDose("u1", "m1", 1);
+    expect(inserts.filter((i) => i.table === inventoryEvents)).toHaveLength(0);
+  });
+
+  it("logs a dose_deleted event when a TAKEN dose is removed", async () => {
+    nextSelectRow = takenDose({ quantity: 1, medicationId: "m1" });
+    // The deleteDose path does a fresh select inside the transaction
+    // for the inventory snapshot. The mock's select returns the same
+    // nextSelectRow shape regardless; previousCount lookup pulls
+    // `inventoryCount` from this row, so include it.
+    nextSelectRow = {
+      id: "d1",
+      userId: "u1",
+      medicationId: "m1",
+      quantity: 1,
+      status: "taken",
+      takenAt: new Date(),
+      loggedAt: new Date(),
+      notes: null,
+      sideEffects: null,
+      inventoryCount: 28,
+    };
+
+    await deleteDose("u1", "d1");
+
+    const events = inserts.filter((i) => i.table === inventoryEvents);
+    expect(events).toHaveLength(1);
+    const row = events[0].values as Record<string, unknown>;
+    expect(row.eventType).toBe("dose_deleted");
+    expect(row.quantityChange).toBe(1);
+  });
+
+  it("does NOT record an event when a SKIPPED dose is removed", async () => {
+    nextSelectRow = skippedDose({ quantity: 1 });
+    await deleteDose("u1", "d1");
+    expect(inserts.filter((i) => i.table === inventoryEvents)).toHaveLength(0);
+  });
+
+  it("logs a dose_quantity_updated event when a TAKEN dose's quantity changes", async () => {
+    nextSelectRow = {
+      id: "d1",
+      userId: "u1",
+      medicationId: "m1",
+      quantity: 1,
+      status: "taken",
+      takenAt: new Date(),
+      loggedAt: new Date(),
+      notes: null,
+      sideEffects: null,
+      inventoryCount: 30,
+    };
+    nextUpdatedRow = takenDose({ quantity: 2 });
+    await updateDose("u1", "d1", { quantity: 2 });
+
+    const events = inserts.filter((i) => i.table === inventoryEvents);
+    expect(events).toHaveLength(1);
+    const row = events[0].values as Record<string, unknown>;
+    expect(row.eventType).toBe("dose_quantity_updated");
+    expect(row.quantityChange).toBe(-1);
   });
 });

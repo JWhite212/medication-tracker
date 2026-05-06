@@ -28,7 +28,9 @@ export type ReauthPurpose =
   | "disable_2fa"
   | "delete_account"
   | "export_data"
-  | "revoke_all_sessions";
+  | "revoke_all_sessions"
+  | "wipe_dose_history"
+  | "wipe_archived_medications";
 
 const REAUTH_TTL_MS = 5 * 60 * 1000;
 

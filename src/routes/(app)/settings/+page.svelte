@@ -105,6 +105,19 @@
         </div>
         <span class="text-text-muted">›</span>
       </a>
+
+      <a
+        href="/settings/privacy"
+        class="border-glass-border hover:bg-surface-raised flex items-center justify-between rounded-lg border px-4 py-3 transition-colors"
+      >
+        <div>
+          <p class="font-medium">Privacy & Data</p>
+          <p class="text-text-muted text-sm">
+            What's stored, exports, audit log, wipe slices, revoke sessions
+          </p>
+        </div>
+        <span class="text-text-muted">›</span>
+      </a>
     </div>
   </GlassCard>
 </div>

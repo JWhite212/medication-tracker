@@ -83,6 +83,15 @@ export class InvalidRefillQuantityError extends Error {
   }
 }
 
+export class InvalidAdjustmentError extends Error {
+  constructor(
+    message = "Adjustment must be a non-negative integer different from the current count",
+  ) {
+    super(message);
+    this.name = "InvalidAdjustmentError";
+  }
+}
+
 /**
  * Apply a refill: read the previous count, add `quantity`, append a
  * `refill` event. The whole sequence runs inside a single transaction
@@ -129,5 +138,61 @@ export async function refillMedication(
     });
 
     return { previousCount, newCount };
+  });
+}
+
+/**
+ * Set a medication's inventory count to an exact target (non-negative
+ * integer). Used by the manual-adjustment UI for cases like spilled
+ * pills, lost stock, or reconciling a miscount. The signed delta
+ * (newCount - previousCount) is recorded so the history reflects
+ * whether the adjustment increased or decreased stock.
+ *
+ * Throws InvalidAdjustmentError when newCount is not a non-negative
+ * integer or when it equals the existing count (no-op). Throws
+ * MedicationNotFoundError when the medication is not owned by the
+ * user.
+ */
+export async function adjustInventory(
+  userId: string,
+  medicationId: string,
+  newCount: number,
+  note?: string | null,
+): Promise<{ previousCount: number | null; newCount: number; quantityChange: number }> {
+  if (!Number.isInteger(newCount) || newCount < 0) {
+    throw new InvalidAdjustmentError();
+  }
+
+  return dbTx.transaction(async (tx) => {
+    const [med] = await tx
+      .select({ inventoryCount: medications.inventoryCount })
+      .from(medications)
+      .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
+      .limit(1);
+
+    if (!med) throw new MedicationNotFoundError();
+
+    const previousCount = med.inventoryCount;
+    const quantityChange = newCount - (previousCount ?? 0);
+    if (quantityChange === 0) {
+      throw new InvalidAdjustmentError("New count is the same as the current count");
+    }
+
+    await tx
+      .update(medications)
+      .set({ inventoryCount: newCount, updatedAt: new Date() })
+      .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)));
+
+    await recordInventoryEvent(tx, {
+      userId,
+      medicationId,
+      eventType: "manual_adjustment",
+      quantityChange,
+      previousCount,
+      newCount,
+      note: note ?? null,
+    });
+
+    return { previousCount, newCount, quantityChange };
   });
 }

@@ -11,13 +11,20 @@ import { getSchedulesForMedication, replaceSchedulesForMedication } from "$lib/s
 import {
   getInventoryHistory,
   refillMedication,
+  adjustInventory,
   InvalidRefillQuantityError,
+  InvalidAdjustmentError,
   MedicationNotFoundError,
 } from "$lib/server/inventory-events";
 import type { Actions, PageServerLoad } from "./$types";
 
 const refillSchema = z.object({
   quantity: z.coerce.number().int().positive().max(100_000),
+  note: z.string().max(200).optional().or(z.literal("")),
+});
+
+const adjustSchema = z.object({
+  newCount: z.coerce.number().int().min(0).max(100_000),
   note: z.string().max(200).optional().or(z.literal("")),
 });
 
@@ -92,6 +99,30 @@ export const actions: Actions = {
       }
       if (err instanceof InvalidRefillQuantityError) {
         return fail(400, { refillError: "Quantity must be a positive whole number." });
+      }
+      throw err;
+    }
+  },
+  adjust: async ({ request, locals, params }) => {
+    const formData = Object.fromEntries(await request.formData());
+    const parsed = adjustSchema.safeParse(formData);
+    if (!parsed.success) {
+      return fail(400, { adjustError: "New count must be a whole number, 0 or greater." });
+    }
+    try {
+      const { newCount, quantityChange } = await adjustInventory(
+        locals.user!.id,
+        params.id,
+        parsed.data.newCount,
+        parsed.data.note || null,
+      );
+      return { adjustOk: true, newCount, quantityChange };
+    } catch (err) {
+      if (err instanceof MedicationNotFoundError) {
+        return fail(404, { adjustError: "Medication not found." });
+      }
+      if (err instanceof InvalidAdjustmentError) {
+        return fail(400, { adjustError: err.message });
       }
       throw err;
     }

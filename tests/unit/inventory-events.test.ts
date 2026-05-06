@@ -52,7 +52,9 @@ vi.mock("$lib/server/db", () => ({
 const {
   recordInventoryEvent,
   refillMedication,
+  adjustInventory,
   InvalidRefillQuantityError,
+  InvalidAdjustmentError,
   MedicationNotFoundError,
 } = await import("../../src/lib/server/inventory-events");
 
@@ -143,5 +145,58 @@ describe("refillMedication", () => {
     const row = eventInsert!.values as Record<string, unknown>;
     expect(row.previousCount).toBeNull();
     expect(row.newCount).toBe(30);
+  });
+});
+
+describe("adjustInventory", () => {
+  it("rejects negative or non-integer new counts", async () => {
+    nextSelectRow = { inventoryCount: 5 };
+    await expect(adjustInventory("u1", "med-A", -1)).rejects.toBeInstanceOf(InvalidAdjustmentError);
+    await expect(adjustInventory("u1", "med-A", 4.2)).rejects.toBeInstanceOf(
+      InvalidAdjustmentError,
+    );
+  });
+
+  it("throws MedicationNotFoundError when the medication is not owned by the user", async () => {
+    nextSelectRow = undefined;
+    await expect(adjustInventory("u1", "missing", 10)).rejects.toBeInstanceOf(
+      MedicationNotFoundError,
+    );
+  });
+
+  it("rejects an adjustment that equals the current count (no-op)", async () => {
+    nextSelectRow = { inventoryCount: 12 };
+    await expect(adjustInventory("u1", "med-A", 12)).rejects.toBeInstanceOf(InvalidAdjustmentError);
+  });
+
+  it("records a manual_adjustment event with the signed delta when count decreases", async () => {
+    nextSelectRow = { inventoryCount: 30 };
+    const result = await adjustInventory("u1", "med-A", 26, "spilled 4 pills");
+    expect(result).toEqual({ previousCount: 30, newCount: 26, quantityChange: -4 });
+
+    const eventInsert = inserts.find((i) => i.table === "inventory_events");
+    expect(eventInsert).toBeDefined();
+    const row = eventInsert!.values as Record<string, unknown>;
+    expect(row.eventType).toBe("manual_adjustment");
+    expect(row.quantityChange).toBe(-4);
+    expect(row.previousCount).toBe(30);
+    expect(row.newCount).toBe(26);
+    expect(row.note).toBe("spilled 4 pills");
+  });
+
+  it("records a positive delta when count increases (e.g. found extra stock)", async () => {
+    nextSelectRow = { inventoryCount: 5 };
+    const result = await adjustInventory("u1", "med-A", 12);
+    expect(result.quantityChange).toBe(7);
+    const eventInsert = inserts.find((i) => i.table === "inventory_events");
+    const row = eventInsert!.values as Record<string, unknown>;
+    expect(row.quantityChange).toBe(7);
+    expect(row.note).toBeNull();
+  });
+
+  it("treats a null previousCount as 0 when computing the delta", async () => {
+    nextSelectRow = { inventoryCount: null };
+    const result = await adjustInventory("u1", "med-A", 30);
+    expect(result).toEqual({ previousCount: null, newCount: 30, quantityChange: 30 });
   });
 });

@@ -63,6 +63,18 @@
       </p>
     {/if}
 
+    {#if form?.adjustOk}
+      <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
+        Adjustment recorded. New count: {form.newCount} ({form.quantityChange > 0
+          ? "+"
+          : ""}{form.quantityChange}).
+      </p>
+    {:else if form?.adjustError}
+      <p class="bg-danger/10 text-danger mb-4 rounded-lg px-4 py-2 text-sm">
+        {form.adjustError}
+      </p>
+    {/if}
+
     <form
       method="POST"
       action="?/refill"
@@ -100,6 +112,55 @@
         Mark as refilled
       </button>
     </form>
+
+    <details class="border-glass-border mt-4 border-t pt-4">
+      <summary
+        class="text-text-secondary hover:text-text-primary cursor-pointer text-sm font-medium"
+      >
+        Manual adjustment
+      </summary>
+      <p class="text-text-muted mt-2 mb-3 text-xs">
+        Set the inventory to an exact count — for example after a spillage, lost stock, or
+        reconciling a miscount. Logs a <strong>manual_adjustment</strong> event with the signed delta.
+      </p>
+      <form
+        method="POST"
+        action="?/adjust"
+        use:enhance
+        class="grid gap-3 sm:grid-cols-[auto_1fr_auto]"
+      >
+        <div>
+          <label for="adjustNewCount" class="text-text-muted mb-1 block text-xs">New count</label>
+          <input
+            id="adjustNewCount"
+            name="newCount"
+            type="number"
+            min="0"
+            step="1"
+            required
+            placeholder={data.medication.inventoryCount?.toString() ?? "0"}
+            class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-32 rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label for="adjustNote" class="text-text-muted mb-1 block text-xs">Note (optional)</label>
+          <input
+            id="adjustNote"
+            name="note"
+            type="text"
+            maxlength="200"
+            placeholder="e.g. spilled 4 pills"
+            class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+          />
+        </div>
+        <button
+          type="submit"
+          class="border-warning text-warning hover:bg-warning/10 self-end rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+        >
+          Adjust
+        </button>
+      </form>
+    </details>
   </GlassCard>
 
   <GlassCard>

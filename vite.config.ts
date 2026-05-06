@@ -20,16 +20,15 @@ export default defineConfig({
         "src/lib/server/db/schema.ts",
         "src/lib/server/db/index.ts",
       ],
-      // Regression-only thresholds. Bumped after the P1-P9 work
-      // landed — actuals are now ~30/36/25/37 across the four
-      // metrics, so the floor sits at the brief's target of
-      // 30/25/25/30. CI fails if any metric drops below these;
-      // meaningful coverage growth bumps the floor again when more
-      // service-layer tests land.
+      // Regression-only thresholds. After the auth-reauth + analytics
+      // + TOTP test additions, actuals sit at ~31/37/26/39 across the
+      // four metrics. Floor bumped on functions to lock in the new
+      // service-layer coverage. CI fails if any metric drops below
+      // these.
       thresholds: {
         statements: 30,
         branches: 25,
-        functions: 25,
+        functions: 26,
         lines: 30,
       },
     },

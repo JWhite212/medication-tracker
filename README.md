@@ -182,7 +182,10 @@ Honest about what's complete vs. what's planned:
 +-------------------+
 ```
 
-The architectural decisions are recorded in [`docs/adr/`](docs/adr/).
+For Mermaid diagrams of the system overview, the reminder-dispatch
+sequence, and the data model, see
+[`docs/architecture.md`](docs/architecture.md). The architectural
+decisions are recorded in [`docs/adr/`](docs/adr/).
 
 ## For technical reviewers
 

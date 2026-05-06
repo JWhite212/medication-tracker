@@ -3,6 +3,7 @@ import { eq, and, gte, desc, sql, isNotNull, max } from "drizzle-orm";
 import { db, dbTx } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
+import { recordInventoryEvent } from "./inventory-events";
 import { startOfDay } from "$lib/utils/time";
 import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 
@@ -89,6 +90,15 @@ export async function logDose(
       })
       .returning();
 
+    // Snapshot the count BEFORE the update so the inventory event
+    // can record both ends of the change.
+    const [med] = await tx
+      .select({ inventoryCount: medications.inventoryCount })
+      .from(medications)
+      .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
+      .limit(1);
+    const previousCount = med?.inventoryCount ?? null;
+
     await tx
       .update(medications)
       .set({
@@ -101,6 +111,20 @@ export async function logDose(
           isNotNull(medications.inventoryCount),
         ),
       );
+
+    // Only record an event when inventory was actually tracked.
+    // The actual delta accounts for the GREATEST(0, ...) clamp.
+    if (previousCount !== null) {
+      const newCount = Math.max(0, previousCount - quantity);
+      await recordInventoryEvent(tx, {
+        userId,
+        medicationId,
+        eventType: "dose_taken",
+        quantityChange: newCount - previousCount,
+        previousCount,
+        newCount,
+      });
+    }
 
     return inserted;
   });
@@ -145,6 +169,13 @@ export async function deleteDose(userId: string, doseId: string) {
     await tx.delete(doseLogs).where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)));
 
     if (shouldRestoreInventory) {
+      const [med] = await tx
+        .select({ inventoryCount: medications.inventoryCount })
+        .from(medications)
+        .where(and(eq(medications.id, dose.medicationId), eq(medications.userId, userId)))
+        .limit(1);
+      const previousCount = med?.inventoryCount ?? null;
+
       await tx
         .update(medications)
         .set({
@@ -157,6 +188,17 @@ export async function deleteDose(userId: string, doseId: string) {
             isNotNull(medications.inventoryCount),
           ),
         );
+
+      if (previousCount !== null) {
+        await recordInventoryEvent(tx, {
+          userId,
+          medicationId: dose.medicationId,
+          eventType: "dose_deleted",
+          quantityChange: dose.quantity,
+          previousCount,
+          newCount: previousCount + dose.quantity,
+        });
+      }
     }
   });
   await logAudit(userId, "dose_log", doseId, "delete");
@@ -207,6 +249,13 @@ export async function updateDose(
 
     if (inventoryAffectingChange) {
       const diff = updates.quantity! - existing.quantity;
+      const [med] = await tx
+        .select({ inventoryCount: medications.inventoryCount })
+        .from(medications)
+        .where(and(eq(medications.id, existing.medicationId), eq(medications.userId, userId)))
+        .limit(1);
+      const previousCount = med?.inventoryCount ?? null;
+
       await tx
         .update(medications)
         .set({
@@ -219,6 +268,21 @@ export async function updateDose(
             isNotNull(medications.inventoryCount),
           ),
         );
+
+      if (previousCount !== null) {
+        // diff > 0 → quantity went up → inventory drops; diff < 0 →
+        // inventory rises. The clamp at zero only matters when diff
+        // is positive and exceeds previousCount.
+        const newCount = Math.max(0, previousCount - diff);
+        await recordInventoryEvent(tx, {
+          userId,
+          medicationId: existing.medicationId,
+          eventType: "dose_quantity_updated",
+          quantityChange: newCount - previousCount,
+          previousCount,
+          newCount,
+        });
+      }
     }
 
     return u;

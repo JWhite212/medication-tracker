@@ -284,6 +284,43 @@ export const reminderEvents = pgTable(
   ],
 );
 
+export type InventoryEventType =
+  | "dose_taken"
+  | "dose_deleted"
+  | "dose_quantity_updated"
+  | "manual_adjustment"
+  | "refill"
+  | "correction";
+
+export const inventoryEvents = pgTable(
+  "inventory_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    medicationId: text("medication_id")
+      .notNull()
+      .references(() => medications.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull().$type<InventoryEventType>(),
+    // Signed delta applied to inventory_count. dose_taken is negative,
+    // refill / dose_deleted (taken) are positive, manual_adjustment
+    // and correction can be either.
+    quantityChange: integer("quantity_change").notNull(),
+    // Snapshot of the count immediately before and after the change.
+    // Nullable for medications without inventory tracking, where the
+    // event is recorded for traceability but the count is undefined.
+    previousCount: integer("previous_count"),
+    newCount: integer("new_count"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("inventory_events_user_created_idx").on(table.userId, table.createdAt),
+    index("inventory_events_med_created_idx").on(table.medicationId, table.createdAt),
+  ],
+);
+
 export const reauthTokens = pgTable(
   "reauth_tokens",
   {

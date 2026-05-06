@@ -34,7 +34,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ request, locals }) => {
+  // SvelteKit rejects a `default` action when ANY named action is
+  // also defined — the resendVerification action below makes this
+  // page named-only, so the Save Changes form targets `?/savePrefs`
+  // explicitly. Previously the default coexistence threw a 500 on
+  // every POST. https://svelte.dev/docs/kit/form-actions#named-actions
+  savePrefs: async ({ request, locals }) => {
     const formData = Object.fromEntries(await request.formData());
     const parsed = notificationSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { errors: parsed.error.flatten().fieldErrors });

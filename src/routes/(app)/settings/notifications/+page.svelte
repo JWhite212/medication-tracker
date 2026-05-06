@@ -144,7 +144,7 @@
   {/if}
 
   <GlassCard>
-    <form method="POST" use:enhance class="space-y-6">
+    <form method="POST" action="?/savePrefs" use:enhance class="space-y-6">
       <fieldset class="m-0 border-0 p-0">
         <legend class="text-text-muted mb-3 text-xs font-medium tracking-wider uppercase">
           Overdue dose reminders

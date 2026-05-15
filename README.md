@@ -34,7 +34,8 @@ and Postgres.
 19. [Known limitations](#known-limitations)
 20. [Known follow-ups](#known-follow-ups)
 21. [Roadmap](#roadmap)
-22. [License](#license)
+22. [Dependency policy](#dependency-policy)
+23. [License](#license)
 
 ## Overview
 
@@ -503,8 +504,6 @@ Honest list of audit findings deliberately deferred under a
 conservative-risk policy. Each is captured here so a future pass
 can pick them up:
 
-- **Refactor `MedicationForm.svelte`** (currently 634 LoC) into
-  `ScheduleModeSelector`, `ColourPicker`, and a leaner form body.
 - **Tighten CSP `style-src`** — Tailwind v4 may still emit inline
   styles in some component paths; verify before removing
   `'unsafe-inline'`.
@@ -514,8 +513,9 @@ can pick them up:
   for high-traffic deployments (single-user is unaffected).
 - **Log-page filter UX** — switch the filters from `goto()` to
   `<form use:enhance>` for progressive enhancement.
-- **`sharp` dependency** — currently transitive; audit whether
-  Vercel image optimization actually needs it.
+- **`sharp` dependency** — listed as a direct dev dependency for
+  Vercel image optimization; audit whether the runtime actually
+  needs it pinned at the top level.
 - **Lighthouse CI** — wire in once a stable production URL exists.
 
 ## Roadmap
@@ -542,6 +542,48 @@ Tracked across implementation phases, with the source plan in
   a11y, reorder a11y, pending-state on delete, README, CHANGELOG,
   CONTRIBUTING, SECURITY, deployment guide, husky, CI hardening.
   **Done.**
+
+## Dependency policy
+
+The project deliberately tracks recent versions of SvelteKit,
+Svelte 5, Tailwind v4, Vite, and Vitest — but values stability
+over bleeding edge. The rule of thumb is to wait one minor after
+a release so the ecosystem (adapters, lint plugins, type
+definitions) has time to catch up.
+
+Pinning strategy:
+
+- **Dev dependencies** — caret ranges (`^x.y.z`); minor and patch
+  updates roll forward automatically when `npm install` runs.
+- **Security-critical runtime** — tilde (`~x.y.z`) or exact pin
+  for `lucia`, `@node-rs/argon2`, `web-push`, `resend`, and
+  `@neondatabase/serverless`. Patch updates are reviewed
+  manually rather than absorbed by `^` resolution.
+
+Cadence:
+
+- Dependencies are reviewed quarterly. `npm outdated` triages
+  what has drifted; updates are split by category.
+- Major-version bumps require CI green plus a manual E2E smoke
+  run before merge.
+- `npm audit` runs weekly; high or critical advisories are
+  patched within seven days or explicitly deferred with a note.
+
+See [`docs/dependency-policy.md`](docs/dependency-policy.md) for
+the full policy, including the upgrade process, security
+advisory handling, and the reasoning behind each floor version.
+
+### Floor versions
+
+| Dependency | Floor version | Notes                             |
+| ---------- | ------------- | --------------------------------- |
+| Node       | 22            | LTS; matches CI and Vercel target |
+| Svelte     | 5.55          | Runes API stable                  |
+| SvelteKit  | 2.57          | Form actions + server hooks       |
+| Vite       | 8.0           | Tracking current major            |
+| Tailwind   | 4.2           | Vite plugin variant               |
+| TypeScript | 6.0           | Strict mode on                    |
+| Vitest     | 4.1           | v8 coverage provider              |
 
 ## License
 

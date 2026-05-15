@@ -24,7 +24,7 @@ export default defineConfig({
     {
       name: "authed",
       // Tests that operate against the seeded user's session.
-      testMatch: /(medication-lifecycle|dose-logging|analytics|exports)\.test\.ts$/,
+      testMatch: /(medication-lifecycle|dose-logging|analytics|exports|schedule-editor)\.test\.ts$/,
       use: { storageState: SEEDED_STORAGE_STATE },
     },
   ],

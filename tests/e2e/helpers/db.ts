@@ -2,8 +2,13 @@
 // truth (e.g. "did inventory actually decrement"). All reads are
 // scoped by userId.
 
-import { eq, and } from "drizzle-orm";
-import { users, medications, doseLogs } from "../../../src/lib/server/db/schema";
+import { eq, and, asc } from "drizzle-orm";
+import {
+  users,
+  medications,
+  doseLogs,
+  medicationSchedules,
+} from "../../../src/lib/server/db/schema";
 
 // ESM hoists `import` statements above any top-level statements, so
 // the env-var assignment must live inside a runtime initializer to
@@ -61,4 +66,49 @@ export async function countDoseLogs(
     : eq(doseLogs.medicationId, med.id);
   const rows = await db.select({ id: doseLogs.id }).from(doseLogs).where(conditions);
   return rows.length;
+}
+
+export async function getMedicationIdByName(
+  userId: string,
+  medicationName: string,
+): Promise<string | null> {
+  const db = await getDb();
+  const [row] = await db
+    .select({ id: medications.id })
+    .from(medications)
+    .where(and(eq(medications.userId, userId), eq(medications.name, medicationName)))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+export type ScheduleRow = {
+  scheduleKind: "fixed_time" | "interval" | "prn";
+  timeOfDay: string | null;
+  intervalHours: string | null;
+  daysOfWeek: number[] | null;
+  sortOrder: number;
+};
+
+export async function getSchedulesForMedication(medicationId: string): Promise<ScheduleRow[]> {
+  const db = await getDb();
+  const rows = await db
+    .select({
+      scheduleKind: medicationSchedules.scheduleKind,
+      timeOfDay: medicationSchedules.timeOfDay,
+      intervalHours: medicationSchedules.intervalHours,
+      daysOfWeek: medicationSchedules.daysOfWeek,
+      sortOrder: medicationSchedules.sortOrder,
+    })
+    .from(medicationSchedules)
+    .where(eq(medicationSchedules.medicationId, medicationId))
+    .orderBy(asc(medicationSchedules.sortOrder));
+  return rows as ScheduleRow[];
+}
+
+// FK constraints cascade from medications → medication_schedules and
+// dose_logs, so deleting the medication is enough cleanup for these
+// tests (no dose logs are created against the temp meds).
+export async function deleteMedicationCascade(medicationId: string): Promise<void> {
+  const db = await getDb();
+  await db.delete(medications).where(eq(medications.id, medicationId));
 }

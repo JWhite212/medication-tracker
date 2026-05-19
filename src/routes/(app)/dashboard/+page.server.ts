@@ -1,4 +1,5 @@
 import { fail } from "@sveltejs/kit";
+import { track } from "@vercel/analytics/server";
 import { getActiveMedications } from "$lib/server/medications";
 import { getRefillForecast } from "$lib/server/inventory";
 import {
@@ -107,6 +108,18 @@ export const actions: Actions = {
         return fail(404, { errors: { form: ["Medication not found"] } });
       }
       throw err;
+    }
+
+    // Fire-and-forget product analytics. Only safe, non-PII metadata is sent:
+    // no medication id/name, no notes content, no side-effect strings.
+    try {
+      await track("dose_logged", {
+        source: "dashboard",
+        hasNotes: Boolean(notes),
+        hasSideEffects: Array.isArray(sideEffects) && sideEffects.length > 0,
+      });
+    } catch {
+      // Telemetry failure must never break the user's dose log.
     }
 
     return { success: true };

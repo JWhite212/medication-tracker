@@ -22,4 +22,6 @@ injectAnalytics({
     }
   },
 });
+
+
 injectSpeedInsights();

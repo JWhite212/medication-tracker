@@ -7,13 +7,19 @@ injectAnalytics({
   beforeSend(event: BeforeSendEvent) {
     // The /log page accepts a free-text search (`?q=...`) that can contain
     // medication names. Strip the entire query string so it never reaches
-    // the recorded URL.
-    if (event.url.includes("/log")) {
+    // the recorded URL. Match the pathname exactly so we don't also catch
+    // routes like /auth/login or /auth/logout.
+    try {
       const u = new URL(event.url);
-      u.search = "";
-      return { ...event, url: u.toString() };
+      if (u.pathname === "/log" || u.pathname === "/log/") {
+        u.search = "";
+        return { ...event, url: u.toString() };
+      }
+      return event;
+    } catch (err) {
+      console.warn("[analytics beforeSend] URL parse failed", err, event.url);
+      return event;
     }
-    return event;
   },
 });
 

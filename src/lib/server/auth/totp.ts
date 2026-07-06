@@ -1,6 +1,5 @@
 import { createTOTPKeyURI, verifyHOTP, verifyTOTP } from "@oslojs/otp";
 import { encodeBase32UpperCase, decodeBase32 } from "@oslojs/encoding";
-import QRCode from "qrcode";
 import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { encryptSecret, decryptSecret } from "./crypto";
 import { db } from "$lib/server/db";
@@ -26,6 +25,9 @@ export function getTOTPUri(secret: string, email: string): string {
 }
 
 export async function generateQRDataUrl(uri: string): Promise<string> {
+  // Lazy so the qrcode package is only loaded on the 2FA-setup path,
+  // not on every request that touches the auth module graph.
+  const { default: QRCode } = await import("qrcode");
   return QRCode.toDataURL(uri);
 }
 

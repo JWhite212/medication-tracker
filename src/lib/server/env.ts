@@ -6,11 +6,14 @@ import { env as privateEnv } from "$env/dynamic/private";
 // undefined — even when Vercel has the value set. Read public vars
 // from the public module instead.
 import { env as publicEnv } from "$env/dynamic/public";
-import { dev } from "$app/environment";
+import { dev, building } from "$app/environment";
 
 const required = ["DATABASE_URL"] as const;
 
-const missing = required.filter((key) => !privateEnv[key]);
+// `building` is true while SvelteKit prerenders pages at build time —
+// the app boots there with no runtime secrets available (CI and local
+// builds have none), so validation must wait for a real server boot.
+const missing = building ? [] : required.filter((key) => !privateEnv[key]);
 if (missing.length > 0) {
   throw new Error(
     `Missing required environment variables: ${missing.join(", ")}. ` +
@@ -23,7 +26,7 @@ if (missing.length > 0) {
 // in any non-dev build — otherwise links would be derived from the
 // inbound request and an attacker could poison them via Host/Origin
 // header injection.
-if (!dev) {
+if (!dev && !building) {
   const baseUrl = publicEnv.PUBLIC_BASE_URL;
   if (!baseUrl) {
     throw new Error(

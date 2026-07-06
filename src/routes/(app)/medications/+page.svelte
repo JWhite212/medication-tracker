@@ -2,7 +2,7 @@
   import { enhance } from "$app/forms";
   import MedicationCard from "$lib/components/MedicationCard.svelte";
   import EmptyState from "$components/EmptyState.svelte";
-  import emptyMedications from "$lib/assets/397d3a76-85b0-43ee-a0c2-981053e4040c.png";
+  import emptyMedications from "$lib/assets/397d3a76-85b0-43ee-a0c2-981053e4040c.webp";
 
   let { data } = $props();
 </script>

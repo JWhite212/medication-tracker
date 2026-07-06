@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
-  import splashImage from "$lib/assets/8ccec61e-617c-4da0-8596-c6aa9970893e.png";
+  import splashImage from "$lib/assets/8ccec61e-617c-4da0-8596-c6aa9970893e.webp";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
 
   let { form } = $props();

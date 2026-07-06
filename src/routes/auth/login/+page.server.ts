@@ -1,7 +1,7 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { dev } from "$app/environment";
 import { loginSchema } from "$lib/utils/validation";
-import { verifyPassword } from "$lib/server/auth/password";
+import { verifyPassword, needsRehash, hashPassword } from "$lib/server/auth/password";
 import { lucia } from "$lib/server/auth/lucia";
 import { db } from "$lib/server/db";
 import { users } from "$lib/server/db/schema";
@@ -57,6 +57,16 @@ export const actions: Actions = {
         errors: { form: ["Invalid email or password"] },
         email,
       });
+    }
+
+    // Transparent Argon2 parameter upgrade: if the stored hash was
+    // created with older cost settings, re-hash now — the only moment
+    // the plaintext is available.
+    if (needsRehash(user.passwordHash)) {
+      await db
+        .update(users)
+        .set({ passwordHash: await hashPassword(password) })
+        .where(eq(users.id, user.id));
     }
 
     // If 2FA is enabled, redirect to TOTP verification

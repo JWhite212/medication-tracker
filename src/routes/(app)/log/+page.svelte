@@ -3,7 +3,6 @@
   import Modal from "$components/ui/Modal.svelte";
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import EmptyState from "$components/EmptyState.svelte";
-  import { goto } from "$app/navigation";
   import { onDestroy } from "svelte";
   import type { DoseLogWithMedication } from "$lib/types";
   import emptyDoseHistory from "$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.webp";
@@ -28,21 +27,42 @@
     }
   });
 
-  function updateFilter(key: string, value: string) {
-    const url = new URL(window.location.href);
-    if (value) url.searchParams.set(key, value);
-    else url.searchParams.delete(key);
-    url.searchParams.set("page", "1");
-    goto(url.toString(), { invalidateAll: true });
+  // The filters are a plain GET form so they work without JavaScript
+  // (SvelteKit's router intercepts GET submissions client-side when JS
+  // is available). Changing any control auto-submits; the Apply button
+  // is the no-JS path. Submitting a GET form drops the page param, so
+  // every filter change naturally resets pagination to page 1.
+  function submitOnChange(e: Event) {
+    (e.currentTarget as HTMLInputElement | HTMLSelectElement).form?.requestSubmit();
   }
 
-  function handleSearch(value: string) {
-    searchInput = value;
+  function handleSearch(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    searchInput = input.value;
     if (searchTimer) {
       clearTimeout(searchTimer);
       searchTimer = null;
     }
-    searchTimer = setTimeout(() => updateFilter("q", value), 300);
+    searchTimer = setTimeout(() => input.form?.requestSubmit(), 300);
+  }
+
+  // Keep submitted URLs clean when JS is available: temporarily disable
+  // empty fields (and the redundant status=any default) so the browser
+  // omits them from the query string. No-JS submissions include them —
+  // the server load treats empty values as absent, so both work.
+  function pruneEmptyFilters(e: SubmitEvent) {
+    const form = e.currentTarget as HTMLFormElement;
+    const pruned: (HTMLInputElement | HTMLSelectElement)[] = [];
+    for (const el of Array.from(form.elements)) {
+      if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLSelectElement)) continue;
+      if (!el.name || el.disabled) continue;
+      if (el instanceof HTMLInputElement && el.type === "checkbox") continue;
+      if (el.value === "" || (el.name === "status" && el.value === "any")) {
+        el.disabled = true;
+        pruned.push(el);
+      }
+    }
+    setTimeout(() => pruned.forEach((el) => (el.disabled = false)), 0);
   }
 
   const hasActiveFilter = $derived(
@@ -108,13 +128,18 @@
 <div class="mx-auto w-full max-w-2xl space-y-6">
   <h1 class="text-2xl font-bold">Dose History</h1>
 
-  <div
+  <form
+    method="GET"
+    data-sveltekit-keepfocus
+    data-sveltekit-noscroll
+    onsubmit={pruneEmptyFilters}
     class="border-glass-border bg-glass flex flex-col gap-2 rounded-xl border p-4 backdrop-blur-xl sm:flex-row sm:flex-wrap sm:gap-3"
   >
     <select
+      name="medication"
       aria-label="Filter by medication"
       class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
-      onchange={(e) => updateFilter("medication", e.currentTarget.value)}
+      onchange={submitOnChange}
     >
       <option value="">All medications</option>
       {#each data.medications as med}
@@ -122,10 +147,10 @@
       {/each}
     </select>
     <select
+      name="status"
       aria-label="Filter by status"
       class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
-      onchange={(e) =>
-        updateFilter("status", e.currentTarget.value === "any" ? "" : e.currentTarget.value)}
+      onchange={submitOnChange}
     >
       <option value="any" selected={data.filters.status === "any"}>Any status</option>
       <option value="taken" selected={data.filters.status === "taken"}>Taken</option>
@@ -134,37 +159,48 @@
     </select>
     <input
       type="date"
+      name="from"
       aria-label="From date"
       class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
       value={data.filters.from ?? ""}
-      onchange={(e) => updateFilter("from", e.currentTarget.value)}
+      onchange={submitOnChange}
     />
     <span class="text-text-muted self-center">to</span>
     <input
       type="date"
+      name="to"
       aria-label="To date"
       class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
       value={data.filters.to ?? ""}
-      onchange={(e) => updateFilter("to", e.currentTarget.value)}
+      onchange={submitOnChange}
     />
     <input
       type="search"
+      name="q"
       aria-label="Search notes"
       placeholder="Search notes…"
       class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-48"
       value={searchInput}
-      oninput={(e) => handleSearch(e.currentTarget.value)}
+      oninput={handleSearch}
     />
     <label class="text-text-secondary flex items-center gap-2 text-sm">
       <input
         type="checkbox"
+        name="withSideEffects"
+        value="1"
         class="border-glass-border bg-surface-raised h-4 w-4 rounded"
         checked={data.filters.withSideEffects}
-        onchange={(e) => updateFilter("withSideEffects", e.currentTarget.checked ? "1" : "")}
+        onchange={submitOnChange}
       />
       With side effects
     </label>
-  </div>
+    <button
+      type="submit"
+      class="border-glass-border bg-surface-raised text-text-secondary hover:text-text-primary rounded-lg border px-3 py-2 text-sm"
+    >
+      Apply
+    </button>
+  </form>
 
   {#if data.doses.length === 0}
     {#if hasActiveFilter}

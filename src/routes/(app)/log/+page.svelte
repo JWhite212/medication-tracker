@@ -6,7 +6,7 @@
   import { goto } from "$app/navigation";
   import { onDestroy } from "svelte";
   import type { DoseLogWithMedication } from "$lib/types";
-  import emptyDoseHistory from "$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.png";
+  import emptyDoseHistory from "$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.webp";
 
   let { data } = $props();
   let editingDose = $state<DoseLogWithMedication | null>(null);

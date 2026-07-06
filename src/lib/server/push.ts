@@ -1,15 +1,24 @@
-import webpush from "web-push";
 import { env } from "$env/dynamic/private";
 import { db } from "$lib/server/db";
 import { pushSubscriptions } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 
-if (env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(
-    "mailto:" + (env.VAPID_EMAIL ?? "noreply@example.com"),
-    env.VAPID_PUBLIC_KEY,
-    env.VAPID_PRIVATE_KEY,
-  );
+// Lazy so the web-push package is only loaded on paths that actually
+// dispatch a notification (reminder cron, subscribe test pings) — not
+// on every request that touches the reminders module graph. VAPID
+// details are configured once, on first use.
+type WebPush = typeof import("web-push");
+let webpushOnce: Promise<WebPush> | null = null;
+function getWebpush(): Promise<WebPush> {
+  webpushOnce ??= import("web-push").then(({ default: webpush }) => {
+    webpush.setVapidDetails(
+      "mailto:" + (env.VAPID_EMAIL ?? "noreply@example.com"),
+      env.VAPID_PUBLIC_KEY!,
+      env.VAPID_PRIVATE_KEY!,
+    );
+    return webpush;
+  });
+  return webpushOnce;
 }
 
 export type PushErrorReason = "not_configured" | "no_subscriptions" | "all_failed";
@@ -57,6 +66,8 @@ export async function sendPushNotification(
       message: "User has no active push subscriptions.",
     };
   }
+
+  const webpush = await getWebpush();
 
   const results = await Promise.allSettled(
     subs.map((sub) =>

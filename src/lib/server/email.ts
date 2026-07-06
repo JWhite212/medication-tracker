@@ -1,4 +1,3 @@
-import { Resend } from "resend";
 import { env } from "$env/dynamic/private";
 // SvelteKit's $env/dynamic/private excludes any variable that starts
 // with the PUBLIC_ prefix, so PUBLIC_BASE_URL must come from the
@@ -33,7 +32,10 @@ export function isEmailConfigured(): boolean {
   return true;
 }
 
-function getResend() {
+// Lazy so the resend SDK (plus its svix/postal-mime dependencies) is
+// only loaded on paths that actually send an email.
+async function getResend() {
+  const { Resend } = await import("resend");
   return new Resend(env.RESEND_API_KEY);
 }
 
@@ -84,7 +86,7 @@ function mapResendError(error: { name?: string; message?: string } | null): {
   }
 }
 
-type ResendSendArgs = Parameters<ReturnType<typeof getResend>["emails"]["send"]>[0];
+type ResendSendArgs = Parameters<Awaited<ReturnType<typeof getResend>>["emails"]["send"]>[0];
 
 async function safeSend(payload: ResendSendArgs): Promise<EmailResult> {
   if (!isEmailConfigured()) {
@@ -95,7 +97,8 @@ async function safeSend(payload: ResendSendArgs): Promise<EmailResult> {
     };
   }
   try {
-    const { data, error } = await getResend().emails.send(payload);
+    const resend = await getResend();
+    const { data, error } = await resend.emails.send(payload);
     if (error) {
       return { ok: false, ...mapResendError(error) };
     }

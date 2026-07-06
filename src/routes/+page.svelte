@@ -1,6 +1,6 @@
 <script lang="ts">
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
-  import heroImage from "$lib/assets/9910d8b5-01d3-4293-94a7-eca14d4e66f5.png";
+  import heroImage from "$lib/assets/9910d8b5-01d3-4293-94a7-eca14d4e66f5.webp";
   import wordmark from "$lib/assets/medtracker-logo-lockup-vector.svg";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
 </script>
@@ -84,6 +84,7 @@
           width="320"
           height="560"
           loading="eager"
+          fetchpriority="high"
           class="shadow-accent/10 w-full max-w-xs rounded-3xl shadow-2xl sm:max-w-sm"
         />
       </div>

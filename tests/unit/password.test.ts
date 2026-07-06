@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { hashPassword, verifyPassword } from "$lib/server/auth/password";
+import {
+  hashPassword,
+  verifyPassword,
+  needsRehash,
+  ARGON2_PARAMS,
+} from "$lib/server/auth/password";
 
 describe("password hashing", () => {
   it("hashes and verifies a password", async () => {
@@ -21,5 +26,37 @@ describe("password hashing", () => {
     const hash1 = await hashPassword("samepassword");
     const hash2 = await hashPassword("samepassword");
     expect(hash1).not.toBe(hash2);
+  });
+});
+
+describe("needsRehash", () => {
+  it("embeds the current parameters in fresh hashes", async () => {
+    const hash = await hashPassword("password");
+    expect(hash).toContain(
+      `$m=${ARGON2_PARAMS.memoryCost},t=${ARGON2_PARAMS.timeCost},p=${ARGON2_PARAMS.parallelism}$`,
+    );
+  });
+
+  it("returns false for a hash created with current parameters", async () => {
+    const hash = await hashPassword("password");
+    expect(needsRehash(hash)).toBe(false);
+  });
+
+  it("returns true when memory cost differs from current parameters", async () => {
+    const hash = await hashPassword("password");
+    const outdated = hash.replace(`m=${ARGON2_PARAMS.memoryCost}`, "m=4096");
+    expect(needsRehash(outdated)).toBe(true);
+  });
+
+  it("returns true when time cost differs from current parameters", async () => {
+    const hash = await hashPassword("password");
+    const outdated = hash.replace(`t=${ARGON2_PARAMS.timeCost},`, "t=1,");
+    expect(needsRehash(outdated)).toBe(true);
+  });
+
+  it("returns true for unrecognised hash formats", () => {
+    expect(needsRehash("$2b$10$legacybcrypthashvalue")).toBe(true);
+    expect(needsRehash("plaintext-or-garbage")).toBe(true);
+    expect(needsRehash("")).toBe(true);
   });
 });

@@ -501,22 +501,31 @@ Six honest takeaways:
 ## Known follow-ups
 
 Honest list of audit findings deliberately deferred under a
-conservative-risk policy. Each is captured here so a future pass
-can pick them up:
+conservative-risk policy, and the resolutions of items a later pass
+closed out:
 
-- **Tighten CSP `style-src`** — Tailwind v4 may still emit inline
-  styles in some component paths; verify before removing
-  `'unsafe-inline'`.
-- **Argon2 parameter versioning** — embed the param version in the
-  hash prefix so future cost increases re-hash on next login.
-- **Inventory concurrency** — versioned updates / optimistic CC
-  for high-traffic deployments (single-user is unaffected).
-- **Log-page filter UX** — switch the filters from `goto()` to
-  `<form use:enhance>` for progressive enhancement.
-- **`sharp` dependency** — listed as a direct dev dependency for
-  Vercel image optimization; audit whether the runtime actually
-  needs it pinned at the top level.
-- **Lighthouse CI** — wire in once a stable production URL exists.
+- **Inventory concurrency** (open) — versioned updates / optimistic
+  CC for high-traffic deployments (single-user is unaffected).
+- **CSP `style-src`** (verified, must keep `'unsafe-inline'`) — the
+  app renders dynamic style _attributes_ everywhere: chart bar
+  heights (`height: {pct}%`), medication colour dots, staggered
+  animation delays, and the accent theme via `style:--color-accent`.
+  CSP hashes only cover `<style>` elements, not attributes, so
+  removing `'unsafe-inline'` would break those surfaces for no
+  practical gain (script-src remains strict).
+- **Argon2 parameter versioning** (done) — Argon2's PHC hash format
+  already embeds its parameters, so `needsRehash()` parses and
+  compares them against the current cost constants and the login
+  action transparently re-hashes on the next successful sign-in.
+- **Log-page filter UX** (done) — filters are a native GET `<form>`:
+  they work without JavaScript, and JS enhances them with
+  auto-submit-on-change plus a debounced notes search.
+- **`sharp` dependency** (resolved) — now a first-class dev
+  dependency consumed by `scripts/optimize-images.mjs`, which
+  produces the WebP illustrations shipped in the client bundle.
+- **Lighthouse CI** (done) — `.github/workflows/lighthouse.yml`
+  audits the production landing and login pages weekly and on
+  demand, median of 3 runs.
 
 ## Roadmap
 

@@ -12,7 +12,7 @@
 
 import { eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
-import { db } from "../src/lib/server/db";
+import { createScriptDb, loadDotEnv } from "./db";
 import {
   users,
   medications,
@@ -21,6 +21,13 @@ import {
   medicationSchedules,
 } from "../src/lib/server/db/schema";
 import { hashPassword } from "../src/lib/server/auth/password";
+
+loadDotEnv();
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL is not set. Pass it inline or add it to .env.");
+  process.exit(1);
+}
+const db = createScriptDb(process.env.DATABASE_URL);
 
 const DEMO_EMAIL = "demo@medtracker.app";
 const DEMO_PASSWORD = "demo-medtracker-2026";

@@ -9,5 +9,6 @@
       "Bash(pkill -f \"vite dev\")",
       "Bash(npx drizzle-kit:*)"
     ]
-  }
+  },
+  "outputStyle": "default"
 }

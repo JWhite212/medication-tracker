@@ -79,6 +79,8 @@ runbook in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Screenshots
 
+![Animated tour of MedTracker: dashboard with live timers, medications list, add-medication form, dose history, and adherence analytics](docs/screenshots/demo.gif)
+
 ![MedTracker dashboard](docs/screenshots/hero-dashboard.png)
 
 |                                                  |                                                        |

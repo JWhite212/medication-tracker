@@ -13,6 +13,10 @@ let selectRows: Array<{ result: unknown }> = [];
 const inserts: Array<{ userId: string; idempotencyKey: string; result: unknown }> = [];
 const updates: Array<{ result: unknown }> = [];
 const deletes: number[] = [];
+// When true, the NEXT update(...).set(...).where(...) call rejects instead
+// of resolving (and resets the flag) — simulates the result-write failing
+// after a successful dispatch.
+let updateShouldRejectOnce = false;
 
 function buildDb() {
   return {
@@ -37,6 +41,10 @@ function buildDb() {
       set: (row: { result: unknown }) => ({
         where: (_cond: unknown) => {
           updates.push(row);
+          if (updateShouldRejectOnce) {
+            updateShouldRejectOnce = false;
+            return Promise.reject(new Error("result write failed"));
+          }
           return Promise.resolve();
         },
       }),
@@ -82,6 +90,7 @@ beforeEach(() => {
   inserts.length = 0;
   updates.length = 0;
   deletes.length = 0;
+  updateShouldRejectOnce = false;
   logDose.mockClear();
 });
 
@@ -145,6 +154,34 @@ describe("runCommands", () => {
     expect(deletes).toEqual([1]);
     expect(updates).toEqual([]);
     expect(results).toEqual([{ id: "cmd-1", ok: false, error: "db write failed" }]);
+  });
+
+  it("result-write failure: reservation preserved, caller still gets its result, replay never re-dispatches", async () => {
+    reserveResult = [{ idempotencyKey: "cmd-1" }];
+    updateShouldRejectOnce = true;
+    const commands = [{ id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1" } }];
+
+    const results = await runCommands("u1", commands);
+
+    // Dispatch happened...
+    expect(logDose).toHaveBeenCalledTimes(1);
+    // ...but the reservation was NOT released, because the mutation is
+    // already durably committed at this point (only the ledger write failed).
+    expect(deletes).toEqual([]);
+    // The caller that actually ran the dispatch still gets its result back
+    // this turn, even though persisting it to the ledger failed.
+    expect(results).toEqual([{ id: "cmd-1", ok: true, result: { id: "dose-1" } }]);
+
+    // Simulate a retry/replay of the same command id: the reservation still
+    // exists (insert loses the race) and its result column is still null
+    // because the update above failed to persist it.
+    reserveResult = [];
+    selectRows = [{ result: null }];
+
+    const replay = await runCommands("u1", commands);
+
+    expect(logDose).toHaveBeenCalledTimes(1); // NOT called again
+    expect(replay).toEqual([{ id: "cmd-1", ok: false, error: "in_progress" }]);
   });
 
   it("unknown command type: caught by the dispatch-fail path, reservation released", async () => {

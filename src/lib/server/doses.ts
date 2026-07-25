@@ -72,9 +72,11 @@ export async function logDose(
   const id = createId();
   const now = new Date();
 
-  // Insert + inventory decrement in a single transaction — partial
-  // failure rolls back both. Audit log runs after the tx commits; a
-  // rollback throws past it, so rolled-back writes are not audited.
+  // Insert + inventory decrement + audit log all happen inside a single
+  // transaction so logDose is all-or-nothing: on any throw, nothing —
+  // including the audit row — is durably committed. This is required by
+  // runCommands' reserve-first idempotency (see commands.ts), which relies
+  // on "handler threw" meaning "safe to retry" for every command handler.
   const dose = await dbTx.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(doseLogs)
@@ -127,10 +129,11 @@ export async function logDose(
       });
     }
 
+    await logAudit(userId, "dose_log", id, "create", undefined, tx);
+
     return inserted;
   });
 
-  await logAudit(userId, "dose_log", id, "create");
   return dose;
 }
 

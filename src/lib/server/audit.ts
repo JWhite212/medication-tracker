@@ -2,10 +2,21 @@ import { createId } from "@paralleldrive/cuid2";
 import { db } from "$lib/server/db";
 import { auditLogs } from "$lib/server/db/schema";
 
-// Minimal client surface that both the global `db` and a transaction
-// `tx` (yielded by `dbTx.transaction`) satisfy. We only ever call
+// Minimal client surface that both the global `db` (neon-http) and a
+// transaction `tx` (yielded by `dbTx.transaction`, backed by the
+// neon-serverless/websocket driver) satisfy. We only ever call
 // `.insert(auditLogs).values(...)` on it.
-type AuditClient = Pick<typeof db, "insert">;
+//
+// This is intentionally a narrow duck-typed shape rather than
+// `Pick<typeof db, "insert">`: `db` and a websocket `tx` return
+// structurally different (driver-specific) builder types from
+// `.insert(...)`, so pinning to `db`'s full method type would reject a
+// `tx` argument even though both satisfy everything we actually use.
+type AuditClient = {
+  insert: (table: typeof auditLogs) => {
+    values: (values: typeof auditLogs.$inferInsert) => PromiseLike<unknown>;
+  };
+};
 
 export function computeChanges(
   before: Record<string, unknown>,

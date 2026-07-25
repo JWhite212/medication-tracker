@@ -176,8 +176,15 @@ const updatePreferences = vi.fn(
     accentColor: "#111111",
   }),
 );
+const getOrCreatePreferences = vi.fn(
+  async (_userId: string): Promise<{ userId: string; accentColor: string }> => ({
+    userId: "u1",
+    accentColor: "#000000",
+  }),
+);
 vi.mock("$lib/server/preferences", () => ({
   updatePreferences: (userId: string, updates: unknown) => updatePreferences(userId, updates),
+  getOrCreatePreferences: (userId: string) => getOrCreatePreferences(userId),
 }));
 
 const wipeDoseHistory = vi.fn(
@@ -213,6 +220,7 @@ beforeEach(() => {
   unarchiveMedication.mockClear();
   swapSortOrder.mockClear();
   updatePreferences.mockClear();
+  getOrCreatePreferences.mockClear();
   wipeDoseHistory.mockClear();
   wipeArchivedMedications.mockClear();
 });
@@ -533,7 +541,7 @@ describe("dispatchCommand — medication + schedule + preference + wipe commands
     expect(result).toEqual({ ok: true });
   });
 
-  it("update_preferences calls updatePreferences with the parsed payload and returns the prefs row verbatim", async () => {
+  it("update_preferences ensures the prefs row exists, calls updatePreferences with the parsed payload, and wraps the result", async () => {
     updatePreferences.mockResolvedValueOnce({ userId: "u1", accentColor: "#123456" });
 
     const result = await dispatchCommand("u1", "update_preferences", {
@@ -541,12 +549,14 @@ describe("dispatchCommand — medication + schedule + preference + wipe commands
       doseLogPageSize: 25,
     });
 
+    expect(getOrCreatePreferences).toHaveBeenCalledTimes(1);
+    expect(getOrCreatePreferences).toHaveBeenCalledWith("u1");
     expect(updatePreferences).toHaveBeenCalledTimes(1);
     expect(updatePreferences).toHaveBeenCalledWith("u1", {
       accentColor: "#123456",
       doseLogPageSize: 25,
     });
-    expect(result).toEqual({ userId: "u1", accentColor: "#123456" });
+    expect(result).toEqual({ preferences: { userId: "u1", accentColor: "#123456" } });
   });
 
   it("wipe_dose_history calls wipeDoseHistory with the userId and returns {deleted}", async () => {

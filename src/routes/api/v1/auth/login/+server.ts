@@ -8,18 +8,7 @@ import { verifyPassword } from "$lib/server/auth/password";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { lucia } from "$lib/server/auth/lucia";
 import { signPreAuthToken } from "$lib/server/api/preauth";
-
-// Inlined until Task 9's `toSessionUser` (src/lib/server/api/serialize.ts)
-// lands — refactor this route to use it once that exists.
-const toSessionUser = (u: typeof users.$inferSelect) => ({
-  id: u.id,
-  email: u.email,
-  name: u.name,
-  avatarUrl: u.avatarUrl,
-  timezone: u.timezone,
-  twoFactorEnabled: u.twoFactorEnabled,
-  emailVerified: u.emailVerified,
-});
+import { toSessionUser } from "$lib/server/api/serialize";
 
 export const POST: RequestHandler = async ({ request }) => {
   const parsed = loginSchema.safeParse(await request.json());

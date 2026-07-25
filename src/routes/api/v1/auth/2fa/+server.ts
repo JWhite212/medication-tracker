@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { verifyPreAuthToken } from "$lib/server/api/preauth";
 import { verifyAndConsumeTOTPCode } from "$lib/server/auth/totp";
 import { lucia } from "$lib/server/auth/lucia";
+import { toSessionUser } from "$lib/server/api/serialize";
 
 const body = z.object({ preAuthToken: z.string(), code: z.string().regex(/^\d{6}$/) });
 
@@ -24,16 +25,5 @@ export const POST: RequestHandler = async ({ request }) => {
   if (!user) throw error(401, "Unknown user");
 
   const session = await lucia.createSession(user.id, {});
-  return json({
-    token: session.id,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      timezone: user.timezone,
-      twoFactorEnabled: user.twoFactorEnabled,
-      emailVerified: user.emailVerified,
-    },
-  });
+  return json({ token: session.id, user: toSessionUser(user) });
 };

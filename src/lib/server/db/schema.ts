@@ -11,7 +11,6 @@ import {
   primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { createId } from "@paralleldrive/cuid2";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -353,9 +352,7 @@ export const reauthTokens = pgTable(
 export const syncTombstones = pgTable(
   "sync_tombstones",
   {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => createId()),
+    id: text("id").primaryKey(),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -363,7 +360,7 @@ export const syncTombstones = pgTable(
     entityId: text("entity_id").notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("sync_tombstones_user_deleted_idx").on(t.userId, t.deletedAt)],
+  (table) => [index("sync_tombstones_user_deleted_idx").on(table.userId, table.deletedAt)],
 );
 
 // Idempotency ledger for /api/v1 write commands. A client retries a
@@ -380,5 +377,5 @@ export const apiCommands = pgTable(
     result: jsonb("result").$type<unknown>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.idempotencyKey] })],
+  (table) => [primaryKey({ columns: [table.userId, table.idempotencyKey] })],
 );

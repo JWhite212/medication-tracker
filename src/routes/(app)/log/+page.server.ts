@@ -58,6 +58,7 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
         quantity: doseLogs.quantity,
         takenAt: doseLogs.takenAt,
         loggedAt: doseLogs.loggedAt,
+        updatedAt: doseLogs.updatedAt,
         notes: doseLogs.notes,
         sideEffects: doseLogs.sideEffects,
         status: doseLogs.status,

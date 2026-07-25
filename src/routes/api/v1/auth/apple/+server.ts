@@ -7,23 +7,12 @@ import { and, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { lucia } from "$lib/server/auth/lucia";
 import { verifyAppleIdentityToken } from "$lib/server/api/apple";
+import { toSessionUser } from "$lib/server/api/serialize";
 
 const PROVIDER = "apple";
 const body = z.object({
   identityToken: z.string().min(1),
   fullName: z.string().max(200).optional(),
-});
-
-// Inlined until Task 9's `toSessionUser` (src/lib/server/api/serialize.ts)
-// lands — refactor this route to use it once that exists.
-const projectUser = (u: typeof users.$inferSelect) => ({
-  id: u.id,
-  email: u.email,
-  name: u.name,
-  avatarUrl: u.avatarUrl,
-  timezone: u.timezone,
-  twoFactorEnabled: u.twoFactorEnabled,
-  emailVerified: u.emailVerified,
 });
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -47,7 +36,7 @@ export const POST: RequestHandler = async ({ request }) => {
   if (link) {
     const [u] = await db.select().from(users).where(eq(users.id, link.userId)).limit(1);
     const session = await lucia.createSession(u.id, {});
-    return json({ token: session.id, user: projectUser(u) });
+    return json({ token: session.id, user: toSessionUser(u) });
   }
 
   // 2. email collision with a non-Apple account → refuse to auto-link
@@ -76,5 +65,5 @@ export const POST: RequestHandler = async ({ request }) => {
     .values({ provider: PROVIDER, providerUserId: identity.appleUserId, userId });
   const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   const session = await lucia.createSession(userId, {});
-  return json({ token: session.id, user: projectUser(u) });
+  return json({ token: session.id, user: toSessionUser(u) });
 };

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { upsertMedicationPayload } from "$lib/utils/validation";
 
 // api_commands is the idempotency ledger — table identity only matters
 // for drizzle's typings here, the mock db below ignores the actual
@@ -138,6 +139,58 @@ vi.mock("$lib/server/inventory-events", () => ({
     adjustInventory(userId, medicationId, newCount, note),
 }));
 
+const createMedicationWithSchedules = vi.fn(
+  async (
+    _userId: string,
+    _input: unknown,
+    _schedules: unknown,
+  ): Promise<{ id: string } | null> => ({ id: "med-created" }),
+);
+const updateMedicationWithSchedules = vi.fn(
+  async (
+    _userId: string,
+    _id: string,
+    _input: unknown,
+    _schedules: unknown,
+  ): Promise<{ id: string } | null> => ({ id: "med-updated" }),
+);
+const archiveMedication = vi.fn(async (_userId: string, _id: string): Promise<void> => {});
+const unarchiveMedication = vi.fn(async (_userId: string, _id: string): Promise<void> => {});
+const swapSortOrder = vi.fn(
+  async (_userId: string, _medId1: string, _medId2: string): Promise<void> => {},
+);
+vi.mock("$lib/server/medications", () => ({
+  createMedicationWithSchedules: (userId: string, input: unknown, schedules: unknown) =>
+    createMedicationWithSchedules(userId, input, schedules),
+  updateMedicationWithSchedules: (userId: string, id: string, input: unknown, schedules: unknown) =>
+    updateMedicationWithSchedules(userId, id, input, schedules),
+  archiveMedication: (userId: string, id: string) => archiveMedication(userId, id),
+  unarchiveMedication: (userId: string, id: string) => unarchiveMedication(userId, id),
+  swapSortOrder: (userId: string, medId1: string, medId2: string) =>
+    swapSortOrder(userId, medId1, medId2),
+}));
+
+const updatePreferences = vi.fn(
+  async (_userId: string, _updates: unknown): Promise<{ userId: string; accentColor: string }> => ({
+    userId: "u1",
+    accentColor: "#111111",
+  }),
+);
+vi.mock("$lib/server/preferences", () => ({
+  updatePreferences: (userId: string, updates: unknown) => updatePreferences(userId, updates),
+}));
+
+const wipeDoseHistory = vi.fn(
+  async (_userId: string): Promise<{ deleted: number }> => ({ deleted: 5 }),
+);
+const wipeArchivedMedications = vi.fn(
+  async (_userId: string): Promise<{ deleted: number }> => ({ deleted: 2 }),
+);
+vi.mock("$lib/server/api/wipe", () => ({
+  wipeDoseHistory: (userId: string) => wipeDoseHistory(userId),
+  wipeArchivedMedications: (userId: string) => wipeArchivedMedications(userId),
+}));
+
 const { runCommands, dispatchCommand, UnknownCommandError } =
   await import("../../../src/lib/server/api/commands");
 
@@ -154,6 +207,14 @@ beforeEach(() => {
   deleteDose.mockClear();
   refillMedication.mockClear();
   adjustInventory.mockClear();
+  createMedicationWithSchedules.mockClear();
+  updateMedicationWithSchedules.mockClear();
+  archiveMedication.mockClear();
+  unarchiveMedication.mockClear();
+  swapSortOrder.mockClear();
+  updatePreferences.mockClear();
+  wipeDoseHistory.mockClear();
+  wipeArchivedMedications.mockClear();
 });
 
 describe("runCommands", () => {
@@ -373,5 +434,138 @@ describe("dispatchCommand — dose + inventory commands (Task 12)", () => {
     await dispatchCommand("u1", "adjust_inventory", { medicationId: "med-1", newCount: 0 });
 
     expect(adjustInventory).toHaveBeenCalledWith("u1", "med-1", 0, null);
+  });
+});
+
+describe("dispatchCommand — medication + schedule + preference + wipe commands (Task 13)", () => {
+  const rawMedication = {
+    name: "Vitamin D",
+    dosageAmount: "1000",
+    dosageUnit: "IU",
+    form: "tablet" as const,
+    category: "supplement" as const,
+    colour: "#f59e0b",
+    pattern: "solid" as const,
+    scheduleType: "scheduled" as const,
+  };
+  const rawSchedules = [{ scheduleKind: "prn" as const }];
+  // The handler re-parses the payload internally; parse it here too so
+  // assertions compare against exactly what the handler actually passes
+  // downstream (defaults applied, transforms run), not the raw literal.
+  const { medication: parsedMedication, schedules: parsedSchedules } =
+    upsertMedicationPayload.parse({ medication: rawMedication, schedules: rawSchedules });
+
+  it("upsert_medication_with_schedules with no id calls createMedicationWithSchedules and wraps the result", async () => {
+    createMedicationWithSchedules.mockResolvedValueOnce({ id: "med-created" });
+
+    const result = await dispatchCommand("u1", "upsert_medication_with_schedules", {
+      medication: rawMedication,
+      schedules: rawSchedules,
+    });
+
+    expect(createMedicationWithSchedules).toHaveBeenCalledTimes(1);
+    expect(createMedicationWithSchedules).toHaveBeenCalledWith(
+      "u1",
+      parsedMedication,
+      parsedSchedules,
+    );
+    expect(updateMedicationWithSchedules).not.toHaveBeenCalled();
+    expect(result).toEqual({ medication: { id: "med-created" } });
+  });
+
+  it("upsert_medication_with_schedules with an id calls updateMedicationWithSchedules and wraps the result", async () => {
+    updateMedicationWithSchedules.mockResolvedValueOnce({ id: "med-updated" });
+
+    const result = await dispatchCommand("u1", "upsert_medication_with_schedules", {
+      id: "med-1",
+      medication: rawMedication,
+      schedules: rawSchedules,
+    });
+
+    expect(updateMedicationWithSchedules).toHaveBeenCalledTimes(1);
+    expect(updateMedicationWithSchedules).toHaveBeenCalledWith(
+      "u1",
+      "med-1",
+      parsedMedication,
+      parsedSchedules,
+    );
+    expect(createMedicationWithSchedules).not.toHaveBeenCalled();
+    expect(result).toEqual({ medication: { id: "med-updated" } });
+  });
+
+  it("upsert_medication_with_schedules still returns a non-null wrapper when updateMedicationWithSchedules finds no owned medication", async () => {
+    updateMedicationWithSchedules.mockResolvedValueOnce(null);
+
+    const result = await dispatchCommand("u1", "upsert_medication_with_schedules", {
+      id: "missing",
+      medication: rawMedication,
+      schedules: rawSchedules,
+    });
+
+    // The domain fn returned null, but the handler's own result must be a
+    // non-null object — the idempotency ledger treats a null `result`
+    // column as "in progress" (see the INVARIANT comment above `handlers`).
+    expect(result).not.toBeNull();
+    expect(result).toEqual({ medication: null });
+  });
+
+  it("archive calls archiveMedication with the mapped medicationId and returns {ok: true}", async () => {
+    const result = await dispatchCommand("u1", "archive", { medicationId: "med-1" });
+
+    expect(archiveMedication).toHaveBeenCalledTimes(1);
+    expect(archiveMedication).toHaveBeenCalledWith("u1", "med-1");
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("unarchive calls unarchiveMedication with the mapped medicationId and returns {ok: true}", async () => {
+    const result = await dispatchCommand("u1", "unarchive", { medicationId: "med-1" });
+
+    expect(unarchiveMedication).toHaveBeenCalledTimes(1);
+    expect(unarchiveMedication).toHaveBeenCalledWith("u1", "med-1");
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("reorder calls swapSortOrder with the mapped medication ids and returns {ok: true}", async () => {
+    const result = await dispatchCommand("u1", "reorder", { medId1: "med-1", medId2: "med-2" });
+
+    expect(swapSortOrder).toHaveBeenCalledTimes(1);
+    expect(swapSortOrder).toHaveBeenCalledWith("u1", "med-1", "med-2");
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("update_preferences calls updatePreferences with the parsed payload and returns the prefs row verbatim", async () => {
+    updatePreferences.mockResolvedValueOnce({ userId: "u1", accentColor: "#123456" });
+
+    const result = await dispatchCommand("u1", "update_preferences", {
+      accentColor: "#123456",
+      doseLogPageSize: 25,
+    });
+
+    expect(updatePreferences).toHaveBeenCalledTimes(1);
+    expect(updatePreferences).toHaveBeenCalledWith("u1", {
+      accentColor: "#123456",
+      doseLogPageSize: 25,
+    });
+    expect(result).toEqual({ userId: "u1", accentColor: "#123456" });
+  });
+
+  it("wipe_dose_history calls wipeDoseHistory with the userId and returns {deleted}", async () => {
+    wipeDoseHistory.mockResolvedValueOnce({ deleted: 12 });
+
+    const result = await dispatchCommand("u1", "wipe_dose_history", {});
+
+    expect(wipeDoseHistory).toHaveBeenCalledTimes(1);
+    expect(wipeDoseHistory).toHaveBeenCalledWith("u1");
+    expect(result).toEqual({ deleted: 12 });
+  });
+
+  it("wipe_archived_medications calls wipeArchivedMedications with the userId and returns {deleted}", async () => {
+    wipeArchivedMedications.mockResolvedValueOnce({ deleted: 3 });
+
+    const result = await dispatchCommand("u1", "wipe_archived_medications", {});
+
+    expect(wipeArchivedMedications).toHaveBeenCalledTimes(1);
+    expect(wipeArchivedMedications).toHaveBeenCalledWith("u1");
+    expect(result).toEqual({ deleted: 3 });
   });
 });

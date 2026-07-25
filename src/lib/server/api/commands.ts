@@ -4,12 +4,25 @@ import { apiCommands } from "$lib/server/db/schema";
 import { logDose, logSkippedDose, updateDose, deleteDose } from "$lib/server/doses";
 import { refillMedication, adjustInventory } from "$lib/server/inventory-events";
 import {
+  createMedicationWithSchedules,
+  updateMedicationWithSchedules,
+  archiveMedication,
+  unarchiveMedication,
+  swapSortOrder,
+} from "$lib/server/medications";
+import { updatePreferences } from "$lib/server/preferences";
+import { wipeDoseHistory, wipeArchivedMedications } from "$lib/server/api/wipe";
+import {
   logDosePayload,
   skipDosePayload,
   editDosePayload,
   deleteDosePayload,
   refillPayload,
   adjustInventoryPayload,
+  upsertMedicationPayload,
+  archivePayload,
+  reorderPayload,
+  updatePreferencesPayload,
 } from "$lib/utils/validation";
 
 export class UnknownCommandError extends Error {
@@ -75,6 +88,37 @@ const handlers: Record<string, Handler> = {
     const p = adjustInventoryPayload.parse(payload);
     return adjustInventory(userId, p.medicationId, p.newCount, p.note ?? null);
   },
+  // updateMedicationWithSchedules RETURNS NULL when the medication isn't
+  // found/owned by this user — that null must never escape this handler as
+  // the command's *result*, because the idempotency ledger (see runCommands
+  // above) uses a null `result` column to mean "in progress". Always wrap
+  // it in a non-null object, even when the medication itself is null.
+  upsert_medication_with_schedules: async (userId, payload) => {
+    const p = upsertMedicationPayload.parse(payload);
+    const medication = p.id
+      ? await updateMedicationWithSchedules(userId, p.id, p.medication, p.schedules)
+      : await createMedicationWithSchedules(userId, p.medication, p.schedules);
+    return { medication };
+  },
+  archive: async (userId, payload) => {
+    const p = archivePayload.parse(payload);
+    await archiveMedication(userId, p.medicationId);
+    return { ok: true };
+  },
+  unarchive: async (userId, payload) => {
+    const p = archivePayload.parse(payload);
+    await unarchiveMedication(userId, p.medicationId);
+    return { ok: true };
+  },
+  reorder: async (userId, payload) => {
+    const p = reorderPayload.parse(payload);
+    await swapSortOrder(userId, p.medId1, p.medId2);
+    return { ok: true };
+  },
+  update_preferences: async (userId, payload) =>
+    updatePreferences(userId, updatePreferencesPayload.parse(payload)),
+  wipe_dose_history: async (userId) => wipeDoseHistory(userId),
+  wipe_archived_medications: async (userId) => wipeArchivedMedications(userId),
 };
 
 export async function dispatchCommand(

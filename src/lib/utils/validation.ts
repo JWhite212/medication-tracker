@@ -227,3 +227,31 @@ export const adjustInventoryPayload = z.object({
   newCount: z.number().int().min(0),
   note: z.string().max(200).nullable().optional(),
 });
+
+export const upsertMedicationPayload = z.object({
+  id: z.string().optional(),
+  medication: medicationSchema,
+  schedules: schedulesSchema,
+});
+
+export const archivePayload = z.object({ medicationId: z.string() });
+
+export const reorderPayload = z.object({ medId1: z.string(), medId2: z.string() });
+
+export const updatePreferencesPayload = z.object({
+  accentColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+  dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
+  timeFormat: z.enum(["12h", "24h"]).optional(),
+  uiDensity: z.enum(["comfortable", "compact"]).optional(),
+  reducedMotion: z.boolean().optional(),
+  overdueEmailReminders: z.boolean().optional(),
+  overduePushReminders: z.boolean().optional(),
+  lowInventoryEmailAlerts: z.boolean().optional(),
+  lowInventoryPushAlerts: z.boolean().optional(),
+  doseLogPageSize: z.number().int().min(5).max(100).optional(),
+  heatmapPeriod: z.number().int().optional(),
+  exportFormat: z.enum(["pdf", "csv"]).optional(),
+});

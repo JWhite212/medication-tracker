@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { eq, and, gte, desc, sql, isNotNull, max } from "drizzle-orm";
 import { db, dbTx } from "$lib/server/db";
-import { doseLogs, medications } from "$lib/server/db/schema";
+import { doseLogs, medications, syncTombstones } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
 import { recordInventoryEvent } from "./inventory-events";
 import { startOfDay } from "$lib/utils/time";
@@ -201,6 +201,13 @@ export async function deleteDose(userId: string, doseId: string) {
         });
       }
     }
+
+    await tx.insert(syncTombstones).values({
+      id: createId(),
+      userId,
+      entityType: "dose_log",
+      entityId: doseId,
+    });
   });
   await logAudit(userId, "dose_log", doseId, "delete");
   return true;
@@ -244,6 +251,7 @@ export async function updateDose(
         ...(updates.sideEffects !== undefined && {
           sideEffects: updates.sideEffects ?? null,
         }),
+        updatedAt: new Date(),
       })
       .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
       .returning();

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { medications, doseLogs, inventoryEvents } from "$lib/server/db/schema";
+import { medications, doseLogs, inventoryEvents, syncTombstones } from "$lib/server/db/schema";
 
 // What db.select(...).limit(1) returns. Tests prime this before calling
 // the function under test to simulate "the dose row that exists in the DB".
@@ -14,7 +14,7 @@ let nextUpdatedRow: Record<string, unknown> | undefined;
 let failOnUpdateOf: unknown | null = null;
 
 // Operations recorded by the mock so tests can assert what was called.
-const updates: Array<{ table: unknown }> = [];
+const updates: Array<{ table: unknown; values: unknown }> = [];
 const deletes: Array<{ table: unknown }> = [];
 const inserts: Array<{ table: unknown; values: unknown }> = [];
 
@@ -44,24 +44,26 @@ function buildChainable() {
       chain.limit = () => Promise.resolve(nextSelectRow ? [nextSelectRow] : []);
       return chain;
     },
-    update: (table: unknown) => {
-      updates.push({ table });
-      if (failOnUpdateOf !== null && failOnUpdateOf === table) {
-        const err = new Error("simulated update failure");
-        const failingChain = {
-          returning: () => Promise.reject(err),
-          then: (_onFulfilled: unknown, onRejected?: (e: unknown) => unknown) =>
-            onRejected ? Promise.resolve().then(() => onRejected(err)) : Promise.reject(err),
+    update: (table: unknown) => ({
+      set: (values: unknown) => {
+        updates.push({ table, values });
+        if (failOnUpdateOf !== null && failOnUpdateOf === table) {
+          const err = new Error("simulated update failure");
+          const failingChain = {
+            returning: () => Promise.reject(err),
+            then: (_onFulfilled: unknown, onRejected?: (e: unknown) => unknown) =>
+              onRejected ? Promise.resolve().then(() => onRejected(err)) : Promise.reject(err),
+          };
+          return { where: () => failingChain };
+        }
+        const whereChain = {
+          returning: () => Promise.resolve(nextUpdatedRow ? [nextUpdatedRow] : []),
+          then: (onFulfilled: (v: unknown) => unknown) =>
+            Promise.resolve().then(() => onFulfilled(undefined)),
         };
-        return { set: () => ({ where: () => failingChain }) };
-      }
-      const whereChain = {
-        returning: () => Promise.resolve(nextUpdatedRow ? [nextUpdatedRow] : []),
-        then: (onFulfilled: (v: unknown) => unknown) =>
-          Promise.resolve().then(() => onFulfilled(undefined)),
-      };
-      return { set: () => ({ where: () => whereChain }) };
-    },
+        return { where: () => whereChain };
+      },
+    }),
     delete: (table: unknown) => {
       deletes.push({ table });
       return { where: () => Promise.resolve() };
@@ -295,5 +297,24 @@ describe("inventory event recording", () => {
     const row = events[0].values as Record<string, unknown>;
     expect(row.eventType).toBe("dose_quantity_updated");
     expect(row.quantityChange).toBe(-1);
+  });
+});
+
+describe("sync-aware mutations (Task 2)", () => {
+  it("updateDose bumps updatedAt", async () => {
+    nextSelectRow = takenDose({ quantity: 1 });
+    nextUpdatedRow = takenDose({ quantity: 2 });
+    await updateDose("u1", "d1", { quantity: 2 });
+
+    const doseUpdate = updates.find((u) => u.table === doseLogs);
+    expect(doseUpdate?.values).toHaveProperty("updatedAt");
+  });
+
+  it("deleteDose writes a tombstone", async () => {
+    nextSelectRow = takenDose();
+    await deleteDose("u1", "d1");
+
+    const tomb = inserts.find((i) => i.table === syncTombstones);
+    expect(tomb?.values).toMatchObject({ entityType: "dose_log", entityId: "d1" });
   });
 });

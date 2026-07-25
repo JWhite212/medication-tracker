@@ -313,6 +313,18 @@ describe("dispatchCommand — dose + inventory commands (Task 12)", () => {
     expect(result).toEqual({ updated: false });
   });
 
+  it("edit_dose passes an explicit null sideEffects through to updateDose (clear), not undefined", async () => {
+    updateDose.mockResolvedValueOnce({ id: "dose-1" });
+
+    await dispatchCommand("u1", "edit_dose", { doseId: "dose-1", sideEffects: null });
+
+    expect(updateDose).toHaveBeenCalledWith(
+      "u1",
+      "dose-1",
+      expect.objectContaining({ sideEffects: null }),
+    );
+  });
+
   it("delete_dose calls deleteDose with the mapped doseId and returns {deleted: boolean}", async () => {
     deleteDose.mockResolvedValueOnce(true);
 

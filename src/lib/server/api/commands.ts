@@ -58,7 +58,8 @@ const handlers: Record<string, Handler> = {
       takenAt: p.takenAt ? new Date(p.takenAt) : undefined,
       quantity: p.quantity,
       notes: p.notes,
-      sideEffects: p.sideEffects ?? undefined,
+      // Pass through null (explicit "clear side effects") vs undefined ("don't touch") — updateDose distinguishes them.
+      sideEffects: p.sideEffects,
     });
     return { updated: row !== null };
   },

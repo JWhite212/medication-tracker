@@ -6,6 +6,8 @@ import {
   medications,
   doseLogs,
   auditLogs,
+  syncTombstones,
+  apiCommands,
 } from "$lib/server/db/schema";
 
 describe("database schema", () => {
@@ -44,5 +46,18 @@ describe("database schema", () => {
     expect(auditLogs.changes).toBeDefined();
     expect(auditLogs.entityType).toBeDefined();
     expect(auditLogs.action).toBeDefined();
+  });
+
+  it("dose_logs has updatedAt for delta sync", () => {
+    expect(doseLogs.updatedAt).toBeDefined();
+  });
+
+  it("users has syncEpoch", () => {
+    expect(users.syncEpoch).toBeDefined();
+  });
+
+  it("sync tables exist", () => {
+    expect(syncTombstones.entityType).toBeDefined();
+    expect(apiCommands.idempotencyKey).toBeDefined();
   });
 });

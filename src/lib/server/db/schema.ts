@@ -11,6 +11,7 @@ import {
   primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { createId } from "@paralleldrive/cuid2";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -26,6 +27,12 @@ export const users = pgTable("users", {
   totpLastCounter: bigint("totp_last_counter", { mode: "number" }),
   twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   emailVerified: boolean("email_verified").notNull().default(false),
+  // Bumped whenever a mutation affecting this user's synced entities
+  // occurs outside the normal per-row updatedAt tracking (e.g. a
+  // destructive server-side operation). Native clients compare this
+  // against their last-synced epoch to decide whether a full resync
+  // is required instead of a delta sync.
+  syncEpoch: integer("sync_epoch").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -117,11 +124,17 @@ export const doseLogs = pgTable(
         Array<{ name: string; severity: "mild" | "moderate" | "severe" }>
       >(),
     status: text("status").notNull().default("taken").$type<DoseLogStatus>(),
+    // Delta-sync cursor for the /api/v1 sync endpoint — distinct from
+    // takenAt/loggedAt, which are user-facing timestamps. Bumped on
+    // every create/update so native clients can page "what changed
+    // since my last cursor" without rescanning the whole table.
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("dose_logs_user_taken_idx").on(table.userId, table.takenAt),
     index("dose_logs_med_taken_idx").on(table.medicationId, table.takenAt),
     index("dose_logs_user_status_taken_idx").on(table.userId, table.status, table.takenAt),
+    index("dose_logs_user_updated_idx").on(table.userId, table.updatedAt),
   ],
 );
 
@@ -330,4 +343,42 @@ export const reauthTokens = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("reauth_tokens_user_purpose_idx").on(table.userId, table.purpose)],
+);
+
+// Records a deletion of a synced entity so native clients can remove
+// their local copy on the next delta sync, instead of only ever
+// learning about creates/updates. entityType mirrors the sync-eligible
+// tables: 'medication' | 'dose_log' | 'medication_schedule' |
+// 'inventory_event'.
+export const syncTombstones = pgTable(
+  "sync_tombstones",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(), // 'medication' | 'dose_log' | 'medication_schedule' | 'inventory_event'
+    entityId: text("entity_id").notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sync_tombstones_user_deleted_idx").on(t.userId, t.deletedAt)],
+);
+
+// Idempotency ledger for /api/v1 write commands. A client retries a
+// command with the same idempotencyKey after a dropped response; the
+// API looks up (userId, idempotencyKey) first and replays the stored
+// result instead of re-applying the mutation.
+export const apiCommands = pgTable(
+  "api_commands",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    result: jsonb("result").$type<unknown>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.idempotencyKey] })],
 );

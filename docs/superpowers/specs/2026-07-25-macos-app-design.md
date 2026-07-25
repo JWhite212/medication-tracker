@@ -69,20 +69,17 @@ The trade we consciously accept for this: it's an **account-based health app**, 
 
 **Principle: the server stays canonical; every transactional invariant lives in exactly one place.** The `/api/v1` command endpoints call the _same_ server domain functions the web form actions already call (`logDose`, `refillMedication`, `updateMedicationWithSchedules`, …), so inventory clamping, signed inventory-event ledgers, audit diffs, and schedule replacement can never fork between web and Mac. The Mac app keeps a full local replica for offline reads/writes and schedules notifications locally, but writes replay as server-side **commands** so the server resolves inventory.
 
-### 3.1 Repository structure
+### 3.1 Repository structure — DECIDED: separate repo
 
-Recommendation: **keep it a monorepo.** The API contract is shared between the web backend and the Mac client, and co-locating them makes contract changes atomic and reviewable. Proposed layout:
+The Mac app lives in its **own new GitHub repository** in a **new local folder alongside `medication-tracker`** (a sibling directory one level above the current project folder, i.e. under `…/Projects/`). The work therefore spans **two repositories**:
 
 ```
-medication-tracker/
-  apps/
-    web/        # existing SvelteKit app (moved down one level) + /api/v1
-    mac/        # new Xcode workspace + SPM packages
-  packages/
-    api-contract/   # OpenAPI/JSON schema + generated TS types (optional)
+…/Projects/
+  medication-tracker/     # EXISTING web repo — gains the /api/v1 backend, migrations, Sign in with Apple
+  medtracker-mac/         # NEW repo — Xcode workspace + SPM packages (the Swift app)
 ```
 
-Moving the existing app into `apps/web/` is a mechanical but wide-reaching change; if that churn is unwelcome, the acceptable alternative is a **separate `medtracker-mac` repo** that documents the `/api/v1` contract it depends on. Decision deferred to the plan (see §17); default is monorepo.
+The new repo documents the `/api/v1` contract it consumes (a checked-in OpenAPI/JSON-schema file kept in sync by hand or generated from the web repo). Trade vs a monorepo: two repos to coordinate on contract changes, in exchange for zero churn to the existing web app's layout and a clean, independently-versioned Swift codebase. The new repo is created fresh; the current `worktree-macos-app-design` branch on the web repo only carries this spec and the `/api/v1` backend work.
 
 ---
 
@@ -336,7 +333,7 @@ The critic flagged that silently "fixing" these changes user-visible numbers. Ea
 | Interval meds **never remind until first dose logged** (no baseline)                                                                  | **Keep** for v1 parity; revisit as a "schedule-creation anchor" improvement later. Documented in-app.                      |
 | Low-inventory count, once alerted, **suppressed forever**                                                                             | **Fix** — reset suppression when a refill raises count above threshold (the improvement noted in §7.3).                    |
 | Heatmap keyed by **device-local** date but counts by **user-tz** date                                                                 | **Fix** — unify on profile tz (§6.1).                                                                                      |
-| Interaction check includes **archived** meds                                                                                          | **Keep** (documented) or consciously exclude — decide in the plan; do not change silently.                                 |
+| Interaction check includes **archived** meds                                                                                          | **Keep, documented** (DECIDED) — same behavior as the web; note it in the interaction-notice copy.                         |
 | `missed` status **never written** per-row (aggregate-inferred only)                                                                   | **Keep** — same inference.                                                                                                 |
 | `dateFormat` preference is **write-only dead code** on the web (stored, never read)                                                   | **Implement** it on the Mac (wire it into `DateFormatter`) — it should do what it says.                                    |
 | Dose quantity **unbounded on create**, 1–10 on edit                                                                                   | **Fix** — apply the 1–10 bound consistently.                                                                               |
@@ -364,13 +361,13 @@ The critic flagged that silently "fixing" these changes user-visible numbers. Ea
 
 Solo senior dev, strong in TypeScript, newer to Swift; FTE weeks, quality over speed.
 
-| Phase                   | Scope                                                                                                                                                                                                                                                                        | Est.                            |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| **0 — Backend API**     | Bearer auth (incl. TOTP step) + Sign in with Apple; `updated_at` + `sync_tombstones` migrations; delta-sync endpoint; idempotent command endpoint wrapping existing domain fns; full-JSON export; Vitest coverage                                                            | 2.5–3.5 wk                      |
-| **1 — Mac core**        | Workspace + 4 SPM packages; GRDB schema + migrator; cuid2 port; **`MedTrackerCore` + parity tests** (budget 1.5–2 wk — this is the contract); Keychain/auth/login UI; **sync engine** (pull, outbox, reconciliation); Dashboard, Medications CRUD + schedule editor, History | 6–8 wk                          |
-| **2 — Differentiators** | **Notification engine** (planner, actions, suppression, tz/wake/sync triggers, menu-bar agent, QA matrix); Analytics + insights; CSV/PDF export via `NSSavePanel`; Settings; app lock                                                                                        | 4–6 wk                          |
-| **3 — Ship**            | Accessibility pass; privacy manifest + nutrition label; screenshots; demo seed; TestFlight-for-Mac soak; App Review + one rejection round-trip                                                                                                                               | 2–3 wk                          |
-| **Total**               |                                                                                                                                                                                                                                                                              | **~15–20 FTE wk (≈4–5 months)** |
+| Phase                   | Scope                                                                                                                                                                                                                                                                                                                            | Est.                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| **0 — Backend API**     | Bearer auth (incl. TOTP step) + Sign in with Apple; `updated_at` + `sync_tombstones` migrations; delta-sync endpoint; idempotent command endpoint wrapping existing domain fns; full-JSON export; Vitest coverage                                                                                                                | 2.5–3.5 wk                      |
+| **1 — Mac core**        | **New `medtracker-mac` repo + local folder;** Xcode workspace + 4 SPM packages; GRDB schema + migrator; cuid2 port; **`MedTrackerCore` + parity tests** (budget 1.5–2 wk — this is the contract); Keychain/auth/login UI; **sync engine** (pull, outbox, reconciliation); Dashboard, Medications CRUD + schedule editor, History | 6–8 wk                          |
+| **2 — Differentiators** | **Notification engine** (planner, actions, suppression, tz/wake/sync triggers, menu-bar agent, QA matrix); Analytics + insights; CSV/PDF export via `NSSavePanel`; Settings; app lock                                                                                                                                            | 4–6 wk                          |
+| **3 — Ship**            | Accessibility pass; privacy manifest + nutrition label; screenshots; demo seed; TestFlight-for-Mac soak; App Review + one rejection round-trip                                                                                                                                                                                   | 2–3 wk                          |
+| **Total**               |                                                                                                                                                                                                                                                                                                                                  | **~15–20 FTE wk (≈4–5 months)** |
 
 **Phase 0 go/no-go spike (do first):** a sandboxed, Apple-Distribution-signed build proving (a) a scheduled `UNNotificationRequest` fires with the app fully quit, (b) a notification action launches the app and reaches the handler, (c) the time-sensitive entitlement is granted, (d) a bearer-auth `/api/v1` round-trip works. If the notification legs fail, the whole premise needs rework before investing months.
 
@@ -388,10 +385,12 @@ Solo senior dev, strong in TypeScript, newer to Swift; FTE weeks, quality over s
 
 ---
 
-## 19. Open decisions for the plan
+## 19. Decisions resolved (were open)
 
-1. **Repo layout:** monorepo (`apps/web` + `apps/mac`) vs a separate `medtracker-mac` repo. Default: monorepo.
-2. **Minimum macOS version:** 15 (Sequoia) proposed; confirm against the owner's own Mac and the SwiftUI/UserNotifications APIs used.
-3. **Interaction-check archived-meds inclusion:** keep-as-is vs exclude (§15).
-4. **Expose currently-hidden prefs** (`doseLogPageSize`, `heatmapPeriod`) in Settings, or keep them defaulted.
-5. **Sign in with Apple:** confirm it's wanted server-side now (required for App Review of the account app) vs deferring by making the Mac app email/password + existing OAuth only (riskier for 4.8).
+All five confirmed with the owner on 2026-07-25:
+
+1. **Repo layout — separate repo + separate local folder.** New `medtracker-mac` GitHub repo in a new sibling folder alongside `medication-tracker` (one level above the current project dir, under `…/Projects/`). The `/api/v1` backend work stays in the existing web repo. See §3.1.
+2. **Minimum macOS version — 15 (Sequoia).** Confirmed acceptable.
+3. **openFDA interaction check — keep archived meds included, documented.** Same behavior as the web; noted in the interaction-notice copy. See §15.
+4. **Expose the currently-hidden prefs — yes.** Surface `doseLogPageSize` (history page size) and `heatmapPeriod` (default analytics window) in Settings → Appearance/History rather than leaving them defaulted.
+5. **Sign in with Apple — yes, added server-side.** Welcome feature; also satisfies Guideline 4.8 for the account-based app.

@@ -264,8 +264,13 @@ export async function swapSortOrder(userId: string, medId1: string, medId2: stri
     .where(and(eq(medications.id, medId2), eq(medications.userId, userId)))
     .limit(1);
   if (!m1 || !m2) return;
-  await db.update(medications).set({ sortOrder: m2.sortOrder }).where(eq(medications.id, medId1));
-  await db.update(medications).set({ sortOrder: m1.sortOrder }).where(eq(medications.id, medId2));
+  // Both updates commit or roll back together — a throw partway through
+  // (e.g. a dropped connection) must not leave a half-completed swap that
+  // a command retry could then corrupt further.
+  await dbTx.transaction(async (tx) => {
+    await tx.update(medications).set({ sortOrder: m2.sortOrder }).where(eq(medications.id, medId1));
+    await tx.update(medications).set({ sortOrder: m1.sortOrder }).where(eq(medications.id, medId2));
+  });
 }
 
 export async function archiveMedication(userId: string, id: string) {

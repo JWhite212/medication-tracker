@@ -12,6 +12,7 @@ export async function verifyAppleIdentityToken(idToken: string): Promise<{
   const { payload } = await jwtVerify(idToken, JWKS, {
     issuer: "https://appleid.apple.com",
     audience: env.APPLE_CLIENT_ID,
+    requiredClaims: ["sub"],
   });
   const ev = payload.email_verified;
   return {

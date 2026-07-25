@@ -72,6 +72,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "arctic": "^3.7.0",
     "drizzle-orm": "^0.45.2",
+    "jose": "^6.2.4",
     "lucia": "^3.2.2",
     "pdfkit": "^0.18.0",
     "qrcode": "^1.5.4",

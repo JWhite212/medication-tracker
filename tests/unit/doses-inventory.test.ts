@@ -203,9 +203,11 @@ describe("transactional atomicity (Phase 2.1)", () => {
     // Both writes were attempted inside the transaction (the mock
     // recorded the update call before the simulated throw).
     expect(updates.some((u) => u.table === medications)).toBe(true);
-    // CRITICAL: the audit log was NOT called — logAudit runs AFTER
-    // dbTx.transaction(...) resolves; a throw bypasses it. In a real
-    // DB, the dose insert is also rolled back.
+    // CRITICAL: the audit log was NOT called — logAudit is now called
+    // INSIDE dbTx.transaction(...), after the inventory update, so the
+    // throw happens before that call is ever reached. In a real DB, the
+    // dose insert, inventory update, and (had it been reached) the audit
+    // row are all rolled back together.
     expect(auditCalls).toEqual([]);
   });
 

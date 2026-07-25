@@ -18,6 +18,15 @@ type Handler = (userId: string, payload: unknown) => Promise<unknown>;
 // Each handler validates its own JSON-native payload and delegates to an
 // existing domain function — no business logic is reimplemented here.
 // Tasks 12-13 register more command types into this same map.
+//
+// INVARIANT: every command handler's domain function MUST be all-or-nothing
+// — no durable side effect after its transaction commits — so that a thrown
+// error guarantees nothing was committed (runCommands releases the
+// reservation and allows retry on throw; see the reserve-first algorithm
+// documented on runCommands below). Handlers MUST also return a NON-NULL,
+// NON-UNDEFINED result: the idempotency ledger uses a null `result` to mean
+// "in progress", so a null/undefined handler result would make a completed
+// command indistinguishable from pending and block replay forever.
 const handlers: Record<string, Handler> = {
   log_dose: async (userId, payload) => {
     const p = logDosePayload.parse(payload);

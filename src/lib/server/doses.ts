@@ -141,18 +141,23 @@ export async function logSkippedDose(userId: string, medicationId: string) {
   await assertMedicationBelongsToUser(userId, medicationId);
   const id = createId();
   const now = new Date();
-  await db.insert(doseLogs).values({
-    id,
-    userId,
-    medicationId,
-    quantity: 1,
-    takenAt: now,
-    loggedAt: now,
-    notes: null,
-    sideEffects: null,
-    status: "skipped",
+  // Insert + audit log in a single transaction so logSkippedDose is
+  // all-or-nothing (see logDose above for why this matters for
+  // runCommands' reserve-first idempotency).
+  await dbTx.transaction(async (tx) => {
+    await tx.insert(doseLogs).values({
+      id,
+      userId,
+      medicationId,
+      quantity: 1,
+      takenAt: now,
+      loggedAt: now,
+      notes: null,
+      sideEffects: null,
+      status: "skipped",
+    });
+    await logAudit(userId, "dose_log", id, "create", undefined, tx);
   });
-  await logAudit(userId, "dose_log", id, "create");
   return id;
 }
 
@@ -211,8 +216,9 @@ export async function deleteDose(userId: string, doseId: string) {
       entityType: "dose_log",
       entityId: doseId,
     });
+
+    await logAudit(userId, "dose_log", doseId, "delete", undefined, tx);
   });
-  await logAudit(userId, "dose_log", doseId, "delete");
   return true;
 }
 
@@ -297,11 +303,12 @@ export async function updateDose(
       }
     }
 
+    const changes = computeChanges(existing, u);
+    if (changes) await logAudit(userId, "dose_log", doseId, "update", changes, tx);
+
     return u;
   });
 
-  const changes = computeChanges(existing, updated);
-  if (changes) await logAudit(userId, "dose_log", doseId, "update", changes);
   return updated;
 }
 

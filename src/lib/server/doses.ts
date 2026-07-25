@@ -39,6 +39,7 @@ export async function getTodaysDoses(
       status: doseLogs.status,
       takenAt: doseLogs.takenAt,
       loggedAt: doseLogs.loggedAt,
+      updatedAt: doseLogs.updatedAt,
       notes: doseLogs.notes,
       sideEffects: doseLogs.sideEffects,
       medication: {

@@ -37,6 +37,21 @@ vi.mock("$lib/server/db/schema", () => ({
 
 const inserts: Array<{ table: unknown; values: unknown }> = [];
 
+// The new-user path now runs both inserts inside dbTx.transaction (see
+// commands.ts atomicity fix) — mirror the tx-mock pattern used in
+// tests/unit/api/wipe.test.ts: the callback gets a mock tx client whose
+// insert() records into the same `inserts` array the old top-level
+// db.insert used to, so existing assertions keep working unmodified.
+function buildTxClient() {
+  return {
+    insert: (table: unknown) => ({
+      values: async (values: unknown) => {
+        inserts.push({ table, values });
+      },
+    }),
+  };
+}
+
 vi.mock("$lib/server/db", () => ({
   db: {
     select: () => ({
@@ -46,11 +61,10 @@ vi.mock("$lib/server/db", () => ({
         }),
       }),
     }),
-    insert: (table: unknown) => ({
-      values: async (values: unknown) => {
-        inserts.push({ table, values });
-      },
-    }),
+  },
+  dbTx: {
+    transaction: async <T>(cb: (tx: ReturnType<typeof buildTxClient>) => Promise<T>) =>
+      cb(buildTxClient()),
   },
 }));
 

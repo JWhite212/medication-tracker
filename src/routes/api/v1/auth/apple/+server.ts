@@ -1,7 +1,7 @@
 import { json, error } from "@sveltejs/kit";
 import type { RequestHandler } from "@sveltejs/kit";
 import { z } from "zod";
-import { db } from "$lib/server/db";
+import { db, dbTx } from "$lib/server/db";
 import { users, oauthAccounts } from "$lib/server/db/schema";
 import { and, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
@@ -52,17 +52,19 @@ export const POST: RequestHandler = async ({ request }) => {
   // 3. create fresh account + link
   const userId = createId();
   const email = identity.email?.toLowerCase() ?? `${identity.appleUserId}@privaterelay.appleid.com`;
-  await db.insert(users).values({
-    id: userId,
-    email,
-    name: parsed.data.fullName ?? "Apple User",
-    passwordHash: null,
-    emailVerified: identity.emailVerified,
-    avatarUrl: null,
+  await dbTx.transaction(async (tx) => {
+    await tx.insert(users).values({
+      id: userId,
+      email,
+      name: parsed.data.fullName ?? "Apple User",
+      passwordHash: null,
+      emailVerified: identity.emailVerified,
+      avatarUrl: null,
+    });
+    await tx
+      .insert(oauthAccounts)
+      .values({ provider: PROVIDER, providerUserId: identity.appleUserId, userId });
   });
-  await db
-    .insert(oauthAccounts)
-    .values({ provider: PROVIDER, providerUserId: identity.appleUserId, userId });
   const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   const session = await lucia.createSession(userId, {});
   return json({ token: session.id, user: toSessionUser(u) });

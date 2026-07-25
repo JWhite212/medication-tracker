@@ -60,4 +60,12 @@ describe("GET /api/v1/sync", () => {
 
     expect(buildSyncResponse).toHaveBeenCalledWith("u1", null, 0);
   });
+
+  it("rejects a malformed since parameter with 400 without calling buildSyncResponse", async () => {
+    const url = new URL("http://x/api/v1/sync?since=not-a-date");
+    const request = new Request(url, { headers: { authorization: "Bearer sess-1" } });
+
+    await expect(GET({ request, url } as never)).rejects.toMatchObject({ status: 400 });
+    expect(buildSyncResponse).not.toHaveBeenCalled();
+  });
 });

@@ -10,7 +10,7 @@ import {
   unarchiveMedication,
   swapSortOrder,
 } from "$lib/server/medications";
-import { updatePreferences } from "$lib/server/preferences";
+import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferences";
 import { wipeDoseHistory, wipeArchivedMedications } from "$lib/server/api/wipe";
 import {
   logDosePayload,
@@ -115,8 +115,12 @@ const handlers: Record<string, Handler> = {
     await swapSortOrder(userId, p.medId1, p.medId2);
     return { ok: true };
   },
-  update_preferences: async (userId, payload) =>
-    updatePreferences(userId, updatePreferencesPayload.parse(payload)),
+  update_preferences: async (userId, payload) => {
+    const updates = updatePreferencesPayload.parse(payload);
+    await getOrCreatePreferences(userId); // ensure the singleton row exists (Apple/API-first users)
+    const preferences = await updatePreferences(userId, updates);
+    return { preferences };
+  },
   wipe_dose_history: async (userId) => wipeDoseHistory(userId),
   wipe_archived_medications: async (userId) => wipeArchivedMedications(userId),
 };

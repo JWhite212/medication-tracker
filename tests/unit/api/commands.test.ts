@@ -70,6 +70,22 @@ const logDose = vi.fn(
     _sideEffects?: unknown,
   ): Promise<{ id: string }> => ({ id: "dose-1" }),
 );
+const logSkippedDose = vi.fn(
+  async (_userId: string, _medicationId: string): Promise<string> => "skipped-dose-1",
+);
+const updateDose = vi.fn(
+  async (
+    _userId: string,
+    _doseId: string,
+    _updates: {
+      takenAt?: Date;
+      quantity?: number;
+      notes?: string;
+      sideEffects?: unknown;
+    },
+  ): Promise<{ id: string } | null> => ({ id: "dose-1" }),
+);
+const deleteDose = vi.fn(async (_userId: string, _doseId: string): Promise<boolean> => true);
 vi.mock("$lib/server/doses", () => ({
   logDose: (
     userId: string,
@@ -79,6 +95,47 @@ vi.mock("$lib/server/doses", () => ({
     notes?: string,
     sideEffects?: unknown,
   ) => logDose(userId, medicationId, quantity, takenAt, notes, sideEffects),
+  logSkippedDose: (userId: string, medicationId: string) => logSkippedDose(userId, medicationId),
+  updateDose: (
+    userId: string,
+    doseId: string,
+    updates: { takenAt?: Date; quantity?: number; notes?: string; sideEffects?: unknown },
+  ) => updateDose(userId, doseId, updates),
+  deleteDose: (userId: string, doseId: string) => deleteDose(userId, doseId),
+}));
+
+const refillMedication = vi.fn(
+  async (
+    _userId: string,
+    _medicationId: string,
+    _quantity: number,
+    _note?: string | null,
+  ): Promise<{ previousCount: number | null; newCount: number }> => ({
+    previousCount: 10,
+    newCount: 40,
+  }),
+);
+const adjustInventory = vi.fn(
+  async (
+    _userId: string,
+    _medicationId: string,
+    _newCount: number,
+    _note?: string | null,
+  ): Promise<{ previousCount: number | null; newCount: number; quantityChange: number }> => ({
+    previousCount: 10,
+    newCount: 7,
+    quantityChange: -3,
+  }),
+);
+vi.mock("$lib/server/inventory-events", () => ({
+  refillMedication: (
+    userId: string,
+    medicationId: string,
+    quantity: number,
+    note?: string | null,
+  ) => refillMedication(userId, medicationId, quantity, note),
+  adjustInventory: (userId: string, medicationId: string, newCount: number, note?: string | null) =>
+    adjustInventory(userId, medicationId, newCount, note),
 }));
 
 const { runCommands, dispatchCommand, UnknownCommandError } =
@@ -92,6 +149,11 @@ beforeEach(() => {
   deletes.length = 0;
   updateShouldRejectOnce = false;
   logDose.mockClear();
+  logSkippedDose.mockClear();
+  updateDose.mockClear();
+  deleteDose.mockClear();
+  refillMedication.mockClear();
+  adjustInventory.mockClear();
 });
 
 describe("runCommands", () => {
@@ -202,5 +264,102 @@ describe("runCommands", () => {
 describe("dispatchCommand", () => {
   it("throws UnknownCommandError for an unregistered type", async () => {
     await expect(dispatchCommand("u1", "nope", {})).rejects.toThrow(UnknownCommandError);
+  });
+});
+
+describe("dispatchCommand — dose + inventory commands (Task 12)", () => {
+  it("skip_dose calls logSkippedDose with the mapped medicationId and returns {id}", async () => {
+    logSkippedDose.mockResolvedValueOnce("skip-1");
+
+    const result = await dispatchCommand("u1", "skip_dose", { medicationId: "med-1" });
+
+    expect(logSkippedDose).toHaveBeenCalledTimes(1);
+    expect(logSkippedDose).toHaveBeenCalledWith("u1", "med-1");
+    expect(result).toEqual({ id: "skip-1" });
+  });
+
+  it("edit_dose calls updateDose with the mapped fields and returns {updated: true} on a hit", async () => {
+    updateDose.mockResolvedValueOnce({ id: "dose-1" });
+
+    const result = await dispatchCommand("u1", "edit_dose", {
+      doseId: "dose-1",
+      takenAt: "2026-07-25T08:00:00.000Z",
+      quantity: 2,
+      notes: "with food",
+      sideEffects: [{ name: "nausea", severity: "mild" }],
+    });
+
+    expect(updateDose).toHaveBeenCalledTimes(1);
+    expect(updateDose).toHaveBeenCalledWith("u1", "dose-1", {
+      takenAt: new Date("2026-07-25T08:00:00.000Z"),
+      quantity: 2,
+      notes: "with food",
+      sideEffects: [{ name: "nausea", severity: "mild" }],
+    });
+    expect(result).toEqual({ updated: true });
+  });
+
+  it("edit_dose returns {updated: false} when updateDose finds no matching dose", async () => {
+    updateDose.mockResolvedValueOnce(null);
+
+    const result = await dispatchCommand("u1", "edit_dose", { doseId: "missing" });
+
+    expect(updateDose).toHaveBeenCalledWith("u1", "missing", {
+      takenAt: undefined,
+      quantity: undefined,
+      notes: undefined,
+      sideEffects: undefined,
+    });
+    expect(result).toEqual({ updated: false });
+  });
+
+  it("delete_dose calls deleteDose with the mapped doseId and returns {deleted: boolean}", async () => {
+    deleteDose.mockResolvedValueOnce(true);
+
+    const result = await dispatchCommand("u1", "delete_dose", { doseId: "dose-1" });
+
+    expect(deleteDose).toHaveBeenCalledTimes(1);
+    expect(deleteDose).toHaveBeenCalledWith("u1", "dose-1");
+    expect(result).toEqual({ deleted: true });
+  });
+
+  it("refill calls refillMedication with the mapped args and returns its result verbatim", async () => {
+    refillMedication.mockResolvedValueOnce({ previousCount: 10, newCount: 40 });
+
+    const result = await dispatchCommand("u1", "refill", {
+      medicationId: "med-1",
+      quantity: 30,
+      note: "pharmacy pickup",
+    });
+
+    expect(refillMedication).toHaveBeenCalledTimes(1);
+    expect(refillMedication).toHaveBeenCalledWith("u1", "med-1", 30, "pharmacy pickup");
+    expect(result).toEqual({ previousCount: 10, newCount: 40 });
+  });
+
+  it("refill defaults a missing note to null", async () => {
+    await dispatchCommand("u1", "refill", { medicationId: "med-1", quantity: 5 });
+
+    expect(refillMedication).toHaveBeenCalledWith("u1", "med-1", 5, null);
+  });
+
+  it("adjust_inventory calls adjustInventory with the mapped args and returns its result verbatim", async () => {
+    adjustInventory.mockResolvedValueOnce({ previousCount: 10, newCount: 7, quantityChange: -3 });
+
+    const result = await dispatchCommand("u1", "adjust_inventory", {
+      medicationId: "med-1",
+      newCount: 7,
+      note: "spilled pills",
+    });
+
+    expect(adjustInventory).toHaveBeenCalledTimes(1);
+    expect(adjustInventory).toHaveBeenCalledWith("u1", "med-1", 7, "spilled pills");
+    expect(result).toEqual({ previousCount: 10, newCount: 7, quantityChange: -3 });
+  });
+
+  it("adjust_inventory defaults a missing note to null", async () => {
+    await dispatchCommand("u1", "adjust_inventory", { medicationId: "med-1", newCount: 0 });
+
+    expect(adjustInventory).toHaveBeenCalledWith("u1", "med-1", 0, null);
   });
 });

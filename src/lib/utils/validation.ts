@@ -203,3 +203,27 @@ export const logDosePayload = z.object({
   notes: z.string().max(500).optional(),
   sideEffects: z.array(sideEffectJson).max(20).optional(),
 });
+
+export const skipDosePayload = z.object({ medicationId: z.string() });
+
+export const editDosePayload = z.object({
+  doseId: z.string(),
+  takenAt: z.string().datetime().optional(),
+  quantity: z.number().int().min(1).max(10).optional(),
+  notes: z.string().max(500).optional(),
+  sideEffects: z.array(sideEffectJson).max(20).nullable().optional(),
+});
+
+export const deleteDosePayload = z.object({ doseId: z.string() });
+
+export const refillPayload = z.object({
+  medicationId: z.string(),
+  quantity: z.number().int().positive(),
+  note: z.string().max(200).nullable().optional(),
+});
+
+export const adjustInventoryPayload = z.object({
+  medicationId: z.string(),
+  newCount: z.number().int().min(0),
+  note: z.string().max(200).nullable().optional(),
+});

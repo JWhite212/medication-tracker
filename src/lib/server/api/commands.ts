@@ -1,8 +1,16 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { apiCommands } from "$lib/server/db/schema";
-import { logDose } from "$lib/server/doses";
-import { logDosePayload } from "$lib/utils/validation";
+import { logDose, logSkippedDose, updateDose, deleteDose } from "$lib/server/doses";
+import { refillMedication, adjustInventory } from "$lib/server/inventory-events";
+import {
+  logDosePayload,
+  skipDosePayload,
+  editDosePayload,
+  deleteDosePayload,
+  refillPayload,
+  adjustInventoryPayload,
+} from "$lib/utils/validation";
 
 export class UnknownCommandError extends Error {
   constructor(type: string) {
@@ -39,6 +47,32 @@ const handlers: Record<string, Handler> = {
       p.sideEffects,
     );
     return { id: (row as { id: string }).id };
+  },
+  skip_dose: async (userId, payload) => {
+    const p = skipDosePayload.parse(payload);
+    return { id: await logSkippedDose(userId, p.medicationId) };
+  },
+  edit_dose: async (userId, payload) => {
+    const p = editDosePayload.parse(payload);
+    const row = await updateDose(userId, p.doseId, {
+      takenAt: p.takenAt ? new Date(p.takenAt) : undefined,
+      quantity: p.quantity,
+      notes: p.notes,
+      sideEffects: p.sideEffects ?? undefined,
+    });
+    return { updated: row !== null };
+  },
+  delete_dose: async (userId, payload) => {
+    const p = deleteDosePayload.parse(payload);
+    return { deleted: await deleteDose(userId, p.doseId) };
+  },
+  refill: async (userId, payload) => {
+    const p = refillPayload.parse(payload);
+    return refillMedication(userId, p.medicationId, p.quantity, p.note ?? null);
+  },
+  adjust_inventory: async (userId, payload) => {
+    const p = adjustInventoryPayload.parse(payload);
+    return adjustInventory(userId, p.medicationId, p.newCount, p.note ?? null);
   },
 };
 

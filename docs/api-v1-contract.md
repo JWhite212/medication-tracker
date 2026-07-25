@@ -487,7 +487,7 @@ Used for `429` on `/auth/login` and `/export/full`. Body:
 
 Plus a `Retry-After` response header (same integer, as a string). **Note the different key
 name** (`error`, not `message`) from shape A — this is deliberate in the source (see
-`src/routes/api/v1/auth/login/+server.ts` and `.../export/+server.ts`), not an inconsistency
+`src/routes/api/v1/auth/login/+server.ts` and `.../export/full/+server.ts`), not an inconsistency
 to normalize away; the client must check for `error === "rate_limited"` on 429s and
 `message` on the thrown-error statuses.
 

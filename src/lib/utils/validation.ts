@@ -185,3 +185,21 @@ export const scheduleRowSchema = z.discriminatedUnion("scheduleKind", [
 export const schedulesSchema = z.array(scheduleRowSchema).min(1).max(20);
 
 export type ScheduleInput = z.infer<typeof scheduleRowSchema>;
+
+// JSON-native command payload schemas for POST /api/v1/commands. These
+// mirror the form-oriented schemas above (doseLogSchema, sideEffectsField)
+// but accept real JSON types directly — no checkbox "on"/"off" strings, no
+// JSON-string transforms — since command payloads arrive as parsed JSON,
+// not multipart form fields.
+export const sideEffectJson = z.object({
+  name: z.string().min(1).max(100),
+  severity: z.enum(["mild", "moderate", "severe"]),
+});
+
+export const logDosePayload = z.object({
+  medicationId: z.string(),
+  quantity: z.number().int().min(1).max(10).default(1),
+  takenAt: z.string().datetime().optional(),
+  notes: z.string().max(500).optional(),
+  sideEffects: z.array(sideEffectJson).max(20).optional(),
+});

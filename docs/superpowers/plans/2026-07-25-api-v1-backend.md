@@ -206,13 +206,14 @@ In `deleteDose`, inside the existing `dbTx.transaction(async (tx) => {...})` blo
 
 ```ts
 await tx.insert(syncTombstones).values({
+  id: createId(),
   userId,
   entityType: "dose_log",
   entityId: doseId,
 });
 ```
 
-Import `syncTombstones` from `./db/schema`.
+Import `syncTombstones` from `./db/schema`. `syncTombstones.id` has **no** schema-level default (it follows the codebase convention where callers generate the cuid2 id), so you MUST pass `id: createId()` — import `createId` from `@paralleldrive/cuid2` (it is very likely already imported in `doses.ts`; check first).
 
 - [ ] **Step 4: Run to verify pass**
 

@@ -44,6 +44,11 @@ vi.mock("$lib/server/api/preauth", () => ({
   signPreAuthToken: (userId: string) => signPreAuthToken(userId),
 }));
 
+const logAudit = vi.fn(async (..._args: unknown[]) => {});
+vi.mock("$lib/server/audit", () => ({
+  logAudit: (...args: unknown[]) => logAudit(...args),
+}));
+
 vi.mock("$lib/server/db/schema", () => ({
   users: { id: {}, email: {}, passwordHash: {} },
 }));
@@ -103,6 +108,7 @@ beforeEach(() => {
   checkRateLimit.mockClear();
   createSession.mockClear();
   signPreAuthToken.mockClear();
+  logAudit.mockClear();
 });
 
 describe("POST /api/v1/auth/login", () => {
@@ -142,6 +148,38 @@ describe("POST /api/v1/auth/login", () => {
     await expect(call({ email: baseUser.email, password: "wrong" })).rejects.toMatchObject({
       status: 401,
     });
+  });
+
+  it("writes a failed_login audit row for a real account with the wrong password", async () => {
+    state.userRow = { ...baseUser };
+    state.verifyResult = false;
+    await expect(call({ email: baseUser.email, password: "wrong" })).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(logAudit).toHaveBeenCalledWith("u1", "session", "n/a", "failed_login");
+  });
+
+  it("does not write an audit row for an unknown email (no user id to attribute)", async () => {
+    state.userRow = null;
+    await expect(call({ email: "nobody@b.com", password: "whatever" })).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it("does not write an audit row for an OAuth-only account with no password hash", async () => {
+    state.userRow = { ...baseUser, passwordHash: null };
+    await expect(call({ email: baseUser.email, password: "whatever" })).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it("does not write a failed_login audit row on a successful login", async () => {
+    state.userRow = { ...baseUser };
+    state.verifyResult = true;
+    await call({ email: baseUser.email, password: "correct" });
+    expect(logAudit).not.toHaveBeenCalled();
   });
 
   it("returns { token, user } on correct credentials with no 2FA", async () => {

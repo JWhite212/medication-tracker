@@ -13,6 +13,17 @@ vi.mock("$lib/server/api/auth", () => ({
   requireApiUser: (request: Request) => requireApiUser(request),
 }));
 
+const state = { rateLimit: { allowed: true, retryAfterMs: 0 } };
+const rlCalls: Array<{ key: string; max: number | undefined; windowMs: number | undefined }> = [];
+const checkRateLimit = vi.fn(async (key: string, max?: number, windowMs?: number) => {
+  rlCalls.push({ key, max, windowMs });
+  return state.rateLimit;
+});
+vi.mock("$lib/server/auth/rate-limit", () => ({
+  checkRateLimit: (key: string, max?: number, windowMs?: number) =>
+    checkRateLimit(key, max, windowMs),
+}));
+
 const buildSyncResponse = vi.fn(async (_userId: string, _since: string | null, _epoch: number) => ({
   epoch: 2,
   fullResync: false,
@@ -36,6 +47,9 @@ const { GET } = await import("../../../src/routes/api/v1/sync/+server");
 beforeEach(() => {
   requireApiUser.mockClear();
   buildSyncResponse.mockClear();
+  checkRateLimit.mockClear();
+  rlCalls.length = 0;
+  state.rateLimit = { allowed: true, retryAfterMs: 0 };
 });
 
 describe("GET /api/v1/sync", () => {
@@ -66,6 +80,20 @@ describe("GET /api/v1/sync", () => {
     const request = new Request(url, { headers: { authorization: "Bearer sess-1" } });
 
     await expect(GET({ request, url } as never)).rejects.toMatchObject({ status: 400 });
+    expect(buildSyncResponse).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits per user: returns 429 with Retry-After and does not build the sync response", async () => {
+    state.rateLimit = { allowed: false, retryAfterMs: 30_000 };
+    const url = new URL("http://x/api/v1/sync");
+    const request = new Request(url, { headers: { authorization: "Bearer sess-1" } });
+
+    const res = await GET({ request, url } as never);
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("30");
+    await expect(res.json()).resolves.toEqual({ error: "rate_limited", retryAfterSeconds: 30 });
+    expect(rlCalls[0]).toMatchObject({ key: "api-sync:u1" });
     expect(buildSyncResponse).not.toHaveBeenCalled();
   });
 });

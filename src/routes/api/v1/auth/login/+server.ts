@@ -12,17 +12,11 @@ import {
 } from "$lib/server/auth/password";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { readJson } from "$lib/server/api/read-json";
+import { rateLimitedResponse } from "$lib/server/api/rate-limit-response";
 import { lucia } from "$lib/server/auth/lucia";
 import { signPreAuthToken } from "$lib/server/api/preauth";
 import { toSessionUser } from "$lib/server/api/serialize";
-
-function rateLimited(retryAfterMs: number) {
-  const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
-  return json(
-    { error: "rate_limited", retryAfterSeconds },
-    { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } },
-  );
-}
+import { logAudit } from "$lib/server/audit";
 
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   const parsed = loginSchema.safeParse(await readJson(request));
@@ -33,21 +27,30 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   // source), then per-email (throttles a distributed attack on one
   // account). The IP budget is looser: shared NATs are legitimate.
   const byIp = await checkRateLimit(`api-login-ip:${getClientAddress()}`, 10, 15 * 60 * 1000);
-  if (!byIp.allowed) return rateLimited(byIp.retryAfterMs);
+  if (!byIp.allowed) return rateLimitedResponse(byIp.retryAfterMs);
   const byEmail = await checkRateLimit(`api-login:${email}`, 5, 15 * 60 * 1000);
-  if (!byEmail.allowed) return rateLimited(byEmail.retryAfterMs);
+  if (!byEmail.allowed) return rateLimitedResponse(byEmail.retryAfterMs);
 
   const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  // Unknown or password-less accounts still burn an Argon2 verify so
-  // response timing cannot enumerate registered emails.
-  const ok = user?.passwordHash
-    ? await verifyPassword(user.passwordHash, parsed.data.password)
-    : await verifyDummyPassword(parsed.data.password);
-  if (!user || !ok) throw error(401, "Invalid email or password");
+
+  // Unknown or password-less (OAuth-only) accounts still burn an Argon2
+  // verify so response timing cannot enumerate registered emails. No
+  // audit row here: there is no user id to attribute a failed_login to
+  // for an unknown email, and this matches the web login action.
+  if (!user || !user.passwordHash) {
+    await verifyDummyPassword(parsed.data.password);
+    throw error(401, "Invalid email or password");
+  }
+
+  const ok = await verifyPassword(user.passwordHash, parsed.data.password);
+  if (!ok) {
+    await logAudit(user.id, "session", "n/a", "failed_login");
+    throw error(401, "Invalid email or password");
+  }
 
   // Transparent Argon2 parameter upgrade — same as the web login: this
   // is the only moment the plaintext is available.
-  if (user.passwordHash && needsRehash(user.passwordHash)) {
+  if (needsRehash(user.passwordHash)) {
     await db
       .update(users)
       .set({ passwordHash: await hashPassword(parsed.data.password) })

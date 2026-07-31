@@ -115,7 +115,7 @@ describe("POST /api/v1/auth/2fa", () => {
     const body = await res.json();
     expect(body).toEqual({ error: "rate_limited", retryAfterSeconds: 120 });
     expect(res.headers.get("Retry-After")).toBe("120");
-    expect(rlCalls[0]).toMatchObject({ key: "2fa:u1", max: 5 });
+    expect(rlCalls[0]).toMatchObject({ key: "2fa:u1", max: 5, windowMs: 900_000 });
     expect(verifyAndConsumeTOTPCode).not.toHaveBeenCalled();
   });
 

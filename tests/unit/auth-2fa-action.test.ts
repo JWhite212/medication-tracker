@@ -51,6 +51,7 @@ const call = (code: string, pendingUserId: string | undefined = "pending-user") 
   actions.default({
     request: new Request("http://x", { method: "POST", body: new URLSearchParams({ code }) }),
     cookies: makeCookies(pendingUserId),
+    getClientAddress: () => "1.1.1.1",
   } as never);
 
 beforeEach(() => {
@@ -62,13 +63,15 @@ beforeEach(() => {
 });
 
 describe("web 2FA action", () => {
-  it("rate-limits verification attempts per pending user and never checks the code when limited", async () => {
+  it("rate-limits per pending user AND client IP (so a forged pending_2fa cookie can't lock out a victim) and never checks the code when limited", async () => {
     state.rateLimit = { allowed: false, retryAfterMs: 10 * 60 * 1000 };
 
     const result = (await call("123456")) as { status: number };
     expect(result.status).toBe(429);
     expect(verifyAndConsumeTOTPCode).not.toHaveBeenCalled();
-    expect(rlCalls[0]?.key).toBe("2fa:pending-user");
+    // Compound key includes the IP: an attacker who forges pending_2fa
+    // to a victim's id burns their OWN ip's bucket, not the victim's.
+    expect(rlCalls[0]).toMatchObject({ key: "2fa:pending-user:1.1.1.1", max: 5, windowMs: 900000 });
   });
 
   it("counts the attempt before verifying so wrong guesses are not free", async () => {

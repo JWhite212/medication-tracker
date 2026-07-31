@@ -48,7 +48,10 @@ Body (`loginSchema`):
 - `400` if the body fails `loginSchema` validation — body `{ message: "Invalid credentials payload" }`.
 - Unknown emails and password-less (OAuth-only) accounts burn a dummy Argon2 verification so response timing cannot enumerate registered emails.
 - `401` if the email doesn't exist or the password is wrong (uniform message, no email
-  enumeration) — body `{ message: "Invalid email or password" }`.
+  enumeration) — body `{ message: "Invalid email or password" }`. A wrong password on an
+  **existing** account writes a `failed_login` audit row (`logAudit(user.id, "session",
+"n/a", "failed_login")`, same as the web login); unknown emails and OAuth-only accounts do
+  not (no user id to attribute).
 - If `user.twoFactorEnabled`, returns **200** with a TOTP challenge instead of a session:
 
   ```ts
@@ -144,7 +147,10 @@ Returned by all three auth endpoints (`src/lib/server/api/serialize.ts:toSession
 
 ## 3. `GET /sync`
 
-Delta pull for the native client. Auth required.
+Delta pull for the native client. Auth required. Rate-limited per user id:
+**120 requests / 60 seconds** (`checkRateLimit("api-sync:<userId>", 120, 60*1000)`) — generous
+enough for launch/foreground/post-drain syncs; only a runaway loop hits it. `429` on limit
+(see §6).
 
 **Query params:**
 
@@ -338,7 +344,10 @@ overrides date fields to ISO strings:
 
 ## 4. `POST /commands`
 
-Batched, idempotent write endpoint. Auth required.
+Batched, idempotent write endpoint. Auth required. Rate-limited per user id:
+**60 requests / 60 seconds** (`checkRateLimit("api-commands:<userId>", 60, 60*1000)`) — each
+request already carries up to 200 commands, so this bounds abuse without throttling normal
+outbox drains. `429` on limit (see §6).
 
 **Body:**
 
@@ -488,7 +497,8 @@ Examples actually produced by this code:
 
 ### B. Rate-limit responses (constructed directly, not via `error()`)
 
-Used for `429` on `/auth/login`, `/auth/2fa`, and `/export/full`. Body:
+Used for `429` on `/auth/login`, `/auth/2fa`, `/sync`, `/commands`, and `/export/full`
+(constructed via the shared `rateLimitedResponse` helper, `src/lib/server/api/rate-limit-response.ts`). Body:
 
 ```ts
 {

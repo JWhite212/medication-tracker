@@ -9,6 +9,17 @@ vi.mock("$lib/server/api/commands", () => ({
   runCommands: (userId: string, commands: unknown[]) => runCommands(userId, commands),
 }));
 
+const state = { rateLimit: { allowed: true, retryAfterMs: 0 } };
+const rlCalls: Array<{ key: string; max: number | undefined; windowMs: number | undefined }> = [];
+const checkRateLimit = vi.fn(async (key: string, max?: number, windowMs?: number) => {
+  rlCalls.push({ key, max, windowMs });
+  return state.rateLimit;
+});
+vi.mock("$lib/server/auth/rate-limit", () => ({
+  checkRateLimit: (key: string, max?: number, windowMs?: number) =>
+    checkRateLimit(key, max, windowMs),
+}));
+
 const { POST } = await import("../../../src/routes/api/v1/commands/+server");
 
 const call = (body: BodyInit) =>
@@ -18,6 +29,9 @@ const call = (body: BodyInit) =>
 
 beforeEach(() => {
   runCommands.mockClear();
+  checkRateLimit.mockClear();
+  rlCalls.length = 0;
+  state.rateLimit = { allowed: true, retryAfterMs: 0 };
 });
 
 describe("POST /api/v1/commands (route)", () => {
@@ -37,5 +51,17 @@ describe("POST /api/v1/commands (route)", () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ results: [] });
     expect(runCommands).toHaveBeenCalledWith("u1", [{ id: "c1", type: "log_dose", payload: {} }]);
+  });
+
+  it("rate-limits per user: returns 429 with Retry-After and never dispatches", async () => {
+    state.rateLimit = { allowed: false, retryAfterMs: 45_000 };
+
+    const res = await call(JSON.stringify({ commands: [] }));
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("45");
+    await expect(res.json()).resolves.toEqual({ error: "rate_limited", retryAfterSeconds: 45 });
+    expect(rlCalls[0]).toMatchObject({ key: "api-commands:u1", max: 60, windowMs: 60_000 });
+    expect(runCommands).not.toHaveBeenCalled();
   });
 });

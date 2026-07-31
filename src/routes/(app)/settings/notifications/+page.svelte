@@ -2,6 +2,7 @@
   import { enhance } from "$app/forms";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import { showToast } from "$lib/components/ui/Toast.svelte";
+  import { urlBase64ToUint8Array } from "$lib/utils/push";
 
   let { data, form } = $props();
 
@@ -60,6 +61,10 @@
         pushEnabled = false;
         showToast("Push notifications disabled", "success");
       } else {
+        // Guarded by `pushSupported` (which requires a VAPID key) before
+        // this button renders, but narrow it explicitly for the subscribe
+        // call below.
+        if (!data.vapidPublicKey) return;
         const permission = await Notification.requestPermission();
         if (permission !== "granted") {
           showToast("Notification permission denied", "error");
@@ -67,7 +72,7 @@
         }
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: data.vapidPublicKey,
+          applicationServerKey: urlBase64ToUint8Array(data.vapidPublicKey),
         });
         const res = await fetch("/api/push/subscribe", {
           method: "POST",

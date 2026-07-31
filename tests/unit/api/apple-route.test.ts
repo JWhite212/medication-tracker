@@ -95,6 +95,15 @@ beforeEach(() => {
 });
 
 describe("POST /api/v1/auth/apple", () => {
+  it("returns 400 (not 500) for a malformed JSON body", async () => {
+    await expect(
+      POST({
+        request: new Request("http://x", { method: "POST", body: "{not json" }),
+      } as never),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(verifyAppleIdentityToken).not.toHaveBeenCalled();
+  });
+
   it("signs in via an existing oauth_accounts (apple, sub) link", async () => {
     state.identityResult = { appleUserId: "000123.abc", email: "a@b.com", emailVerified: true };
     // 1st select: oauthAccounts lookup finds the link. 2nd select: user-by-id.

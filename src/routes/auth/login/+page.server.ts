@@ -1,7 +1,12 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { dev } from "$app/environment";
 import { loginSchema } from "$lib/utils/validation";
-import { verifyPassword, needsRehash, hashPassword } from "$lib/server/auth/password";
+import {
+  verifyPassword,
+  verifyDummyPassword,
+  needsRehash,
+  hashPassword,
+} from "$lib/server/auth/password";
 import { lucia } from "$lib/server/auth/lucia";
 import { db } from "$lib/server/db";
 import { users } from "$lib/server/db/schema";
@@ -44,6 +49,9 @@ export const actions: Actions = {
     const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
     if (!user || !user.passwordHash) {
+      // Unknown or password-less accounts still burn an Argon2 verify
+      // so response timing cannot enumerate registered emails.
+      await verifyDummyPassword(password);
       return fail(400, {
         errors: { form: ["Invalid email or password"] },
         email,

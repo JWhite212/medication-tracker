@@ -1,6 +1,7 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { lucia } from "$lib/server/auth/lucia";
 import { verifyAndConsumeTOTPCode } from "$lib/server/auth/totp";
+import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -20,6 +21,19 @@ export const actions: Actions = {
 
     if (code.length !== 6 || !/^\d{6}$/.test(code))
       return fail(400, { error: "Enter a 6-digit code" });
+
+    // Wrong codes are otherwise free to guess: the TOTP step counter
+    // only advances on success, so cap verification attempts per user.
+    const { allowed, retryAfterMs } = await checkRateLimit(
+      `2fa:${pendingUserId}`,
+      5,
+      15 * 60 * 1000,
+    );
+    if (!allowed) {
+      return fail(429, {
+        error: `Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
+      });
+    }
 
     // Atomic verify-and-consume rejects replay of the same TOTP step.
     const ok = await verifyAndConsumeTOTPCode(pendingUserId, code);

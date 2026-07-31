@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   hashPassword,
   verifyPassword,
+  verifyDummyPassword,
   needsRehash,
   ARGON2_PARAMS,
 } from "$lib/server/auth/password";
@@ -26,6 +27,14 @@ describe("password hashing", () => {
     const hash1 = await hashPassword("samepassword");
     const hash2 = await hashPassword("samepassword");
     expect(hash1).not.toBe(hash2);
+  });
+});
+
+describe("verifyDummyPassword", () => {
+  it("always returns false, whatever the input", async () => {
+    expect(await verifyDummyPassword("anything")).toBe(false);
+    expect(await verifyDummyPassword("")).toBe(false);
+    expect(await verifyDummyPassword("a".repeat(1024))).toBe(false);
   });
 });
 

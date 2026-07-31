@@ -19,6 +19,17 @@ export async function verifyPassword(hash: string, password: string): Promise<bo
   return verify(hash, password);
 }
 
+// A real Argon2id hash (current parameters) of a discarded random
+// secret. Login paths verify against it when the account is unknown or
+// password-less so response timing cannot enumerate registered emails.
+const DUMMY_PASSWORD_HASH =
+  "$argon2id$v=19$m=19456,t=2,p=1$r78Qi7iIJiKSmX/onwosfw$5ZGEdBHdbOncXnMKq/hIJNjNZLIddEd6+DkVR0GPtWo";
+
+export async function verifyDummyPassword(password: string): Promise<false> {
+  await verify(DUMMY_PASSWORD_HASH, password).catch(() => false);
+  return false;
+}
+
 // Argon2 PHC strings already embed their parameters
 // ($argon2id$v=19$m=19456,t=2,p=1$salt$digest), so no custom version
 // prefix is needed — parse them and compare against ARGON2_PARAMS.

@@ -43,8 +43,10 @@ Body (`loginSchema`):
 } // email: must be a valid email; password: non-empty
 ```
 
-- Rate-limited per lower-cased email: **5 attempts / 15 minutes** (`checkRateLimit("api-login:<email>", 5, 15*60*1000)`). Exceeding it returns `429` (see §6).
+- Rate-limited per client IP first: **10 attempts / 15 minutes** (`checkRateLimit("api-login-ip:<ip>", 10, 15*60*1000)`), then per lower-cased email: **5 attempts / 15 minutes** (`checkRateLimit("api-login:<email>", 5, 15*60*1000)`). Exceeding either returns `429` (see §6); the IP budget is checked first and does not touch the email budget when exceeded.
+- `400` if the body is not valid JSON — body `{ message: "Invalid JSON body" }` (`readJson`, `src/lib/server/api/read-json.ts`).
 - `400` if the body fails `loginSchema` validation — body `{ message: "Invalid credentials payload" }`.
+- Unknown emails and password-less (OAuth-only) accounts burn a dummy Argon2 verification so response timing cannot enumerate registered emails.
 - `401` if the email doesn't exist or the password is wrong (uniform message, no email
   enumeration) — body `{ message: "Invalid email or password" }`.
 - If `user.twoFactorEnabled`, returns **200** with a TOTP challenge instead of a session:
@@ -57,7 +59,10 @@ Body (`loginSchema`):
   ```
 
   `preAuthToken` is an HMAC-signed, **5-minute-TTL** token (`signPreAuthToken`,
-  `src/lib/server/api/preauth.ts`) — not a session token. Pass it to `/auth/2fa`.
+  `src/lib/server/api/preauth.ts`) — not a session token. Pass it to `/auth/2fa`. It embeds
+  a single-use id (`jti`): the token stays valid across wrong-code retries within its TTL,
+  but is consumed by the first **successful** `/auth/2fa` verification and cannot mint a
+  second session. Treat it as opaque.
 
 - Otherwise returns **200**:
 
@@ -81,10 +86,15 @@ Body:
 } // code: must match /^\d{6}$/
 ```
 
+- Rate-limited per user id behind the token: **5 attempts / 15 minutes** (`checkRateLimit("2fa:<userId>", 5, 15*60*1000)`). Exceeding it returns `429` (see §6). Wrong codes count toward the budget; the TOTP step counter alone only advances on success, so this is what makes guessing non-free.
+- `400` if the body is not valid JSON — `{ message: "Invalid JSON body" }`.
 - `400` if the body fails validation (e.g. code isn't 6 digits) — `{ message: "Invalid payload" }`.
 - `401` if the pre-auth token is invalid/expired/tampered — `{ message: "Challenge expired — sign in again" }`.
 - `401` if the TOTP code is wrong (via `verifyAndConsumeTOTPCode`, which also enforces the
   RFC 6238 replay guard against `totpLastCounter`) — `{ message: "Invalid code" }`.
+- `401` if the pre-auth token was already consumed by an earlier successful verification
+  (single-use `jti`) — `{ message: "Challenge expired — sign in again" }`. Wrong-code
+  attempts do **not** consume the token; only success does.
 - `401` if the user backing the pre-auth token no longer exists — `{ message: "Unknown user" }`.
 - Otherwise **200**: `{ token: string; user: SessionUser }` (new Lucia session, same shape as login).
 
@@ -101,6 +111,7 @@ against Apple's JWKS via `verifyAppleIdentityToken`, checking issuer `https://ap
 and audience `APPLE_CLIENT_ID`). This is the **native token flow only** — there is no web
 redirect flow implemented in `/api/v1` (deferred).
 
+- `400` if the body is not valid JSON — `{ message: "Invalid JSON body" }`.
 - `400` if the body fails validation — `{ message: "Invalid payload" }`.
 - `401` if the identity token fails verification — `{ message: "Invalid Apple token" }`.
 - Three outcomes after verification, checked in order:
@@ -462,12 +473,13 @@ Examples actually produced by this code:
 
 | status  | body                                               | where                                                                                        |
 | ------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 400     | `{ message: "Invalid JSON body" }`                 | any v1 POST route, body is not parseable JSON (`readJson`)                                   |
 | 400     | `{ message: "Invalid credentials payload" }`       | `POST /auth/login`, bad body                                                                 |
 | 400     | `{ message: "Invalid payload" }`                   | `POST /auth/2fa`, bad body                                                                   |
 | 400     | `{ message: "Invalid payload" }`                   | `POST /auth/apple`, bad body                                                                 |
 | 400     | `{ message: "Invalid commands payload" }`          | `POST /commands`, bad envelope                                                               |
 | 401     | `{ message: "Invalid email or password" }`         | `POST /auth/login`                                                                           |
-| 401     | `{ message: "Challenge expired — sign in again" }` | `POST /auth/2fa`, bad/expired preAuthToken                                                   |
+| 401     | `{ message: "Challenge expired — sign in again" }` | `POST /auth/2fa`, bad/expired preAuthToken — or one already consumed by a prior success      |
 | 401     | `{ message: "Invalid code" }`                      | `POST /auth/2fa`, wrong TOTP code                                                            |
 | 401     | `{ message: "Unknown user" }`                      | `POST /auth/2fa`, user deleted between login and 2fa                                         |
 | 401     | `{ message: "Invalid Apple token" }`               | `POST /auth/apple`                                                                           |
@@ -476,7 +488,7 @@ Examples actually produced by this code:
 
 ### B. Rate-limit responses (constructed directly, not via `error()`)
 
-Used for `429` on `/auth/login` and `/export/full`. Body:
+Used for `429` on `/auth/login`, `/auth/2fa`, and `/export/full`. Body:
 
 ```ts
 {

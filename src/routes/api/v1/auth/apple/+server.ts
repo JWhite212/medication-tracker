@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { lucia } from "$lib/server/auth/lucia";
 import { verifyAppleIdentityToken } from "$lib/server/api/apple";
+import { readJson } from "$lib/server/api/read-json";
 import { toSessionUser } from "$lib/server/api/serialize";
 
 const PROVIDER = "apple";
@@ -16,7 +17,7 @@ const body = z.object({
 });
 
 export const POST: RequestHandler = async ({ request }) => {
-  const parsed = body.safeParse(await request.json());
+  const parsed = body.safeParse(await readJson(request));
   if (!parsed.success) throw error(400, "Invalid payload");
 
   const identity = await verifyAppleIdentityToken(parsed.data.identityToken).catch(() => null);

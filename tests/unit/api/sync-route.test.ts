@@ -93,7 +93,7 @@ describe("GET /api/v1/sync", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBe("30");
     await expect(res.json()).resolves.toEqual({ error: "rate_limited", retryAfterSeconds: 30 });
-    expect(rlCalls[0]).toMatchObject({ key: "api-sync:u1" });
+    expect(rlCalls[0]).toMatchObject({ key: "api-sync:u1", max: 120, windowMs: 60_000 });
     expect(buildSyncResponse).not.toHaveBeenCalled();
   });
 });

@@ -61,7 +61,7 @@ describe("POST /api/v1/commands (route)", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBe("45");
     await expect(res.json()).resolves.toEqual({ error: "rate_limited", retryAfterSeconds: 45 });
-    expect(rlCalls[0]).toMatchObject({ key: "api-commands:u1" });
+    expect(rlCalls[0]).toMatchObject({ key: "api-commands:u1", max: 60, windowMs: 60_000 });
     expect(runCommands).not.toHaveBeenCalled();
   });
 });

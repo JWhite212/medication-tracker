@@ -36,6 +36,17 @@ describe("verifyDummyPassword", () => {
     expect(await verifyDummyPassword("")).toBe(false);
     expect(await verifyDummyPassword("a".repeat(1024))).toBe(false);
   });
+
+  it("performs a real Argon2 verification (a `return false` stub would not)", async () => {
+    // The whole point is timing parity with a real login: a genuine
+    // Argon2id verify at ARGON2_PARAMS (19 MiB, t=2) takes many ms,
+    // whereas a no-op stub returns in microseconds. A generous 1ms
+    // floor guards the security property without flakiness (load only
+    // makes it slower, never faster).
+    const start = performance.now();
+    await verifyDummyPassword("some-password");
+    expect(performance.now() - start).toBeGreaterThan(1);
+  });
 });
 
 describe("needsRehash", () => {

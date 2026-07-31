@@ -12,7 +12,7 @@ export const load: PageServerLoad = async ({ cookies }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ request, cookies }) => {
+  default: async ({ request, cookies, getClientAddress }) => {
     const pendingUserId = cookies.get("pending_2fa");
     if (!pendingUserId) redirect(302, "/auth/login");
 
@@ -23,9 +23,15 @@ export const actions: Actions = {
       return fail(400, { error: "Enter a 6-digit code" });
 
     // Wrong codes are otherwise free to guess: the TOTP step counter
-    // only advances on success, so cap verification attempts per user.
+    // only advances on success, so cap verification attempts. The key
+    // is scoped by client IP as well as the pending user id: the
+    // pending_2fa cookie is unauthenticated and forgeable, so keying on
+    // the user id alone would let anyone who knows a victim's id
+    // pre-exhaust (lock out) their 2FA budget. Scoping by IP means an
+    // attacker only burns their own bucket, and it no longer shares a
+    // key with the API 2FA path.
     const { allowed, retryAfterMs } = await checkRateLimit(
-      `2fa:${pendingUserId}`,
+      `2fa:${pendingUserId}:${getClientAddress()}`,
       5,
       15 * 60 * 1000,
     );

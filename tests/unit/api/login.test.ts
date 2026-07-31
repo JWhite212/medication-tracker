@@ -243,6 +243,10 @@ describe("POST /api/v1/auth/login", () => {
       "api-login-ip:9.9.9.9",
       `api-login:${baseUser.email}`,
     ]);
+    // Assert the actual budgets/windows, not just the keys, so a
+    // loosened limit can't pass CI silently.
+    expect(rlCalls[0]).toMatchObject({ max: 10, windowMs: 900_000 });
+    expect(rlCalls[1]).toMatchObject({ max: 5, windowMs: 900_000 });
   });
 
   it("returns 429 when the IP budget is exhausted, before touching the email budget", async () => {

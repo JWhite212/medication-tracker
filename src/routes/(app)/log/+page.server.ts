@@ -116,12 +116,13 @@ export const actions: Actions = {
     if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
 
     const { doseId, takenAt, quantity, notes, sideEffects } = parsed.data;
-    await updateDose(locals.user!.id, doseId, {
+    const updated = await updateDose(locals.user!.id, doseId, {
       takenAt: parseDateTimeLocal(takenAt, locals.user!.timezone),
       quantity,
       notes,
       sideEffects: sideEffects ?? null,
     });
+    if (!updated) return fail(404, { editErrors: { form: ["Dose no longer exists"] } });
     return { success: true };
   },
   deleteDose: async ({ request, locals }) => {

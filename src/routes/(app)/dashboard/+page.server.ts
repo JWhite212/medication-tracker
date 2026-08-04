@@ -143,7 +143,10 @@ export const actions: Actions = {
     const doseId = formData.get("doseId") as string;
 
     if (!doseId) return fail(400, { error: "Missing dose ID" });
-    await deleteDose(locals.user!.id, doseId);
+    // deleteDose returns false for a stale/unowned row (removed in
+    // another tab or via sync) — surface it instead of a false toast.
+    const deleted = await deleteDose(locals.user!.id, doseId);
+    if (!deleted) return fail(404, { error: "Dose not found" });
     return { success: true };
   },
   editDose: async ({ request, locals }) => {
@@ -152,12 +155,13 @@ export const actions: Actions = {
     if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
 
     const { doseId, takenAt, quantity, notes, sideEffects } = parsed.data;
-    await updateDose(locals.user!.id, doseId, {
+    const updated = await updateDose(locals.user!.id, doseId, {
       takenAt: parseDateTimeLocal(takenAt, locals.user!.timezone),
       quantity,
       notes,
       sideEffects: sideEffects ?? null,
     });
+    if (!updated) return fail(404, { editErrors: { form: ["Dose no longer exists"] } });
     return { success: true };
   },
   skipDose: async ({ request, locals }) => {

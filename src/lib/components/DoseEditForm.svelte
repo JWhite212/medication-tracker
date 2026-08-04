@@ -26,6 +26,10 @@
       if (result.type === "success") {
         showToast("Dose updated", "success");
         onclose();
+      } else if (result.type === "failure") {
+        const formError = (result.data as { editErrors?: { form?: string[] } } | undefined)
+          ?.editErrors?.form?.[0];
+        showToast(formError ?? "Couldn't update dose — check the fields", "error");
       }
       await update();
     };

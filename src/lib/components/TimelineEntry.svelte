@@ -96,6 +96,8 @@
           deleting = true;
           return async ({ result, update }) => {
             if (result.type === "success") showToast("Dose removed", "success");
+            else if (result.type === "failure")
+              showToast("Dose could not be removed — it may already be gone", "error");
             await update();
             deleting = false;
           };

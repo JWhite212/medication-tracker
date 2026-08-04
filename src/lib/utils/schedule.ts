@@ -210,7 +210,7 @@ export function computeScheduleSlots(
     const medSchedules = schedulesByMedId.get(med.id) ?? [];
     if (medSchedules.length === 0) continue;
 
-    const expectedTimes: Date[] = [];
+    const expectedTimes: { time: Date; kind: "interval" | "fixed_time" }[] = [];
 
     for (const schedule of medSchedules) {
       if (schedule.scheduleKind === "prn") continue;
@@ -220,26 +220,46 @@ export function computeScheduleSlots(
         if (!intervalHours || intervalHours <= 0) continue;
         const lastDose = lastDoseByMedication[med.id];
         const anchor = lastDose ? new Date(lastDose.getTime()) : new Date(dayStartUtc.getTime());
-        expectedTimes.push(
-          ...expectedTimesForInterval(intervalHours, anchor, dayStartUtc, dayEndUtc),
-        );
+        for (const t of expectedTimesForInterval(intervalHours, anchor, dayStartUtc, dayEndUtc)) {
+          expectedTimes.push({ time: t, kind: "interval" });
+        }
       } else if (schedule.scheduleKind === "fixed_time") {
-        expectedTimes.push(
-          ...expectedTimesForFixedTime(schedule, dayStartUtc, dayEndUtc, timezone),
-        );
+        for (const t of expectedTimesForFixedTime(schedule, dayStartUtc, dayEndUtc, timezone)) {
+          expectedTimes.push({ time: t, kind: "fixed_time" });
+        }
       }
     }
 
     if (expectedTimes.length === 0) continue;
 
     // Dedupe — two schedule rows might emit the same expected time.
-    const seen = new Set<number>();
-    const dedup: Date[] = [];
-    for (const t of expectedTimes) {
-      if (seen.has(t.getTime())) continue;
-      seen.add(t.getTime());
-      dedup.push(t);
+    // On an exact collision keep the fixed_time entry so the declared
+    // schedule, not the derived interval projection, is canonical.
+    const byTime = new Map<number, { time: Date; kind: "interval" | "fixed_time" }>();
+    for (const e of expectedTimes) {
+      const key = e.time.getTime();
+      const existing = byTime.get(key);
+      if (!existing || (existing.kind === "interval" && e.kind === "fixed_time")) {
+        byTime.set(key, e);
+      }
     }
+
+    // Interval projections anchor to the *actual* last-taken time, so
+    // they drift with the user's behaviour (log at 08:55 → project
+    // 08:55). When such a projection lands within the matching
+    // tolerance of a declared fixed_time slot it is the same intended
+    // dose, not an extra one — drop the phantom twin and keep the
+    // declared time. Explicit fixed_time rows are never collapsed.
+    const fixedMs = [...byTime.values()]
+      .filter((e) => e.kind === "fixed_time")
+      .map((e) => e.time.getTime());
+    const dedup = [...byTime.values()]
+      .filter(
+        (e) =>
+          e.kind === "fixed_time" ||
+          !fixedMs.some((f) => Math.abs(f - e.time.getTime()) <= MATCH_TOLERANCE_MS),
+      )
+      .map((e) => e.time);
     dedup.sort((a, b) => a.getTime() - b.getTime());
 
     const medDoses = dosesByMedId.get(med.id) ?? [];

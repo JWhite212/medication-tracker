@@ -29,6 +29,10 @@ export type MedicationWithStats = Medication & {
   weeklyDoseCount: number;
   avgDailyConsumption: number;
   daysUntilRefill: number | null;
+  // Schedule-aware doses/day (medication_schedules first, legacy
+  // interval as fallback); null for PRN. Drives the adherence bar's
+  // expected-dose denominator. Optional so older constructors compile.
+  expectedDailyDoses?: number | null;
   // 14-day daily-dose count series, oldest → newest. Optional so
   // existing callers don't need to populate it.
   sparkline?: number[];

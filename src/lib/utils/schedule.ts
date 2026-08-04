@@ -1,5 +1,6 @@
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
+import { classifyDueStatus } from "./time";
 
 export type ScheduleSlotStatus = "taken" | "skipped" | "upcoming" | "overdue";
 
@@ -349,4 +350,31 @@ export function groupSlotsByTimeOfDay(slots: ScheduleSlot[], timezone: string): 
   return config
     .filter((c) => groups[c.key].length > 0)
     .map((c) => ({ ...c, slots: groups[c.key] }));
+}
+
+/**
+ * Derive a QuickLogBar-style timing status from a medication's My Day
+ * slots: the earliest unresolved (overdue/upcoming) slot is the next
+ * due dose. Returns null when nothing is pending today — used for
+ * fixed-time medications, whose deprecated legacy interval columns are
+ * null and who therefore never matched the interval-based path.
+ */
+export function timingStatusFromSlots(
+  slots: ScheduleSlot[],
+  now: Date,
+): { status: "ok" | "due_soon" | "due_now" | "overdue"; minutesUntilDue: number } | null {
+  let pending: ScheduleSlot | undefined;
+  for (const s of slots) {
+    if (s.status !== "overdue" && s.status !== "upcoming") continue;
+    if (!pending || new Date(s.expectedTime).getTime() < new Date(pending.expectedTime).getTime()) {
+      pending = s;
+    }
+  }
+  if (!pending) return null;
+
+  const msUntilDue = new Date(pending.expectedTime).getTime() - now.getTime();
+  return {
+    status: classifyDueStatus(msUntilDue),
+    minutesUntilDue: Math.round(msUntilDue / 60_000),
+  };
 }

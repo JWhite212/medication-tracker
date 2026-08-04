@@ -151,6 +151,26 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     .limit(1);
 
   if (existingOAuth) {
+    // A verified provider identity is only the first factor. Without
+    // this gate, enabling TOTP is a no-op for OAuth-only accounts —
+    // route through the same pending_2fa → /auth/2fa challenge as the
+    // password login before any session exists.
+    const [linkedUser] = await db
+      .select({ twoFactorEnabled: users.twoFactorEnabled })
+      .from(users)
+      .where(eq(users.id, existingOAuth.userId))
+      .limit(1);
+    if (linkedUser?.twoFactorEnabled) {
+      cookies.set("pending_2fa", existingOAuth.userId, {
+        path: "/",
+        maxAge: 300,
+        httpOnly: true,
+        secure: !dev,
+        sameSite: "lax",
+      });
+      redirect(302, "/auth/2fa");
+    }
+
     const session = await lucia.createSession(existingOAuth.userId, {});
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {

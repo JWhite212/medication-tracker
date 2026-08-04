@@ -38,7 +38,13 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/dashboard";
+  const raw = (event.notification.data && event.notification.data.url) || "/dashboard";
+  // Only navigate to same-origin paths — "//host" is protocol-relative
+  // and would leave the app, so it falls back too. Payload URLs are
+  // server-authored today; this keeps a future dynamic-URL reminder
+  // from becoming an open redirect.
+  const url =
+    typeof raw === "string" && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/dashboard";
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {

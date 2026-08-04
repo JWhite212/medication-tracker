@@ -148,21 +148,24 @@ export function computeTimingStatus(
   const intervalMs = intervalHours * 60 * 60 * 1000;
   const nextDueAt = lastEventAt.getTime() + intervalMs;
   const msUntilDue = nextDueAt - now.getTime();
-  const minutesUntilDue = Math.round(msUntilDue / 60_000);
+  return {
+    status: classifyDueStatus(msUntilDue),
+    minutesUntilDue: Math.round(msUntilDue / 60_000),
+  };
+}
 
-  // Thresholds: overdue if past due, due_now if within 1 min, due_soon if within 1 hour
-  if (msUntilDue <= -60_000) {
-    return { status: "overdue", minutesUntilDue };
-  }
-  if (msUntilDue <= 60_000) {
-    // Within +-1 minute of due time
-    return { status: "due_now", minutesUntilDue };
-  }
-  if (msUntilDue <= 60 * 60_000) {
-    // Within 1 hour
-    return { status: "due_soon", minutesUntilDue };
-  }
-  return { status: "ok", minutesUntilDue };
+/**
+ * Shared due-ness thresholds: overdue if more than a minute past due,
+ * due_now within ±1 minute, due_soon within the next hour. Used by
+ * both the interval-based computeTimingStatus above and the slot-based
+ * timing in $lib/utils/schedule.ts so the QuickLogBar badges mean the
+ * same thing for every schedule kind.
+ */
+export function classifyDueStatus(msUntilDue: number): "ok" | "due_soon" | "due_now" | "overdue" {
+  if (msUntilDue <= -60_000) return "overdue";
+  if (msUntilDue <= 60_000) return "due_now";
+  if (msUntilDue <= 60 * 60_000) return "due_soon";
+  return "ok";
 }
 
 export function startOfDay(date: Date, timezone: string): Date {

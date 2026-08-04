@@ -13,7 +13,7 @@ import {
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
 import { parseDateTimeLocal, startOfDay, computeTimingStatus } from "$lib/utils/time";
-import { computeScheduleSlots } from "$lib/utils/schedule";
+import { computeScheduleSlots, timingStatusFromSlots } from "$lib/utils/schedule";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import type { Actions, PageServerLoad } from "./$types";
 import type { MedicationTimingStatus } from "$lib/types";
@@ -73,6 +73,20 @@ export const load: PageServerLoad = async ({ locals }) => {
     user.timezone,
     now,
   );
+
+  // Fixed-time medications have null legacy interval columns, so the
+  // filter above never gives them a QuickLogBar badge. Derive their
+  // timing from today's slots instead (PRN meds project no slots and
+  // stay badge-free).
+  const covered = new Set(timingStatus.map((t) => t.medicationId));
+  for (const med of medications) {
+    if (covered.has(med.id)) continue;
+    const t = timingStatusFromSlots(
+      scheduleSlots.filter((s) => s.medicationId === med.id),
+      now,
+    );
+    if (t) timingStatus.push({ medicationId: med.id, ...t });
+  }
 
   return {
     medications,

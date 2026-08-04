@@ -1,12 +1,14 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and, sql, max, count, inArray } from "drizzle-orm";
+import { eq, and, sql, max, inArray } from "drizzle-orm";
 import { db, dbTx } from "$lib/server/db";
 import { auditLogs, medications, doseLogs, medicationSchedules } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
-import { buildScheduleRows, MedicationOwnershipError } from "./schedules";
+import { buildScheduleRows, MedicationOwnershipError, getSchedulesForUser } from "./schedules";
+import type { MedicationSchedule } from "./schedules";
+import { dailyRateFor, daysUntilRefill } from "./inventory";
+import { expectedPerDayForSchedules } from "./analytics";
 import type { MedicationInput, ScheduleInput } from "$lib/utils/validation";
-import type { MedicationWithStats } from "$lib/types";
-import { calculateDaysUntilRefill } from "$lib/utils/time";
+import type { Medication, MedicationWithStats } from "$lib/types";
 
 export async function getActiveMedications(userId: string) {
   return db
@@ -20,20 +22,33 @@ export async function getMedicationsWithStats(userId: string): Promise<Medicatio
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  const meds = await getActiveMedications(userId);
+  const [meds, schedulesByMed] = await Promise.all([
+    getActiveMedications(userId),
+    getSchedulesForUser(userId),
+  ]);
   if (meds.length === 0) return [];
 
   // Scope to active meds so archived rows don't hit the aggregate.
+  // Taken doses only — skipped/missed rows never consumed inventory
+  // and must not move "last taken" or the adherence numerator. Sum
+  // quantity, not rows: a ×3 log is three doses (CLAUDE.md gotcha),
+  // matching how inventory.ts and the sparkline already count.
   const medIds = meds.map((m) => m.id);
   const stats = await db
     .select({
       medicationId: doseLogs.medicationId,
       lastTakenAt: max(doseLogs.takenAt),
-      weeklyDoseCount: count(sql`CASE WHEN ${doseLogs.takenAt} >= ${sevenDaysAgo} THEN 1 END`),
-      thirtyDayDoseCount: count(sql`CASE WHEN ${doseLogs.takenAt} >= ${thirtyDaysAgo} THEN 1 END`),
+      weeklyDoseCount: sql<number>`coalesce(sum(CASE WHEN ${doseLogs.takenAt} >= ${sevenDaysAgo} THEN ${doseLogs.quantity} ELSE 0 END), 0)::int`,
+      thirtyDayDoseCount: sql<number>`coalesce(sum(CASE WHEN ${doseLogs.takenAt} >= ${thirtyDaysAgo} THEN ${doseLogs.quantity} ELSE 0 END), 0)::int`,
     })
     .from(doseLogs)
-    .where(and(eq(doseLogs.userId, userId), inArray(doseLogs.medicationId, medIds)))
+    .where(
+      and(
+        eq(doseLogs.userId, userId),
+        inArray(doseLogs.medicationId, medIds),
+        eq(doseLogs.status, "taken"),
+      ),
+    )
     .groupBy(doseLogs.medicationId);
 
   const statsMap = new Map(
@@ -42,28 +57,53 @@ export async function getMedicationsWithStats(userId: string): Promise<Medicatio
       {
         lastTakenAt: s.lastTakenAt ? new Date(s.lastTakenAt) : null,
         weeklyDoseCount: Number(s.weeklyDoseCount),
-        avgDailyConsumption: Number(s.thirtyDayDoseCount) / 30,
+        thirtyDayDoseCount: Number(s.thirtyDayDoseCount),
       },
     ]),
   );
 
-  return meds.map((med) => {
-    const s = statsMap.get(med.id);
-    const avgDaily = s?.avgDailyConsumption ?? 0;
+  return meds.map((med) =>
+    medicationStatsFor(med, schedulesByMed.get(med.id), statsMap.get(med.id)),
+  );
+}
 
-    return {
-      ...med,
-      lastTakenAt: s?.lastTakenAt ?? null,
-      weeklyDoseCount: s?.weeklyDoseCount ?? 0,
-      avgDailyConsumption: avgDaily,
-      daysUntilRefill: calculateDaysUntilRefill(
-        med.inventoryCount,
-        avgDaily,
-        med.scheduleType,
-        med.scheduleIntervalHours,
-      ),
-    };
-  });
+/**
+ * Pure per-medication stats assembly. daysUntilRefill goes through
+ * inventory.ts's dailyRateFor — the single source of truth (schedule
+ * rows first, legacy interval column next, 30-day history for PRN) —
+ * instead of only the deprecated legacy columns, which are null for
+ * fixed-time medications. expectedDailyDoses is the scheduled rate
+ * for the adherence denominator; null when the med has no scheduled
+ * rate (PRN), so the card renders no adherence bar.
+ */
+export function medicationStatsFor(
+  med: Medication,
+  schedules: MedicationSchedule[] | undefined,
+  s: { lastTakenAt: Date | null; weeklyDoseCount: number; thirtyDayDoseCount: number } | undefined,
+): MedicationWithStats {
+  const thirtyDayDoseCount = s?.thirtyDayDoseCount ?? 0;
+  const dailyRate = dailyRateFor(
+    schedules,
+    med.scheduleType,
+    med.scheduleIntervalHours,
+    thirtyDayDoseCount,
+  );
+
+  const scheduledRate = schedules ? expectedPerDayForSchedules(schedules) : 0;
+  const legacyHrs = med.scheduleIntervalHours != null ? Number(med.scheduleIntervalHours) : NaN;
+  const legacyRate =
+    med.scheduleType === "scheduled" && Number.isFinite(legacyHrs) && legacyHrs > 0
+      ? 24 / legacyHrs
+      : 0;
+
+  return {
+    ...med,
+    lastTakenAt: s?.lastTakenAt ?? null,
+    weeklyDoseCount: s?.weeklyDoseCount ?? 0,
+    avgDailyConsumption: thirtyDayDoseCount / 30,
+    daysUntilRefill: daysUntilRefill(med.inventoryCount, dailyRate),
+    expectedDailyDoses: scheduledRate > 0 ? scheduledRate : legacyRate > 0 ? legacyRate : null,
+  };
 }
 
 export async function getMedicationById(userId: string, id: string) {

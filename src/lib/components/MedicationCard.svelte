@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { MedicationWithStats } from "$lib/types";
   import { getMedicationBackground } from "$lib/utils/medication-style";
+  import { expectedWeeklyDoses, adherencePercent } from "$lib/utils/adherence";
   import TimeSince from "$components/TimeSince.svelte";
   import Sparkline from "$components/Sparkline.svelte";
 
@@ -14,14 +15,11 @@
   }
 
   const isScheduled = $derived(medication.scheduleType === "scheduled");
-  const scheduleHours = $derived(
-    medication.scheduleIntervalHours ? Number(medication.scheduleIntervalHours) : 24,
+  const weeklyExpected = $derived(
+    expectedWeeklyDoses(medication.expectedDailyDoses, medication.scheduleIntervalHours),
   );
-  const expectedWeeklyDoses = $derived(Math.round((7 * 24) / scheduleHours));
-  const adherencePercent = $derived(
-    isScheduled && expectedWeeklyDoses > 0
-      ? Math.min(100, Math.round((medication.weeklyDoseCount / expectedWeeklyDoses) * 100))
-      : 0,
+  const adherence = $derived(
+    isScheduled ? adherencePercent(medication.weeklyDoseCount, weeklyExpected) : 0,
   );
 
   let logging = $state(false);
@@ -99,10 +97,10 @@
         <div class="bg-glass h-1.5 flex-1 overflow-hidden rounded-full">
           <div
             class="h-full rounded-full transition-all"
-            style="width: {adherencePercent}%; background: {medication.colour}"
+            style="width: {adherence}%; background: {medication.colour}"
           ></div>
         </div>
-        <span class="text-text-muted shrink-0 text-xs tabular-nums">{adherencePercent}%</span>
+        <span class="text-text-muted shrink-0 text-xs tabular-nums">{adherence}%</span>
       </div>
     {/if}
 

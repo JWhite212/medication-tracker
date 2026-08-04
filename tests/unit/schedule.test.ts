@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { classifyHour, computeScheduleSlots, groupSlotsByTimeOfDay } from "$lib/utils/schedule";
+import {
+  classifyHour,
+  computeScheduleSlots,
+  groupSlotsByTimeOfDay,
+  timingStatusFromSlots,
+} from "$lib/utils/schedule";
+import type { ScheduleSlot, ScheduleSlotStatus } from "$lib/utils/schedule";
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
 
@@ -515,5 +521,59 @@ describe("groupSlotsByTimeOfDay", () => {
     const groups = groupSlotsByTimeOfDay(slots, "UTC");
     expect(groups).toHaveLength(1);
     expect(groups[0].key).toBe("night");
+  });
+});
+
+describe("timingStatusFromSlots", () => {
+  const now = new Date("2026-04-16T10:00:00Z");
+
+  function slot(status: ScheduleSlotStatus, iso: string): ScheduleSlot {
+    return {
+      medicationId: "med-1",
+      medicationName: "TestMed",
+      colour: "#6366f1",
+      colourSecondary: null,
+      pattern: "solid",
+      dosageAmount: "200",
+      dosageUnit: "mg",
+      expectedTime: iso,
+      status,
+      matchedDoseId: null,
+    };
+  }
+
+  it("reports overdue with negative minutes for a past unresolved slot", () => {
+    const t = timingStatusFromSlots([slot("overdue", "2026-04-16T08:00:00Z")], now);
+    expect(t).toEqual({ status: "overdue", minutesUntilDue: -120 });
+  });
+
+  it("reports due_soon for a slot within the next hour", () => {
+    const t = timingStatusFromSlots([slot("upcoming", "2026-04-16T10:30:00Z")], now);
+    expect(t).toEqual({ status: "due_soon", minutesUntilDue: 30 });
+  });
+
+  it("reports ok for a slot further out", () => {
+    const t = timingStatusFromSlots([slot("upcoming", "2026-04-16T13:00:00Z")], now);
+    expect(t).toEqual({ status: "ok", minutesUntilDue: 180 });
+  });
+
+  it("uses the earliest unresolved slot when several exist", () => {
+    const t = timingStatusFromSlots(
+      [slot("upcoming", "2026-04-16T10:30:00Z"), slot("overdue", "2026-04-16T08:00:00Z")],
+      now,
+    );
+    expect(t).toEqual({ status: "overdue", minutesUntilDue: -120 });
+  });
+
+  it("returns null when every slot is already resolved", () => {
+    const t = timingStatusFromSlots(
+      [slot("taken", "2026-04-16T08:00:00Z"), slot("skipped", "2026-04-16T09:00:00Z")],
+      now,
+    );
+    expect(t).toBeNull();
+  });
+
+  it("returns null for an empty slot list", () => {
+    expect(timingStatusFromSlots([], now)).toBeNull();
   });
 });

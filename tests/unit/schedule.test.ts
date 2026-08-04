@@ -375,6 +375,120 @@ describe("computeScheduleSlots — prn and mixed", () => {
   });
 });
 
+describe("computeScheduleSlots — multi-unit dose matching (quantity)", () => {
+  const dayStart = new Date("2026-04-16T00:00:00Z");
+  const dayEnd = new Date("2026-04-17T00:00:00Z");
+  const timezone = "UTC";
+
+  it("a quantity-3 taken dose fills 3 nearby slots", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeFixedTimeSchedule("med-1", "08:30", null, 0),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+      makeFixedTimeSchedule("med-1", "09:30", null, 2),
+    ]);
+    const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00Z"), quantity: 3 });
+    const now = new Date("2026-04-16T23:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [dose], {}, dayStart, dayEnd, timezone, now);
+    expect(slots.map((s) => s.status)).toEqual(["taken", "taken", "taken"]);
+  });
+
+  it("does not fill a slot outside the ±1h vicinity of the dose", () => {
+    // The user's scenario: log ×3 at 09:00; 08:55 and 09:00 are covered,
+    // but the 11:00 slot is 2h away and stays its own upcoming dose.
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeFixedTimeSchedule("med-1", "08:55", null, 0),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+      makeFixedTimeSchedule("med-1", "11:00", null, 2),
+    ]);
+    const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00Z"), quantity: 3 });
+    const now = new Date("2026-04-16T09:30:00Z");
+    const slots = computeScheduleSlots(meds, sched, [dose], {}, dayStart, dayEnd, timezone, now);
+    expect(slots[0].status).toBe("taken"); // 08:55
+    expect(slots[1].status).toBe("taken"); // 09:00
+    expect(slots[2].status).toBe("upcoming"); // 11:00 — untouched
+    expect(slots[2].matchedDoseId).toBeNull();
+  });
+
+  it("quantity exceeding available nearby slots fills what it can and ignores the surplus", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeFixedTimeSchedule("med-1", "08:45", null, 0),
+      makeFixedTimeSchedule("med-1", "09:15", null, 1),
+    ]);
+    const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00Z"), quantity: 5 });
+    const now = new Date("2026-04-16T23:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [dose], {}, dayStart, dayEnd, timezone, now);
+    expect(slots).toHaveLength(2);
+    expect(slots.map((s) => s.status)).toEqual(["taken", "taken"]);
+  });
+
+  it("a skipped dose clears at most one slot even if its quantity is >1", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeFixedTimeSchedule("med-1", "08:45", null, 0),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+      makeFixedTimeSchedule("med-1", "09:15", null, 2),
+    ]);
+    const skip = makeDose({
+      id: "dose-skip-1",
+      takenAt: new Date("2026-04-16T09:00:00Z"),
+      quantity: 3,
+      status: "skipped",
+    });
+    const now = new Date("2026-04-16T23:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [skip], {}, dayStart, dayEnd, timezone, now);
+    expect(slots.filter((s) => s.status === "skipped")).toHaveLength(1);
+    expect(slots.filter((s) => s.status === "overdue")).toHaveLength(2);
+  });
+
+  it("prefers a taken dose over a skipped dose when both are in-vicinity of a slot", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([makeFixedTimeSchedule("med-1", "09:00", null, 0)]);
+    // Skipped dose is closer in time (10m) than the taken dose (20m), but a
+    // real taken dose should win the slot. Skipped is passed first to prove
+    // selection is not order-dependent.
+    const skip = makeDose({
+      id: "dose-skip-1",
+      takenAt: new Date("2026-04-16T08:50:00Z"),
+      status: "skipped",
+    });
+    const taken = makeDose({
+      id: "dose-taken-1",
+      takenAt: new Date("2026-04-16T09:20:00Z"),
+      status: "taken",
+    });
+    const now = new Date("2026-04-16T23:00:00Z");
+    const slots = computeScheduleSlots(
+      meds,
+      sched,
+      [skip, taken],
+      {},
+      dayStart,
+      dayEnd,
+      timezone,
+      now,
+    );
+    expect(slots[0].status).toBe("taken");
+    expect(slots[0].matchedDoseId).toBe("dose-taken-1");
+  });
+
+  it("a quantity-1 dose still fills exactly one slot (regression)", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeFixedTimeSchedule("med-1", "08:30", null, 0),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+      makeFixedTimeSchedule("med-1", "09:30", null, 2),
+    ]);
+    const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00Z"), quantity: 1 });
+    const now = new Date("2026-04-16T23:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [dose], {}, dayStart, dayEnd, timezone, now);
+    expect(slots.filter((s) => s.status === "taken")).toHaveLength(1);
+    expect(slots.filter((s) => s.status === "overdue")).toHaveLength(2);
+  });
+});
+
 describe("groupSlotsByTimeOfDay", () => {
   it("groups slots into correct time-of-day buckets", () => {
     const dayStart = new Date("2026-04-16T00:00:00Z");

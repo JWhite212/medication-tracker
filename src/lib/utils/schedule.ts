@@ -243,15 +243,45 @@ export function computeScheduleSlots(
     dedup.sort((a, b) => a.getTime() - b.getTime());
 
     const medDoses = dosesByMedId.get(med.id) ?? [];
-    const usedDoseIds = new Set<string>();
+
+    // Capacity-based matching: a single logged dose can satisfy several
+    // nearby slots, up to the number of units actually taken. A `taken`
+    // dose has a capacity equal to its quantity (so logging ×3 in one go
+    // covers up to three slots within the vicinity window); a `skipped` or
+    // `missed` row can only ever clear one slot. `remaining` is decremented
+    // as slots consume each dose's capacity.
+    const remaining = new Map<string, number>();
+    for (const d of medDoses) {
+      remaining.set(d.id, d.status === "taken" ? Math.max(1, d.quantity) : 1);
+    }
 
     for (const expected of dedup) {
-      const matchedDose = medDoses.find(
-        (d) =>
-          !usedDoseIds.has(d.id) &&
-          Math.abs(new Date(d.takenAt).getTime() - expected.getTime()) <= MATCH_TOLERANCE_MS,
-      );
-      if (matchedDose) usedDoseIds.add(matchedDose.id);
+      const expectedMs = expected.getTime();
+
+      // Pick the best in-vicinity dose with capacity left: prefer a real
+      // `taken` dose over a `skipped`/`missed` one, then the nearest in
+      // time, tie-broken by id for deterministic output.
+      let matchedDose: DoseLogWithMedication | undefined;
+      let bestRank = Infinity;
+      let bestDist = Infinity;
+      for (const d of medDoses) {
+        if ((remaining.get(d.id) ?? 0) <= 0) continue;
+        const dist = Math.abs(new Date(d.takenAt).getTime() - expectedMs);
+        if (dist > MATCH_TOLERANCE_MS) continue;
+        const rank = d.status === "taken" ? 0 : 1;
+        const better =
+          rank < bestRank ||
+          (rank === bestRank && dist < bestDist) ||
+          (rank === bestRank && dist === bestDist && (!matchedDose || d.id < matchedDose.id));
+        if (better) {
+          matchedDose = d;
+          bestRank = rank;
+          bestDist = dist;
+        }
+      }
+      if (matchedDose) {
+        remaining.set(matchedDose.id, (remaining.get(matchedDose.id) ?? 0) - 1);
+      }
 
       let status: ScheduleSlotStatus;
       if (matchedDose) {

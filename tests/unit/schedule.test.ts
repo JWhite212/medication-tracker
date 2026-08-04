@@ -489,6 +489,101 @@ describe("computeScheduleSlots — multi-unit dose matching (quantity)", () => {
   });
 });
 
+describe("computeScheduleSlots — drifted interval twin of a fixed_time slot", () => {
+  const dayStart = new Date("2026-04-16T00:00:00Z");
+  const dayEnd = new Date("2026-04-17T00:00:00Z");
+  const timezone = "UTC";
+
+  it("suppresses an interval projection within 1h of a fixed_time slot", () => {
+    // Med has a declared 09:00 + 11:00 fixed schedule plus a leftover
+    // 24h interval row anchored to yesterday's 08:55 log — the interval
+    // projection lands at 08:55 today, 5 min from the declared 09:00.
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeIntervalSchedule("med-1", "24"),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+      makeFixedTimeSchedule("med-1", "11:00", null, 2),
+    ]);
+    const lastDose = { "med-1": new Date("2026-04-15T08:55:00Z") };
+    const now = new Date("2026-04-16T08:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [], lastDose, dayStart, dayEnd, timezone, now);
+    expect(slots.map((s) => s.expectedTime)).toEqual([
+      "2026-04-16T09:00:00.000Z",
+      "2026-04-16T11:00:00.000Z",
+    ]);
+  });
+
+  it("a dose logged at the drifted time still marks the fixed slot taken", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeIntervalSchedule("med-1", "24"),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+      makeFixedTimeSchedule("med-1", "11:00", null, 2),
+    ]);
+    const lastDose = { "med-1": new Date("2026-04-16T08:55:00Z") };
+    const dose = makeDose({ takenAt: new Date("2026-04-16T08:55:00Z") });
+    const now = new Date("2026-04-16T10:00:00Z");
+    const slots = computeScheduleSlots(
+      meds,
+      sched,
+      [dose],
+      lastDose,
+      dayStart,
+      dayEnd,
+      timezone,
+      now,
+    );
+    expect(slots).toHaveLength(2);
+    expect(slots[0].expectedTime).toBe("2026-04-16T09:00:00.000Z");
+    expect(slots[0].status).toBe("taken");
+    expect(slots[1].expectedTime).toBe("2026-04-16T11:00:00.000Z");
+    expect(slots[1].status).toBe("upcoming");
+  });
+
+  it("keeps an interval projection more than 1h from any fixed_time slot", () => {
+    // Anchored at 07:30 yesterday → projects 07:30 today, 90 min from
+    // the 09:00 fixed slot — genuinely separate, both must render.
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeIntervalSchedule("med-1", "24"),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+    ]);
+    const lastDose = { "med-1": new Date("2026-04-15T07:30:00Z") };
+    const now = new Date("2026-04-16T08:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [], lastDose, dayStart, dayEnd, timezone, now);
+    expect(slots.map((s) => s.expectedTime)).toEqual([
+      "2026-04-16T07:30:00.000Z",
+      "2026-04-16T09:00:00.000Z",
+    ]);
+  });
+
+  it("collapses an exact interval/fixed_time collision into one slot", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeIntervalSchedule("med-1", "24"),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+    ]);
+    const lastDose = { "med-1": new Date("2026-04-15T09:00:00Z") };
+    const now = new Date("2026-04-16T08:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [], lastDose, dayStart, dayEnd, timezone, now);
+    expect(slots.map((s) => s.expectedTime)).toEqual(["2026-04-16T09:00:00.000Z"]);
+  });
+
+  it("never collapses two explicit fixed_time slots, however close", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([
+      makeFixedTimeSchedule("med-1", "08:55", null, 0),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+    ]);
+    const now = new Date("2026-04-16T08:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
+    expect(slots.map((s) => s.expectedTime)).toEqual([
+      "2026-04-16T08:55:00.000Z",
+      "2026-04-16T09:00:00.000Z",
+    ]);
+  });
+});
+
 describe("groupSlotsByTimeOfDay", () => {
   it("groups slots into correct time-of-day buckets", () => {
     const dayStart = new Date("2026-04-16T00:00:00Z");

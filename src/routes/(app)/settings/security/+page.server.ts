@@ -84,18 +84,22 @@ export const actions: Actions = {
   revokeSession: async ({ request, locals }) => {
     const formData = await request.formData();
     const sessionId = formData.get("sessionId") as string;
-    if (sessionId && sessionId !== locals.session!.id) {
-      // Verify the target session belongs to the current user
-      const [targetSession] = await db
-        .select({ id: sessions.id })
-        .from(sessions)
-        .where(and(eq(sessions.id, sessionId), eq(sessions.userId, locals.user!.id)))
-        .limit(1);
-      if (targetSession) {
-        await lucia.invalidateSession(sessionId);
-        await logAudit(locals.user!.id, "session", sessionId, "delete");
-      }
+    if (!sessionId || sessionId === locals.session!.id) {
+      return fail(400, { sessionError: "Invalid session" });
     }
+    // Verify the target session belongs to the current user
+    const [targetSession] = await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), eq(sessions.userId, locals.user!.id)))
+      .limit(1);
+    // A stale or unowned target revokes nothing — say so rather than
+    // returning a success indistinguishable from a real revocation.
+    if (!targetSession) {
+      return fail(404, { sessionError: "Session not found" });
+    }
+    await lucia.invalidateSession(sessionId);
+    await logAudit(locals.user!.id, "session", sessionId, "delete");
     return { sessionRevoked: true };
   },
   setupTwoFactor: async ({ request, locals }) => {

@@ -6,6 +6,7 @@
   import InsightsCard from "$components/InsightsCard.svelte";
   import StatusBreakdownBar from "$components/StatusBreakdownBar.svelte";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
+  import MedicationFilterSelect from "$lib/components/MedicationFilterSelect.svelte";
   import { goto } from "$app/navigation";
 
   let { data } = $props();
@@ -42,6 +43,15 @@
     else url.searchParams.delete(key);
     goto(url.toString(), { invalidateAll: true });
   }
+
+  function setMedFilter(ids: string[]) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("med");
+    for (const id of ids) url.searchParams.append("med", id);
+    // keepFocus/noScroll so toggling checkboxes in the popover doesn't
+    // jump the page while data reloads.
+    goto(url.toString(), { invalidateAll: true, keepFocus: true, noScroll: true });
+  }
 </script>
 
 <svelte:head>
@@ -53,8 +63,13 @@
 
   <InsightsCard insights={data.insights} />
 
-  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+  <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
     <h1 class="text-2xl font-bold">Analytics</h1>
+    <MedicationFilterSelect
+      medications={data.medications}
+      selectedIds={data.selectedMedIds}
+      onchange={setMedFilter}
+    />
     <div class="border-glass-border bg-glass flex gap-1 rounded-lg border p-1 backdrop-blur-xl">
       {#each PERIODS as p}
         <button

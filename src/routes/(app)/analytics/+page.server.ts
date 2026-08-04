@@ -11,10 +11,12 @@ import {
   buildInsights,
   calculateStreak,
   calculateTrend,
+  resolveMedicationFilter,
 } from "$lib/server/analytics";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import { getRefillForecast } from "$lib/server/inventory";
-import type { DateRange } from "$lib/server/analytics";
+import { getMedicationOptions } from "$lib/server/medications";
+import type { AnalyticsFilter, DateRange } from "$lib/server/analytics";
 import type { PageServerLoad } from "./$types";
 
 const VALID_PERIODS = new Set(["7", "30", "90", "365"]);
@@ -48,6 +50,13 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
   const period =
     periodParam && VALID_PERIODS.has(periodParam) ? Number(periodParam) : preferences.heatmapPeriod;
 
+  const medicationOptions = await getMedicationOptions(userId);
+  const medicationIds = resolveMedicationFilter(
+    url.searchParams.getAll("med"),
+    medicationOptions.map((m) => m.id),
+  );
+  const analyticsFilter: AnalyticsFilter = { ...customRange, medicationIds };
+
   const now = Date.now();
   const previousRange: DateRange = customRange
     ? {
@@ -74,24 +83,28 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     prevDailyCounts,
     prevMedStats,
   ] = await Promise.all([
-    getDailyDoseCounts(userId, period, timezone, customRange),
-    getPerMedicationStats(userId, period, timezone, customRange),
-    getHourlyDistribution(userId, period, timezone, customRange),
-    getDayOfWeekDistribution(userId, period, timezone, customRange),
-    getSideEffectStats(userId, period, timezone, customRange),
-    getDailyAdherenceSeries(userId, period, timezone, customRange),
-    getDoseStatusBreakdown(userId, period, timezone, customRange),
-    getScheduleVariance(userId, period, timezone, customRange),
+    getDailyDoseCounts(userId, period, timezone, analyticsFilter),
+    getPerMedicationStats(userId, period, timezone, analyticsFilter),
+    getHourlyDistribution(userId, period, timezone, analyticsFilter),
+    getDayOfWeekDistribution(userId, period, timezone, analyticsFilter),
+    getSideEffectStats(userId, period, timezone, analyticsFilter),
+    getDailyAdherenceSeries(userId, period, timezone, analyticsFilter),
+    getDoseStatusBreakdown(userId, period, timezone, analyticsFilter),
+    getScheduleVariance(userId, period, timezone, analyticsFilter),
     getSchedulesForUser(userId),
-    getDailyDoseCounts(userId, period, timezone, previousRange),
-    getPerMedicationStats(userId, period, timezone, previousRange),
+    getDailyDoseCounts(userId, period, timezone, { ...previousRange, medicationIds }),
+    getPerMedicationStats(userId, period, timezone, { ...previousRange, medicationIds }),
   ]);
 
   const refillForecast = await getRefillForecast(userId);
+  const relevantRefills = medicationIds
+    ? refillForecast.filter((r) => medicationIds.includes(r.medicationId))
+    : refillForecast;
 
-  // Hours with at least one fixed_time schedule across all meds.
+  // Hours with at least one fixed_time schedule across the selected meds.
   const scheduledHours = new Set<number>();
-  for (const schedules of schedulesByMed.values()) {
+  for (const [medId, schedules] of schedulesByMed) {
+    if (medicationIds && !medicationIds.includes(medId)) continue;
     for (const s of schedules) {
       if (s.scheduleKind === "fixed_time" && s.timeOfDay) {
         const hour = Number(s.timeOfDay.split(":")[0]);
@@ -131,7 +144,7 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     hourly,
     sideEffectsCount: sideEffects.frequency.reduce((s, e) => s + e.count, 0),
     topSideEffect: sideEffects.frequency[0]?.name ?? null,
-    refillCriticalCount: refillForecast.filter(
+    refillCriticalCount: relevantRefills.filter(
       (r) => r.severity === "critical" || r.severity === "warning",
     ).length,
     streak,
@@ -167,5 +180,7 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
     trends,
     from: fromParam ?? "",
     to: toParam ?? "",
+    medications: medicationOptions,
+    selectedMedIds: medicationIds ?? [],
   };
 };

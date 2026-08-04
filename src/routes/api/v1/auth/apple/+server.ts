@@ -8,6 +8,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { lucia } from "$lib/server/auth/lucia";
 import { verifyAppleIdentityToken } from "$lib/server/api/apple";
 import { readJson } from "$lib/server/api/read-json";
+import { signPreAuthToken } from "$lib/server/api/preauth";
 import { toSessionUser } from "$lib/server/api/serialize";
 
 const PROVIDER = "apple";
@@ -36,6 +37,13 @@ export const POST: RequestHandler = async ({ request }) => {
     .limit(1);
   if (link) {
     const [u] = await db.select().from(users).where(eq(users.id, link.userId)).limit(1);
+    // A verified Apple identity is only the first factor: without this
+    // gate, enabling TOTP would be a no-op for Apple-only accounts.
+    // Same challenge contract as the password login; the client answers
+    // at /api/v1/auth/2fa, which burns the token and mints the session.
+    if (u.twoFactorEnabled) {
+      return json({ challenge: "totp", preAuthToken: signPreAuthToken(u.id) });
+    }
     const session = await lucia.createSession(u.id, {});
     return json({ token: session.id, user: toSessionUser(u) });
   }

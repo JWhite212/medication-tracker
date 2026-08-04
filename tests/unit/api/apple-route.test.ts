@@ -35,6 +35,10 @@ vi.mock("$lib/server/db/schema", () => ({
   oauthAccounts: { provider: {}, providerUserId: {}, userId: {} },
 }));
 
+vi.mock("$lib/server/api/preauth", () => ({
+  signPreAuthToken: (userId: string) => `pretok-${userId}`,
+}));
+
 const inserts: Array<{ table: unknown; values: unknown }> = [];
 
 // The new-user path now runs both inserts inside dbTx.transaction (see
@@ -190,6 +194,21 @@ describe("POST /api/v1/auth/apple", () => {
       userId: newUserId,
     });
     expect(createSession).toHaveBeenCalledWith(newUserId, {});
+  });
+
+  it("returns a totp challenge instead of a session when the linked user has 2FA enabled", async () => {
+    state.identityResult = { appleUserId: "000123.abc", email: "a@b.com", emailVerified: true };
+    // 1st select: oauthAccounts link. 2nd select: user-by-id with 2FA on.
+    state.selectQueue = [[{ userId: "u1" }], [{ ...baseUser, twoFactorEnabled: true }]];
+
+    const res = await call({ identityToken: "tok" });
+    expect(res.status).toBe(200);
+    const resBody = await res.json();
+    expect(resBody).toEqual({ challenge: "totp", preAuthToken: "pretok-u1" });
+    // The whole point: no session may exist until the TOTP challenge
+    // is answered at /api/v1/auth/2fa.
+    expect(createSession).not.toHaveBeenCalled();
+    expect(inserts).toHaveLength(0);
   });
 
   it("returns 401 when the Apple identity token is invalid", async () => {

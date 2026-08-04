@@ -57,8 +57,9 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const raw = (event.notification.data?.url as string) ?? "/dashboard";
-  // Only allow same-origin relative paths to prevent open redirect
-  const url = raw.startsWith("/") ? raw : "/dashboard";
+  // Only allow same-origin relative paths to prevent open redirect —
+  // "//host" is protocol-relative and would leave the app.
+  const url = raw.startsWith("/") && !raw.startsWith("//") ? raw : "/dashboard";
   event.waitUntil(
     self.clients.matchAll({ type: "window" }).then((list) => {
       for (const client of list) {

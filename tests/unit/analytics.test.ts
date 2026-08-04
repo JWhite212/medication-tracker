@@ -9,6 +9,7 @@ import {
   calculateTrend,
   buildInsights,
   expectedPerDayForSchedules,
+  resolveMedicationFilter,
 } from "$lib/server/analytics";
 import type { InsightInputs } from "$lib/server/analytics";
 import type { MedicationSchedule } from "$lib/server/schedules";
@@ -343,5 +344,32 @@ describe("expectedPerDayForSchedules", () => {
       schedule({ id: "c", scheduleKind: "prn" }),
     ]);
     expect(total).toBeCloseTo(2 + 1, 5);
+  });
+});
+
+describe("resolveMedicationFilter", () => {
+  const owned = ["med-a", "med-b", "med-c"];
+
+  it("returns undefined when nothing was requested", () => {
+    expect(resolveMedicationFilter([], owned)).toBeUndefined();
+  });
+
+  it("keeps only ids the user owns, preserving request order", () => {
+    expect(resolveMedicationFilter(["med-c", "not-mine", "med-a"], owned)).toEqual([
+      "med-c",
+      "med-a",
+    ]);
+  });
+
+  it("collapses duplicate ids", () => {
+    expect(resolveMedicationFilter(["med-b", "med-b", "med-b"], owned)).toEqual(["med-b"]);
+  });
+
+  it("treats an all-invalid request as no filter", () => {
+    expect(resolveMedicationFilter(["x", "y"], owned)).toBeUndefined();
+  });
+
+  it("accepts any iterable of owned ids", () => {
+    expect(resolveMedicationFilter(["med-a"], new Set(owned))).toEqual(["med-a"]);
   });
 });

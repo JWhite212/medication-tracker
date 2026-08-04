@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
+import { eq, and, gte, lte, sql, desc, inArray } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { startOfDay } from "$lib/utils/time";
@@ -41,26 +41,53 @@ export interface DateRange {
   to?: Date;
 }
 
+// Common filter accepted by every analytics query. `medicationIds`
+// restricts results to those medications; absent or empty means all.
+export interface AnalyticsFilter extends DateRange {
+  medicationIds?: string[];
+}
+
+/**
+ * Resolve raw `?med=` query params against the ids the user actually
+ * owns. Unknown ids are dropped and duplicates collapsed; an empty
+ * result means "no filter" so garbage input falls back to all meds,
+ * mirroring the date-param handling in the analytics page load.
+ */
+export function resolveMedicationFilter(
+  requested: string[],
+  ownedIds: Iterable<string>,
+): string[] | undefined {
+  if (requested.length === 0) return undefined;
+  const owned = new Set(ownedIds);
+  const valid = [...new Set(requested)].filter((id) => owned.has(id));
+  return valid.length > 0 ? valid : undefined;
+}
+
 function buildDateFilters(
   userId: string,
   days: number,
   timezone: string,
-  range?: DateRange,
+  filter?: AnalyticsFilter,
   status: DoseLogStatus | "any" = "taken",
 ) {
   const baseUser = eq(doseLogs.userId, userId);
   const statusFilter = status === "any" ? undefined : eq(doseLogs.status, status);
+  const medFilter =
+    filter?.medicationIds && filter.medicationIds.length > 0
+      ? inArray(doseLogs.medicationId, filter.medicationIds)
+      : undefined;
+  const extras = [...(statusFilter ? [statusFilter] : []), ...(medFilter ? [medFilter] : [])];
 
-  if (range?.from && range?.to) {
+  if (filter?.from && filter?.to) {
     return and(
       baseUser,
-      ...(statusFilter ? [statusFilter] : []),
-      gte(doseLogs.takenAt, range.from),
-      lte(doseLogs.takenAt, range.to),
+      ...extras,
+      gte(doseLogs.takenAt, filter.from),
+      lte(doseLogs.takenAt, filter.to),
     );
   }
   const since = startOfDay(new Date(Date.now() - days * 86400000), timezone);
-  return and(baseUser, ...(statusFilter ? [statusFilter] : []), gte(doseLogs.takenAt, since));
+  return and(baseUser, ...extras, gte(doseLogs.takenAt, since));
 }
 
 export function calculateTrend(
@@ -111,7 +138,7 @@ export async function getDailyDoseCounts(
   userId: string,
   days: number,
   timezone: string = "UTC",
-  range?: DateRange,
+  filter?: AnalyticsFilter,
 ) {
   return db
     .select({
@@ -119,7 +146,7 @@ export async function getDailyDoseCounts(
       count: sql<number>`count(*)::int`,
     })
     .from(doseLogs)
-    .where(buildDateFilters(userId, days, timezone, range))
+    .where(buildDateFilters(userId, days, timezone, filter))
     .groupBy(sql`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`)
     .orderBy(desc(sql`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`));
 }
@@ -128,13 +155,13 @@ export async function getPerMedicationStats(
   userId: string,
   days: number,
   timezone: string = "UTC",
-  range?: DateRange,
+  filter?: AnalyticsFilter,
   options?: { includeAsNeeded?: boolean },
 ) {
-  const whereClauseAll = buildDateFilters(userId, days, timezone, range, "any");
+  const whereClauseAll = buildDateFilters(userId, days, timezone, filter, "any");
 
-  const rangeFrom = range?.from ?? new Date(Date.now() - days * 86400000);
-  const rangeTo = range?.to ?? new Date();
+  const rangeFrom = filter?.from ?? new Date(Date.now() - days * 86400000);
+  const rangeTo = filter?.to ?? new Date();
 
   const [rows, schedulesByMed] = await Promise.all([
     db
@@ -255,9 +282,9 @@ export async function getDoseStatusBreakdown(
   userId: string,
   days: number,
   timezone: string = "UTC",
-  range?: DateRange,
+  filter?: AnalyticsFilter,
 ) {
-  const stats = await getPerMedicationStats(userId, days, timezone, range, {
+  const stats = await getPerMedicationStats(userId, days, timezone, filter, {
     includeAsNeeded: true,
   });
 
@@ -315,10 +342,10 @@ export async function getDailyAdherenceSeries(
   userId: string,
   days: number,
   timezone: string = "UTC",
-  range?: DateRange,
+  filter?: AnalyticsFilter,
 ): Promise<DailyAdherencePoint[]> {
   const [dailyCounts, schedulesByMed, activeMeds] = await Promise.all([
-    getDailyDoseCounts(userId, days, timezone, range),
+    getDailyDoseCounts(userId, days, timezone, filter),
     getSchedulesForUser(userId),
     db
       .select({
@@ -329,7 +356,18 @@ export async function getDailyAdherenceSeries(
         endedAt: medications.endedAt,
       })
       .from(medications)
-      .where(and(eq(medications.userId, userId), eq(medications.isArchived, false))),
+      // Scope expected-per-day to the same medications as the dose
+      // counts, otherwise a filtered view would divide selected doses
+      // by everyone's expected total.
+      .where(
+        and(
+          eq(medications.userId, userId),
+          eq(medications.isArchived, false),
+          ...(filter?.medicationIds && filter.medicationIds.length > 0
+            ? [inArray(medications.id, filter.medicationIds)]
+            : []),
+        ),
+      ),
   ]);
 
   // Per-medication expected-per-day so we can include only meds that
@@ -344,10 +382,10 @@ export async function getDailyAdherenceSeries(
   });
 
   const fromDate =
-    range?.from && range?.to
-      ? range.from
+    filter?.from && filter?.to
+      ? filter.from
       : startOfDay(new Date(Date.now() - days * 86400000), timezone);
-  const toDate = range?.to ?? new Date();
+  const toDate = filter?.to ?? new Date();
   const span = Math.max(1, Math.round((toDate.getTime() - fromDate.getTime()) / 86400000));
 
   const tz = validTimezones.has(timezone) ? timezone : "UTC";
@@ -389,7 +427,7 @@ export async function getHourlyDistribution(
   userId: string,
   days: number,
   timezone: string = "UTC",
-  range?: DateRange,
+  filter?: AnalyticsFilter,
 ) {
   return db
     .select({
@@ -397,7 +435,7 @@ export async function getHourlyDistribution(
       count: sql<number>`count(*)::int`,
     })
     .from(doseLogs)
-    .where(buildDateFilters(userId, days, timezone, range))
+    .where(buildDateFilters(userId, days, timezone, filter))
     .groupBy(sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`)
     .orderBy(sql`extract(hour from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`);
 }
@@ -406,7 +444,7 @@ export async function getDayOfWeekDistribution(
   userId: string,
   days: number,
   timezone: string = "UTC",
-  range?: DateRange,
+  filter?: AnalyticsFilter,
 ) {
   return db
     .select({
@@ -414,7 +452,7 @@ export async function getDayOfWeekDistribution(
       count: sql<number>`count(*)::int`,
     })
     .from(doseLogs)
-    .where(buildDateFilters(userId, days, timezone, range))
+    .where(buildDateFilters(userId, days, timezone, filter))
     .groupBy(sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`)
     .orderBy(sql`extract(dow from ${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`);
 }
@@ -550,7 +588,7 @@ export async function getScheduleVariance(
   userId: string,
   days: number,
   timezone: string = "UTC",
-  range?: DateRange,
+  filter?: AnalyticsFilter,
 ): Promise<{ avgMinutesOff: number; sampleSize: number } | null> {
   const tz = validTimezones.has(timezone) ? timezone : "UTC";
 
@@ -560,7 +598,7 @@ export async function getScheduleVariance(
       takenAt: doseLogs.takenAt,
     })
     .from(doseLogs)
-    .where(buildDateFilters(userId, days, timezone, range));
+    .where(buildDateFilters(userId, days, timezone, filter));
 
   if (rows.length === 0) return null;
 
@@ -637,7 +675,7 @@ export async function getSideEffectStats(
   userId: string,
   days: number,
   timezone: string = "UTC",
-  range?: DateRange,
+  filter?: AnalyticsFilter,
 ) {
   const rows = await db
     .select({
@@ -646,7 +684,7 @@ export async function getSideEffectStats(
     })
     .from(doseLogs)
     .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
-    .where(buildDateFilters(userId, days, timezone, range));
+    .where(buildDateFilters(userId, days, timezone, filter));
 
   const effectCounts = new Map<string, { count: number; severities: Map<string, number> }>();
   const medEffects = new Map<string, Map<string, number>>();

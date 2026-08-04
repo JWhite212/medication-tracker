@@ -18,6 +18,22 @@ export async function getActiveMedications(userId: string) {
     .orderBy(medications.sortOrder);
 }
 
+// Lean list of every medication (active first, then archived) for
+// filter UIs — includes archived meds so historical ranges stay
+// analysable.
+export async function getMedicationOptions(userId: string) {
+  return db
+    .select({
+      id: medications.id,
+      name: medications.name,
+      colour: medications.colour,
+      isArchived: medications.isArchived,
+    })
+    .from(medications)
+    .where(eq(medications.userId, userId))
+    .orderBy(medications.isArchived, medications.sortOrder, medications.name);
+}
+
 export async function getMedicationsWithStats(userId: string): Promise<MedicationWithStats[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

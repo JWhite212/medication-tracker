@@ -255,3 +255,225 @@ export const updatePreferencesPayload = z.object({
   heatmapPeriod: z.number().int().optional(),
   exportFormat: z.enum(["pdf", "csv"]).optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Data import
+// ---------------------------------------------------------------------------
+// Schemas for the `version: 1` account backup produced by
+// /api/v1/export/full and /api/export/full. This is the widest
+// untrusted-input surface in the app: the file is user-supplied, may
+// come from another account, and may be hand-edited. Rules:
+//
+//   * Unknown keys are STRIPPED, not rejected, so a future `version: 2`
+//     export still parses for the fields we understand.
+//   * Identity and credential fields (id, userId, email, passwordHash,
+//     totpSecret, ...) are deliberately absent from these schemas —
+//     what isn't parsed can't be written. `id` survives only as a
+//     within-file reference (see `sourceId` in server/import/types.ts).
+//   * Cosmetic fields fall back to a default rather than failing the
+//     whole import; data-bearing fields are strict.
+//   * Every array is capped so a hostile file can't exhaust memory
+//     after the byte-size check.
+
+export const IMPORT_MAX_MEDICATIONS = 1000;
+export const IMPORT_MAX_SCHEDULES_PER_MED = 20;
+export const IMPORT_MAX_DOSE_LOGS = 50_000;
+export const IMPORT_MAX_INVENTORY_EVENTS = 50_000;
+
+/** Upload ceiling. Vercel's own limit is ~4.5 MB; stay under it so the
+ * rejection is ours (a clear message) rather than a platform 413. */
+export const IMPORT_MAX_BYTES = 4 * 1024 * 1024;
+
+const MIN_IMPORT_TIME = Date.UTC(1900, 0, 1);
+/** Tolerate a day of clock skew, but no more: a dose "taken" in 2099
+ * would poison adherence and the heatmap for every future range. */
+const IMPORT_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
+
+const importDate = z
+  .string()
+  .max(64)
+  .transform((value, ctx) => {
+    const parsed = new Date(value);
+    const time = parsed.getTime();
+    if (!Number.isFinite(time)) {
+      ctx.addIssue({ code: "custom", message: "Invalid timestamp" });
+      return z.NEVER;
+    }
+    if (time < MIN_IMPORT_TIME || time > Date.now() + IMPORT_FUTURE_SKEW_MS) {
+      ctx.addIssue({ code: "custom", message: "Timestamp outside the supported range" });
+      return z.NEVER;
+    }
+    return parsed;
+  });
+
+const nullableImportDate = importDate.nullable().optional().default(null);
+
+/** Drizzle `numeric` columns arrive as strings and must stay strings —
+ * coercing to number changes the shape on re-export. */
+const numericString = z
+  .string()
+  .max(32)
+  .regex(/^\d+(\.\d+)?$/, "Must be a number");
+
+const importScheduleSchema = z.object({
+  scheduleKind: z.enum(["fixed_time", "interval", "prn"]),
+  timeOfDay: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .nullable()
+    .optional()
+    .default(null),
+  intervalHours: numericString.nullable().optional().default(null),
+  daysOfWeek: z.array(z.number().int().min(0).max(6)).max(7).nullable().optional().default(null),
+  sortOrder: z.number().int().min(0).max(10_000).catch(0),
+  effectiveFrom: nullableImportDate,
+  effectiveTo: nullableImportDate,
+});
+
+const importMedicationSchema = z.object({
+  id: z.string().max(64).nullable().optional().default(null),
+  name: z.string().min(1).max(200),
+  dosageAmount: numericString,
+  dosageUnit: z.string().min(1).max(20),
+  form: z
+    .enum([
+      "tablet",
+      "capsule",
+      "liquid",
+      "softgel",
+      "patch",
+      "injection",
+      "inhaler",
+      "drops",
+      "cream",
+      "other",
+    ])
+    .catch("other"),
+  category: z.enum(["prescription", "otc", "supplement"]).catch("otc"),
+  colour: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .catch("#6366f1"),
+  colourSecondary: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable()
+    .optional()
+    .default(null)
+    .catch(null),
+  pattern: z
+    .enum(["solid", "split", "gradient", "stripes", "h-stripes", "dots", "checkerboard", "radial"])
+    .catch("solid"),
+  notes: z.string().max(1000).nullable().optional().default(null),
+  scheduleType: z.enum(["scheduled", "as_needed"]).catch("scheduled"),
+  scheduleIntervalHours: numericString.nullable().optional().default(null),
+  inventoryCount: z.number().int().min(0).max(1_000_000).nullable().optional().default(null),
+  inventoryAlertThreshold: z
+    .number()
+    .int()
+    .min(0)
+    .max(1_000_000)
+    .nullable()
+    .optional()
+    .default(null),
+  sortOrder: z.number().int().min(0).max(10_000).catch(0),
+  isArchived: z.boolean().catch(false),
+  archivedAt: nullableImportDate,
+  startedAt: nullableImportDate,
+  endedAt: nullableImportDate,
+  schedules: z.array(importScheduleSchema).max(IMPORT_MAX_SCHEDULES_PER_MED).optional().default([]),
+});
+
+const importDoseLogSchema = z.object({
+  medicationId: z.string().max(64),
+  quantity: z.number().int().min(1).max(1000).catch(1),
+  takenAt: importDate,
+  loggedAt: nullableImportDate,
+  notes: z.string().max(500).nullable().optional().default(null),
+  sideEffects: z.array(sideEffectJson).max(20).nullable().optional().default(null),
+  status: z.enum(["taken", "skipped", "missed"]).catch("taken"),
+});
+
+const importInventoryEventSchema = z.object({
+  medicationId: z.string().max(64),
+  eventType: z.enum([
+    "dose_taken",
+    "dose_deleted",
+    "dose_quantity_updated",
+    "manual_adjustment",
+    "refill",
+    "correction",
+  ]),
+  quantityChange: z.number().int().min(-1_000_000).max(1_000_000),
+  previousCount: z.number().int().min(0).max(1_000_000).nullable().optional().default(null),
+  newCount: z.number().int().min(0).max(1_000_000).nullable().optional().default(null),
+  note: z.string().max(200).nullable().optional().default(null),
+  createdAt: importDate,
+});
+
+/** Only `name` and `timezone` are read. Email, 2FA state and verification
+ * flags are intentionally not modelled — importing them would let a file
+ * rewrite the importer's identity. */
+const importProfileSchema = z.object({
+  name: z.string().min(1).max(100),
+  timezone: z.string().refine((tz) => validTimezones.has(tz), "Invalid timezone"),
+});
+
+const importPreferencesSchema = z.object({
+  accentColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+  dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
+  timeFormat: z.enum(["12h", "24h"]).optional(),
+  uiDensity: z.enum(["comfortable", "compact"]).optional(),
+  reducedMotion: z.boolean().optional(),
+  overdueEmailReminders: z.boolean().optional(),
+  overduePushReminders: z.boolean().optional(),
+  lowInventoryEmailAlerts: z.boolean().optional(),
+  lowInventoryPushAlerts: z.boolean().optional(),
+  doseLogPageSize: z.number().int().min(5).max(100).optional(),
+  heatmapPeriod: z.number().int().min(1).max(3650).optional(),
+  exportFormat: z.enum(["pdf", "csv"]).optional(),
+});
+
+export const IMPORT_SUPPORTED_VERSION = 1;
+
+export const backupEnvelopeSchema = z.object({
+  version: z.literal(IMPORT_SUPPORTED_VERSION),
+  exportedAt: importDate.nullable().optional().default(null),
+  profile: importProfileSchema.nullable().optional().default(null),
+  preferences: importPreferencesSchema.nullable().optional().default(null),
+  medications: z.array(importMedicationSchema).max(IMPORT_MAX_MEDICATIONS).optional().default([]),
+  doseLogs: z.array(importDoseLogSchema).max(IMPORT_MAX_DOSE_LOGS).optional().default([]),
+  inventoryEvents: z
+    .array(importInventoryEventSchema)
+    .max(IMPORT_MAX_INVENTORY_EVENTS)
+    .optional()
+    .default([]),
+  // auditLogs is deliberately NOT modelled. Replaying a file's audit
+  // rows would fabricate a tamper-evident history; import writes one
+  // `data_import` row of its own instead.
+});
+
+export type BackupEnvelope = z.infer<typeof backupEnvelopeSchema>;
+
+/** Form fields for the import page. Checkboxes follow the existing
+ * "only submits when checked" convention. */
+export const importOptionsSchema = z.object({
+  mode: z.enum(["merge", "replace"]).default("merge"),
+  sectionInventory: checkboxField,
+  sectionPreferences: checkboxField,
+  sectionProfile: checkboxField,
+});
+
+/** User decisions for CSV medication names with no match in the account.
+ * Keyed by the normalised (lowercased, trimmed) name. */
+export const nameMappingSchema = z.record(
+  z.string().min(1).max(200),
+  z.discriminatedUnion("action", [
+    z.object({ action: z.literal("create") }),
+    z.object({ action: z.literal("map"), medicationId: z.string().min(1).max(64) }),
+    z.object({ action: z.literal("skip") }),
+  ]),
+);

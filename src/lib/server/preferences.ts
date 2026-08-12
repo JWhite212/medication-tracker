@@ -12,9 +12,25 @@ export async function getOrCreatePreferences(userId: string): Promise<UserPrefer
 
   if (existing) return existing;
 
-  const [created] = await db.insert(userPreferences).values({ userId }).returning();
+  // Two concurrent first-touches (e.g. a page load racing an import)
+  // would both miss the select and both insert, and the second would
+  // fail the primary-key constraint. onConflictDoNothing makes the loser
+  // return no row instead of throwing; it then re-reads the winner's.
+  const [created] = await db
+    .insert(userPreferences)
+    .values({ userId })
+    .onConflictDoNothing()
+    .returning();
 
-  return created;
+  if (created) return created;
+
+  const [raced] = await db
+    .select()
+    .from(userPreferences)
+    .where(eq(userPreferences.userId, userId))
+    .limit(1);
+
+  return raced;
 }
 
 export async function updatePreferences(

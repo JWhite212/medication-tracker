@@ -59,6 +59,20 @@ describe("parseCsv (RFC 4180)", () => {
   it("preserves empty trailing fields", () => {
     expect(parseCsv("a,b,,")).toEqual([["a", "b", "", ""]]);
   });
+
+  it("treats a quote in the MIDDLE of a field as a literal character", () => {
+    // Otherwise one stray unescaped quote opens a quoted run that eats
+    // the rest of the file into a single cell.
+    expect(parseCsv('a,5" patch,b\r\nc,d,e')).toEqual([
+      ["a", '5" patch', "b"],
+      ["c", "d", "e"],
+    ]);
+  });
+
+  it("stops at the row cap instead of materialising an unbounded array", () => {
+    const many = Array.from({ length: 100 }, (_, i) => `r${i},x`).join("\r\n");
+    expect(parseCsv(many, 10)).toHaveLength(10);
+  });
 });
 
 describe("unescapeCsvCell — inverse of the formula-injection guard", () => {
@@ -284,6 +298,50 @@ describe("parseDoseCsv", () => {
   it("REJECTS a file whose header doesn't match the export", () => {
     const result = parseDoseCsv("When,What\n2026-06-01,A", TZ);
     expect(result.ok).toBe(false);
+  });
+
+  it("REJECTS a date that matches the shape but isn't a real day", () => {
+    // ^\d{4}-\d{2}-\d{2}$ happily accepts 2026-13-45, which then reaches
+    // Intl.DateTimeFormat and throws RangeError — 500ing the whole import
+    // over one bad row.
+    const result = parseDoseCsv(
+      csv("2026-13-45,08:30,taken,A,1mg,1,,", "2026-02-31,08:30,taken,A,1mg,1,,"),
+      TZ,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.doses).toHaveLength(0);
+    expect(result.bundle.warnings[0]).toMatch(/real YYYY-MM-DD/);
+  });
+
+  it("REJECTS a date outside the supported range", () => {
+    // The JSON path gets this bound from importDate; the CSV path has to
+    // apply it itself or a dose dated 9999 stretches every future range.
+    const result = parseDoseCsv(csv("9999-12-31,09:00,taken,A,1mg,1,,"), TZ);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.doses).toHaveLength(0);
+    expect(result.bundle.warnings[0]).toMatch(/supported range/);
+  });
+
+  it("does not let a stray quote swallow the rest of the file", () => {
+    // A bare quote mid-cell must not open a quoted run that absorbs every
+    // following comma and newline into one field.
+    const result = parseDoseCsv(
+      csv('2026-06-01,08:30,taken,5" patch,1mg,1,,', "2026-06-02,08:30,taken,B,1mg,1,,"),
+      TZ,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.doses).toHaveLength(2);
+    expect(result.bundle.medications.map((m) => m.name).sort()).toEqual(['5" patch', "B"]);
+  });
+
+  it("tolerates leading blank lines, matching what detectFormat accepts", () => {
+    const result = parseDoseCsv("\r\n\r\n" + csv("2026-06-01,08:30,taken,A,1mg,1,,"), TZ);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.doses).toHaveLength(1);
   });
 
   it("carries no inventory events — a dose CSV has none", () => {

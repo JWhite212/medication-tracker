@@ -6,6 +6,7 @@
 // a documented reconstruction of what the exporter threw away, and every
 // row it can't reconstruct becomes a warning rather than a silent drop.
 import { parseDateTimeLocal } from "$lib/utils/time";
+import { IMPORT_MAX_MEDICATIONS, isImportableTime } from "$lib/utils/validation";
 import { stripBom } from "./detect";
 import { DOSE_CSV_HEADER } from "./detect";
 import type { ImportBundle, ImportDose, ImportMedication } from "./types";
@@ -24,15 +25,30 @@ const MAX_CSV_ROWS = 50_000;
  * terminators because the exporter emits CRLF but hand-edited files
  * routinely arrive with LF.
  */
-export function parseCsv(input: string): string[][] {
+export function parseCsv(input: string, maxRows = MAX_CSV_ROWS): string[][] {
   const text = stripBom(input);
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
   let inQuotes = false;
   let sawAnyChar = false;
+  // A quote only opens a quoted section at the START of a field. Without
+  // this, one stray unescaped `"` mid-cell (common in hand-edited files)
+  // opens a quoted run that swallows every comma and newline to the next
+  // quote or EOF — merging the rest of the file into a single cell while
+  // the skipped-row count reports nothing wrong.
+  let atFieldStart = true;
 
-  for (let i = 0; i < text.length; i++) {
+  const pushRow = () => {
+    row.push(field);
+    rows.push(row);
+    row = [];
+    field = "";
+    sawAnyChar = false;
+    atFieldStart = true;
+  };
+
+  for (let i = 0; i < text.length && rows.length < maxRows; i++) {
     const char = text[i];
 
     if (inQuotes) {
@@ -49,9 +65,10 @@ export function parseCsv(input: string): string[][] {
       continue;
     }
 
-    if (char === '"') {
+    if (char === '"' && atFieldStart) {
       inQuotes = true;
       sawAnyChar = true;
+      atFieldStart = false;
       continue;
     }
 
@@ -59,25 +76,23 @@ export function parseCsv(input: string): string[][] {
       row.push(field);
       field = "";
       sawAnyChar = true;
+      atFieldStart = true;
       continue;
     }
 
     if (char === "\r" || char === "\n") {
       if (char === "\r" && text[i + 1] === "\n") i++;
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-      sawAnyChar = false;
+      pushRow();
       continue;
     }
 
     field += char;
     sawAnyChar = true;
+    atFieldStart = false;
   }
 
   // Trailing field/row, unless the file simply ended with a newline.
-  if (field.length > 0 || sawAnyChar || row.length > 0) {
+  if (rows.length < maxRows && (field.length > 0 || sawAnyChar || row.length > 0)) {
     row.push(field);
     rows.push(row);
   }
@@ -171,6 +186,33 @@ export function parseSideEffects(raw: string): SideEffect[] | null {
   return effects.length > 0 ? effects : null;
 }
 
+/**
+ * Strict YYYY-MM-DD, validated as a real calendar date rather than just
+ * a shape. `/^\d{4}-\d{2}-\d{2}$/` happily accepts "2026-13-45", which
+ * then reaches Intl and throws.
+ */
+export function parseIsoDate(raw: string): { year: number; month: number; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+
+  // Round-trip check catches both out-of-range components (month 13) and
+  // dates that don't exist (31 February).
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return { year, month, day };
+}
+
 /** Deterministic colour so re-importing the same medication name twice
  * doesn't produce two differently-coloured pills. */
 const STUB_COLOURS = [
@@ -200,10 +242,15 @@ const HEADER_COLUMNS = DOSE_CSV_HEADER.split(",");
  * the UI states which zone is being used.
  */
 export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult {
-  const rows = parseCsv(rawText);
-  if (rows.length === 0) return { ok: false, reason: "The CSV file is empty." };
+  // +1 so a file that is exactly at the cap still has room for its header.
+  const rows = parseCsv(rawText, MAX_CSV_ROWS + 1);
+  // Leading blank lines are skipped the same way detectFormat's
+  // firstNonEmptyLine does, so the two can't disagree about whether a
+  // file is a valid dose CSV.
+  const headerIndex = rows.findIndex((row) => row.some((cell) => cell.trim() !== ""));
+  if (headerIndex === -1) return { ok: false, reason: "The CSV file is empty." };
 
-  const header = rows[0].map((cell) => cell.trim());
+  const header = rows[headerIndex].map((cell) => cell.trim());
   if (header.join(",") !== DOSE_CSV_HEADER) {
     return {
       ok: false,
@@ -211,11 +258,13 @@ export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult 
     };
   }
 
-  const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell.trim() !== ""));
-  if (dataRows.length > MAX_CSV_ROWS) {
+  const dataRows = rows
+    .slice(headerIndex + 1)
+    .filter((row) => row.some((cell) => cell.trim() !== ""));
+  if (dataRows.length >= MAX_CSV_ROWS) {
     return {
       ok: false,
-      reason: `That CSV has ${dataRows.length.toLocaleString()} rows, which is over the ${MAX_CSV_ROWS.toLocaleString()} limit.`,
+      reason: `That CSV has at least ${MAX_CSV_ROWS.toLocaleString()} rows, which is over the limit.`,
     };
   }
 
@@ -259,9 +308,10 @@ export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult 
     // Strict ISO only. Accepting DD/MM/YYYY as well would make
     // 03/04/2026 silently ambiguous with MM/DD/YYYY and could shift
     // real dose history by months.
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
+    const calendar = parseIsoDate(dateRaw);
+    if (!calendar) {
       skipped++;
-      skipReasons.add(`line ${lineNumber}: date must be YYYY-MM-DD`);
+      skipReasons.add(`line ${lineNumber}: date must be a real YYYY-MM-DD`);
       return;
     }
 
@@ -273,10 +323,25 @@ export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult 
     }
 
     const stamp = `${dateRaw}T${String(clock.hours).padStart(2, "0")}:${String(clock.minutes).padStart(2, "0")}`;
-    const takenAt = parseDateTimeLocal(stamp, timezone);
-    if (!Number.isFinite(takenAt.getTime())) {
+    // parseDateTimeLocal runs Intl.DateTimeFormat.formatToParts, which
+    // throws RangeError on an out-of-range date rather than returning an
+    // Invalid Date — an uncaught throw here would 500 the whole import
+    // over one bad row.
+    let takenAt: Date;
+    try {
+      takenAt = parseDateTimeLocal(stamp, timezone);
+    } catch {
       skipped++;
       skipReasons.add(`line ${lineNumber}: unreadable date/time`);
+      return;
+    }
+
+    // The JSON path gets these bounds from `importDate`; the CSV path has
+    // to apply them itself, or a row dated 9999-12-31 would stretch every
+    // future analytics range.
+    if (!isImportableTime(takenAt.getTime())) {
+      skipped++;
+      skipReasons.add(`line ${lineNumber}: date outside the supported range`);
       return;
     }
 
@@ -316,6 +381,16 @@ export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult 
       status,
     });
   });
+
+  // The JSON path gets this cap from backupEnvelopeSchema; the CSV path
+  // has to apply it itself, or a file of 50,000 distinct names would
+  // create 50,000 stub medications.
+  if (medicationsByKey.size > IMPORT_MAX_MEDICATIONS) {
+    return {
+      ok: false,
+      reason: `That CSV names ${medicationsByKey.size.toLocaleString()} different medications, which is over the ${IMPORT_MAX_MEDICATIONS.toLocaleString()} limit.`,
+    };
+  }
 
   if (skipped > 0) {
     const detail = [...skipReasons].slice(0, 5).join("; ");

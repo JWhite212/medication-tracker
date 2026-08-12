@@ -6,7 +6,13 @@
 // can carry another account's identity. `id` survives only as
 // `sourceId`, used to resolve references between arrays in the same
 // file and never written to the database.
-import { backupEnvelopeSchema, IMPORT_SUPPORTED_VERSION } from "$lib/utils/validation";
+import {
+  backupEnvelopeSchema,
+  importDoseLogSchema,
+  importInventoryEventSchema,
+  IMPORT_SUPPORTED_VERSION,
+} from "$lib/utils/validation";
+import type { z } from "zod";
 import { stripBom } from "./detect";
 import type { ImportBundle, ImportMedication } from "./types";
 
@@ -83,15 +89,35 @@ export function parseBackup(rawText: string): ParseResult {
     archivedAt: med.archivedAt,
     startedAt: med.startedAt,
     endedAt: med.endedAt,
-    schedules: med.schedules.map((schedule, index) => ({
-      scheduleKind: schedule.scheduleKind,
-      timeOfDay: schedule.timeOfDay,
-      intervalHours: schedule.intervalHours,
-      daysOfWeek: schedule.daysOfWeek,
-      sortOrder: schedule.sortOrder || index,
-      effectiveFrom: schedule.effectiveFrom,
-      effectiveTo: schedule.effectiveTo,
-    })),
+    // `scheduleKind` and its payload are validated independently, so a
+    // hand-edited file can carry a fixed_time row with no timeOfDay (or
+    // an interval row with no intervalHours). Rather than writing a row
+    // the schedule engine can't interpret — or dropping it and leaving
+    // the medication with no schedule at all, which the dashboard and
+    // analytics don't expect — demote it to PRN, which is the honest
+    // reading of "we don't know when this is taken".
+    schedules: med.schedules.map((schedule, index) => {
+      const usable =
+        (schedule.scheduleKind === "fixed_time" && schedule.timeOfDay !== null) ||
+        (schedule.scheduleKind === "interval" && schedule.intervalHours !== null) ||
+        schedule.scheduleKind === "prn";
+
+      if (!usable) {
+        warnings.push(
+          `A ${schedule.scheduleKind.replace("_", " ")} schedule on "${med.name}" was missing its details and was imported as "as needed".`,
+        );
+      }
+
+      return {
+        scheduleKind: usable ? schedule.scheduleKind : ("prn" as const),
+        timeOfDay: usable ? schedule.timeOfDay : null,
+        intervalHours: usable ? schedule.intervalHours : null,
+        daysOfWeek: usable ? schedule.daysOfWeek : null,
+        sortOrder: schedule.sortOrder || index,
+        effectiveFrom: schedule.effectiveFrom,
+        effectiveTo: schedule.effectiveTo,
+      };
+    }),
   }));
 
   // A dose or event whose medicationId doesn't appear in `medications`
@@ -100,19 +126,59 @@ export function parseBackup(rawText: string): ParseResult {
   // never sees.
   const knownIds = new Set(medications.map((med) => med.sourceId).filter(Boolean) as string[]);
 
-  const doses = data.doseLogs.filter((dose) => knownIds.has(dose.medicationId));
-  const orphanDoses = data.doseLogs.length - doses.length;
+  // Row-at-a-time validation. One malformed dose in a 5000-dose backup
+  // must not make the whole file unimportable, so a bad row is counted
+  // and reported rather than aborting the import.
+  const doses: z.infer<typeof importDoseLogSchema>[] = [];
+  let invalidDoses = 0;
+  let orphanDoses = 0;
+  for (const row of data.doseLogs) {
+    const parsed = importDoseLogSchema.safeParse(row);
+    if (!parsed.success) {
+      invalidDoses++;
+      continue;
+    }
+    if (!knownIds.has(parsed.data.medicationId)) {
+      orphanDoses++;
+      continue;
+    }
+    doses.push(parsed.data);
+  }
+
+  const inventoryEvents: z.infer<typeof importInventoryEventSchema>[] = [];
+  let invalidEvents = 0;
+  let orphanEvents = 0;
+  for (const row of data.inventoryEvents) {
+    const parsed = importInventoryEventSchema.safeParse(row);
+    if (!parsed.success) {
+      invalidEvents++;
+      continue;
+    }
+    if (!knownIds.has(parsed.data.medicationId)) {
+      orphanEvents++;
+      continue;
+    }
+    inventoryEvents.push(parsed.data);
+  }
+
   if (orphanDoses > 0) {
     warnings.push(
       `${orphanDoses} dose ${orphanDoses === 1 ? "entry" : "entries"} referenced a medication that isn't in the file and were skipped.`,
     );
   }
-
-  const inventoryEvents = data.inventoryEvents.filter((event) => knownIds.has(event.medicationId));
-  const orphanEvents = data.inventoryEvents.length - inventoryEvents.length;
+  if (invalidDoses > 0) {
+    warnings.push(
+      `${invalidDoses} dose ${invalidDoses === 1 ? "entry" : "entries"} could not be read (bad timestamp or value) and were skipped.`,
+    );
+  }
   if (orphanEvents > 0) {
     warnings.push(
       `${orphanEvents} inventory ${orphanEvents === 1 ? "event" : "events"} referenced a medication that isn't in the file and were skipped.`,
+    );
+  }
+  if (invalidEvents > 0) {
+    warnings.push(
+      `${invalidEvents} inventory ${invalidEvents === 1 ? "event" : "events"} could not be read and were skipped.`,
     );
   }
 

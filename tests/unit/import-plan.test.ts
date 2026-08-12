@@ -213,13 +213,55 @@ describe("buildImportPlan — dose deduplication", () => {
     expect(plan.summary.dosesSkipped).toBe(1);
   });
 
-  it("dedupes at minute granularity, because the CSV only carries minutes", () => {
-    const existingKey = doseKey("existing_1", new Date("2026-05-01T08:00:00Z"), "taken", 1);
+  it("dedupes a CSV at minute granularity, because its Time column is only HH:mm", () => {
+    const csvSnapshot = snapshot({
+      medications: [{ id: "existing_1", name: "Sertraline", isArchived: false }],
+      doseKeys: new Set([
+        doseKey("existing_1", new Date("2026-05-01T08:00:00Z"), "taken", 1, "minute"),
+      ]),
+    });
     const plan = buildImportPlan(
-      bundle({ doses: [dose({ takenAt: new Date("2026-05-01T08:00:41Z") })] }),
+      bundle({
+        format: "dose-csv",
+        medications: [med({ sourceId: null })],
+        doses: [
+          dose({
+            sourceMedicationId: null,
+            medicationName: "Sertraline",
+            takenAt: new Date("2026-05-01T08:00:41Z"),
+          }),
+        ],
+      }),
+      csvSnapshot,
+      MERGE,
+    );
+    expect(plan.doses[0].action).toBe("skip");
+  });
+
+  it("KEEPS two JSON doses in the same minute — a backup carries milliseconds", () => {
+    // Bucketing a JSON backup to the minute would silently drop a split
+    // dose or a quick correction logged seconds apart.
+    const plan = buildImportPlan(
+      bundle({
+        doses: [
+          dose({ takenAt: new Date("2026-05-01T08:00:05Z") }),
+          dose({ takenAt: new Date("2026-05-01T08:00:41Z") }),
+        ],
+      }),
+      snapshot(),
+      MERGE,
+    );
+    expect(plan.summary.dosesCreated).toBe(2);
+  });
+
+  it("still dedupes a JSON dose that matches an existing row exactly", () => {
+    const plan = buildImportPlan(
+      bundle(),
       snapshot({
         medications: [{ id: "existing_1", name: "Sertraline", isArchived: false }],
-        doseKeys: new Set([existingKey]),
+        doseKeys: new Set([
+          doseKey("existing_1", new Date("2026-05-01T08:00:00Z"), "taken", 1, "exact"),
+        ]),
       }),
       MERGE,
     );
@@ -410,6 +452,92 @@ describe("buildImportPlan — replace mode", () => {
   it("still dedupes duplicates within the file itself", () => {
     const plan = buildImportPlan(bundle({ doses: [dose(), dose()] }), snapshot(), REPLACE);
     expect(plan.summary.dosesCreated).toBe(1);
+  });
+
+  it("reports EMPTY when the file yielded nothing, so a replace can't wipe the account", () => {
+    // Reachable without malice: export the dose CSV, open it in Excel,
+    // save (Excel rewrites 2026-08-01 as 01/08/2026), re-import as
+    // replace. Every row fails the date check and the file parses to
+    // nothing. If planIsEmpty counted the pending deletions as "work",
+    // the caller's guard would pass and the account would be deleted
+    // with nothing put back.
+    const plan = buildImportPlan(
+      bundle({ medications: [], doses: [], profile: null, preferences: null }),
+      snapshot({
+        medications: [{ id: "a", name: "A", isArchived: false }],
+        existingDoseCount: 4213,
+      }),
+      REPLACE,
+    );
+    expect(plan.summary.medicationsDeleted).toBe(1);
+    expect(planIsEmpty(plan)).toBe(true);
+  });
+
+  it("keeps the file's own sortOrder, since export array order is arbitrary", () => {
+    // buildSyncResponse has no ORDER BY on medications, so renumbering by
+    // array position would scramble the ordering the user had set.
+    const plan = buildImportPlan(
+      bundle({
+        medications: [
+          med({ sourceId: "m1", name: "Third", sortOrder: 2 }),
+          med({ sourceId: "m2", name: "First", sortOrder: 0 }),
+        ],
+        doses: [],
+      }),
+      snapshot(),
+      REPLACE,
+    );
+    expect(plan.medications.map((m) => [m.source.name, m.source.sortOrder])).toEqual([
+      ["Third", 2],
+      ["First", 0],
+    ]);
+  });
+});
+
+describe("buildImportPlan — mapping is scoped and prototype-safe", () => {
+  it("does NOT apply a leftover CSV mapping to a JSON backup", () => {
+    // The mapping input persists in the form across file changes; applying
+    // it to a JSON backup would skip medications the user never chose.
+    const plan = buildImportPlan(bundle(), snapshot(), {
+      ...MERGE,
+      nameMapping: { sertraline: { action: "skip" } },
+    });
+    expect(plan.medications[0].action).toBe("create");
+  });
+
+  it("does not let a medication named 'constructor' slip past the unmatched gate", () => {
+    // A bare `nameMapping[key]` lookup resolves "constructor" through
+    // Object.prototype, which is truthy, so the medication would fall
+    // through to "create" without ever being offered to the user.
+    const plan = buildImportPlan(
+      bundle({
+        format: "dose-csv",
+        medications: [med({ sourceId: null, name: "constructor" })],
+        doses: [],
+        profile: null,
+        preferences: null,
+      }),
+      snapshot(),
+      MERGE,
+    );
+    expect(plan.medications[0].action).toBe("skip");
+    expect(plan.unmatchedNames).toEqual(["constructor"]);
+  });
+
+  it("still reuses an existing medication named 'constructor'", () => {
+    const plan = buildImportPlan(
+      bundle({
+        format: "dose-csv",
+        medications: [med({ sourceId: null, name: "constructor" })],
+        doses: [],
+        profile: null,
+        preferences: null,
+      }),
+      snapshot({ medications: [{ id: "existing_1", name: "constructor", isArchived: false }] }),
+      MERGE,
+    );
+    expect(plan.medications[0].action).toBe("reuse");
+    expect(plan.medications[0].existingId).toBe("existing_1");
   });
 });
 

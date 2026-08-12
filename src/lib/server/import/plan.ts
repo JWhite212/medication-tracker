@@ -11,6 +11,7 @@ import {
   inventoryEventKey,
   normaliseName,
   type AccountSnapshot,
+  type DosePrecision,
   type ImportBundle,
   type ImportMode,
   type ImportPlan,
@@ -28,10 +29,17 @@ export type PlanOptions = {
   nameMapping?: NameMapping;
 };
 
-/** Stable handle for a medication within one import. JSON files carry
- * ids; a CSV only has names, so the normalised name is the key. */
+/**
+ * Stable handle for a medication within one import. JSON files carry
+ * ids; a CSV only has names, so the normalised name is the key.
+ *
+ * The two are namespaced apart so a hand-edited file can't make an
+ * id-keyed medication and a name-keyed one collide (a medication whose
+ * `id` is null and whose name happens to equal another row's id would
+ * otherwise share a ref, and one would silently shadow the other).
+ */
 function refFor(sourceId: string | null, name: string): string {
-  return sourceId ?? normaliseName(name);
+  return sourceId ? `id:${sourceId}` : `name:${normaliseName(name)}`;
 }
 
 export function buildImportPlan(
@@ -70,22 +78,42 @@ export function buildImportPlan(
     if (!current || dose.takenAt < current) earliestDoseByRef.set(ref, dose.takenAt);
   }
 
-  // Imported medications are appended above whatever the user already
-  // has, preserving their file order relative to each other.
-  const sortOffset = replacing ? 0 : snapshot.maxSortOrder + 1;
-  let nextSortOrder = sortOffset;
+  // Merge appends imported medications above whatever the user already
+  // has: getActiveMedications orders by sortOrder alone, so reusing the
+  // file's values would interleave them into a hand-ordered list.
+  //
+  // Replace keeps the file's own sortOrder instead. The export has no
+  // ORDER BY, so its array order is arbitrary — renumbering by array
+  // position would scramble the ordering the user had set.
+  let nextSortOrder = snapshot.maxSortOrder + 1;
 
   const medications: PlannedMedication[] = bundle.medications.map((source) => {
     const ref = refFor(source.sourceId, source.name);
     const key = normaliseName(source.name);
     const backDated = source.startedAt ?? earliestDoseByRef.get(ref) ?? null;
-    const withDates = { ...source, startedAt: backDated, sortOrder: nextSortOrder++ };
+    const withDates = {
+      ...source,
+      startedAt: backDated,
+      sortOrder: replacing ? source.sortOrder : nextSortOrder++,
+    };
 
     if (replacing) {
       return { source: withDates, action: "create", existingId: null, ref, reason: null };
     }
 
-    const choice = nameMapping[key];
+    // A name mapping only ever describes CSV medication names. Applying
+    // a stale mapping to a JSON backup would skip or re-point
+    // medications the user never chose anything for.
+    //
+    // hasOwnProperty, not a bare lookup: `nameMapping` is a plain object
+    // built from client JSON, so a medication literally named
+    // "constructor" would otherwise resolve through Object.prototype,
+    // enter this branch with `action` undefined, and fall through to
+    // "create" — bypassing both the dedupe and the unmatched-name gate.
+    const choice =
+      bundle.format === "dose-csv" && Object.prototype.hasOwnProperty.call(nameMapping, key)
+        ? nameMapping[key]
+        : undefined;
     if (choice) {
       if (choice.action === "skip") {
         return {
@@ -149,6 +177,11 @@ export function buildImportPlan(
     }
   }
 
+  // A JSON backup carries millisecond timestamps, so two distinct doses
+  // in the same minute must stay distinct. A CSV only carries HH:mm, so
+  // it has to match on minutes or it would never dedupe at all.
+  const precision: DosePrecision = bundle.format === "dose-csv" ? "minute" : "exact";
+
   // Seeded from the account so a merge doesn't re-add rows the user
   // already has; extended as we go so duplicates *within* one file are
   // caught too.
@@ -172,7 +205,7 @@ export function buildImportPlan(
     // ref instead; it's unique per medication within this import, which
     // is all within-file dedupe needs.
     const namespace = med.action === "reuse" ? med.existingId! : `new:${ref}`;
-    const key = doseKey(namespace, source.takenAt, source.status, source.quantity);
+    const key = doseKey(namespace, source.takenAt, source.status, source.quantity, precision);
 
     if (seenDoseKeys.has(key)) {
       return {
@@ -272,14 +305,25 @@ export function buildImportPlan(
   };
 }
 
-/** Nothing to do — used to keep the UI honest instead of reporting a
- * successful import that wrote zero rows. */
+/**
+ * True when the plan would write nothing.
+ *
+ * Deliberately ignores `medicationsDeleted`. Counting a replace-mode
+ * deletion as "something happening" would mean a file that parsed to
+ * zero rows still passed the caller's not-empty check — and replace
+ * would then delete every medication (cascading to schedules, doses and
+ * inventory events) and insert nothing in their place.
+ *
+ * That is reachable without any malice: export the dose CSV, open it in
+ * Excel, save (Excel rewrites `2026-08-01` as `01/08/2026`), re-import
+ * in replace mode. Every row fails the strict date check, the file
+ * parses to zero doses, and the account is wiped.
+ */
 export function planIsEmpty(plan: ImportPlan): boolean {
   return (
     plan.summary.medicationsCreated === 0 &&
     plan.summary.dosesCreated === 0 &&
     plan.summary.inventoryEventsCreated === 0 &&
-    plan.summary.medicationsDeleted === 0 &&
     !plan.summary.profileUpdated &&
     !plan.summary.preferencesUpdated
   );

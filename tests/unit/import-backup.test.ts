@@ -202,27 +202,6 @@ describe("parseBackup — rejections", () => {
     expect(parseBackup("[]").ok).toBe(false);
   });
 
-  it("REJECTS a dose dated far in the future", () => {
-    const raw = backup();
-    (raw.doseLogs as Json[])[0].takenAt = "2099-01-01T00:00:00.000Z";
-    const result = parseBackup(JSON.stringify(raw));
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.reason).toMatch(/supported range/);
-  });
-
-  it("REJECTS a dose dated before 1900", () => {
-    const raw = backup();
-    (raw.doseLogs as Json[])[0].takenAt = "1850-01-01T00:00:00.000Z";
-    expect(parseBackup(JSON.stringify(raw)).ok).toBe(false);
-  });
-
-  it("REJECTS an unparseable timestamp", () => {
-    const raw = backup();
-    (raw.doseLogs as Json[])[0].takenAt = "yesterday-ish";
-    expect(parseBackup(JSON.stringify(raw)).ok).toBe(false);
-  });
-
   it("REJECTS a non-numeric dosage", () => {
     const raw = backup();
     (raw.medications as Json[])[0].dosageAmount = "; DROP TABLE users";
@@ -287,5 +266,72 @@ describe("parseBackup — tolerance", () => {
     if (!result.ok) return;
     expect(result.bundle.medications).toEqual([]);
     expect(result.bundle.doses).toEqual([]);
+  });
+});
+
+describe("parseBackup — one bad row must not sink the file", () => {
+  function withExtraDose(takenAt: string): ReturnType<typeof parseBackup> {
+    const raw = backup();
+    (raw.doseLogs as Json[]).push({
+      medicationId: "med_1",
+      quantity: 1,
+      takenAt,
+      status: "taken",
+    });
+    return parseBackup(JSON.stringify(raw));
+  }
+
+  it("skips a dose dated absurdly far in the future, keeping the rest", () => {
+    const result = withExtraDose("2099-01-01T00:00:00.000Z");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.doses).toHaveLength(1);
+    expect(result.bundle.warnings.join(" ")).toMatch(/could not be read/);
+  });
+
+  it("skips a dose dated before 1900, keeping the rest", () => {
+    const result = withExtraDose("1850-01-01T00:00:00.000Z");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.doses).toHaveLength(1);
+  });
+
+  it("skips an unparseable timestamp, keeping the rest", () => {
+    const result = withExtraDose("yesterday-ish");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.doses).toHaveLength(1);
+  });
+
+  it("ACCEPTS a near-future dose, because the app itself allows logging one", () => {
+    // doseLogSchema puts no upper bound on takenAt, so the app can store
+    // a future dose. A tighter window here would make the app's own
+    // backup unimportable.
+    const soon = new Date(Date.now() + 7 * 86400000).toISOString();
+    const result = withExtraDose(soon);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.doses).toHaveLength(2);
+    expect(result.bundle.warnings).toEqual([]);
+  });
+
+  it("still REJECTS the whole file for a bad medication, which is structural", () => {
+    // Dropping a medication would silently orphan all of its dose
+    // history, so medications stay strict where doses are tolerant.
+    const raw = backup();
+    (raw.medications as Json[])[0].dosageAmount = "not-a-number";
+    expect(parseBackup(JSON.stringify(raw)).ok).toBe(false);
+  });
+
+  it("demotes a fixed-time schedule with no time to PRN rather than writing a broken row", () => {
+    const raw = backup();
+    (raw.medications as Json[])[0].schedules = [
+      { scheduleKind: "fixed_time", timeOfDay: null, sortOrder: 0 },
+    ];
+    const result = parseBackup(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.medications[0].schedules[0].scheduleKind).toBe("prn");
+    expect(result.bundle.warnings.join(" ")).toMatch(/as needed/);
   });
 });

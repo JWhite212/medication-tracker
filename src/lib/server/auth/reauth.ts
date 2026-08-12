@@ -30,7 +30,11 @@ export type ReauthPurpose =
   | "export_data"
   | "revoke_all_sessions"
   | "wipe_dose_history"
-  | "wipe_archived_medications";
+  | "wipe_archived_medications"
+  // Replace-mode import deletes every medication (cascading to
+  // schedules, doses and inventory events) before restoring a file, so
+  // it is gated like the other destructive actions.
+  | "import_replace_data";
 
 const REAUTH_TTL_MS = 5 * 60 * 1000;
 

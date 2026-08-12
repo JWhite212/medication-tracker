@@ -54,14 +54,38 @@
       </button>
     </form>
 
-    <div class="border-glass-border mt-4 border-t pt-4">
+    <div class="border-glass-border mt-4 flex flex-wrap gap-3 border-t pt-4">
       <a
         href="/api/export"
         class="border-glass-border hover:bg-glass-hover inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
       >
         Download Export
       </a>
+      <a
+        href="/api/export/full"
+        class="border-glass-border hover:bg-glass-hover inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+      >
+        Download Full Backup (JSON)
+      </a>
     </div>
+    <p class="text-text-muted mt-3 text-xs">
+      PDF and CSV exports are reports — useful to read or share, but they don't carry everything.
+      The full JSON backup is the only format that can be imported back in.
+    </p>
+  </GlassCard>
+
+  <GlassCard>
+    <h2 class="mb-2 text-lg font-semibold">Import</h2>
+    <p class="text-text-secondary mb-4 text-sm">
+      Restore from a backup, or bring data across from another account. Imports preview what will
+      change before anything is written, and merging never overwrites what's already here.
+    </p>
+    <a
+      href="/settings/data/import"
+      class="border-glass-border hover:bg-glass-hover inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+    >
+      Import Data
+    </a>
   </GlassCard>
 
   <GlassCard>

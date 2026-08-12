@@ -5,6 +5,10 @@ import { doseLogs, medications, sessions, auditLogs } from "$lib/server/db/schem
 import { lucia } from "$lib/server/auth/lucia";
 import { confirmReauth } from "$lib/server/auth/reauth";
 import { logAudit } from "$lib/server/audit";
+import {
+  wipeArchivedMedications as wipeArchivedMedicationsForUser,
+  wipeDoseHistory as wipeDoseHistoryForUser,
+} from "$lib/server/api/wipe";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -48,20 +52,20 @@ async function requirePassword(
 }
 
 export const actions: Actions = {
+  // Both wipes delegate to src/lib/server/api/wipe.ts rather than
+  // deleting inline. That module does the delete, the `users.syncEpoch`
+  // bump and the audit row in one transaction. The epoch bump is the
+  // part that matters: a bulk delete writes no per-row tombstone, so
+  // without it a native client keeps showing rows that are gone from the
+  // server — which is exactly what the inline version here used to do.
   wipeDoseHistory: async ({ request, locals }) => {
     const userId = locals.user!.id;
     const formData = await request.formData();
     const reauth = await requirePassword(userId, formData, "wipe_dose_history");
     if (!reauth.ok) return fail(400, { wipeDosesError: reauth.error });
 
-    const deleted = await db
-      .delete(doseLogs)
-      .where(eq(doseLogs.userId, userId))
-      .returning({ id: doseLogs.id });
-    await logAudit(userId, "dose_log", "*", "delete", {
-      deleted: { from: deleted.length, to: 0 },
-    });
-    return { wipeDosesOk: true, removed: deleted.length };
+    const { deleted } = await wipeDoseHistoryForUser(userId);
+    return { wipeDosesOk: true, removed: deleted };
   },
 
   wipeArchivedMedications: async ({ request, locals }) => {
@@ -70,17 +74,8 @@ export const actions: Actions = {
     const reauth = await requirePassword(userId, formData, "wipe_archived_medications");
     if (!reauth.ok) return fail(400, { wipeArchivedError: reauth.error });
 
-    // Cascading FKs on dose_logs and medication_schedules drop the
-    // dependent rows when the medication row goes.
-    const deleted = await db
-      .delete(medications)
-      .where(and(eq(medications.userId, userId), eq(medications.isArchived, true)))
-      .returning({ id: medications.id });
-    await logAudit(userId, "medication", "*", "delete", {
-      deleted: { from: deleted.length, to: 0 },
-      filter: { from: null, to: "archived" },
-    });
-    return { wipeArchivedOk: true, removed: deleted.length };
+    const { deleted } = await wipeArchivedMedicationsForUser(userId);
+    return { wipeArchivedOk: true, removed: deleted };
   },
 
   revokeOtherSessions: async ({ request, locals }) => {

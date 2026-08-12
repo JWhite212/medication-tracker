@@ -55,9 +55,12 @@ is no file to import, so this adds `GET /api/export/full` (session auth, same bu
 
 - **Medications** — matched on `trim().toLowerCase()` of name, across active _and_
   archived. A match means _reuse the existing medication_, never update it.
-- **Doses** — key is `medicationId | floor(epochMs / 60000) | status | quantity`.
-  Minute granularity because the CSV export only carries minutes; keying on exact ms
-  would make a CSV re-import never dedupe against JSON-imported rows.
+- **Doses** — key is `medicationId | stamp | status | quantity`, where the precision of
+  `stamp` depends on the source format. Exact milliseconds for a JSON backup: bucketing
+  those to the minute would silently drop two genuinely distinct doses logged seconds
+  apart (a split dose, a quick correction). Minutes for the dose CSV, whose `Time` column
+  is only `HH:mm` — keying on exact ms there would never match, so every re-import would
+  duplicate the lot. The snapshot carries both precisions so either can be matched.
 - **Inventory counts and events are only written for medications the import creates.**
   An existing medication keeps its own count and ledger. This is what stops inventory
   drift, which is the main way an import could quietly corrupt a working account.
@@ -102,13 +105,36 @@ staging table, no TTL sweeper, and no path where client-supplied JSON reaches th
 - Transport is a **multipart form action**. A cookie-authenticated JSON `POST` is not
   covered by SvelteKit's origin check; multipart is.
 - Caps: 4 MB upload rejected from `content-length` before the body is buffered; per-array
-  `.max()` in Zod; `maxDuration: 60`; inserts chunked at 500 rows to stay under the
-  Postgres parameter limit.
-- Rate limits: `import-preview:${uid}` 20/15m, `import-commit:${uid}` 5/60m.
-- Timestamps rejected outside `[1900-01-01, now + 1 day]`, so a dose "taken" in 2099
-  can't wreck analytics.
+  `.max()` in Zod; a row cap applied _during_ CSV parsing rather than after; `maxDuration:
+60`; inserts chunked at 500 rows to stay under the Postgres parameter limit.
+- Rate limits: `import-preview` 20/15m, `import-attempt` 20/15m (covers parse cost, spent
+  on every commit attempt), `import-commit` 5/60m (spent only immediately before a real
+  write, so a mistyped replace password doesn't burn one).
+- Timestamps bounded to `[1900-01-01, now + 1 year]`. The upper bound is generous on
+  purpose: `doseLogSchema` puts no ceiling on `takenAt`, so the app can store a future
+  dose, and a tighter window would make its own backup unimportable.
+- Both actions check `locals.user` themselves — form actions run _before_ layout load
+  functions, so the `(app)` group's auth guard has not executed yet.
+- Preferences and profile default to **off**. Both overwrite settings the account already
+  has, which would contradict the promise that merging never overwrites.
 - Unknown keys are stripped, not rejected, so a future `version: 2` export degrades
   gracefully; an unrecognised `version` is a hard reject with a clear message.
+
+### The failure mode that matters most
+
+`planIsEmpty` deliberately ignores pending deletions. Counting a replace-mode wipe as
+"something happening" means a file that parsed to zero rows still passes the caller's
+not-empty check — and replace then deletes every medication (cascading to schedules,
+doses and inventory events) and inserts nothing.
+
+This needs no malice to reach: export the dose CSV, open it in Excel, save (Excel
+rewrites `2026-08-01` as `01/08/2026`), re-import in replace mode. Every row fails the
+strict date check, the file parses to nothing, and the account is gone.
+
+Row-level tolerance matters for the same reason from the other direction: one malformed
+dose must not make a 5000-dose backup unimportable. Dose and inventory rows are validated
+individually and skipped with a count; medications stay strict, because dropping one
+would silently orphan all of its dose history.
 
 ## Correctness details
 

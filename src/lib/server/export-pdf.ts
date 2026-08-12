@@ -1,6 +1,6 @@
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { doseLogs, medications } from "$lib/server/db/schema";
+import { doseLogs, medications, type DoseLogStatus } from "$lib/server/db/schema";
 import { formatUserTime, type TimeFormat } from "$lib/utils/time";
 import { getDoseStatusBreakdown } from "$lib/server/analytics";
 
@@ -15,6 +15,65 @@ function formatDateInTz(date: Date, timezone: string): string {
     month: "short",
     year: "numeric",
   }).format(date);
+}
+
+/**
+ * Marker for a dose that was not taken.
+ *
+ * Written as an exhaustive switch rather than `status === "skipped" ? ...`
+ * so that adding a fourth `DoseLogStatus` is a compile error here. The
+ * previous ternary only handled `skipped`, which meant `missed` fell
+ * through to the empty string and rendered identically to a dose that was
+ * actually taken — in a report a user hands to a clinician.
+ */
+function statusLabelFor(status: DoseLogStatus): string {
+  switch (status) {
+    case "taken":
+      return "";
+    case "skipped":
+      return " [SKIPPED]";
+    case "missed":
+      return " [MISSED]";
+    default: {
+      // Unreachable for the current union. If a newer schema writes a
+      // status this build doesn't know, surface it verbatim rather than
+      // let it render as taken — silence is the failure mode this
+      // function exists to prevent.
+      const unknown: never = status;
+      return ` [${String(unknown).toUpperCase()}]`;
+    }
+  }
+}
+
+export type DoseLogLine = {
+  takenAt: Date;
+  quantity: number;
+  status: DoseLogStatus;
+  medName: string;
+  dosageAmount: string;
+  dosageUnit: string;
+};
+
+/**
+ * One line of the PDF's dose log. Pure and exported so the formatting can
+ * be unit-tested — the PDF itself is a binary blob, which is why this
+ * logic went unverified long enough for the status bug to survive. Same
+ * split as `escapeCsvCell` in export-csv.ts.
+ */
+export function formatDoseLogLine(
+  dose: DoseLogLine,
+  timezone: string,
+  timeFormat: TimeFormat,
+): string {
+  const at = new Date(dose.takenAt);
+  const date = formatDateInTz(at, timezone);
+  const time = formatUserTime(at, timezone, timeFormat);
+  // Quantity is only meaningful for a dose that was actually taken.
+  // "x2" against a missed dose asserts two doses were consumed when none
+  // were; TimelineEntry.svelte suppresses it for the same reason.
+  const quantity = dose.status === "taken" ? ` x${dose.quantity}` : "";
+
+  return `${date} ${time}${statusLabelFor(dose.status)}  ${dose.medName} ${dose.dosageAmount}${dose.dosageUnit}${quantity}`;
 }
 
 export async function generateReport(
@@ -129,14 +188,7 @@ export async function generateReport(
       doc.fontSize(10).text("No doses recorded in this range.");
     } else {
       for (const dose of doses) {
-        const time = formatUserTime(new Date(dose.takenAt), timezone, timeFormat);
-        const date = formatDateInTz(new Date(dose.takenAt), timezone);
-        const statusLabel = dose.status === "skipped" ? " [SKIPPED]" : "";
-        doc
-          .fontSize(10)
-          .text(
-            `${date} ${time}${statusLabel}  ${dose.medName} ${dose.dosageAmount}${dose.dosageUnit} x${dose.quantity}`,
-          );
+        doc.fontSize(10).text(formatDoseLogLine(dose, timezone, timeFormat));
         if (dose.sideEffects?.length) {
           doc
             .fontSize(8)

@@ -69,10 +69,13 @@ export async function loadAccountSnapshot(
 
   return {
     ...base,
+    // Both precisions, so whichever the source format calls for is
+    // already present without a second pass over the table.
     doseKeys: new Set(
-      doseRows.map((row) =>
-        doseKey(row.medicationId, new Date(row.takenAt), row.status, row.quantity),
-      ),
+      doseRows.flatMap((row) => [
+        doseKey(row.medicationId, new Date(row.takenAt), row.status, row.quantity, "exact"),
+        doseKey(row.medicationId, new Date(row.takenAt), row.status, row.quantity, "minute"),
+      ]),
     ),
     inventoryEventKeys: new Set(
       eventRows.map((row) =>

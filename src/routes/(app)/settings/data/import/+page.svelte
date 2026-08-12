@@ -6,22 +6,22 @@
 
   let mode = $state<"merge" | "replace">("merge");
   let sectionInventory = $state(true);
-  let sectionPreferences = $state(true);
+  // Preferences and profile default OFF. Both overwrite settings the
+  // account already has, which would contradict the promise that merging
+  // never overwrites anything — so they are opt-in, not opt-out.
+  let sectionPreferences = $state(false);
   let sectionProfile = $state(false);
   let password = $state("");
   let confirmPhrase = $state("");
   let submitting = $state(false);
   let fileName = $state("");
+  let fileSize = $state(0);
 
   // name -> "skip" | "create" | a medication id
   let mapping = $state<Record<string, string>>({});
 
-  const preview = $derived(form?.preview ?? null);
   const imported = $derived(form?.imported ?? null);
 
-  // The preview is advisory; commit re-parses the same upload. Both
-  // buttons submit the one form, so the chosen file survives between
-  // them without the user re-picking it.
   const mappingJson = $derived(
     JSON.stringify(
       Object.fromEntries(
@@ -35,7 +35,38 @@
     ),
   );
 
+  // A preview describes one exact combination of file and options. If any
+  // of them changes afterwards the numbers on screen no longer describe
+  // what the commit button would do — most dangerously, a merge preview
+  // followed by switching to Replace. Drop the stale preview instead.
+  //
+  // The mapping is deliberately not part of this: changing it is the
+  // normal flow, and the server re-plans on commit and refuses while any
+  // name is still undecided.
+  let previewSignature = $state<string | null>(null);
+  const currentSignature = $derived(
+    [mode, sectionInventory, sectionPreferences, sectionProfile, fileName, fileSize].join("|"),
+  );
+  const preview = $derived(
+    previewSignature !== null && previewSignature !== currentSignature
+      ? null
+      : (form?.preview ?? null),
+  );
+
   const needsMapping = $derived((preview?.unmatchedNames ?? []).length > 0);
+
+  // Seed a choice for every unmatched name so the "Skip" shown in the
+  // dropdown is actually submitted. Without this the default is only ever
+  // visual: `mapping` stays empty, the server keeps reporting the name as
+  // undecided, and the commit button can never be enabled.
+  $effect(() => {
+    const names = preview?.unmatchedNames ?? [];
+    if (names.length === 0) return;
+    const missing = names.filter((name) => !(name in mapping));
+    if (missing.length === 0) return;
+    mapping = { ...mapping, ...Object.fromEntries(missing.map((name) => [name, "skip"])) };
+  });
+
   const replaceConfirmed = $derived(
     mode !== "replace" || (data.hasPassword ? password.length > 0 : confirmPhrase === "REPLACE"),
   );
@@ -46,9 +77,11 @@
   const maxMb = $derived(Math.round(data.maxBytes / 1024 / 1024));
 
   function submitHandler() {
+    const signatureAtSubmit = currentSignature;
     submitting = true;
     return async ({ update }: { update: (opts?: { reset?: boolean }) => Promise<void> }) => {
       await update({ reset: false });
+      previewSignature = signatureAtSubmit;
       submitting = false;
     };
   }
@@ -118,7 +151,9 @@
           accept=".json,.csv,application/json,text/csv"
           required
           onchange={(event) => {
-            fileName = event.currentTarget.files?.[0]?.name ?? "";
+            const chosen = event.currentTarget.files?.[0];
+            fileName = chosen?.name ?? "";
+            fileSize = chosen?.size ?? 0;
           }}
           class="border-glass-border bg-surface-raised text-text-primary file:bg-accent file:text-accent-fg w-full rounded-lg border px-4 py-2.5 text-sm file:mr-4 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
         />
@@ -192,6 +227,9 @@
 
         <div class="border-glass-border mt-4 space-y-2 border-t pt-4">
           <p class="text-sm font-medium">Also restore from a JSON backup</p>
+          <p class="text-text-muted text-xs">
+            These overwrite settings you already have, so they're off by default.
+          </p>
           <label class="flex items-center gap-2 text-sm">
             <input
               type="checkbox"

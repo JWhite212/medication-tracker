@@ -1,4 +1,4 @@
-import { fail } from "@sveltejs/kit";
+import { error, fail } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { medications, users } from "$lib/server/db/schema";
@@ -7,7 +7,7 @@ import { confirmReauth } from "$lib/server/auth/reauth";
 import { applyImport } from "$lib/server/import/apply";
 import { buildPlanFromFile } from "$lib/server/import/pipeline";
 import { planIsEmpty } from "$lib/server/import/plan";
-import { ALL_SECTIONS, type ImportPlan, type NameMapping } from "$lib/server/import/types";
+import { NO_SECTIONS, type ImportPlan, type NameMapping } from "$lib/server/import/types";
 import { IMPORT_MAX_BYTES, importOptionsSchema, nameMappingSchema } from "$lib/utils/validation";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -17,6 +17,8 @@ export const config = { maxDuration: 60 };
 
 const PREVIEW_WINDOW_MS = 15 * 60 * 1000;
 const PREVIEW_MAX = 20;
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const ATTEMPT_MAX = 20;
 const COMMIT_WINDOW_MS = 60 * 60 * 1000;
 const COMMIT_MAX = 5;
 
@@ -126,8 +128,11 @@ function readOptions(formData: FormData) {
     sectionProfile: formData.get("sectionProfile") ?? undefined,
   });
 
+  // Fail closed. Falling back to every section enabled would let a
+  // malformed post overwrite the user's profile and preferences, which
+  // the UI leaves off by default.
   if (!parsed.success) {
-    return { mode: "merge" as const, sections: { ...ALL_SECTIONS } };
+    return { mode: "merge" as const, sections: { ...NO_SECTIONS } };
   }
 
   return {
@@ -140,14 +145,17 @@ function readOptions(formData: FormData) {
   };
 }
 
+/** Null-prototype so a medication named "constructor" or "__proto__"
+ * can't resolve through Object.prototype in the planner's lookup. */
 function readMapping(formData: FormData): NameMapping {
+  const empty = Object.create(null) as NameMapping;
   const raw = formData.get("mapping");
-  if (typeof raw !== "string" || !raw.trim()) return {};
+  if (typeof raw !== "string" || !raw.trim()) return empty;
   try {
     const parsed = nameMappingSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : {};
+    return parsed.success ? Object.assign(empty, parsed.data) : empty;
   } catch {
-    return {};
+    return empty;
   }
 }
 
@@ -169,7 +177,11 @@ async function assertMappingOwnership(userId: string, mapping: NameMapping): Pro
 
 export const actions: Actions = {
   preview: async ({ request, locals }) => {
-    const userId = locals.user!.id;
+    // Form actions run BEFORE layout load functions, so the (app) group's
+    // auth guard has not executed at this point. Without this check an
+    // anonymous POST reaches `locals.user!.id` and 500s.
+    if (!locals.user) error(401, "Unauthorized");
+    const userId = locals.user.id;
 
     const { allowed, retryAfterMs } = await checkRateLimit(
       `import-preview:${userId}`,
@@ -201,16 +213,21 @@ export const actions: Actions = {
   },
 
   commit: async ({ request, locals }) => {
-    const userId = locals.user!.id;
+    if (!locals.user) error(401, "Unauthorized");
+    const userId = locals.user.id;
 
-    const { allowed, retryAfterMs } = await checkRateLimit(
-      `import-commit:${userId}`,
-      COMMIT_MAX,
-      COMMIT_WINDOW_MS,
+    // Two limiters. The wide one covers the cost of parsing an upload and
+    // is spent on every attempt; the tight one is spent only immediately
+    // before a real write, so a mistyped password on a replace doesn't
+    // burn one of the day's few imports.
+    const attempt = await checkRateLimit(
+      `import-attempt:${userId}`,
+      ATTEMPT_MAX,
+      ATTEMPT_WINDOW_MS,
     );
-    if (!allowed) {
+    if (!attempt.allowed) {
       return fail(429, {
-        importError: `Too many imports. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
+        importError: `Too many import attempts. Try again in ${Math.ceil(attempt.retryAfterMs / 60000)} minutes.`,
       });
     }
 
@@ -265,10 +282,23 @@ export const actions: Actions = {
       });
     }
 
+    // Also the guard that stops replace mode wiping an account when the
+    // file parsed to nothing — `planIsEmpty` deliberately ignores the
+    // pending deletions for exactly this reason.
     if (planIsEmpty(plan)) {
       return fail(400, {
-        importError: "Nothing to import — everything in that file is already in your account.",
+        importError:
+          plan.mode === "replace"
+            ? "That file contains nothing importable, so replacing would delete your data and put nothing back. Nothing has been changed."
+            : "Nothing to import — everything in that file is already in your account.",
         preview: toPreview(plan),
+      });
+    }
+
+    const commit = await checkRateLimit(`import-commit:${userId}`, COMMIT_MAX, COMMIT_WINDOW_MS);
+    if (!commit.allowed) {
+      return fail(429, {
+        importError: `Too many imports. Try again in ${Math.ceil(commit.retryAfterMs / 60000)} minutes.`,
       });
     }
 

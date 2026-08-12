@@ -30,6 +30,13 @@ export const ALL_SECTIONS: ImportSections = {
   profile: true,
 };
 
+/** Fail-closed default: write only medications, schedules and doses. */
+export const NO_SECTIONS: ImportSections = {
+  inventory: false,
+  preferences: false,
+  profile: false,
+};
+
 export type ImportSchedule = {
   scheduleKind: ScheduleKind;
   timeOfDay: string | null;
@@ -201,7 +208,9 @@ export type AccountSnapshot = {
   /** Active first, then archived — so name matching prefers a live
    * medication over an archived namesake. */
   medications: Array<{ id: string; name: string; isArchived: boolean }>;
-  /** `medicationId|minute|status|quantity` — see `doseKey`. */
+  /** Both precisions of every existing dose — see `doseKey`. The
+   * planner picks the set matching the source format, so a JSON import
+   * dedupes on exact timestamps and a CSV import on minutes. */
   doseKeys: Set<string>;
   /** `medicationId|epochMs|eventType|quantityChange`. */
   inventoryEventKeys: Set<string>;
@@ -213,26 +222,36 @@ export type AccountSnapshot = {
   maxSortOrder: number;
 };
 
+/** How precisely two doses must agree to count as the same record. */
+export type DosePrecision = "exact" | "minute";
+
 /**
  * Duplicate key for a dose.
  *
- * Bucketed to the **minute**, not the millisecond, because the CSV
- * export only carries `HH:mm`. Keying on exact epoch ms would mean a
- * CSV re-import could never dedupe against rows that arrived via a JSON
- * backup, and the same file imported through both paths would double.
+ * The precision depends on the source format, and getting this wrong
+ * loses data in one direction or duplicates it in the other:
  *
- * `quantity` is part of the key: a row whose quantity was edited after
- * export is a genuinely different record, and surfacing it as an extra
- * row is recoverable, whereas silently dropping it is not.
+ *  - `exact` for a JSON backup, which carries full millisecond
+ *    timestamps. Bucketing those to the minute would silently drop two
+ *    genuinely distinct doses of the same medication logged in the same
+ *    minute (a split dose, a quick correction).
+ *  - `minute` for the dose CSV, whose `Time` column is only `HH:mm`.
+ *    Keying on exact ms there would never match anything, so every
+ *    re-import of the same CSV would duplicate the lot.
+ *
+ * `quantity` is part of the key either way: a row whose quantity was
+ * edited after export is a genuinely different record, and surfacing it
+ * as an extra row is recoverable where silently dropping it is not.
  */
 export function doseKey(
   medicationId: string,
   takenAt: Date,
   status: DoseLogStatus,
   quantity: number,
+  precision: DosePrecision = "exact",
 ): string {
-  const minute = Math.floor(takenAt.getTime() / 60_000);
-  return `${medicationId}|${minute}|${status}|${quantity}`;
+  const stamp = precision === "minute" ? Math.floor(takenAt.getTime() / 60_000) : takenAt.getTime();
+  return `${medicationId}|${precision}|${stamp}|${status}|${quantity}`;
 }
 
 export function inventoryEventKey(

@@ -284,23 +284,34 @@ export const IMPORT_MAX_INVENTORY_EVENTS = 50_000;
  * rejection is ours (a clear message) rather than a platform 413. */
 export const IMPORT_MAX_BYTES = 4 * 1024 * 1024;
 
-const MIN_IMPORT_TIME = Date.UTC(1900, 0, 1);
-/** Tolerate a day of clock skew, but no more: a dose "taken" in 2099
- * would poison adherence and the heatmap for every future range. */
-const IMPORT_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
+export const MIN_IMPORT_TIME = Date.UTC(1900, 0, 1);
+/**
+ * How far ahead a timestamp may sit. Generous on purpose: the app itself
+ * lets a dose be logged with a future `takenAt` (doseLogSchema puts no
+ * upper bound on it), so a tighter window here would make the app's own
+ * backup unimportable. Still bounded, so a dose dated 2099 can't stretch
+ * every future analytics range.
+ */
+export const IMPORT_FUTURE_SKEW_MS = 365 * 24 * 60 * 60 * 1000;
+
+export function isImportableTime(time: number): boolean {
+  return (
+    Number.isFinite(time) && time >= MIN_IMPORT_TIME && time <= Date.now() + IMPORT_FUTURE_SKEW_MS
+  );
+}
 
 const importDate = z
   .string()
   .max(64)
   .transform((value, ctx) => {
     const parsed = new Date(value);
-    const time = parsed.getTime();
-    if (!Number.isFinite(time)) {
-      ctx.addIssue({ code: "custom", message: "Invalid timestamp" });
-      return z.NEVER;
-    }
-    if (time < MIN_IMPORT_TIME || time > Date.now() + IMPORT_FUTURE_SKEW_MS) {
-      ctx.addIssue({ code: "custom", message: "Timestamp outside the supported range" });
+    if (!isImportableTime(parsed.getTime())) {
+      ctx.addIssue({
+        code: "custom",
+        message: Number.isFinite(parsed.getTime())
+          ? "Timestamp outside the supported range"
+          : "Invalid timestamp",
+      });
       return z.NEVER;
     }
     return parsed;
@@ -384,7 +395,7 @@ const importMedicationSchema = z.object({
   schedules: z.array(importScheduleSchema).max(IMPORT_MAX_SCHEDULES_PER_MED).optional().default([]),
 });
 
-const importDoseLogSchema = z.object({
+export const importDoseLogSchema = z.object({
   medicationId: z.string().max(64),
   quantity: z.number().int().min(1).max(1000).catch(1),
   takenAt: importDate,
@@ -394,7 +405,7 @@ const importDoseLogSchema = z.object({
   status: z.enum(["taken", "skipped", "missed"]).catch("taken"),
 });
 
-const importInventoryEventSchema = z.object({
+export const importInventoryEventSchema = z.object({
   medicationId: z.string().max(64),
   eventType: z.enum([
     "dose_taken",
@@ -444,13 +455,15 @@ export const backupEnvelopeSchema = z.object({
   exportedAt: importDate.nullable().optional().default(null),
   profile: importProfileSchema.nullable().optional().default(null),
   preferences: importPreferencesSchema.nullable().optional().default(null),
+  // Medications are validated strictly: they're few, they're structural,
+  // and dropping one would silently orphan all of its dose history.
   medications: z.array(importMedicationSchema).max(IMPORT_MAX_MEDICATIONS).optional().default([]),
-  doseLogs: z.array(importDoseLogSchema).max(IMPORT_MAX_DOSE_LOGS).optional().default([]),
-  inventoryEvents: z
-    .array(importInventoryEventSchema)
-    .max(IMPORT_MAX_INVENTORY_EVENTS)
-    .optional()
-    .default([]),
+  // Dose and inventory rows are only bounded and shape-checked here, then
+  // validated one at a time in server/import/backup.ts. A single bad row
+  // in a 5000-dose backup must not make the whole file unimportable — it
+  // is skipped and counted instead.
+  doseLogs: z.array(z.unknown()).max(IMPORT_MAX_DOSE_LOGS).optional().default([]),
+  inventoryEvents: z.array(z.unknown()).max(IMPORT_MAX_INVENTORY_EVENTS).optional().default([]),
   // auditLogs is deliberately NOT modelled. Replaying a file's audit
   // rows would fabricate a tamper-evident history; import writes one
   // `data_import` row of its own instead.

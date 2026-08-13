@@ -1,0 +1,70 @@
+name: Reminder tick
+
+# Drives /api/cron/reminders more often than the Vercel Hobby plan
+# allows. Hobby caps cron jobs at one run per day, which is far too
+# coarse for medication reminders: an evening dose would only ever be
+# reported the following morning. The vercel.json cron stays in place as
+# a guaranteed daily backstop; this workflow is what makes reminders
+# timely during waking hours.
+#
+# Setup: add a repository secret CRON_SECRET matching the value set in
+# the Vercel production environment. Without it this workflow no-ops
+# rather than failing every half hour.
+#
+# The target origin is pinned in this file rather than read from a
+# repository variable on purpose: the request carries CRON_SECRET, so
+# anything that can change the destination can redirect the secret.
+# Pinning it means altering the target requires a reviewed commit.
+#
+# Two caveats worth knowing: GitHub's scheduler is best-effort and can
+# run late under load, and it disables scheduled workflows in repos with
+# no activity for 60 days.
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 30 minutes, 06:00–22:59 UTC. The overnight gap lets the Neon
+    # compute scale to zero instead of being held awake around the
+    # clock, and the daily Vercel cron still covers that window.
+    - cron: "*/30 6-22 * * *"
+
+permissions:
+  contents: read
+
+# Never let a slow run overlap the next tick — the dispatcher dedupes on
+# a slot key, but concurrent runs would race for the same claim.
+concurrency:
+  group: reminder-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch due reminders
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: https://medication-tracker.jamiewhite.site
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::notice::CRON_SECRET repository secret is not set — skipping."
+            exit 0
+          fi
+
+          url="${BASE_URL}/api/cron/reminders"
+
+          status=$(curl -sS -o /tmp/response.json -w '%{http_code}' \
+            --max-time 60 --retry 2 --retry-delay 10 --retry-connrefused \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${url}")
+
+          echo "HTTP ${status}"
+          cat /tmp/response.json || true
+          echo
+
+          if [ "${status}" != "200" ]; then
+            echo "::error::Reminder dispatch failed with HTTP ${status}"
+            exit 1
+          fi

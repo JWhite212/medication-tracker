@@ -222,7 +222,7 @@ describe("occurrencesFor", () => {
   });
 });
 
-import { isOutstanding, resolvesSlot } from "$lib/utils/due";
+import { isOutstanding, resolvesSlot, type DoseEvent } from "$lib/utils/due";
 
 const NOW = new Date("2026-05-01T15:00:00Z");
 
@@ -247,13 +247,92 @@ describe("isOutstanding — interval", () => {
     expect(got?.toISOString()).toBe("2026-05-01T12:00:00.000Z");
   });
 
-  it("a SKIPPED dose resolves the slot just as a taken one does", () => {
-    // The anchor is lastEventAt, which the caller builds from taken OR
-    // skipped rows. This is the divergence the whole change exists to fix.
-    const anchor = new Date("2026-05-01T12:00:00Z");
-    expect(
-      isOutstanding(sched(), { kind: "anchor", lastEventAt: anchor }, "UTC", NOW, LIFE),
-    ).toBeNull();
+  it("events mode: a missed dose is ignored when extracting the anchor", () => {
+    // Two doses: a taken dose at 04:00, then a missed dose at 12:00.
+    // The missed dose should be ignored, so the anchor is the taken dose at 04:00.
+    // Expected slot after 04:00 is 12:00. The missed dose at 12:00 doesn't resolve it.
+    const doses: DoseEvent[] = [
+      {
+        id: "dose-1",
+        medicationId: "med-1",
+        takenAt: new Date("2026-05-01T04:00:00Z"),
+        status: "taken",
+        quantity: 1,
+      },
+      {
+        id: "dose-2",
+        medicationId: "med-1",
+        takenAt: new Date("2026-05-01T12:00:00Z"),
+        status: "missed",
+        quantity: 1,
+      },
+    ];
+    const got = isOutstanding(sched(), { kind: "events", doses }, "UTC", NOW, LIFE);
+    // Anchor is 04:00, so next slot is 12:00. Missed dose doesn't resolve, so 12:00 is outstanding.
+    expect(got?.toISOString()).toBe("2026-05-01T12:00:00.000Z");
+  });
+
+  it("events mode: a skipped dose resolves just as a taken dose does", () => {
+    // Same scenario as above but with skipped instead of missed.
+    // Now the dose at 12:00 should resolve the 12:00 slot.
+    const doses: DoseEvent[] = [
+      {
+        id: "dose-1",
+        medicationId: "med-1",
+        takenAt: new Date("2026-05-01T04:00:00Z"),
+        status: "taken",
+        quantity: 1,
+      },
+      {
+        id: "dose-2",
+        medicationId: "med-1",
+        takenAt: new Date("2026-05-01T12:00:00Z"),
+        status: "skipped",
+        quantity: 1,
+      },
+    ];
+    const got = isOutstanding(sched(), { kind: "events", doses }, "UTC", NOW, LIFE);
+    // Anchor is now 12:00 (the skipped dose), so next slot is 20:00, which is after NOW.
+    expect(got).toBeNull();
+  });
+
+  it("events mode: with multiple resolving doses, uses the latest as anchor", () => {
+    // Multiple doses: some before 12:00, one missed, and one taken after.
+    // The latest resolving dose (at 12:00) should be the anchor.
+    const doses: DoseEvent[] = [
+      {
+        id: "dose-1",
+        medicationId: "med-1",
+        takenAt: new Date("2026-05-01T00:00:00Z"),
+        status: "taken",
+        quantity: 1,
+      },
+      {
+        id: "dose-2",
+        medicationId: "med-1",
+        takenAt: new Date("2026-05-01T08:00:00Z"),
+        status: "taken",
+        quantity: 1,
+      },
+      {
+        id: "dose-3",
+        medicationId: "med-1",
+        takenAt: new Date("2026-05-01T12:30:00Z"),
+        status: "missed", // ignored
+        quantity: 1,
+      },
+      {
+        id: "dose-4",
+        medicationId: "med-1",
+        takenAt: new Date("2026-05-01T12:00:00Z"),
+        status: "skipped",
+        quantity: 1,
+      },
+    ];
+    // With an 8h interval, doses at 08:00 and 12:00, the latest resolving is 12:00.
+    // Next slot after 12:00 is 20:00. With NOW=15:00, that's not outstanding yet.
+    const got = isOutstanding(sched(), { kind: "events", doses }, "UTC", NOW, LIFE);
+    expect(got).toBeNull();
   });
 
   it("a never-handled interval medication is outstanding once startedAt + interval has passed", () => {
@@ -312,5 +391,21 @@ describe("isOutstanding — fixed time", () => {
     // 2026-05-01 is Friday, 2026-04-30 Thursday — neither is Sunday, so
     // nothing inside the look-back qualifies.
     expect(isOutstanding(s, { kind: "anchor", lastEventAt: null }, "UTC", NOW, life)).toBeNull();
+  });
+
+  it("resolves at exactly the tolerance boundary (slot - SLOT_TOLERANCE_MS)", () => {
+    // Slot at 09:00, dose at exactly 08:00 (1h before). Tolerance is 1h.
+    // This should resolve because dose >= slot - tolerance.
+    const at = new Date("2026-05-01T08:00:00Z");
+    expect(isOutstanding(fixed, { kind: "anchor", lastEventAt: at }, "UTC", NOW, LIFE)).toBeNull();
+  });
+
+  it("does not resolve just beyond the tolerance boundary (slot - SLOT_TOLERANCE_MS - 1ms)", () => {
+    // Slot at 09:00, dose at 07:59:59.999 (1ms before the 1h boundary).
+    // This should NOT resolve because dose < slot - tolerance.
+    const at = new Date("2026-05-01T07:59:59.999Z");
+    expect(
+      isOutstanding(fixed, { kind: "anchor", lastEventAt: at }, "UTC", NOW, LIFE),
+    ).not.toBeNull();
   });
 });

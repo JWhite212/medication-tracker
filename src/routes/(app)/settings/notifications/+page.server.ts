@@ -6,7 +6,12 @@ import { encodeHexLowerCase } from "@oslojs/encoding";
 import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferences";
 import { notificationSchema } from "$lib/utils/validation";
 import { logAudit, computeChanges } from "$lib/server/audit";
-import { getVapidPublicKey } from "$lib/server/push";
+import {
+  getVapidPublicKey,
+  getPushHealth,
+  sendTestPush,
+  describeTestPushResult,
+} from "$lib/server/push";
 import { isEmailConfigured, sendVerificationEmail } from "$lib/server/email";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { db } from "$lib/server/db";
@@ -30,6 +35,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     vapidPublicKey: getVapidPublicKey(),
     emailVerified: user?.emailVerified ?? false,
     emailConfigured: isEmailConfigured(),
+    pushHealth: await getPushHealth(locals.user!.id),
   };
 };
 
@@ -65,6 +71,49 @@ export const actions: Actions = {
       await logAudit(locals.user!.id, "user_preferences", locals.user!.id, "update", changes);
 
     return { success: true };
+  },
+
+  /**
+   * Fire a test push to every device the user has registered, so they
+   * can confirm delivery without waiting for a real dose to fall due.
+   *
+   * Rate-limited per user: the action needs no input, so without a limit
+   * it would be a one-click way to flood a user's own devices, and an
+   * authenticated amplifier against the push services.
+   */
+  sendTest: async ({ locals }) => {
+    const userId = locals.user!.id;
+    const { allowed, retryAfterMs } = await checkRateLimit(
+      `push-test:${userId}`,
+      5,
+      15 * 60 * 1000,
+    );
+    if (!allowed) {
+      return fail(429, {
+        testError: `Too many test notifications. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
+      });
+    }
+
+    const result = await sendTestPush(userId);
+    const { ok, message } = describeTestPushResult(result);
+
+    if (!ok) {
+      // The provider's own error text stays in the logs; only the
+      // categorised message from describeTestPushResult goes back to
+      // the browser.
+      if (!result.ok) {
+        console.warn(`test push failed (${result.reason}): ${result.message}`);
+      }
+      const status =
+        !result.ok && result.reason === "not_configured"
+          ? 503
+          : !result.ok && result.reason === "no_subscriptions"
+            ? 400
+            : 502;
+      return fail(status, { testError: message });
+    }
+
+    return { testOk: true, testMessage: message };
   },
 
   /**

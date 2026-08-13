@@ -113,10 +113,26 @@ Occurrences project per schedule kind:
 Occurrences are clipped to the medication's `[startedAt, endedAt]` lifecycle window,
 consistent with how analytics already treats that range.
 
-An occurrence is **resolved** by a `taken` or `skipped` event within
-±`SLOT_TOLERANCE_MS`. A `missed` row never resolves one — it records that a dose was
-not consumed, so the slot stays outstanding. An occurrence in the past that is not
-resolved is outstanding. The fixed-time scan walks back `OVERDUE_LOOKBACK_DAYS` to
+An occurrence is **resolved** by a `taken` or `skipped` event near it. A `missed` row
+never resolves one — it records that a dose was not consumed, so the slot stays
+outstanding. An occurrence in the past that is not resolved is outstanding.
+
+"Near it" is deliberately not symmetric, and the two projections apply it differently.
+Both behaviours are pre-existing and both are correct for the question they answer:
+
+- **The cron** resolves an occurrence with any dose at or after it, **however late** —
+  its tolerance extends backwards only, covering a dose taken shortly before the
+  scheduled time. Reporting a taken-but-late dose as overdue would be a false alarm.
+  This is the rule `computeOverdueSlot` always implemented and CLAUDE.md records as a
+  reminder invariant.
+- **The timeline** pairs a dose to a slot only within a symmetric ±`SLOT_TOLERANCE_MS`
+  window, because a day with several slots makes a hours-late dose genuinely ambiguous
+  about which slot it belongs to.
+
+An earlier draft of this spec stated the rule as symmetric for both. The parity test
+in `tests/unit/due-parity.test.ts` caught the contradiction; that test now bounds
+itself to doses at or before the occurrence and pins the late-dose asymmetry
+explicitly, so it cannot be flattened into false agreement later. The fixed-time scan walks back `OVERDUE_LOOKBACK_DAYS` to
 find the most recent elapsed occurrence, so a slot timed after the cron tick is not
 lost when the local date rolls over.
 

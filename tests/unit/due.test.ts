@@ -196,4 +196,28 @@ describe("occurrencesFor", () => {
       occurrencesFor(sched({ intervalHours: null }), DAY_START, DAY_END, "UTC", DAY_START, LIFE),
     ).toEqual([]);
   });
+
+  it("catches up from an anchor several intervals before the window", () => {
+    // Anchor is 16 hours (2 intervals) before window start.
+    const anchor = new Date("2026-04-30T08:00:00Z");
+    const out = occurrencesFor(sched(), DAY_START, DAY_END, "UTC", anchor, LIFE);
+    expect(out.map((d) => d.toISOString())).toEqual([
+      "2026-05-01T00:00:00.000Z",
+      "2026-05-01T08:00:00.000Z",
+      "2026-05-01T16:00:00.000Z",
+    ]);
+  });
+
+  it("catches up from an anchor exactly one interval before the window", () => {
+    // Anchor is 4 hours (half interval) before window start at odd time.
+    const anchor = new Date("2026-04-30T20:00:00Z");
+    const windowStart = new Date("2026-05-01T00:00:00Z");
+    const windowEnd = new Date("2026-05-02T00:00:00Z");
+    const out = occurrencesFor(sched(), windowStart, windowEnd, "UTC", anchor, LIFE);
+    expect(out.map((d) => d.toISOString())).toEqual([
+      "2026-05-01T04:00:00.000Z",
+      "2026-05-01T12:00:00.000Z",
+      "2026-05-01T20:00:00.000Z",
+    ]);
+  });
 });

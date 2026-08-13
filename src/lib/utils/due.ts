@@ -137,18 +137,6 @@ export function occurrencesFor(
       out.push(new Date(t.getTime()));
       t = new Date(t.getTime() + intervalMs);
     }
-
-    // Keep the anchor itself visible when it falls inside the window, so a
-    // just-handled dose still renders as its own slot.
-    const anchorTime = anchor?.getTime();
-    if (
-      anchorTime !== undefined &&
-      anchorTime >= windowStartUtc.getTime() &&
-      anchorTime < windowEndUtc.getTime() &&
-      !out.some((d) => d.getTime() === anchorTime)
-    ) {
-      out.push(new Date(anchorTime));
-    }
   } else if (schedule.scheduleKind === "fixed_time") {
     if (!schedule.timeOfDay) return [];
     for (const dateStr of getLocalDatesInRange(windowStartUtc, windowEndUtc, timezone)) {

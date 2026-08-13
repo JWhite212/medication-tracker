@@ -394,8 +394,27 @@ describe("outstandingSlots — prn and mixed", () => {
     expect(slots).toHaveLength(0);
   });
 
-  it("medication with no schedules produces zero slots", () => {
-    const meds = [makeMed()];
+  it("medication with no schedule rows falls back to its legacy interval columns", () => {
+    // Behaviour change, deliberate: effectiveSchedules synthesises a schedule
+    // from the deprecated scheduleType/scheduleIntervalHours columns when a
+    // medication has no rows in medication_schedules. Such medications are
+    // still creatable via import, and previously projected nothing at all.
+    const meds = [makeMed()]; // scheduleType "scheduled", scheduleIntervalHours "8"
+    const now = new Date("2026-04-16T10:00:00Z");
+    const slots = outstandingSlots(
+      meds,
+      new Map(),
+      { kind: "events", doses: [] },
+      { startUtc: dayStart, endUtc: dayEnd },
+      timezone,
+      now,
+    );
+    expect(slots.length).toBeGreaterThan(0);
+    expect(slots.every((s) => s.medicationId === "med-1")).toBe(true);
+  });
+
+  it("medication with neither schedule rows nor legacy columns produces zero slots", () => {
+    const meds = [makeMed({ scheduleIntervalHours: null })];
     const now = new Date("2026-04-16T10:00:00Z");
     const slots = outstandingSlots(
       meds,

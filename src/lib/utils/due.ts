@@ -268,64 +268,6 @@ export interface ScheduleSlot {
   matchedDoseId: string | null;
 }
 
-function expectedTimesForInterval(
-  intervalHours: number,
-  anchor: Date,
-  dayStartUtc: Date,
-  dayEndUtc: Date,
-): Date[] {
-  if (!intervalHours || intervalHours <= 0) return [];
-  const intervalMs = intervalHours * 60 * 60 * 1000;
-  const out: Date[] = [];
-
-  let t = new Date(anchor.getTime());
-  if (t.getTime() < dayStartUtc.getTime()) {
-    const diff = dayStartUtc.getTime() - t.getTime();
-    const intervals = Math.ceil(diff / intervalMs);
-    t = new Date(t.getTime() + intervals * intervalMs);
-  }
-
-  while (t.getTime() < dayEndUtc.getTime()) {
-    out.push(new Date(t.getTime()));
-    t = new Date(t.getTime() + intervalMs);
-  }
-
-  if (
-    anchor.getTime() >= dayStartUtc.getTime() &&
-    anchor.getTime() < dayEndUtc.getTime() &&
-    !out.some((et) => et.getTime() === anchor.getTime())
-  ) {
-    out.push(new Date(anchor.getTime()));
-  }
-
-  out.sort((a, b) => a.getTime() - b.getTime());
-  return out;
-}
-
-function expectedTimesForFixedTime(
-  schedule: MedicationSchedule,
-  dayStartUtc: Date,
-  dayEndUtc: Date,
-  timezone: string,
-): Date[] {
-  if (!schedule.timeOfDay) return [];
-  const out: Date[] = [];
-  const allowed = schedule.daysOfWeek;
-
-  for (const dateStr of getLocalDatesInRange(dayStartUtc, dayEndUtc, timezone)) {
-    const utc = localTimeOnDateToUtc(dateStr, schedule.timeOfDay, timezone);
-    if (utc.getTime() < dayStartUtc.getTime() || utc.getTime() >= dayEndUtc.getTime()) {
-      continue;
-    }
-    if (allowed && allowed.length > 0) {
-      if (!allowed.includes(getLocalDayOfWeek(utc, timezone))) continue;
-    }
-    out.push(utc);
-  }
-
-  return out;
-}
-
 /**
  * Compute expected dose schedule slots for the window.
  *
@@ -352,9 +294,12 @@ export function outstandingSlots(
   const dayStartUtc = window.startUtc;
   const dayEndUtc = window.endUtc;
 
+  // Anchor on the last RESOLVING event — taken or skipped. A skip advances
+  // the interval clock exactly as the QuickLogBar badge already did, so the
+  // timeline and the badge finally answer the question the same way.
   const anchorByMed = new Map<string, Date>();
   for (const d of doses) {
-    if (d.status !== "taken") continue;
+    if (!resolvesSlot(d.status)) continue;
     const existing = anchorByMed.get(d.medicationId);
     if (!existing || d.takenAt.getTime() > existing.getTime()) {
       anchorByMed.set(d.medicationId, d.takenAt);
@@ -374,26 +319,27 @@ export function outstandingSlots(
   }
 
   for (const med of medications) {
-    const medSchedules = schedulesByMedId.get(med.id) ?? [];
+    // effectiveSchedules absorbs the deprecated-column fallback, so a
+    // medication with no schedule rows still projects instead of vanishing.
+    const medSchedules = effectiveSchedules(med, schedulesByMedId.get(med.id) ?? []);
     if (medSchedules.length === 0) continue;
 
-    const expectedTimes: { time: Date; kind: "interval" | "fixed_time" }[] = [];
+    const anchor = anchorByMed.get(med.id) ?? null;
+    const lifecycle: Lifecycle = { startedAt: med.startedAt, endedAt: med.endedAt };
+
+    const expectedTimes: { time: Date; kind: ScheduleKind }[] = [];
 
     for (const schedule of medSchedules) {
       if (schedule.scheduleKind === "prn") continue;
-
-      if (schedule.scheduleKind === "interval") {
-        const intervalHours = schedule.intervalHours ? Number(schedule.intervalHours) : 0;
-        if (!intervalHours || intervalHours <= 0) continue;
-        const lastDose = anchorByMed.get(med.id);
-        const anchor = lastDose ? new Date(lastDose.getTime()) : new Date(dayStartUtc.getTime());
-        for (const t of expectedTimesForInterval(intervalHours, anchor, dayStartUtc, dayEndUtc)) {
-          expectedTimes.push({ time: t, kind: "interval" });
-        }
-      } else if (schedule.scheduleKind === "fixed_time") {
-        for (const t of expectedTimesForFixedTime(schedule, dayStartUtc, dayEndUtc, timezone)) {
-          expectedTimes.push({ time: t, kind: "fixed_time" });
-        }
+      for (const t of occurrencesFor(
+        schedule,
+        dayStartUtc,
+        dayEndUtc,
+        timezone,
+        anchor,
+        lifecycle,
+      )) {
+        expectedTimes.push({ time: t, kind: schedule.scheduleKind });
       }
     }
 
@@ -402,7 +348,7 @@ export function outstandingSlots(
     // Dedupe — two schedule rows might emit the same expected time.
     // On an exact collision keep the fixed_time entry so the declared
     // schedule, not the derived interval projection, is canonical.
-    const byTime = new Map<number, { time: Date; kind: "interval" | "fixed_time" }>();
+    const byTime = new Map<number, { time: Date; kind: ScheduleKind }>();
     for (const e of expectedTimes) {
       const key = e.time.getTime();
       const existing = byTime.get(key);

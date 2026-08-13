@@ -197,6 +197,24 @@ describe("occurrencesFor", () => {
     ).toEqual([]);
   });
 
+  it("guards a sub-millisecond interval instead of looping forever", () => {
+    // An interval under 1ms cannot advance a Date — `new Date(t + 0.36)`
+    // truncates back to `t` — so the projection loop would never terminate,
+    // hanging the dashboard request or the reminder cron for every user.
+    // `z.coerce.number().positive()` admits 1e-7, so this is reachable input.
+    // If this test ever hangs rather than fails, the guard has been removed.
+    expect(
+      occurrencesFor(
+        sched({ intervalHours: "0.0000001" }),
+        DAY_START,
+        DAY_END,
+        "UTC",
+        DAY_START,
+        LIFE,
+      ),
+    ).toEqual([]);
+  });
+
   it("catches up from an anchor several intervals before the window", () => {
     // Anchor is 16 hours (2 intervals) before window start.
     const anchor = new Date("2026-04-30T08:00:00Z");

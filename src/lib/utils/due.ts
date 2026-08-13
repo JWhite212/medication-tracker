@@ -143,6 +143,12 @@ export function occurrencesFor(
     const hrs = schedule.intervalHours !== null ? Number(schedule.intervalHours) : NaN;
     if (!Number.isFinite(hrs) || hrs <= 0) return [];
     const intervalMs = hrs * 60 * 60 * 1000;
+    // An interval under one millisecond cannot advance a Date: `new Date(t +
+    // 0.36)` truncates straight back to `t`, so the loop below would spin
+    // forever and hang the request — or, worse, the reminder cron for every
+    // user. `z.coerce.number().positive()` admits 1e-7, so this is reachable
+    // input, not a theoretical one.
+    if (intervalMs < 1) return [];
 
     // With an event, phase from it. Without one, the first expected dose is
     // one interval AFTER startedAt — startedAt is when the medication began,

@@ -90,7 +90,12 @@ export function effectiveSchedules(
   return [];
 }
 
-import { getLocalDatesInRange, getLocalDayOfWeek, localTimeOnDateToUtc } from "$lib/utils/schedule";
+import {
+  getLocalDateString,
+  getLocalDatesInRange,
+  getLocalDayOfWeek,
+  localTimeOnDateToUtc,
+} from "$lib/utils/schedule";
 
 export type Lifecycle = { startedAt: Date; endedAt: Date | null };
 
@@ -154,4 +159,95 @@ export function occurrencesFor(
   // prn projects nothing.
 
   return out.filter((t) => withinLifecycle(t, lifecycle)).sort((a, b) => a.getTime() - b.getTime());
+}
+
+/**
+ * The dose fields this module reads. Declared structurally rather than as
+ * `DoseLogWithMedication` so the module stays independent of the Drizzle
+ * row type — every real dose row satisfies it, so callers pass their rows
+ * straight through with no mapping and no cast.
+ */
+export type DoseEvent = {
+  id: string;
+  medicationId: string;
+  takenAt: Date;
+  status: string;
+  quantity: number;
+};
+
+/**
+ * What a caller can tell the module about doses.
+ *
+ * `events` is full fidelity — every dose row for the window, which is what
+ * makes per-occurrence matching possible. `anchor` is a single aggregated
+ * "last resolving event", which is all the reminder cron can afford while
+ * scanning every user. `anchor` is therefore a conservative approximation
+ * of `events`, never a contradiction of it.
+ */
+export type Evidence =
+  | { kind: "events"; doses: DoseEvent[] }
+  | { kind: "anchor"; lastEventAt: Date | null };
+
+/** A dose resolves an occurrence when it was taken or deliberately skipped. */
+export function resolvesSlot(status: string): boolean {
+  return status === "taken" || status === "skipped";
+}
+
+function anchorOf(evidence: Evidence): Date | null {
+  if (evidence.kind === "anchor") return evidence.lastEventAt;
+  let latest: Date | null = null;
+  for (const d of evidence.doses) {
+    if (!resolvesSlot(d.status)) continue;
+    if (!latest || d.takenAt.getTime() > latest.getTime()) latest = d.takenAt;
+  }
+  return latest;
+}
+
+function shiftLocalDate(dateStr: string, days: number): string {
+  // Pure UTC calendar arithmetic: Date.UTC rolls months and years over
+  // correctly and has no DST, so "the previous local date" stays exact
+  // across a transition where subtracting 24h would land on the wrong day.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d - days)).toISOString().slice(0, 10);
+}
+
+/**
+ * The most recent elapsed occurrence that no dose has resolved, or null.
+ *
+ * Walks back `OVERDUE_LOOKBACK_DAYS` local days so an occurrence timed
+ * between two cron ticks is not lost when the local date rolls over.
+ */
+export function isOutstanding(
+  schedule: EffectiveSchedule,
+  evidence: Evidence,
+  timezone: string,
+  now: Date,
+  lifecycle: Lifecycle,
+): Date | null {
+  if (schedule.scheduleKind === "prn") return null;
+
+  const tz = timezone || "UTC";
+  const anchor = anchorOf(evidence);
+  const todayStr = getLocalDateString(now, tz);
+
+  const windowStart = localTimeOnDateToUtc(
+    shiftLocalDate(todayStr, OVERDUE_LOOKBACK_DAYS),
+    "00:00",
+    tz,
+  );
+  const windowEnd = new Date(now.getTime() + 1);
+
+  const occurrences = occurrencesFor(schedule, windowStart, windowEnd, tz, anchor, lifecycle);
+
+  for (let i = occurrences.length - 1; i >= 0; i--) {
+    const slot = occurrences[i];
+    if (slot.getTime() > now.getTime()) continue;
+    // A dose at or after the occurrence resolves it however late it was;
+    // the tolerance only extends backwards, covering a dose taken shortly
+    // before the scheduled time.
+    if (anchor !== null && anchor.getTime() >= slot.getTime() - SLOT_TOLERANCE_MS) return null;
+    return slot;
+  }
+
+  return null;
 }

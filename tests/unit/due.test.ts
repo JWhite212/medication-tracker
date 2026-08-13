@@ -221,3 +221,96 @@ describe("occurrencesFor", () => {
     ]);
   });
 });
+
+import { isOutstanding, resolvesSlot } from "$lib/utils/due";
+
+const NOW = new Date("2026-05-01T15:00:00Z");
+
+describe("resolvesSlot", () => {
+  it("counts taken and skipped, never missed", () => {
+    expect(resolvesSlot("taken")).toBe(true);
+    expect(resolvesSlot("skipped")).toBe(true);
+    expect(resolvesSlot("missed")).toBe(false);
+  });
+});
+
+describe("isOutstanding — interval", () => {
+  it("is not outstanding inside the interval window", () => {
+    const anchor = new Date("2026-05-01T12:00:00Z"); // 3h ago, 8h interval
+    const got = isOutstanding(sched(), { kind: "anchor", lastEventAt: anchor }, "UTC", NOW, LIFE);
+    expect(got).toBeNull();
+  });
+
+  it("is outstanding once the interval has elapsed", () => {
+    const anchor = new Date("2026-05-01T04:00:00Z"); // 11h ago, 8h interval
+    const got = isOutstanding(sched(), { kind: "anchor", lastEventAt: anchor }, "UTC", NOW, LIFE);
+    expect(got?.toISOString()).toBe("2026-05-01T12:00:00.000Z");
+  });
+
+  it("a SKIPPED dose resolves the slot just as a taken one does", () => {
+    // The anchor is lastEventAt, which the caller builds from taken OR
+    // skipped rows. This is the divergence the whole change exists to fix.
+    const anchor = new Date("2026-05-01T12:00:00Z");
+    expect(
+      isOutstanding(sched(), { kind: "anchor", lastEventAt: anchor }, "UTC", NOW, LIFE),
+    ).toBeNull();
+  });
+
+  it("a never-handled interval medication is outstanding once startedAt + interval has passed", () => {
+    const life: Lifecycle = { startedAt: new Date("2026-05-01T00:00:00Z"), endedAt: null };
+    const got = isOutstanding(sched(), { kind: "anchor", lastEventAt: null }, "UTC", NOW, life);
+    expect(got?.toISOString()).toBe("2026-05-01T08:00:00.000Z");
+  });
+
+  it("a never-handled interval medication is NOT outstanding before startedAt + interval", () => {
+    const life: Lifecycle = { startedAt: new Date("2026-05-01T14:00:00Z"), endedAt: null };
+    expect(
+      isOutstanding(sched(), { kind: "anchor", lastEventAt: null }, "UTC", NOW, life),
+    ).toBeNull();
+  });
+});
+
+describe("isOutstanding — fixed time", () => {
+  const fixed = sched({ scheduleKind: "fixed_time", timeOfDay: "09:00", intervalHours: null });
+
+  it("is outstanding when today's elapsed slot has no event", () => {
+    const got = isOutstanding(fixed, { kind: "anchor", lastEventAt: null }, "UTC", NOW, LIFE);
+    expect(got?.toISOString()).toBe("2026-05-01T09:00:00.000Z");
+  });
+
+  it("is not outstanding when an event lands inside the tolerance", () => {
+    const at = new Date("2026-05-01T08:30:00Z"); // 30 min before the slot
+    expect(isOutstanding(fixed, { kind: "anchor", lastEventAt: at }, "UTC", NOW, LIFE)).toBeNull();
+  });
+
+  it("is outstanding when the event is older than the tolerance", () => {
+    const at = new Date("2026-05-01T07:00:00Z"); // 2h before the slot
+    expect(
+      isOutstanding(fixed, { kind: "anchor", lastEventAt: at }, "UTC", NOW, LIFE),
+    ).not.toBeNull();
+  });
+
+  it("treats a late dose as resolving the slot however late", () => {
+    const at = new Date("2026-05-01T14:00:00Z"); // 5h after the slot
+    expect(isOutstanding(fixed, { kind: "anchor", lastEventAt: at }, "UTC", NOW, LIFE)).toBeNull();
+  });
+
+  it("falls back to yesterday's slot when today's has not arrived", () => {
+    const earlyNow = new Date("2026-05-01T06:00:00Z");
+    const got = isOutstanding(fixed, { kind: "anchor", lastEventAt: null }, "UTC", earlyNow, LIFE);
+    expect(got?.toISOString()).toBe("2026-04-30T09:00:00.000Z");
+  });
+
+  it("does not reach back beyond the look-back window", () => {
+    const life: Lifecycle = { startedAt: new Date("2026-01-01T00:00:00Z"), endedAt: null };
+    const s = sched({
+      scheduleKind: "fixed_time",
+      timeOfDay: "09:00",
+      intervalHours: null,
+      daysOfWeek: [0],
+    });
+    // 2026-05-01 is Friday, 2026-04-30 Thursday — neither is Sunday, so
+    // nothing inside the look-back qualifies.
+    expect(isOutstanding(s, { kind: "anchor", lastEventAt: null }, "UTC", NOW, life)).toBeNull();
+  });
+});

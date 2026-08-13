@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // last-taken-per-medication aggregate. Tests push rows into these
 // arrays before invoking the function.
 const scheduleRows: Array<Record<string, unknown>> = [];
-const lastTakenRows: Array<{ medicationId: string; lastTakenAt: Date | null }> = [];
+const lastEventRows: Array<{ medicationId: string; lastEventAt: Date | null }> = [];
 let selectCallIndex = 0;
 
 // Queue of return values for db.insert(...).returning() calls (the
@@ -23,16 +23,32 @@ type UpdateCapture = {
 };
 const updateCaptures: UpdateCapture[] = [];
 
+// The cron's row shape gained lifecycle and legacy-column fields when the
+// join relaxed to a LEFT join. Declared once so each fixture below states
+// only what it actually varies.
+const SCHEDULE_ROW_DEFAULTS = {
+  effectiveFrom: null,
+  effectiveTo: null,
+  medicationScheduleType: "scheduled",
+  medicationIntervalHours: null,
+  startedAt: new Date("2020-01-01T00:00:00Z"),
+  endedAt: null,
+};
+
 vi.mock("$lib/server/db", () => ({
   db: {
     select: () => {
       const callIndex = selectCallIndex++;
-      const rowsForCall = () => (callIndex === 0 ? [...scheduleRows] : [...lastTakenRows]);
+      const rowsForCall = () =>
+        callIndex === 0
+          ? scheduleRows.map((r) => ({ ...SCHEDULE_ROW_DEFAULTS, ...r }))
+          : [...lastEventRows];
       const chain: Record<string, unknown> = {};
       const resolver = () => Promise.resolve(rowsForCall());
       const passthrough = () => chain;
       chain.from = passthrough;
       chain.innerJoin = passthrough;
+      chain.leftJoin = passthrough;
       chain.where = (..._args: unknown[]) => ({
         ...chain,
         groupBy: resolver,
@@ -127,7 +143,7 @@ const { checkOverdueMedications, checkLowInventoryMedications } =
 
 beforeEach(() => {
   scheduleRows.length = 0;
-  lastTakenRows.length = 0;
+  lastEventRows.length = 0;
   sentEmails.length = 0;
   sentPushes.length = 0;
   emailResults.length = 0;
@@ -157,7 +173,7 @@ function pushDefaultOverdueRow(): void {
     userOverdueEmailReminders: true,
     userOverduePushReminders: true,
   });
-  lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+  lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 }
 
 describe("checkOverdueMedications — claim/complete with per-channel status", () => {
@@ -187,12 +203,71 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userEmailVerified: true,
       userTimezone: "UTC",
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: oneHourAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: oneHourAgo });
 
     await checkOverdueMedications();
     expect(sentEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(0);
     expect(updateCaptures).toHaveLength(0);
+  });
+
+  it("does not remind for a slot the user deliberately skipped", async () => {
+    // The defect this whole change exists to fix. The anchor query counts
+    // taken AND skipped, so a skip one hour ago resolves the slot and no
+    // reminder is claimed or dispatched. Filtering to `taken` alone is what
+    // let the dashboard badge clear while a push still went out.
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000);
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+    });
+    // Supplied by the taken-or-skipped aggregate — a skip reaches this map.
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: oneHourAgo });
+
+    await checkOverdueMedications();
+
+    expect(sentPushes).toHaveLength(0);
+    expect(sentEmails).toHaveLength(0);
+    expect(updateCaptures).toHaveLength(0);
+  });
+
+  it("reminds for a medication with no schedule rows but legacy interval columns", async () => {
+    // The LEFT join surfaces these; effectiveSchedules derives a schedule
+    // from the deprecated columns. Import can still create such medications
+    // and they were previously invisible to the cron entirely.
+    const eightHoursAgo = new Date(Date.now() - 8 * 3600 * 1000);
+    scheduleRows.push({
+      scheduleId: null,
+      scheduleKind: null,
+      intervalHours: null,
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-legacy",
+      medicationName: "LegacyMed",
+      medicationScheduleType: "scheduled",
+      medicationIntervalHours: "6",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+      userOverdueEmailReminders: true,
+      userOverduePushReminders: true,
+    });
+    lastEventRows.push({ medicationId: "med-legacy", lastEventAt: eightHoursAgo });
+
+    await checkOverdueMedications();
+
+    expect(sentPushes).toHaveLength(1);
+    expect(sentPushes[0].tag).toBe("overdue-med-legacy");
   });
 
   it("dedupes a repeat run when claim returns no row (not retryable)", async () => {
@@ -249,7 +324,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userOverdueEmailReminders: true,
       userOverduePushReminders: true,
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 
     await checkOverdueMedications();
 
@@ -321,7 +396,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userOverdueEmailReminders: false,
       userOverduePushReminders: true,
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 
     await checkOverdueMedications();
 
@@ -355,7 +430,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userOverdueEmailReminders: false,
       userOverduePushReminders: true,
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
     nextPushSubsThrows = new Error("transient db error");
 
     await checkOverdueMedications();
@@ -384,7 +459,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userOverdueEmailReminders: true,
       userOverduePushReminders: false,
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 
     await checkOverdueMedications();
 

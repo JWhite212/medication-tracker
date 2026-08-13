@@ -124,10 +124,10 @@ export function formatDueIn(ms: number): string {
 
 /**
  * Shared due-ness thresholds: overdue if more than a minute past due,
- * due_now within ±1 minute, due_soon within the next hour. Used by
- * both the interval-based computeTimingStatus above and the slot-based
- * timing in $lib/utils/due.ts so the QuickLogBar badges mean the
- * same thing for every schedule kind.
+ * due_now within ±1 minute, due_soon within the next hour. Turns a
+ * milliseconds-until-due figure into the label the QuickLogBar shows;
+ * `timingStatusFromSlots` in $lib/utils/due.ts is the only caller, so
+ * every schedule kind gets the same thresholds.
  */
 export function classifyDueStatus(msUntilDue: number): "ok" | "due_soon" | "due_now" | "overdue" {
   if (msUntilDue <= -60_000) return "overdue";

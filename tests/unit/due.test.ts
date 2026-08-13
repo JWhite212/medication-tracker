@@ -409,3 +409,38 @@ describe("isOutstanding — fixed time", () => {
     ).not.toBeNull();
   });
 });
+
+describe("occurrencesFor — the schedule's own effective window", () => {
+  it("produces no occurrences after the schedule's effectiveTo", () => {
+    // A superseded schedule stops applying. Nothing read effectiveTo before
+    // this, so such a schedule kept generating occurrences indefinitely.
+    const s = sched({
+      scheduleKind: "fixed_time",
+      timeOfDay: "09:00",
+      intervalHours: null,
+      effectiveTo: new Date("2026-04-30T00:00:00Z"),
+    });
+    expect(occurrencesFor(s, DAY_START, DAY_END, "UTC", null, LIFE)).toEqual([]);
+  });
+
+  it("produces no occurrences before the schedule's effectiveFrom", () => {
+    const s = sched({
+      scheduleKind: "fixed_time",
+      timeOfDay: "09:00",
+      intervalHours: null,
+      effectiveFrom: new Date("2026-06-01T00:00:00Z"),
+    });
+    expect(occurrencesFor(s, DAY_START, DAY_END, "UTC", null, LIFE)).toEqual([]);
+  });
+
+  it("still produces occurrences inside the effective window", () => {
+    const s = sched({
+      scheduleKind: "fixed_time",
+      timeOfDay: "09:00",
+      intervalHours: null,
+      effectiveFrom: new Date("2026-01-01T00:00:00Z"),
+      effectiveTo: new Date("2026-12-31T00:00:00Z"),
+    });
+    expect(occurrencesFor(s, DAY_START, DAY_END, "UTC", null, LIFE)).toHaveLength(1);
+  });
+});

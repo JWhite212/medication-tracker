@@ -100,10 +100,25 @@ import { classifyDueStatus } from "$lib/utils/time";
 
 export type Lifecycle = { startedAt: Date; endedAt: Date | null };
 
-function withinLifecycle(t: Date, lifecycle: Lifecycle): boolean {
-  if (t.getTime() < lifecycle.startedAt.getTime()) return false;
-  if (lifecycle.endedAt && t.getTime() > lifecycle.endedAt.getTime()) return false;
-  return true;
+/**
+ * An occurrence must fall inside BOTH the medication's lifecycle and the
+ * schedule's own effective window.
+ *
+ * `medication_schedules.effectiveFrom` / `effectiveTo` exist so a schedule
+ * can be superseded without losing its history — import back-dates them.
+ * No due-ness code ever read them, so a schedule with a past `effectiveTo`
+ * kept generating occurrences long after it stopped applying.
+ */
+function withinWindows(t: Date, lifecycle: Lifecycle, schedule: EffectiveSchedule): boolean {
+  const ms = t.getTime();
+  const from = schedule.effectiveFrom
+    ? Math.max(lifecycle.startedAt.getTime(), schedule.effectiveFrom.getTime())
+    : lifecycle.startedAt.getTime();
+  const to = Math.min(
+    lifecycle.endedAt?.getTime() ?? Infinity,
+    schedule.effectiveTo?.getTime() ?? Infinity,
+  );
+  return ms >= from && ms <= to;
 }
 
 /**
@@ -159,7 +174,9 @@ export function occurrencesFor(
   }
   // prn projects nothing.
 
-  return out.filter((t) => withinLifecycle(t, lifecycle)).sort((a, b) => a.getTime() - b.getTime());
+  return out
+    .filter((t) => withinWindows(t, lifecycle, schedule))
+    .sort((a, b) => a.getTime() - b.getTime());
 }
 
 /**

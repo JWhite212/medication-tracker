@@ -1,4 +1,4 @@
-import { sql, eq, or, and, isNotNull, inArray, max } from "drizzle-orm";
+import { sql, eq, or, and, isNotNull, ne, inArray, max } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
   medications,
@@ -16,9 +16,19 @@ import {
 } from "./email";
 import { sendPushNotification, hasPushSubscriptions, type PushResult } from "./push";
 import { formatTimeSince } from "$lib/utils/time";
-import { buildOverdueDedupeKey, buildLowInventoryDedupeKey } from "./reminders/domain";
+import {
+  computeOverdueSlot,
+  buildOverdueDedupeKey,
+  buildLowInventoryDedupeKey,
+} from "./reminders/domain";
 import { claimReminderSlot, completeReminder } from "./reminders/dispatch";
-import { effectiveSchedules, isOutstanding } from "$lib/utils/due";
+
+export {
+  computeOverdueSlot,
+  isScheduleOverdue,
+  buildOverdueDedupeKey,
+  buildLowInventoryDedupeKey,
+} from "./reminders/domain";
 
 function emailStatusFromResult(result: EmailResult | null): ReminderChannelStatus {
   if (result === null) return "not_configured";
@@ -51,13 +61,6 @@ export async function checkOverdueMedications() {
   // Per-channel gating happens inside the loop below so a user with
   // email-only or push-only still gets exactly the channels they
   // asked for.
-  // LEFT join, not inner: a medication with no medication_schedules rows is
-  // still creatable (import accepts one with only the deprecated interval
-  // columns) and used to be invisible here. effectiveSchedules derives a
-  // schedule for it below, so it now reaches the dispatcher.
-  //
-  // The prn exclusion has moved out of SQL: isOutstanding returns null for
-  // prn, so the rule lives in one place instead of two.
   const scheduleRows = await db
     .select({
       scheduleId: medicationSchedules.id,
@@ -65,14 +68,8 @@ export async function checkOverdueMedications() {
       intervalHours: medicationSchedules.intervalHours,
       timeOfDay: medicationSchedules.timeOfDay,
       daysOfWeek: medicationSchedules.daysOfWeek,
-      effectiveFrom: medicationSchedules.effectiveFrom,
-      effectiveTo: medicationSchedules.effectiveTo,
       medicationId: medications.id,
       medicationName: medications.name,
-      medicationScheduleType: medications.scheduleType,
-      medicationIntervalHours: medications.scheduleIntervalHours,
-      startedAt: medications.startedAt,
-      endedAt: medications.endedAt,
       userId: medications.userId,
       userEmail: users.email,
       userEmailVerified: users.emailVerified,
@@ -80,13 +77,14 @@ export async function checkOverdueMedications() {
       userOverdueEmailReminders: userPreferences.overdueEmailReminders,
       userOverduePushReminders: userPreferences.overduePushReminders,
     })
-    .from(medications)
+    .from(medicationSchedules)
+    .innerJoin(medications, eq(medicationSchedules.medicationId, medications.id))
     .innerJoin(users, eq(medications.userId, users.id))
     .innerJoin(userPreferences, eq(users.id, userPreferences.userId))
-    .leftJoin(medicationSchedules, eq(medicationSchedules.medicationId, medications.id))
     .where(
       and(
         eq(medications.isArchived, false),
+        ne(medicationSchedules.scheduleKind, "prn"),
         or(
           eq(userPreferences.overdueEmailReminders, true),
           eq(userPreferences.overduePushReminders, true),
@@ -96,30 +94,21 @@ export async function checkOverdueMedications() {
 
   // Fetch the most recent taken dose per medication in one grouped query
   // instead of running a correlated subquery per schedule row.
-  // taken OR skipped — the same anchor `doses.ts:getLastDoseTimes` documents
-  // as the one that drives overdue timing, "so the user can dismiss an
-  // overdue slot by skipping it". Filtering to `taken` alone is why skipping
-  // a dose cleared the dashboard badge and still sent a push.
   const medicationIds = Array.from(new Set(scheduleRows.map((r) => r.medicationId)));
-  const lastEventByMedication = new Map<string, Date>();
+  const lastTakenByMedication = new Map<string, Date>();
   if (medicationIds.length > 0) {
-    const lastEventRows = await db
+    const lastTakenRows = await db
       .select({
         medicationId: doseLogs.medicationId,
-        lastEventAt: max(doseLogs.takenAt),
+        lastTakenAt: max(doseLogs.takenAt),
       })
       .from(doseLogs)
-      .where(
-        and(
-          inArray(doseLogs.medicationId, medicationIds),
-          inArray(doseLogs.status, ["taken", "skipped"]),
-        ),
-      )
+      .where(and(inArray(doseLogs.medicationId, medicationIds), eq(doseLogs.status, "taken")))
       .groupBy(doseLogs.medicationId);
 
-    for (const r of lastEventRows) {
-      if (r.lastEventAt !== null) {
-        lastEventByMedication.set(r.medicationId, new Date(r.lastEventAt));
+    for (const r of lastTakenRows) {
+      if (r.lastTakenAt !== null) {
+        lastTakenByMedication.set(r.medicationId, new Date(r.lastTakenAt));
       }
     }
   }
@@ -128,48 +117,18 @@ export async function checkOverdueMedications() {
   const emailGloballyConfigured = isEmailConfigured();
 
   for (const scheduleRow of scheduleRows) {
-    const row = scheduleRow;
-
-    // One row per schedule from the left join, so pass just this row's
-    // schedule. When the medication has none, scheduleId is null and
-    // effectiveSchedules derives one from the deprecated columns.
-    const schedules = effectiveSchedules(
-      {
-        id: row.medicationId,
-        scheduleType: row.medicationScheduleType,
-        scheduleIntervalHours: row.medicationIntervalHours,
-      },
-      row.scheduleId
-        ? [
-            {
-              id: row.scheduleId,
-              scheduleKind: row.scheduleKind!,
-              timeOfDay: row.timeOfDay,
-              intervalHours: row.intervalHours,
-              daysOfWeek: row.daysOfWeek,
-              effectiveFrom: row.effectiveFrom,
-              effectiveTo: row.effectiveTo,
-            },
-          ]
-        : [],
-    );
-    if (schedules.length === 0) continue;
-    const schedule = schedules[0];
-
-    const slot = isOutstanding(
-      schedule,
-      { kind: "anchor", lastEventAt: lastEventByMedication.get(row.medicationId) ?? null },
-      row.userTimezone,
-      now,
-      { startedAt: row.startedAt, endedAt: row.endedAt },
-    );
+    const row = {
+      ...scheduleRow,
+      lastTakenAt: lastTakenByMedication.get(scheduleRow.medicationId) ?? null,
+    };
+    const slot = computeOverdueSlot(row, now);
     if (!slot) continue;
 
     const dedupeKey = buildOverdueDedupeKey(
       row.userId,
       row.medicationId,
-      schedule.scheduleKind,
-      schedule.id,
+      row.scheduleKind,
+      row.scheduleId,
       slot,
     );
 
@@ -183,11 +142,7 @@ export async function checkOverdueMedications() {
 
     const emailConfigured =
       row.userOverdueEmailReminders && emailGloballyConfigured && row.userEmailVerified;
-    // The anchor is the last taken OR skipped dose, so the copy says
-    // "logged", not "taken" — a reminder can fire after a skip once a later
-    // occurrence elapses, and claiming that dose was taken would be false.
-    const lastEventAt = lastEventByMedication.get(row.medicationId) ?? null;
-    const sinceLabel = lastEventAt ? formatTimeSince(lastEventAt) : "never";
+    const sinceLabel = row.lastTakenAt ? formatTimeSince(new Date(row.lastTakenAt)) : "never";
 
     let emailResult: EmailResult | null = null;
     let pushResult: PushResult | null = null;
@@ -216,7 +171,9 @@ export async function checkOverdueMedications() {
       if (pushConfigured) {
         pushResult = await sendPushNotification(row.userId, {
           title: `${row.medicationName} overdue`,
-          body: lastEventAt ? `Last logged ${formatTimeSince(lastEventAt)} ago` : "Not yet logged",
+          body: row.lastTakenAt
+            ? `Last taken ${formatTimeSince(new Date(row.lastTakenAt))} ago`
+            : "Not yet taken",
           url: "/dashboard",
           tag: `overdue-${row.medicationId}`,
         });

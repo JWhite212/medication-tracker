@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { classifyHour, groupSlotsByTimeOfDay } from "$lib/utils/schedule";
-import { outstandingSlots, timingStatusFromSlots } from "$lib/utils/due";
-import type { ScheduleSlot, ScheduleSlotStatus } from "$lib/utils/due";
+import {
+  classifyHour,
+  computeScheduleSlots,
+  groupSlotsByTimeOfDay,
+  timingStatusFromSlots,
+} from "$lib/utils/schedule";
+import type { ScheduleSlot, ScheduleSlotStatus } from "$lib/utils/schedule";
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
 
@@ -129,17 +133,6 @@ function makeDose(overrides: Partial<DoseLogWithMedication> = {}): DoseLogWithMe
   };
 }
 
-/**
- * `outstandingSlots` derives its per-medication interval anchor from
- * `taken` rows in the same evidence used for slot matching (see due.ts).
- * The pre-move `computeScheduleSlots` took a separate `lastDoseByMedication`
- * map, so tests exercising that anchor synthesize an extra taken dose here
- * to reproduce it.
- */
-function anchorDose(medicationId: string, takenAt: Date): DoseLogWithMedication {
-  return makeDose({ id: `anchor-${medicationId}`, medicationId, takenAt, status: "taken" });
-}
-
 describe("classifyHour", () => {
   it("classifies morning hours (5-11)", () => {
     expect(classifyHour(5)).toBe("morning");
@@ -163,7 +156,7 @@ describe("classifyHour", () => {
   });
 });
 
-describe("outstandingSlots — interval kind", () => {
+describe("computeScheduleSlots — interval kind", () => {
   const dayStart = new Date("2026-04-16T00:00:00Z");
   const dayEnd = new Date("2026-04-17T00:00:00Z");
   const timezone = "UTC";
@@ -172,14 +165,7 @@ describe("outstandingSlots — interval kind", () => {
     const meds = [makeMed()];
     const sched = schedMap([makeIntervalSchedule("med-1", "8")]);
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(3);
     expect(slots[0].expectedTime).toBe("2026-04-16T00:00:00.000Z");
     expect(slots[1].expectedTime).toBe("2026-04-16T08:00:00.000Z");
@@ -189,15 +175,9 @@ describe("outstandingSlots — interval kind", () => {
   it("anchors schedule from last dose before today", () => {
     const meds = [makeMed()];
     const sched = schedMap([makeIntervalSchedule("med-1", "8")]);
+    const lastDose = { "med-1": new Date("2026-04-15T22:00:00Z") };
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [anchorDose("med-1", new Date("2026-04-15T22:00:00Z"))] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], lastDose, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(3);
     expect(slots[0].expectedTime).toBe("2026-04-16T06:00:00.000Z");
     expect(slots[1].expectedTime).toBe("2026-04-16T14:00:00.000Z");
@@ -207,13 +187,16 @@ describe("outstandingSlots — interval kind", () => {
   it("marks slot as taken when dose matches within 1 hour", () => {
     const meds = [makeMed()];
     const sched = schedMap([makeIntervalSchedule("med-1", "8")]);
+    const lastDose = { "med-1": new Date("2026-04-15T22:00:00Z") };
     const dose = makeDose({ takenAt: new Date("2026-04-16T06:30:00Z") });
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
+    const slots = computeScheduleSlots(
       meds,
       sched,
-      { kind: "events", doses: [dose, anchorDose("med-1", new Date("2026-04-15T22:00:00Z"))] },
-      { startUtc: dayStart, endUtc: dayEnd },
+      [dose],
+      lastDose,
+      dayStart,
+      dayEnd,
       timezone,
       now,
     );
@@ -224,15 +207,9 @@ describe("outstandingSlots — interval kind", () => {
   it("marks past unmatched slots as overdue", () => {
     const meds = [makeMed()];
     const sched = schedMap([makeIntervalSchedule("med-1", "8")]);
+    const lastDose = { "med-1": new Date("2026-04-15T22:00:00Z") };
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [anchorDose("med-1", new Date("2026-04-15T22:00:00Z"))] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], lastDose, dayStart, dayEnd, timezone, now);
     expect(slots[0].status).toBe("overdue");
     expect(slots[1].status).toBe("upcoming");
     expect(slots[2].status).toBe("upcoming");
@@ -241,17 +218,20 @@ describe("outstandingSlots — interval kind", () => {
   it("marks slot as skipped when matched dose has status=skipped", () => {
     const meds = [makeMed()];
     const sched = schedMap([makeIntervalSchedule("med-1", "8")]);
+    const lastDose = { "med-1": new Date("2026-04-15T22:00:00Z") };
     const skip = makeDose({
       id: "dose-skip-1",
       takenAt: new Date("2026-04-16T06:30:00Z"),
       status: "skipped",
     });
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
+    const slots = computeScheduleSlots(
       meds,
       sched,
-      { kind: "events", doses: [skip, anchorDose("med-1", new Date("2026-04-15T22:00:00Z"))] },
-      { startUtc: dayStart, endUtc: dayEnd },
+      [skip],
+      lastDose,
+      dayStart,
+      dayEnd,
       timezone,
       now,
     );
@@ -262,17 +242,20 @@ describe("outstandingSlots — interval kind", () => {
   it("marks slot as overdue (not taken) when matched dose has status=missed", () => {
     const meds = [makeMed()];
     const sched = schedMap([makeIntervalSchedule("med-1", "8")]);
+    const lastDose = { "med-1": new Date("2026-04-15T22:00:00Z") };
     const missed = makeDose({
       id: "dose-missed-1",
       takenAt: new Date("2026-04-16T06:30:00Z"),
       status: "missed",
     });
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
+    const slots = computeScheduleSlots(
       meds,
       sched,
-      { kind: "events", doses: [missed, anchorDose("med-1", new Date("2026-04-15T22:00:00Z"))] },
-      { startUtc: dayStart, endUtc: dayEnd },
+      [missed],
+      lastDose,
+      dayStart,
+      dayEnd,
       timezone,
       now,
     );
@@ -284,31 +267,37 @@ describe("outstandingSlots — interval kind", () => {
     const now = new Date("2026-04-16T01:00:00Z");
     const meds = [makeMed()];
 
-    const slots6 = outstandingSlots(
+    const slots6 = computeScheduleSlots(
       meds,
       schedMap([makeIntervalSchedule("med-1", "6")]),
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
+      [],
+      {},
+      dayStart,
+      dayEnd,
       timezone,
       now,
     );
     expect(slots6).toHaveLength(4);
 
-    const slots12 = outstandingSlots(
+    const slots12 = computeScheduleSlots(
       meds,
       schedMap([makeIntervalSchedule("med-1", "12")]),
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
+      [],
+      {},
+      dayStart,
+      dayEnd,
       timezone,
       now,
     );
     expect(slots12).toHaveLength(2);
 
-    const slots24 = outstandingSlots(
+    const slots24 = computeScheduleSlots(
       meds,
       schedMap([makeIntervalSchedule("med-1", "24")]),
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
+      [],
+      {},
+      dayStart,
+      dayEnd,
       timezone,
       now,
     );
@@ -316,7 +305,7 @@ describe("outstandingSlots — interval kind", () => {
   });
 });
 
-describe("outstandingSlots — fixed_time kind", () => {
+describe("computeScheduleSlots — fixed_time kind", () => {
   const dayStart = new Date("2026-04-16T00:00:00Z");
   const dayEnd = new Date("2026-04-17T00:00:00Z");
   const timezone = "UTC";
@@ -328,14 +317,7 @@ describe("outstandingSlots — fixed_time kind", () => {
       makeFixedTimeSchedule("med-1", "20:00", null, 1),
     ]);
     const now = new Date("2026-04-16T01:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(2);
     expect(slots[0].expectedTime).toBe("2026-04-16T08:00:00.000Z");
     expect(slots[1].expectedTime).toBe("2026-04-16T20:00:00.000Z");
@@ -346,14 +328,7 @@ describe("outstandingSlots — fixed_time kind", () => {
     // 2026-04-16 is a Thursday (dow=4). Restrict to Mon/Wed/Fri (1,3,5).
     const sched = schedMap([makeFixedTimeSchedule("med-1", "08:00", [1, 3, 5])]);
     const now = new Date("2026-04-16T01:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(0);
   });
 
@@ -362,19 +337,12 @@ describe("outstandingSlots — fixed_time kind", () => {
     // Thursday = 4
     const sched = schedMap([makeFixedTimeSchedule("med-1", "08:00", [4])]);
     const now = new Date("2026-04-16T01:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(1);
   });
 });
 
-describe("outstandingSlots — prn and mixed", () => {
+describe("computeScheduleSlots — prn and mixed", () => {
   const dayStart = new Date("2026-04-16T00:00:00Z");
   const dayEnd = new Date("2026-04-17T00:00:00Z");
   const timezone = "UTC";
@@ -383,47 +351,14 @@ describe("outstandingSlots — prn and mixed", () => {
     const meds = [makeMed()];
     const sched = schedMap([makePrnSchedule("med-1")]);
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(0);
   });
 
-  it("medication with no schedule rows falls back to its legacy interval columns", () => {
-    // Behaviour change, deliberate: effectiveSchedules synthesises a schedule
-    // from the deprecated scheduleType/scheduleIntervalHours columns when a
-    // medication has no rows in medication_schedules. Such medications are
-    // still creatable via import, and previously projected nothing at all.
-    const meds = [makeMed()]; // scheduleType "scheduled", scheduleIntervalHours "8"
+  it("medication with no schedules produces zero slots", () => {
+    const meds = [makeMed()];
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      new Map(),
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
-    expect(slots.length).toBeGreaterThan(0);
-    expect(slots.every((s) => s.medicationId === "med-1")).toBe(true);
-  });
-
-  it("medication with neither schedule rows nor legacy columns produces zero slots", () => {
-    const meds = [makeMed({ scheduleIntervalHours: null })];
-    const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      new Map(),
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, new Map(), [], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(0);
   });
 
@@ -434,14 +369,7 @@ describe("outstandingSlots — prn and mixed", () => {
       makeFixedTimeSchedule("med-1", "08:00", null, 1),
     ]);
     const now = new Date("2026-04-16T01:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
     // Interval @ 12h with no prior dose: 00:00, 12:00.
     // Fixed: 08:00. Total = 3 distinct ISO times.
     const times = slots.map((s) => s.expectedTime).sort();
@@ -453,7 +381,7 @@ describe("outstandingSlots — prn and mixed", () => {
   });
 });
 
-describe("outstandingSlots — multi-unit dose matching (quantity)", () => {
+describe("computeScheduleSlots — multi-unit dose matching (quantity)", () => {
   const dayStart = new Date("2026-04-16T00:00:00Z");
   const dayEnd = new Date("2026-04-17T00:00:00Z");
   const timezone = "UTC";
@@ -467,14 +395,7 @@ describe("outstandingSlots — multi-unit dose matching (quantity)", () => {
     ]);
     const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00Z"), quantity: 3 });
     const now = new Date("2026-04-16T23:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [dose] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [dose], {}, dayStart, dayEnd, timezone, now);
     expect(slots.map((s) => s.status)).toEqual(["taken", "taken", "taken"]);
   });
 
@@ -489,14 +410,7 @@ describe("outstandingSlots — multi-unit dose matching (quantity)", () => {
     ]);
     const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00Z"), quantity: 3 });
     const now = new Date("2026-04-16T09:30:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [dose] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [dose], {}, dayStart, dayEnd, timezone, now);
     expect(slots[0].status).toBe("taken"); // 08:55
     expect(slots[1].status).toBe("taken"); // 09:00
     expect(slots[2].status).toBe("upcoming"); // 11:00 — untouched
@@ -511,14 +425,7 @@ describe("outstandingSlots — multi-unit dose matching (quantity)", () => {
     ]);
     const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00Z"), quantity: 5 });
     const now = new Date("2026-04-16T23:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [dose] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [dose], {}, dayStart, dayEnd, timezone, now);
     expect(slots).toHaveLength(2);
     expect(slots.map((s) => s.status)).toEqual(["taken", "taken"]);
   });
@@ -537,14 +444,7 @@ describe("outstandingSlots — multi-unit dose matching (quantity)", () => {
       status: "skipped",
     });
     const now = new Date("2026-04-16T23:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [skip] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [skip], {}, dayStart, dayEnd, timezone, now);
     expect(slots.filter((s) => s.status === "skipped")).toHaveLength(1);
     expect(slots.filter((s) => s.status === "overdue")).toHaveLength(2);
   });
@@ -566,11 +466,13 @@ describe("outstandingSlots — multi-unit dose matching (quantity)", () => {
       status: "taken",
     });
     const now = new Date("2026-04-16T23:00:00Z");
-    const slots = outstandingSlots(
+    const slots = computeScheduleSlots(
       meds,
       sched,
-      { kind: "events", doses: [skip, taken] },
-      { startUtc: dayStart, endUtc: dayEnd },
+      [skip, taken],
+      {},
+      dayStart,
+      dayEnd,
       timezone,
       now,
     );
@@ -587,20 +489,13 @@ describe("outstandingSlots — multi-unit dose matching (quantity)", () => {
     ]);
     const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00Z"), quantity: 1 });
     const now = new Date("2026-04-16T23:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [dose] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [dose], {}, dayStart, dayEnd, timezone, now);
     expect(slots.filter((s) => s.status === "taken")).toHaveLength(1);
     expect(slots.filter((s) => s.status === "overdue")).toHaveLength(2);
   });
 });
 
-describe("outstandingSlots — drifted interval twin of a fixed_time slot", () => {
+describe("computeScheduleSlots — drifted interval twin of a fixed_time slot", () => {
   const dayStart = new Date("2026-04-16T00:00:00Z");
   const dayEnd = new Date("2026-04-17T00:00:00Z");
   const timezone = "UTC";
@@ -615,15 +510,9 @@ describe("outstandingSlots — drifted interval twin of a fixed_time slot", () =
       makeFixedTimeSchedule("med-1", "09:00", null, 1),
       makeFixedTimeSchedule("med-1", "11:00", null, 2),
     ]);
+    const lastDose = { "med-1": new Date("2026-04-15T08:55:00Z") };
     const now = new Date("2026-04-16T08:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [anchorDose("med-1", new Date("2026-04-15T08:55:00Z"))] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], lastDose, dayStart, dayEnd, timezone, now);
     expect(slots.map((s) => s.expectedTime)).toEqual([
       "2026-04-16T09:00:00.000Z",
       "2026-04-16T11:00:00.000Z",
@@ -637,13 +526,16 @@ describe("outstandingSlots — drifted interval twin of a fixed_time slot", () =
       makeFixedTimeSchedule("med-1", "09:00", null, 1),
       makeFixedTimeSchedule("med-1", "11:00", null, 2),
     ]);
+    const lastDose = { "med-1": new Date("2026-04-16T08:55:00Z") };
     const dose = makeDose({ takenAt: new Date("2026-04-16T08:55:00Z") });
     const now = new Date("2026-04-16T10:00:00Z");
-    const slots = outstandingSlots(
+    const slots = computeScheduleSlots(
       meds,
       sched,
-      { kind: "events", doses: [dose] },
-      { startUtc: dayStart, endUtc: dayEnd },
+      [dose],
+      lastDose,
+      dayStart,
+      dayEnd,
       timezone,
       now,
     );
@@ -662,15 +554,9 @@ describe("outstandingSlots — drifted interval twin of a fixed_time slot", () =
       makeIntervalSchedule("med-1", "24"),
       makeFixedTimeSchedule("med-1", "09:00", null, 1),
     ]);
+    const lastDose = { "med-1": new Date("2026-04-15T07:30:00Z") };
     const now = new Date("2026-04-16T08:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [anchorDose("med-1", new Date("2026-04-15T07:30:00Z"))] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], lastDose, dayStart, dayEnd, timezone, now);
     expect(slots.map((s) => s.expectedTime)).toEqual([
       "2026-04-16T07:30:00.000Z",
       "2026-04-16T09:00:00.000Z",
@@ -683,15 +569,9 @@ describe("outstandingSlots — drifted interval twin of a fixed_time slot", () =
       makeIntervalSchedule("med-1", "24"),
       makeFixedTimeSchedule("med-1", "09:00", null, 1),
     ]);
+    const lastDose = { "med-1": new Date("2026-04-15T09:00:00Z") };
     const now = new Date("2026-04-16T08:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [anchorDose("med-1", new Date("2026-04-15T09:00:00Z"))] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], lastDose, dayStart, dayEnd, timezone, now);
     expect(slots.map((s) => s.expectedTime)).toEqual(["2026-04-16T09:00:00.000Z"]);
   });
 
@@ -702,14 +582,7 @@ describe("outstandingSlots — drifted interval twin of a fixed_time slot", () =
       makeFixedTimeSchedule("med-1", "09:00", null, 1),
     ]);
     const now = new Date("2026-04-16T08:00:00Z");
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      timezone,
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
     expect(slots.map((s) => s.expectedTime)).toEqual([
       "2026-04-16T08:55:00.000Z",
       "2026-04-16T09:00:00.000Z",
@@ -724,14 +597,7 @@ describe("groupSlotsByTimeOfDay", () => {
     const now = new Date("2026-04-16T01:00:00Z");
     const meds = [makeMed()];
     const sched = schedMap([makeIntervalSchedule("med-1", "6")]);
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      "UTC",
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, "UTC", now);
     const groups = groupSlotsByTimeOfDay(slots, "UTC");
     const keys = groups.map((g) => g.key);
     expect(keys).toContain("night");
@@ -746,14 +612,7 @@ describe("groupSlotsByTimeOfDay", () => {
     const now = new Date("2026-04-16T01:00:00Z");
     const meds = [makeMed()];
     const sched = schedMap([makeIntervalSchedule("med-1", "24")]);
-    const slots = outstandingSlots(
-      meds,
-      sched,
-      { kind: "events", doses: [] },
-      { startUtc: dayStart, endUtc: dayEnd },
-      "UTC",
-      now,
-    );
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, "UTC", now);
     const groups = groupSlotsByTimeOfDay(slots, "UTC");
     expect(groups).toHaveLength(1);
     expect(groups[0].key).toBe("night");

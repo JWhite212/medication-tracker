@@ -1400,7 +1400,7 @@ git commit -m "refactor: delete the superseded due-ness implementations"
 
 ### Task 10: Honour the schedule effective window
 
-**Not in the approved spec — confirm before implementing.** `medication_schedules.effectiveFrom` / `effectiveTo` exist and are written by import, but no due-ness computation has ever read them, so a schedule with a past `effectiveTo` still generates occurrences. Fixing that is correct but _removes_ reminders for any schedule carrying a stale `effectiveTo`. Drop this task wholesale if you would rather not change that.
+**Confirmed in scope (2026-08-13) — implement it.** This went beyond the approved spec and was explicitly approved afterwards. `medication_schedules.effectiveFrom` / `effectiveTo` exist and are written by import, but no due-ness computation has ever read them, so a schedule with a past `effectiveTo` still generates occurrences. Fixing that _removes_ reminders for any schedule carrying a stale `effectiveTo` — that consequence is understood and accepted.
 
 **Files:**
 

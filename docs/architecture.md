@@ -15,20 +15,30 @@ flowchart LR
     Origin -->|Drizzle HTTP / WS| Neon[(Neon Postgres)]
     Origin -->|Resend HTTPS| Resend[Resend transactional email]
     Origin -->|web-push| WebPush[Browser push services]
-    Cron[Vercel Cron] -->|/api/cron/reminders| Origin
-    Vercel -.->|/sw.js| User
+    Cron[Vercel Cron] -->|daily backstop| Origin
+    GHA[GitHub Actions schedule] -->|/api/cron/reminders| Origin
+    Vercel -.->|/service-worker.js| User
 ```
 
 - **Edge / origin split.** Vercel's adapter runs SvelteKit on Node 22 and
-  serves built static assets from the edge. The service worker at
-  `/sw.js` adds offline fallbacks for GET requests and powers Web Push
-  delivery.
+  serves built static assets from the edge. The service worker is
+  `src/service-worker.ts`, built to `/service-worker.js` and registered
+  automatically by SvelteKit — it adds offline fallbacks for GET
+  requests and powers Web Push delivery. There must only ever be one:
+  registrations are keyed by scope, so a second script registered at
+  `/` evicts the first on every load.
 - **Origin-only data flow.** Every read goes through `+page.server.ts`,
   every write goes through a form action. The browser never queries
   the database directly.
-- **Background work** runs on Vercel Cron at `/api/cron/reminders`,
-  triggering `checkOverdueMedications` and `checkLowInventory` over
-  the same dispatch surface used by manual triggers.
+- **Background work** runs at `/api/cron/reminders`, triggering
+  `checkOverdueMedications` and `checkLowInventory` over the same
+  dispatch surface used by manual triggers. It is driven twice: the
+  Vercel Cron in `vercel.json` as a guaranteed daily backstop, and the
+  `reminder-tick` GitHub Actions schedule every 30 minutes for timely
+  delivery, because the Hobby plan caps Vercel crons at one run a day.
+  Both paths authenticate with the same `CRON_SECRET` bearer token, and
+  the dispatcher dedupes on a per-slot key so overlapping runs are
+  safe.
 
 ## Reminder dispatch flow
 

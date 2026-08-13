@@ -110,8 +110,13 @@ describe("isScheduleOverdue — interval schedules", () => {
 });
 
 describe("isScheduleOverdue — fixed-time schedules (UTC)", () => {
-  it("future slot today is not overdue", () => {
-    expect(isScheduleOverdue(fixedTimeRow({ timeOfDay: "23:00" }), now)).toBe(false);
+  it("future slot today falls back to yesterday's slot, which was taken → not overdue", () => {
+    // Today's 23:00 has not arrived yet, so the most recent elapsed
+    // occurrence is yesterday's. A dose at that slot satisfies it.
+    const yesterdayEvening = new Date("2026-04-30T23:00:00.000Z");
+    expect(
+      isScheduleOverdue(fixedTimeRow({ timeOfDay: "23:00", lastTakenAt: yesterdayEvening }), now),
+    ).toBe(false);
   });
 
   it("past slot today with no dose is overdue", () => {
@@ -166,7 +171,17 @@ describe("computeOverdueSlot — returns the actual slot Date used in dedupe key
   });
 
   it("returns null when not overdue", () => {
-    expect(computeOverdueSlot(fixedTimeRow({ timeOfDay: "23:00" }), now)).toBeNull();
+    // Today's 23:00 is still ahead and yesterday's was taken on time.
+    const yesterdayEvening = new Date("2026-04-30T23:00:00.000Z");
+    expect(
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "23:00", lastTakenAt: yesterdayEvening }), now),
+    ).toBeNull();
+  });
+
+  it("fixed-time slot falls back to yesterday when today's has not arrived", () => {
+    const slot = computeOverdueSlot(fixedTimeRow({ timeOfDay: "23:00" }), now);
+    expect(slot).not.toBeNull();
+    expect(slot!.toISOString()).toBe("2026-04-30T23:00:00.000Z");
   });
 
   it("interval & fixed-time produce DIFFERENT dedupe keys for the same med", () => {
@@ -179,5 +194,118 @@ describe("computeOverdueSlot — returns the actual slot Date used in dedupe key
     const intervalKey = buildOverdueDedupeKey("u", "m", "interval", "s1", intervalSlot);
     const fixedKey = buildOverdueDedupeKey("u", "m", "fixed_time", "s2", fixedSlot);
     expect(intervalKey).not.toBe(fixedKey);
+  });
+});
+
+// ---------------------------------------------------------------------
+// Regression: fixed-time slots that fall after the cron tick.
+//
+// The scan used to evaluate ONLY today's local slot and bail when that
+// slot was still in the future. On a once-daily cron that made every
+// schedule timed after the tick permanently invisible: future at every
+// tick, and by the next tick the local date had rolled over so the
+// elapsed occurrence was never revisited. In production this silenced
+// three of five fixed-time schedules outright (10:00 UTC, 11:00
+// Europe/London and 20:00 UTC against a 09:00 UTC tick).
+// ---------------------------------------------------------------------
+describe("computeOverdueSlot — look-back across the cron tick", () => {
+  // The real production shape: cron fires at 09:00 UTC, medication is
+  // due at 20:00 UTC. Before the fix this returned null forever.
+  const nineAmTick = new Date("2026-05-01T09:00:00.000Z");
+
+  it("catches an evening slot that elapsed since the previous tick", () => {
+    const slot = computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00" }), nineAmTick);
+    expect(slot).not.toBeNull();
+    expect(slot!.toISOString()).toBe("2026-04-30T20:00:00.000Z");
+  });
+
+  it("dedupe key differs per day, so a daily slot reminds once per day", () => {
+    const dayOne = computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00" }), nineAmTick)!;
+    const dayTwo = computeOverdueSlot(
+      fixedTimeRow({ timeOfDay: "20:00" }),
+      new Date("2026-05-02T09:00:00.000Z"),
+    )!;
+    expect(buildOverdueDedupeKey("u", "m", "fixed_time", "s", dayOne)).not.toBe(
+      buildOverdueDedupeKey("u", "m", "fixed_time", "s", dayTwo),
+    );
+  });
+
+  it("prefers today's elapsed slot over yesterday's", () => {
+    // At 15:00 an 08:00 schedule has today's slot already behind it.
+    const slot = computeOverdueSlot(fixedTimeRow({ timeOfDay: "08:00" }), now);
+    expect(slot!.toISOString()).toBe("2026-05-01T08:00:00.000Z");
+  });
+
+  it("does not reach back beyond the look-back window", () => {
+    // Sunday-only schedule at 20:00, evaluated Friday 09:00. The most
+    // recent Sunday slot is five days old — too stale to act on.
+    expect(
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", daysOfWeek: [0] }), nineAmTick),
+    ).toBeNull();
+  });
+
+  it("applies day-of-week to the looked-back date, not to today", () => {
+    // 2026-05-01 is a Friday, so the fallback lands on Thursday (4).
+    expect(
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", daysOfWeek: [4] }), nineAmTick),
+    ).not.toBeNull();
+    // Friday-only: yesterday (Thursday) is excluded and today's 20:00
+    // has not arrived, so there is nothing to report yet.
+    expect(
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", daysOfWeek: [5] }), nineAmTick),
+    ).toBeNull();
+  });
+
+  it("a dose taken late still satisfies the slot", () => {
+    // Taken at 22:00 for a 20:00 slot — two hours late, well outside
+    // the one-hour tolerance, but unmistakably taken. Reporting this as
+    // overdue the next morning would be a false alarm.
+    const takenLate = new Date("2026-04-30T22:00:00.000Z");
+    expect(
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastTakenAt: takenLate }), nineAmTick),
+    ).toBeNull();
+  });
+
+  it("a dose taken shortly BEFORE the slot still satisfies it", () => {
+    const takenEarly = new Date("2026-04-30T19:30:00.000Z");
+    expect(
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastTakenAt: takenEarly }), nineAmTick),
+    ).toBeNull();
+  });
+
+  it("a dose taken before the previous slot does not satisfy it", () => {
+    const takenTwoDaysBefore = new Date("2026-04-28T20:00:00.000Z");
+    expect(
+      computeOverdueSlot(
+        fixedTimeRow({ timeOfDay: "20:00", lastTakenAt: takenTwoDaysBefore }),
+        nineAmTick,
+      ),
+    ).not.toBeNull();
+  });
+
+  it("resolves the look-back slot in the user's timezone during BST", () => {
+    // 20:00 Europe/London on 30 Apr is 19:00 UTC (BST, UTC+1).
+    const slot = computeOverdueSlot(
+      fixedTimeRow({ timeOfDay: "20:00", userTimezone: "Europe/London" }),
+      nineAmTick,
+    );
+    expect(slot!.toISOString()).toBe("2026-04-30T19:00:00.000Z");
+  });
+
+  it("resolves the look-back slot in the user's timezone during GMT", () => {
+    // 20:00 Europe/London in January is 20:00 UTC (GMT, no offset).
+    const slot = computeOverdueSlot(
+      fixedTimeRow({ timeOfDay: "20:00", userTimezone: "Europe/London" }),
+      new Date("2026-01-15T09:00:00.000Z"),
+    );
+    expect(slot!.toISOString()).toBe("2026-01-14T20:00:00.000Z");
+  });
+
+  it("crosses a month boundary when looking back", () => {
+    const slot = computeOverdueSlot(
+      fixedTimeRow({ timeOfDay: "20:00" }),
+      new Date("2026-06-01T09:00:00.000Z"),
+    );
+    expect(slot!.toISOString()).toBe("2026-05-31T20:00:00.000Z");
   });
 });

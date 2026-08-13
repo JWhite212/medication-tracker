@@ -1,6 +1,4 @@
-import type { Medication, DoseLogWithMedication } from "$lib/types";
-import type { MedicationSchedule } from "$lib/server/schedules";
-import { outstandingSlots, type DoseEvent, type ScheduleSlot } from "./due";
+import type { ScheduleSlot } from "./due";
 
 export type TimeOfDay = "morning" | "afternoon" | "evening" | "night";
 
@@ -136,59 +134,3 @@ export function groupSlotsByTimeOfDay(slots: ScheduleSlot[], timezone: string): 
     .filter((c) => groups[c.key].length > 0)
     .map((c) => ({ ...c, slots: groups[c.key] }));
 }
-
-/**
- * Temporary compatibility shim. `dashboard/+page.server.ts` still calls the
- * pre-move 8-argument shape, with `todaysDoses` and `lastDoseByMedication`
- * as two separately-sourced parameters (the latter from a standalone
- * "most recent dose per medication" query). `outstandingSlots` takes a
- * single `Evidence` instead and derives its own per-medication anchor from
- * `taken` rows in that same evidence — see the doc comment on
- * `outstandingSlots` in due.ts — so this shim folds the legacy last-dose
- * map into synthetic `taken` rows alongside the real doses.
- *
- * A medication that already has a `taken` dose today is left alone: since
- * `lastDoseByMedication[id]` is `MAX(takenAt) WHERE status = 'taken'`
- * across all time, it can never be earlier than today's own latest taken
- * dose, so today's real rows already reproduce the same anchor. Skipping
- * it there also avoids a same-instant synthetic duplicate racing the real
- * dose's id for a slot match.
- *
- * Task 7 migrates the call site to `outstandingSlots` directly and
- * deletes this function.
- */
-export function computeScheduleSlots(
-  medications: Medication[],
-  schedulesByMedId: Map<string, MedicationSchedule[]>,
-  todaysDoses: DoseLogWithMedication[],
-  lastDoseByMedication: Record<string, Date>,
-  dayStartUtc: Date,
-  dayEndUtc: Date,
-  timezone: string,
-  now: Date,
-): ScheduleSlot[] {
-  const takenToday = new Set(
-    todaysDoses.filter((d) => d.status === "taken").map((d) => d.medicationId),
-  );
-  const anchorDoses: DoseEvent[] = Object.entries(lastDoseByMedication)
-    .filter(([medicationId]) => !takenToday.has(medicationId))
-    .map(([medicationId, takenAt]) => ({
-      id: `legacy-anchor:${medicationId}`,
-      medicationId,
-      takenAt,
-      status: "taken",
-      quantity: 1,
-    }));
-
-  return outstandingSlots(
-    medications,
-    schedulesByMedId,
-    { kind: "events", doses: [...todaysDoses, ...anchorDoses] },
-    { startUtc: dayStartUtc, endUtc: dayEndUtc },
-    timezone,
-    now,
-  );
-}
-
-export { timingStatusFromSlots } from "./due";
-export type { ScheduleSlot, ScheduleSlotStatus } from "./due";

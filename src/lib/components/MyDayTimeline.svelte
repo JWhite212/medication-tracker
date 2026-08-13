@@ -4,7 +4,7 @@
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { getMedicationBackground } from "$lib/utils/medication-style";
   import { groupSlotsByTimeOfDay } from "$lib/utils/schedule";
-  import type { ScheduleSlot } from "$lib/utils/schedule";
+  import type { ScheduleSlot } from "$lib/utils/due";
 
   let {
     scheduleSlots,

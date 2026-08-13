@@ -186,7 +186,19 @@ export type DoseEvent = {
  * of `events`, never a contradiction of it.
  */
 export type Evidence =
-  | { kind: "events"; doses: DoseEvent[] }
+  | {
+      kind: "events";
+      doses: DoseEvent[];
+      /**
+       * Per-medication phase anchor, when the caller knows a resolving dose
+       * that predates `doses`. The dashboard needs this: `doses` holds only
+       * today's rows (they are what a slot may be MATCHED against), but an
+       * interval schedule must phase from the last resolving dose even if
+       * that was yesterday. Keeping the two separate is what stops a
+       * pre-window dose from being matched to an early-morning slot.
+       */
+      anchorByMedication?: Map<string, Date>;
+    }
   | { kind: "anchor"; lastEventAt: Date | null };
 
 /** A dose resolves an occurrence when it was taken or deliberately skipped. */
@@ -324,7 +336,11 @@ export function outstandingSlots(
     const medSchedules = effectiveSchedules(med, schedulesByMedId.get(med.id) ?? []);
     if (medSchedules.length === 0) continue;
 
-    const anchor = anchorByMed.get(med.id) ?? null;
+    // An explicit anchor wins: it may name a resolving dose from before the
+    // window, which `doses` (today's rows) cannot express.
+    const explicitAnchor =
+      evidence.kind === "events" ? evidence.anchorByMedication?.get(med.id) : undefined;
+    const anchor = explicitAnchor ?? anchorByMed.get(med.id) ?? null;
     const lifecycle: Lifecycle = { startedAt: med.startedAt, endedAt: med.endedAt };
 
     const expectedTimes: { time: Date; kind: ScheduleKind }[] = [];

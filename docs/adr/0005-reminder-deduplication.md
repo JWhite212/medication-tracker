@@ -16,11 +16,28 @@ notification.
 ## Decision
 
 Persist a **`reminder_events` row per dispatched reminder** with a
-unique `dedupe_key`. The key is the deterministic tuple
-`${userId}:${medicationId}:${reminderType}:${nextDueAt.toISOString()}`,
-so the same overdue slot only ever produces one event row. Sending
-is wrapped in an insert-or-skip on conflict so a concurrent run
-can't duplicate either.
+unique `dedupe_key`, so the same overdue slot only ever produces one
+event row. Sending is wrapped in an insert-or-skip on conflict so a
+concurrent run can't duplicate either.
+
+The overdue key is the deterministic tuple
+
+```
+${userId}:${medicationId}:overdue:${scheduleKind}:${scheduleId}:${nextDueAt.toISOString()}
+```
+
+> **Amended 2026-08-13.** This ADR originally documented a four-segment
+> key, `${userId}:${medicationId}:${reminderType}:${nextDueAt}`. Two
+> segments were added when a medication gained multiple schedules
+> (ADR-0006) so that two schedules on one medication cannot collide, and
+> the implementation has built six ever since. A medication with no
+> `medication_schedules` rows uses the synthetic schedule id
+> `legacy:${medicationId}`, derived from its deprecated interval columns
+> by `effectiveSchedules` in `$lib/utils/due`.
+
+Low-inventory reminders use a separate shape,
+`${userId}:${medicationId}:low_inventory:${inventoryCount}`, so the key
+changes as stock changes and cannot collide with an overdue key.
 
 ## Alternatives considered
 

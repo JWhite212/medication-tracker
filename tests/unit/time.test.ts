@@ -5,7 +5,6 @@ import {
   startOfDay,
   calculateDaysUntilRefill,
   formatDueIn,
-  computeTimingStatus,
 } from "$lib/utils/time";
 
 describe("formatTimeSince", () => {
@@ -143,55 +142,5 @@ describe("formatDueIn", () => {
   it("formats exactly 1 minute", () => {
     expect(formatDueIn(60_000)).toBe("Due in 1m");
     expect(formatDueIn(-60_000)).toBe("Overdue 1m");
-  });
-});
-
-describe("computeTimingStatus", () => {
-  const now = new Date("2026-04-15T14:30:00Z");
-
-  it("returns 'overdue' when lastTakenAt is null (never taken)", () => {
-    const result = computeTimingStatus(8, null, now);
-    expect(result.status).toBe("overdue");
-    expect(result.minutesUntilDue).toBe(-1);
-  });
-
-  it("returns 'ok' when next dose is more than 1 hour away", () => {
-    // Last taken 1 hour ago, interval 8 hours => next due in 7 hours
-    const lastTaken = new Date("2026-04-15T13:30:00Z");
-    const result = computeTimingStatus(8, lastTaken, now);
-    expect(result.status).toBe("ok");
-    expect(result.minutesUntilDue).toBe(7 * 60);
-  });
-
-  it("returns 'due_soon' when next dose is within 1 hour", () => {
-    // Last taken 7.5 hours ago, interval 8 hours => next due in 30 min
-    const lastTaken = new Date("2026-04-15T07:00:00Z");
-    const result = computeTimingStatus(8, lastTaken, now);
-    expect(result.status).toBe("due_soon");
-    expect(result.minutesUntilDue).toBe(30);
-  });
-
-  it("returns 'due_now' when next dose is within 1 minute", () => {
-    // Last taken exactly 8 hours ago => due right now
-    const lastTaken = new Date("2026-04-15T06:30:00Z");
-    const result = computeTimingStatus(8, lastTaken, now);
-    expect(result.status).toBe("due_now");
-    expect(result.minutesUntilDue).toBe(0);
-  });
-
-  it("returns 'overdue' when past due by more than 1 minute", () => {
-    // Last taken 9 hours ago, interval 8 hours => overdue by 1 hour
-    const lastTaken = new Date("2026-04-15T05:30:00Z");
-    const result = computeTimingStatus(8, lastTaken, now);
-    expect(result.status).toBe("overdue");
-    expect(result.minutesUntilDue).toBe(-60);
-  });
-
-  it("handles fractional interval hours", () => {
-    // Interval 0.5h (30 min), last taken 20 min ago => due in 10 min
-    const lastTaken = new Date("2026-04-15T14:10:00Z");
-    const result = computeTimingStatus(0.5, lastTaken, now);
-    expect(result.status).toBe("due_soon");
-    expect(result.minutesUntilDue).toBe(10);
   });
 });

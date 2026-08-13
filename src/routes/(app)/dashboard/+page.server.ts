@@ -12,8 +12,8 @@ import {
   MedicationNotFoundError,
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
-import { parseDateTimeLocal, startOfDay, computeTimingStatus } from "$lib/utils/time";
-import { computeScheduleSlots, timingStatusFromSlots } from "$lib/utils/schedule";
+import { parseDateTimeLocal, startOfDay } from "$lib/utils/time";
+import { outstandingSlots, timingStatusFromSlots } from "$lib/utils/due";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import type { Actions, PageServerLoad } from "./$types";
 import type { MedicationTimingStatus } from "$lib/types";
@@ -28,59 +28,33 @@ export const load: PageServerLoad = async ({ locals }) => {
     getRefillForecast(user.id),
   ]);
 
-  // lastEventAt advances on both "taken" and "skipped" so a Skip clears
-  // the overdue badge; lastTakenAt anchors slot projection so historical
-  // taken doses stay visible on My Day.
-  const lastEventMap = new Map(lastDoses.map((d) => [d.medicationId, d.lastEventAt]));
-
   const now = new Date();
-
-  // Timing status for QuickLogBar badges
-  const timingStatus: MedicationTimingStatus[] = medications
-    .filter(
-      (m) =>
-        m.scheduleType === "scheduled" &&
-        m.scheduleIntervalHours !== null &&
-        m.scheduleIntervalHours !== undefined,
-    )
-    .map((m) => {
-      const lastEventAt = lastEventMap.get(m.id) ?? null;
-      const { status, minutesUntilDue } = computeTimingStatus(
-        Number(m.scheduleIntervalHours),
-        lastEventAt,
-        now,
-      );
-      return { medicationId: m.id, status, minutesUntilDue };
-    });
-
-  // Schedule slots for My Day timeline — anchor from last *taken* dose
-  // so the day's already-taken slots stay in the projection.
-  const lastDoseByMedication: Record<string, Date> = {};
-  for (const d of lastDoses) {
-    if (d.lastTakenAt) lastDoseByMedication[d.medicationId] = d.lastTakenAt;
-  }
-
   const dayStart = startOfDay(now, user.timezone);
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
 
-  const scheduleSlots = computeScheduleSlots(
+  // Phase anchor: the last event that RESOLVED a slot — taken or skipped —
+  // which may predate today. Kept separate from `doses` (today's rows), the
+  // only thing a slot may be matched against, so a dose from before the
+  // window can phase the projection without being paired to a slot inside it.
+  const anchorByMedication = new Map<string, Date>();
+  for (const d of lastDoses) {
+    if (d.lastEventAt) anchorByMedication.set(d.medicationId, d.lastEventAt);
+  }
+
+  const scheduleSlots = outstandingSlots(
     medications,
     schedulesByMedId,
-    doses,
-    lastDoseByMedication,
-    dayStart,
-    dayEnd,
+    { kind: "events", doses, anchorByMedication },
+    { startUtc: dayStart, endUtc: dayEnd },
     user.timezone,
     now,
   );
 
-  // Fixed-time medications have null legacy interval columns, so the
-  // filter above never gives them a QuickLogBar badge. Derive their
-  // timing from today's slots instead (PRN meds project no slots and
-  // stay badge-free).
-  const covered = new Set(timingStatus.map((t) => t.medicationId));
+  // Every medication's badge is derived from the same slots the timeline
+  // renders. There is no second implementation and no covered-set merge:
+  // one module answers "is this due?" for both surfaces.
+  const timingStatus: MedicationTimingStatus[] = [];
   for (const med of medications) {
-    if (covered.has(med.id)) continue;
     const t = timingStatusFromSlots(
       scheduleSlots.filter((s) => s.medicationId === med.id),
       now,

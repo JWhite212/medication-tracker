@@ -343,11 +343,14 @@ describe("occurrencesFor", () => {
     ]);
   });
 
-  it("falls back to startedAt as the interval anchor when there is no event", () => {
+  it("starts one interval AFTER startedAt when there is no event", () => {
+    // startedAt is when the medication began, not a dose occurrence: the
+    // first expected dose is startedAt + intervalHours. Projecting from
+    // startedAt itself would make a brand-new medication instantly overdue,
+    // which is the badge behaviour this change exists to replace.
     const life: Lifecycle = { startedAt: new Date("2026-05-01T02:00:00Z"), endedAt: null };
     const out = occurrencesFor(sched(), DAY_START, DAY_END, "UTC", null, life);
     expect(out.map((d) => d.toISOString())).toEqual([
-      "2026-05-01T02:00:00.000Z",
       "2026-05-01T10:00:00.000Z",
       "2026-05-01T18:00:00.000Z",
     ]);
@@ -452,7 +455,12 @@ export function occurrencesFor(
     if (!Number.isFinite(hrs) || hrs <= 0) return [];
     const intervalMs = hrs * 60 * 60 * 1000;
 
-    let t = new Date((anchor ?? lifecycle.startedAt).getTime());
+    // With an event, phase from it. Without one, the first expected dose is
+    // one interval AFTER startedAt — startedAt is when the medication began,
+    // not a dose occurrence.
+    let t = anchor
+      ? new Date(anchor.getTime())
+      : new Date(lifecycle.startedAt.getTime() + intervalMs);
     if (t.getTime() < windowStartUtc.getTime()) {
       const gap = windowStartUtc.getTime() - t.getTime();
       t = new Date(t.getTime() + Math.ceil(gap / intervalMs) * intervalMs);
@@ -1372,7 +1380,7 @@ Expected: matches only inside the files about to be edited. Any other hit means 
 
 - [ ] **Step 2: Trim `reminders/domain.ts`**
 
-Delete `computeOverdueSlot`, `isScheduleOverdue`, `shiftLocalDate`, `FIXED_TIME_TOLERANCE_MS`, `OVERDUE_LOOKBACK_DAYS`, `OverdueRow`, and the now-unused imports from `$lib/utils/schedule`. The file keeps only `ReminderType`, `buildOverdueDedupeKey` and `buildLowInventoryDedupeKey`. Delete the re-export block at `reminders.ts:26-31` — nothing imports those names from there.
+Delete `computeOverdueSlot`, `isScheduleOverdue`, `shiftLocalDate`, `FIXED_TIME_TOLERANCE_MS`, `OVERDUE_LOOKBACK_DAYS`, `OverdueRow`, and the now-unused imports from `$lib/utils/schedule`. The file keeps only `ReminderType`, `buildOverdueDedupeKey` and `buildLowInventoryDedupeKey`. In `src/lib/server/reminders.ts`, delete the `export { ... } from "./reminders/domain"` block near the top of the file — nothing imports those names from there. Locate it by content: Task 8 rewrote this file, so any line number from the original is stale.
 
 - [ ] **Step 3: Trim `time.ts`**
 

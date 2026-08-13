@@ -158,7 +158,7 @@ export function computeTimingStatus(
  * Shared due-ness thresholds: overdue if more than a minute past due,
  * due_now within ±1 minute, due_soon within the next hour. Used by
  * both the interval-based computeTimingStatus above and the slot-based
- * timing in $lib/utils/schedule.ts so the QuickLogBar badges mean the
+ * timing in $lib/utils/due.ts so the QuickLogBar badges mean the
  * same thing for every schedule kind.
  */
 export function classifyDueStatus(msUntilDue: number): "ok" | "due_soon" | "due_now" | "overdue" {

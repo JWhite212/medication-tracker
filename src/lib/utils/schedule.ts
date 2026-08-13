@@ -1,21 +1,6 @@
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
-import { classifyDueStatus } from "./time";
-
-export type ScheduleSlotStatus = "taken" | "skipped" | "upcoming" | "overdue";
-
-export interface ScheduleSlot {
-  medicationId: string;
-  medicationName: string;
-  colour: string;
-  colourSecondary: string | null;
-  pattern: string;
-  dosageAmount: string;
-  dosageUnit: string;
-  expectedTime: string; // ISO string
-  status: ScheduleSlotStatus;
-  matchedDoseId: string | null;
-}
+import { outstandingSlots, type DoseEvent, type ScheduleSlot } from "./due";
 
 export type TimeOfDay = "morning" | "afternoon" | "evening" | "night";
 
@@ -25,8 +10,6 @@ export interface TimeOfDayGroup {
   icon: string;
   slots: ScheduleSlot[];
 }
-
-const MATCH_TOLERANCE_MS = 60 * 60 * 1000; // 1 hour
 
 /**
  * Classify an hour (0-23 in user's local timezone) into a time-of-day bucket.
@@ -118,224 +101,6 @@ export function getLocalDayOfWeek(date: Date, timezone: string): number {
   return map[day] ?? 0;
 }
 
-function expectedTimesForInterval(
-  intervalHours: number,
-  anchor: Date,
-  dayStartUtc: Date,
-  dayEndUtc: Date,
-): Date[] {
-  if (!intervalHours || intervalHours <= 0) return [];
-  const intervalMs = intervalHours * 60 * 60 * 1000;
-  const out: Date[] = [];
-
-  let t = new Date(anchor.getTime());
-  if (t.getTime() < dayStartUtc.getTime()) {
-    const diff = dayStartUtc.getTime() - t.getTime();
-    const intervals = Math.ceil(diff / intervalMs);
-    t = new Date(t.getTime() + intervals * intervalMs);
-  }
-
-  while (t.getTime() < dayEndUtc.getTime()) {
-    out.push(new Date(t.getTime()));
-    t = new Date(t.getTime() + intervalMs);
-  }
-
-  if (
-    anchor.getTime() >= dayStartUtc.getTime() &&
-    anchor.getTime() < dayEndUtc.getTime() &&
-    !out.some((et) => et.getTime() === anchor.getTime())
-  ) {
-    out.push(new Date(anchor.getTime()));
-  }
-
-  out.sort((a, b) => a.getTime() - b.getTime());
-  return out;
-}
-
-function expectedTimesForFixedTime(
-  schedule: MedicationSchedule,
-  dayStartUtc: Date,
-  dayEndUtc: Date,
-  timezone: string,
-): Date[] {
-  if (!schedule.timeOfDay) return [];
-  const out: Date[] = [];
-  const allowed = schedule.daysOfWeek;
-
-  for (const dateStr of getLocalDatesInRange(dayStartUtc, dayEndUtc, timezone)) {
-    const utc = localTimeOnDateToUtc(dateStr, schedule.timeOfDay, timezone);
-    if (utc.getTime() < dayStartUtc.getTime() || utc.getTime() >= dayEndUtc.getTime()) {
-      continue;
-    }
-    if (allowed && allowed.length > 0) {
-      if (!allowed.includes(getLocalDayOfWeek(utc, timezone))) continue;
-    }
-    out.push(utc);
-  }
-
-  return out;
-}
-
-/**
- * Compute expected dose schedule slots for the window.
- *
- * Walks every schedule row for each medication. Interval rows project
- * forward from the last dose (or window start) by intervalHours.
- * Fixed-time rows produce one slot per local-time-of-day per local
- * day in the window, optionally filtered by daysOfWeek. PRN rows
- * produce no slots.
- */
-export function computeScheduleSlots(
-  medications: Medication[],
-  schedulesByMedId: Map<string, MedicationSchedule[]>,
-  todaysDoses: DoseLogWithMedication[],
-  lastDoseByMedication: Record<string, Date>,
-  dayStartUtc: Date,
-  dayEndUtc: Date,
-  timezone: string,
-  now: Date,
-): ScheduleSlot[] {
-  const slots: ScheduleSlot[] = [];
-
-  const dosesByMedId = new Map<string, DoseLogWithMedication[]>();
-  for (const dose of todaysDoses) {
-    let arr = dosesByMedId.get(dose.medicationId);
-    if (!arr) {
-      arr = [];
-      dosesByMedId.set(dose.medicationId, arr);
-    }
-    arr.push(dose);
-  }
-
-  for (const med of medications) {
-    const medSchedules = schedulesByMedId.get(med.id) ?? [];
-    if (medSchedules.length === 0) continue;
-
-    const expectedTimes: { time: Date; kind: "interval" | "fixed_time" }[] = [];
-
-    for (const schedule of medSchedules) {
-      if (schedule.scheduleKind === "prn") continue;
-
-      if (schedule.scheduleKind === "interval") {
-        const intervalHours = schedule.intervalHours ? Number(schedule.intervalHours) : 0;
-        if (!intervalHours || intervalHours <= 0) continue;
-        const lastDose = lastDoseByMedication[med.id];
-        const anchor = lastDose ? new Date(lastDose.getTime()) : new Date(dayStartUtc.getTime());
-        for (const t of expectedTimesForInterval(intervalHours, anchor, dayStartUtc, dayEndUtc)) {
-          expectedTimes.push({ time: t, kind: "interval" });
-        }
-      } else if (schedule.scheduleKind === "fixed_time") {
-        for (const t of expectedTimesForFixedTime(schedule, dayStartUtc, dayEndUtc, timezone)) {
-          expectedTimes.push({ time: t, kind: "fixed_time" });
-        }
-      }
-    }
-
-    if (expectedTimes.length === 0) continue;
-
-    // Dedupe — two schedule rows might emit the same expected time.
-    // On an exact collision keep the fixed_time entry so the declared
-    // schedule, not the derived interval projection, is canonical.
-    const byTime = new Map<number, { time: Date; kind: "interval" | "fixed_time" }>();
-    for (const e of expectedTimes) {
-      const key = e.time.getTime();
-      const existing = byTime.get(key);
-      if (!existing || (existing.kind === "interval" && e.kind === "fixed_time")) {
-        byTime.set(key, e);
-      }
-    }
-
-    // Interval projections anchor to the *actual* last-taken time, so
-    // they drift with the user's behaviour (log at 08:55 → project
-    // 08:55). When such a projection lands within the matching
-    // tolerance of a declared fixed_time slot it is the same intended
-    // dose, not an extra one — drop the phantom twin and keep the
-    // declared time. Explicit fixed_time rows are never collapsed.
-    const fixedMs = [...byTime.values()]
-      .filter((e) => e.kind === "fixed_time")
-      .map((e) => e.time.getTime());
-    const dedup = [...byTime.values()]
-      .filter(
-        (e) =>
-          e.kind === "fixed_time" ||
-          !fixedMs.some((f) => Math.abs(f - e.time.getTime()) <= MATCH_TOLERANCE_MS),
-      )
-      .map((e) => e.time);
-    dedup.sort((a, b) => a.getTime() - b.getTime());
-
-    const medDoses = dosesByMedId.get(med.id) ?? [];
-
-    // Capacity-based matching: a single logged dose can satisfy several
-    // nearby slots, up to the number of units actually taken. A `taken`
-    // dose has a capacity equal to its quantity (so logging ×3 in one go
-    // covers up to three slots within the vicinity window); a `skipped` or
-    // `missed` row can only ever clear one slot. `remaining` is decremented
-    // as slots consume each dose's capacity.
-    const remaining = new Map<string, number>();
-    for (const d of medDoses) {
-      remaining.set(d.id, d.status === "taken" ? Math.max(1, d.quantity) : 1);
-    }
-
-    for (const expected of dedup) {
-      const expectedMs = expected.getTime();
-
-      // Pick the best in-vicinity dose with capacity left: prefer a real
-      // `taken` dose over a `skipped`/`missed` one, then the nearest in
-      // time, tie-broken by id for deterministic output.
-      let matchedDose: DoseLogWithMedication | undefined;
-      let bestRank = Infinity;
-      let bestDist = Infinity;
-      for (const d of medDoses) {
-        if ((remaining.get(d.id) ?? 0) <= 0) continue;
-        const dist = Math.abs(new Date(d.takenAt).getTime() - expectedMs);
-        if (dist > MATCH_TOLERANCE_MS) continue;
-        const rank = d.status === "taken" ? 0 : 1;
-        const better =
-          rank < bestRank ||
-          (rank === bestRank && dist < bestDist) ||
-          (rank === bestRank && dist === bestDist && (!matchedDose || d.id < matchedDose.id));
-        if (better) {
-          matchedDose = d;
-          bestRank = rank;
-          bestDist = dist;
-        }
-      }
-      if (matchedDose) {
-        remaining.set(matchedDose.id, (remaining.get(matchedDose.id) ?? 0) - 1);
-      }
-
-      let status: ScheduleSlotStatus;
-      if (matchedDose) {
-        if (matchedDose.status === "skipped") status = "skipped";
-        // A "missed" dose row hasn't actually been consumed, so the slot
-        // is still unfulfilled — render it as overdue, not green-check
-        // taken.
-        else if (matchedDose.status === "missed") status = "overdue";
-        else status = "taken";
-      } else if (expected.getTime() <= now.getTime()) {
-        status = "overdue";
-      } else {
-        status = "upcoming";
-      }
-
-      slots.push({
-        medicationId: med.id,
-        medicationName: med.name,
-        colour: med.colour,
-        colourSecondary: med.colourSecondary,
-        pattern: med.pattern,
-        dosageAmount: med.dosageAmount,
-        dosageUnit: med.dosageUnit,
-        expectedTime: expected.toISOString(),
-        status,
-        matchedDoseId: matchedDose?.id ?? null,
-      });
-    }
-  }
-
-  return slots;
-}
-
 /**
  * Group schedule slots into time-of-day sections.
  * Only returns groups that have at least one slot.
@@ -373,28 +138,57 @@ export function groupSlotsByTimeOfDay(slots: ScheduleSlot[], timezone: string): 
 }
 
 /**
- * Derive a QuickLogBar-style timing status from a medication's My Day
- * slots: the earliest unresolved (overdue/upcoming) slot is the next
- * due dose. Returns null when nothing is pending today — used for
- * fixed-time medications, whose deprecated legacy interval columns are
- * null and who therefore never matched the interval-based path.
+ * Temporary compatibility shim. `dashboard/+page.server.ts` still calls the
+ * pre-move 8-argument shape, with `todaysDoses` and `lastDoseByMedication`
+ * as two separately-sourced parameters (the latter from a standalone
+ * "most recent dose per medication" query). `outstandingSlots` takes a
+ * single `Evidence` instead and derives its own per-medication anchor from
+ * `taken` rows in that same evidence — see the doc comment on
+ * `outstandingSlots` in due.ts — so this shim folds the legacy last-dose
+ * map into synthetic `taken` rows alongside the real doses.
+ *
+ * A medication that already has a `taken` dose today is left alone: since
+ * `lastDoseByMedication[id]` is `MAX(takenAt) WHERE status = 'taken'`
+ * across all time, it can never be earlier than today's own latest taken
+ * dose, so today's real rows already reproduce the same anchor. Skipping
+ * it there also avoids a same-instant synthetic duplicate racing the real
+ * dose's id for a slot match.
+ *
+ * Task 7 migrates the call site to `outstandingSlots` directly and
+ * deletes this function.
  */
-export function timingStatusFromSlots(
-  slots: ScheduleSlot[],
+export function computeScheduleSlots(
+  medications: Medication[],
+  schedulesByMedId: Map<string, MedicationSchedule[]>,
+  todaysDoses: DoseLogWithMedication[],
+  lastDoseByMedication: Record<string, Date>,
+  dayStartUtc: Date,
+  dayEndUtc: Date,
+  timezone: string,
   now: Date,
-): { status: "ok" | "due_soon" | "due_now" | "overdue"; minutesUntilDue: number } | null {
-  let pending: ScheduleSlot | undefined;
-  for (const s of slots) {
-    if (s.status !== "overdue" && s.status !== "upcoming") continue;
-    if (!pending || new Date(s.expectedTime).getTime() < new Date(pending.expectedTime).getTime()) {
-      pending = s;
-    }
-  }
-  if (!pending) return null;
+): ScheduleSlot[] {
+  const takenToday = new Set(
+    todaysDoses.filter((d) => d.status === "taken").map((d) => d.medicationId),
+  );
+  const anchorDoses: DoseEvent[] = Object.entries(lastDoseByMedication)
+    .filter(([medicationId]) => !takenToday.has(medicationId))
+    .map(([medicationId, takenAt]) => ({
+      id: `legacy-anchor:${medicationId}`,
+      medicationId,
+      takenAt,
+      status: "taken",
+      quantity: 1,
+    }));
 
-  const msUntilDue = new Date(pending.expectedTime).getTime() - now.getTime();
-  return {
-    status: classifyDueStatus(msUntilDue),
-    minutesUntilDue: Math.round(msUntilDue / 60_000),
-  };
+  return outstandingSlots(
+    medications,
+    schedulesByMedId,
+    { kind: "events", doses: [...todaysDoses, ...anchorDoses] },
+    { startUtc: dayStartUtc, endUtc: dayEndUtc },
+    timezone,
+    now,
+  );
 }
+
+export { timingStatusFromSlots } from "./due";
+export type { ScheduleSlot, ScheduleSlotStatus } from "./due";

@@ -43,6 +43,9 @@ Server-first SvelteKit app (Svelte 5 runes). Pages load via `+page.server.ts`, m
 
 ## Gotchas
 
+- **Exactly one service worker.** SvelteKit builds `src/service-worker.ts` to `/service-worker.js` and registers it on every page automatically — `kit.serviceWorker.register` defaults to `true`. Never add a second script (e.g. `static/sw.js`) or a manual `navigator.serviceWorker.register(...)`: registrations are keyed by scope, so two scripts at `/` evict each other on every load. Push handlers, `pushsubscriptionchange` and offline caching all belong in that one file.
+- Reminder delivery is driven by **two** schedulers hitting `/api/cron/reminders` with the same `CRON_SECRET` bearer: the Vercel cron (daily, Hobby plan cap) and the `reminder-tick` GitHub Actions schedule (every 30 min). `CRON_SECRET` must be set in the Vercel **production** env or the endpoint 500s before doing any work — that outage was silent for four months.
+- `computeOverdueSlot` for `fixed_time` scans back `OVERDUE_LOOKBACK_DAYS` (1) to find the most recent _elapsed_ slot. Evaluating only today's slot silently dropped every schedule timed after the cron tick — permanently, since the local date rolls over before the next tick. A dose at or after the slot satisfies it however late; the tolerance window only extends backwards.
 - Drizzle `numeric` columns return as **string** in JS, not number. `medications.scheduleIntervalHours` and `dosageAmount` must be `Number(...)` before arithmetic.
 - `medications.inventoryCount` is in **doses**, not raw units. `dose_logs.quantity` defaults to 1; inventory decrements by `quantity` per log, restores on delete.
 - `scheduleType` / `scheduleIntervalHours` columns are marked DEPRECATED in `schema.ts` but still populated and read — the canonical source is the `medication_schedules` table (phase 4d).

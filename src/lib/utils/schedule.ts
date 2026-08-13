@@ -56,7 +56,7 @@ export function getLocalDateString(date: Date, timezone: string): string {
   }).format(date);
 }
 
-function getLocalDatesInRange(start: Date, end: Date, timezone: string): string[] {
+export function getLocalDatesInRange(start: Date, end: Date, timezone: string): string[] {
   const dates = new Set<string>();
   const stepMs = 6 * 60 * 60 * 1000;
   for (let t = start.getTime(); t < end.getTime(); t += stepMs) {

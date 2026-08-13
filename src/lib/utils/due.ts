@@ -89,3 +89,81 @@ export function effectiveSchedules(
 
   return [];
 }
+
+import { getLocalDatesInRange, getLocalDayOfWeek, localTimeOnDateToUtc } from "$lib/utils/schedule";
+
+export type Lifecycle = { startedAt: Date; endedAt: Date | null };
+
+function withinLifecycle(t: Date, lifecycle: Lifecycle): boolean {
+  if (t.getTime() < lifecycle.startedAt.getTime()) return false;
+  if (lifecycle.endedAt && t.getTime() > lifecycle.endedAt.getTime()) return false;
+  return true;
+}
+
+/**
+ * The times this schedule expects a dose inside [windowStart, windowEnd).
+ *
+ * `anchor` is the last resolving event (taken or skipped). Interval
+ * schedules phase from it; when absent they phase from `startedAt`, so a
+ * never-logged medication still has occurrences. Fixed-time schedules
+ * ignore the anchor entirely — they are clock-based.
+ */
+export function occurrencesFor(
+  schedule: EffectiveSchedule,
+  windowStartUtc: Date,
+  windowEndUtc: Date,
+  timezone: string,
+  anchor: Date | null,
+  lifecycle: Lifecycle,
+): Date[] {
+  const out: Date[] = [];
+
+  if (schedule.scheduleKind === "interval") {
+    const hrs = schedule.intervalHours !== null ? Number(schedule.intervalHours) : NaN;
+    if (!Number.isFinite(hrs) || hrs <= 0) return [];
+    const intervalMs = hrs * 60 * 60 * 1000;
+
+    // With an event, phase from it. Without one, the first expected dose is
+    // one interval AFTER startedAt — startedAt is when the medication began,
+    // not a dose occurrence.
+    let t = anchor
+      ? new Date(anchor.getTime())
+      : new Date(lifecycle.startedAt.getTime() + intervalMs);
+    if (t.getTime() < windowStartUtc.getTime()) {
+      const gap = windowStartUtc.getTime() - t.getTime();
+      t = new Date(t.getTime() + Math.ceil(gap / intervalMs) * intervalMs);
+    }
+    while (t.getTime() < windowEndUtc.getTime()) {
+      out.push(new Date(t.getTime()));
+      t = new Date(t.getTime() + intervalMs);
+    }
+
+    // Keep the anchor itself visible when it falls inside the window, so a
+    // just-handled dose still renders as its own slot.
+    const anchorTime = anchor?.getTime();
+    if (
+      anchorTime !== undefined &&
+      anchorTime >= windowStartUtc.getTime() &&
+      anchorTime < windowEndUtc.getTime() &&
+      !out.some((d) => d.getTime() === anchorTime)
+    ) {
+      out.push(new Date(anchorTime));
+    }
+  } else if (schedule.scheduleKind === "fixed_time") {
+    if (!schedule.timeOfDay) return [];
+    for (const dateStr of getLocalDatesInRange(windowStartUtc, windowEndUtc, timezone)) {
+      const utc = localTimeOnDateToUtc(dateStr, schedule.timeOfDay, timezone);
+      if (utc.getTime() < windowStartUtc.getTime() || utc.getTime() >= windowEndUtc.getTime()) {
+        continue;
+      }
+      // Day-of-week is a property of the occurrence's own date, not today's.
+      if (schedule.daysOfWeek && schedule.daysOfWeek.length > 0) {
+        if (!schedule.daysOfWeek.includes(getLocalDayOfWeek(utc, timezone))) continue;
+      }
+      out.push(utc);
+    }
+  }
+  // prn projects nothing.
+
+  return out.filter((t) => withinLifecycle(t, lifecycle)).sort((a, b) => a.getTime() - b.getTime());
+}

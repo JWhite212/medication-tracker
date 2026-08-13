@@ -5,6 +5,7 @@
 declare let self: ServiceWorkerGlobalScope;
 
 import { build, files, version } from "$service-worker";
+import { TEST_PUSH_TAG, TEST_PUSH_SHOWN_MESSAGE } from "$lib/utils/push";
 
 const CACHE = `medtracker-${version}`;
 const ASSETS = [...build, ...files];
@@ -55,14 +56,29 @@ self.addEventListener("fetch", (event) => {
 
 self.addEventListener("push", (event) => {
   const data = event.data?.json() ?? {};
+  const tag = data.tag ?? "medication-reminder";
   event.waitUntil(
-    self.registration.showNotification(data.title ?? "MedTracker", {
-      body: data.body ?? "You have a medication reminder",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      tag: data.tag ?? "medication-reminder",
-      data: { url: data.url ?? "/dashboard" },
-    }),
+    self.registration
+      .showNotification(data.title ?? "MedTracker", {
+        body: data.body ?? "You have a medication reminder",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        tag,
+        data: { url: data.url ?? "/dashboard" },
+      })
+      // "The push service accepted it" is not the same as "the user saw
+      // it" — the OS can suppress a notification after delivery, which
+      // is exactly the case someone reaches for the test button to
+      // diagnose. Telling the open page that showNotification actually
+      // resolved closes that gap. Only test notifications report back,
+      // so real reminders stay silent to the page.
+      .then(async () => {
+        if (tag !== TEST_PUSH_TAG) return;
+        const clients = await self.clients.matchAll({ type: "window" });
+        for (const client of clients) {
+          client.postMessage({ type: TEST_PUSH_SHOWN_MESSAGE });
+        }
+      }),
   );
 });
 

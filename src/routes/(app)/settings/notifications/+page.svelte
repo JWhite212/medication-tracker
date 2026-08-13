@@ -2,13 +2,56 @@
   import { enhance } from "$app/forms";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import { showToast } from "$lib/components/ui/Toast.svelte";
-  import { urlBase64ToUint8Array } from "$lib/utils/push";
+  import { urlBase64ToUint8Array, TEST_PUSH_SHOWN_MESSAGE } from "$lib/utils/push";
+  import { formatTimeSince } from "$lib/utils/time";
 
   let { data, form } = $props();
 
   let pushSupported = $state(false);
   let pushEnabled = $state(false);
   let pushLoading = $state(false);
+
+  // How long to wait for this device's service worker to report that it
+  // actually displayed the test before assuming it was suppressed.
+  const CONFIRM_TIMEOUT_MS = 10_000;
+
+  let testing = $state(false);
+  let confirmed = $state(false);
+  let awaitingConfirmation = $state(false);
+  let confirmationTimedOut = $state(false);
+  // Deliberately not $state: the timer handle is bookkeeping, and making
+  // it reactive would re-run the listener effect on every send.
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // The service worker posts here once showNotification() resolves for a
+  // test push, which is the only evidence available that the OS did not
+  // swallow it. Registered once — this effect reads no reactive state.
+  $effect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type !== TEST_PUSH_SHOWN_MESSAGE) return;
+      clearTimeout(confirmTimer);
+      confirmed = true;
+      awaitingConfirmation = false;
+      confirmationTimedOut = false;
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+      clearTimeout(confirmTimer);
+    };
+  });
+
+  function startConfirmationWindow() {
+    clearTimeout(confirmTimer);
+    confirmed = false;
+    confirmationTimedOut = false;
+    awaitingConfirmation = true;
+    confirmTimer = setTimeout(() => {
+      awaitingConfirmation = false;
+      confirmationTimedOut = true;
+    }, CONFIRM_TIMEOUT_MS);
+  }
 
   // Local two-way bound state seeded from the server payload.
   // Plain `checked={...}` is a one-way binding in Svelte 5 — clicking
@@ -258,4 +301,116 @@
       {/if}
     </GlassCard>
   {/if}
+
+  <!-- Account-wide delivery diagnostics. Rendered from server data, so
+       unlike the card above it does not depend on this browser
+       supporting push — a user on an unsupported browser can still see
+       that their phone is registered. -->
+  <GlassCard>
+    <div class="space-y-4">
+      <div>
+        <p class="text-sm font-medium">Notification delivery</p>
+        <p class="text-text-muted text-xs">
+          Check that notifications reach your devices without waiting for a dose to fall due.
+        </p>
+      </div>
+
+      <dl class="space-y-2 text-xs">
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="text-text-muted">Push service</dt>
+          <dd class={data.pushHealth.vapidConfigured ? "text-success" : "text-warning"}>
+            {data.pushHealth.vapidConfigured ? "Configured" : "Not configured on this deployment"}
+          </dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="text-text-muted">Registered devices</dt>
+          <dd>
+            {data.pushHealth.deviceCount}
+            {#if data.pushHealth.oldestRegisteredAt}
+              <span class="text-text-muted">
+                (oldest {formatTimeSince(new Date(data.pushHealth.oldestRegisteredAt))})
+              </span>
+            {/if}
+          </dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4">
+          <dt class="text-text-muted">Reminders last processed</dt>
+          <dd>
+            {#if data.pushHealth.lastReminderAt}
+              {formatTimeSince(new Date(data.pushHealth.lastReminderAt))}
+            {:else}
+              <span class="text-text-muted">None yet</span>
+            {/if}
+          </dd>
+        </div>
+      </dl>
+
+      {#if !data.pushHealth.lastReminderAt}
+        <p class="text-text-muted text-xs">
+          You haven't been sent a reminder yet. That's expected if no dose has fallen overdue since
+          you signed up.
+        </p>
+      {/if}
+
+      {#if data.pushHealth.deviceCount > 0 && !data.preferences.overduePushReminders && !data.preferences.lowInventoryPushAlerts}
+        <p class="text-warning text-xs">
+          Both push preferences above are off, so real reminders won't be sent to these devices. A
+          test notification will still arrive.
+        </p>
+      {/if}
+
+      <form
+        method="POST"
+        action="?/sendTest"
+        use:enhance={() => {
+          testing = true;
+          confirmed = false;
+          confirmationTimedOut = false;
+          awaitingConfirmation = false;
+          return async ({ result, update }) => {
+            await update({ reset: false });
+            testing = false;
+            // Only the device running this page can report back, and
+            // only if it holds a subscription of its own.
+            if (result.type === "success" && pushEnabled) startConfirmationWindow();
+          };
+        }}
+      >
+        <button
+          type="submit"
+          disabled={testing ||
+            !data.pushHealth.vapidConfigured ||
+            data.pushHealth.deviceCount === 0}
+          class="bg-accent text-accent-fg rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {testing ? "Sending..." : "Send test notification"}
+        </button>
+      </form>
+
+      <!-- Single live region for every outcome, kept outside the form so
+           the button is not re-announced when the result changes. -->
+      <div role="status" class="space-y-1 empty:hidden">
+        {#if data.pushHealth.vapidConfigured && data.pushHealth.deviceCount === 0}
+          <p class="text-text-muted text-xs">
+            Enable push on at least one device before running a test.
+          </p>
+        {/if}
+        {#if form?.testError}
+          <p class="text-danger text-xs">{form.testError}</p>
+        {:else if form?.testOk}
+          <p class="text-success text-xs">{form.testMessage}</p>
+          {#if awaitingConfirmation}
+            <p class="text-text-muted text-xs">Waiting for this device to confirm it displayed…</p>
+          {:else if confirmed}
+            <p class="text-success text-xs">Confirmed displayed on this device.</p>
+          {:else if confirmationTimedOut}
+            <p class="text-warning text-xs">
+              This device didn't confirm it displayed the notification. Check notification
+              permissions for this site in your browser and operating system.
+            </p>
+          {/if}
+        {/if}
+      </div>
+    </div>
+  </GlassCard>
 </div>

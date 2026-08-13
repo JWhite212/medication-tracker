@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import Sidebar from "$components/Sidebar.svelte";
   import MobileHeader from "$components/MobileHeader.svelte";
   import type { SessionUser } from "$lib/types";
@@ -7,15 +6,10 @@
   let { data, children } = $props();
   let sidebarOpen = $state(false);
 
-  // Register the push service worker for authenticated users. It's inert
-  // until the user enables push (Settings → Notifications), but the
-  // registration is what makes navigator.serviceWorker.ready resolve
-  // there. Failure is non-fatal (e.g. unsupported browser).
-  onMount(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
-    }
-  });
+  // No service worker registration here on purpose. SvelteKit registers
+  // src/service-worker.ts app-wide (kit.serviceWorker.register defaults
+  // to true), so registering a second script at the same scope from this
+  // layout made the two evict each other on every load.
 
   function accentFg(hex: string): string {
     const lin = (c: number) => {

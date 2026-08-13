@@ -123,11 +123,43 @@ export function formatDueIn(ms: number): string {
 }
 
 /**
+ * Compute the timing status for a scheduled medication.
+ * @param intervalHours - the schedule interval in hours
+ * @param lastEventAt   - when the medication was last *handled* — taken
+ *                        OR skipped. Both advance the clock so the user
+ *                        can dismiss an overdue slot by skipping it.
+ *                        `null` if the schedule has never been touched.
+ * @param now           - current timestamp (for testability)
+ * @returns status and minutesUntilDue (negative if overdue)
+ */
+export function computeTimingStatus(
+  intervalHours: number,
+  lastEventAt: Date | null,
+  now: Date = new Date(),
+): {
+  status: "ok" | "due_soon" | "due_now" | "overdue";
+  minutesUntilDue: number;
+} {
+  if (!lastEventAt) {
+    // Never handled — treat as overdue
+    return { status: "overdue", minutesUntilDue: -1 };
+  }
+
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  const nextDueAt = lastEventAt.getTime() + intervalMs;
+  const msUntilDue = nextDueAt - now.getTime();
+  return {
+    status: classifyDueStatus(msUntilDue),
+    minutesUntilDue: Math.round(msUntilDue / 60_000),
+  };
+}
+
+/**
  * Shared due-ness thresholds: overdue if more than a minute past due,
- * due_now within ±1 minute, due_soon within the next hour. Turns a
- * milliseconds-until-due figure into the label the QuickLogBar shows;
- * `timingStatusFromSlots` in $lib/utils/due.ts is the only caller, so
- * every schedule kind gets the same thresholds.
+ * due_now within ±1 minute, due_soon within the next hour. Used by
+ * both the interval-based computeTimingStatus above and the slot-based
+ * timing in $lib/utils/schedule.ts so the QuickLogBar badges mean the
+ * same thing for every schedule kind.
  */
 export function classifyDueStatus(msUntilDue: number): "ok" | "due_soon" | "due_now" | "overdue" {
   if (msUntilDue <= -60_000) return "overdue";

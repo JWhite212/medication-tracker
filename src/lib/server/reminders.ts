@@ -92,23 +92,36 @@ export async function checkOverdueMedications() {
       ),
     );
 
-  // Fetch the most recent taken dose per medication in one grouped query
+  // Fetch the most recent HANDLED dose per medication in one grouped query
   // instead of running a correlated subquery per schedule row.
+  //
+  // "Handled" means taken OR skipped. `getLastDoseTimes` in doses.ts already
+  // documents this as the anchor that drives overdue timing — "taken and
+  // skipped advance the clock so the user can dismiss an overdue slot by
+  // skipping it" — and the dashboard has always honoured it. This scan did
+  // not, so skipping a dose cleared the dashboard badge and still sent a
+  // push. `missed` is deliberately excluded: it records that a dose was not
+  // consumed, so the slot is still outstanding.
   const medicationIds = Array.from(new Set(scheduleRows.map((r) => r.medicationId)));
-  const lastTakenByMedication = new Map<string, Date>();
+  const lastEventByMedication = new Map<string, Date>();
   if (medicationIds.length > 0) {
-    const lastTakenRows = await db
+    const lastEventRows = await db
       .select({
         medicationId: doseLogs.medicationId,
-        lastTakenAt: max(doseLogs.takenAt),
+        lastEventAt: max(doseLogs.takenAt),
       })
       .from(doseLogs)
-      .where(and(inArray(doseLogs.medicationId, medicationIds), eq(doseLogs.status, "taken")))
+      .where(
+        and(
+          inArray(doseLogs.medicationId, medicationIds),
+          inArray(doseLogs.status, ["taken", "skipped"]),
+        ),
+      )
       .groupBy(doseLogs.medicationId);
 
-    for (const r of lastTakenRows) {
-      if (r.lastTakenAt !== null) {
-        lastTakenByMedication.set(r.medicationId, new Date(r.lastTakenAt));
+    for (const r of lastEventRows) {
+      if (r.lastEventAt !== null) {
+        lastEventByMedication.set(r.medicationId, new Date(r.lastEventAt));
       }
     }
   }
@@ -119,7 +132,7 @@ export async function checkOverdueMedications() {
   for (const scheduleRow of scheduleRows) {
     const row = {
       ...scheduleRow,
-      lastTakenAt: lastTakenByMedication.get(scheduleRow.medicationId) ?? null,
+      lastEventAt: lastEventByMedication.get(scheduleRow.medicationId) ?? null,
     };
     const slot = computeOverdueSlot(row, now);
     if (!slot) continue;
@@ -142,7 +155,9 @@ export async function checkOverdueMedications() {
 
     const emailConfigured =
       row.userOverdueEmailReminders && emailGloballyConfigured && row.userEmailVerified;
-    const sinceLabel = row.lastTakenAt ? formatTimeSince(new Date(row.lastTakenAt)) : "never";
+    // "logged", not "taken": the anchor now counts skips, so a reminder can
+    // follow a skip and asserting the dose was taken would be false.
+    const sinceLabel = row.lastEventAt ? formatTimeSince(new Date(row.lastEventAt)) : "never";
 
     let emailResult: EmailResult | null = null;
     let pushResult: PushResult | null = null;
@@ -171,9 +186,9 @@ export async function checkOverdueMedications() {
       if (pushConfigured) {
         pushResult = await sendPushNotification(row.userId, {
           title: `${row.medicationName} overdue`,
-          body: row.lastTakenAt
-            ? `Last taken ${formatTimeSince(new Date(row.lastTakenAt))} ago`
-            : "Not yet taken",
+          body: row.lastEventAt
+            ? `Last logged ${formatTimeSince(new Date(row.lastEventAt))} ago`
+            : "Not yet logged",
           url: "/dashboard",
           tag: `overdue-${row.medicationId}`,
         });

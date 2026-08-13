@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // last-taken-per-medication aggregate. Tests push rows into these
 // arrays before invoking the function.
 const scheduleRows: Array<Record<string, unknown>> = [];
-const lastTakenRows: Array<{ medicationId: string; lastTakenAt: Date | null }> = [];
+const lastEventRows: Array<{ medicationId: string; lastEventAt: Date | null }> = [];
 let selectCallIndex = 0;
 
 // Queue of return values for db.insert(...).returning() calls (the
@@ -23,21 +23,47 @@ type UpdateCapture = {
 };
 const updateCaptures: UpdateCapture[] = [];
 
+// The WHERE predicate handed to each select, indexed by call order. The mock
+// does not evaluate predicates — it returns whatever rows a test pushed — so
+// a behavioural test alone cannot tell taken-only from taken-or-skipped.
+// Capturing the predicate is what actually pins the status filter.
+const whereArgsByCall: unknown[][] = [];
+
+/**
+ * Drizzle builds predicates as SQL objects whose column nodes hold a
+ * back-pointer to their table, so a plain JSON.stringify blows up. Same
+ * circular-safe walk reminders-dispatch.test.ts uses.
+ */
+function chunksContain(sqlObj: unknown, needle: string): boolean {
+  const seen = new WeakSet<object>();
+  const json = JSON.stringify(sqlObj, (_key, value) => {
+    if (typeof value === "object" && value !== null) {
+      if (seen.has(value)) return undefined;
+      seen.add(value);
+    }
+    return value;
+  });
+  return json.includes(needle);
+}
+
 vi.mock("$lib/server/db", () => ({
   db: {
     select: () => {
       const callIndex = selectCallIndex++;
-      const rowsForCall = () => (callIndex === 0 ? [...scheduleRows] : [...lastTakenRows]);
+      const rowsForCall = () => (callIndex === 0 ? [...scheduleRows] : [...lastEventRows]);
       const chain: Record<string, unknown> = {};
       const resolver = () => Promise.resolve(rowsForCall());
       const passthrough = () => chain;
       chain.from = passthrough;
       chain.innerJoin = passthrough;
-      chain.where = (..._args: unknown[]) => ({
-        ...chain,
-        groupBy: resolver,
-        then: (onFulfilled: (v: unknown) => unknown) => resolver().then(onFulfilled),
-      });
+      chain.where = (...args: unknown[]) => {
+        whereArgsByCall[callIndex] = args;
+        return {
+          ...chain,
+          groupBy: resolver,
+          then: (onFulfilled: (v: unknown) => unknown) => resolver().then(onFulfilled),
+        };
+      };
       chain.groupBy = resolver;
       return chain;
     },
@@ -127,13 +153,14 @@ const { checkOverdueMedications, checkLowInventoryMedications } =
 
 beforeEach(() => {
   scheduleRows.length = 0;
-  lastTakenRows.length = 0;
+  lastEventRows.length = 0;
   sentEmails.length = 0;
   sentPushes.length = 0;
   emailResults.length = 0;
   pushResults.length = 0;
   claimResults.length = 0;
   updateCaptures.length = 0;
+  whereArgsByCall.length = 0;
   selectCallIndex = 0;
   pushSubscribersByUser = { u1: true };
   nextPushSubsThrows = null;
@@ -157,7 +184,7 @@ function pushDefaultOverdueRow(): void {
     userOverdueEmailReminders: true,
     userOverduePushReminders: true,
   });
-  lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+  lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 }
 
 describe("checkOverdueMedications — claim/complete with per-channel status", () => {
@@ -187,12 +214,74 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userEmailVerified: true,
       userTimezone: "UTC",
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: oneHourAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: oneHourAgo });
 
     await checkOverdueMedications();
     expect(sentEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(0);
     expect(updateCaptures).toHaveLength(0);
+  });
+
+  it("does not remind for a dose the user deliberately skipped", async () => {
+    // The defect being fixed. The anchor aggregate counts taken AND skipped,
+    // so a skip an hour ago resolves the slot and nothing is claimed or sent.
+    // Filtering to `taken` alone is what let the dashboard badge clear while
+    // a push still went out — doses.ts has documented the intended rule all
+    // along; this scan just never honoured it.
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000);
+    scheduleRows.push({
+      scheduleId: "s1",
+      scheduleKind: "interval",
+      intervalHours: "6",
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+      userOverdueEmailReminders: true,
+      userOverduePushReminders: true,
+    });
+    // Supplied by the taken-or-skipped aggregate, so a skip reaches this map.
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: oneHourAgo });
+
+    await checkOverdueMedications();
+
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures).toHaveLength(0);
+  });
+
+  it("anchors on taken AND skipped doses, not taken alone", async () => {
+    // This is the actual fix. The behavioural test above cannot prove it: the
+    // db mock returns whatever rows a test pushed and never evaluates the
+    // predicate, so it would pass on the old taken-only query too. Asserting
+    // the predicate itself is what fails if the filter regresses.
+    pushDefaultOverdueRow();
+
+    await checkOverdueMedications();
+
+    const aggregatePredicate = whereArgsByCall[1];
+    expect(aggregatePredicate).toBeDefined();
+    expect(chunksContain(aggregatePredicate, "skipped")).toBe(true);
+    expect(chunksContain(aggregatePredicate, "taken")).toBe(true);
+    // `missed` must never resolve a slot — it records a dose NOT consumed.
+    expect(chunksContain(aggregatePredicate, "missed")).toBe(false);
+  });
+
+  it("still reminds when the last handled dose is older than the interval", async () => {
+    // The other half of the rule: including skips must not make the scan
+    // silent in general. Without this, the test above would pass even if the
+    // aggregate stopped returning anything at all.
+    pushDefaultOverdueRow();
+
+    await checkOverdueMedications();
+
+    expect(sentEmails).toHaveLength(1);
+    expect(sentPushes).toHaveLength(1);
+    expect(sentEmails[0].sinceLabel).not.toBe("never");
   });
 
   it("dedupes a repeat run when claim returns no row (not retryable)", async () => {
@@ -249,7 +338,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userOverdueEmailReminders: true,
       userOverduePushReminders: true,
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 
     await checkOverdueMedications();
 
@@ -321,7 +410,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userOverdueEmailReminders: false,
       userOverduePushReminders: true,
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 
     await checkOverdueMedications();
 
@@ -355,7 +444,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userOverdueEmailReminders: false,
       userOverduePushReminders: true,
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
     nextPushSubsThrows = new Error("transient db error");
 
     await checkOverdueMedications();
@@ -384,7 +473,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userOverdueEmailReminders: true,
       userOverduePushReminders: false,
     });
-    lastTakenRows.push({ medicationId: "med-A", lastTakenAt: eightHoursAgo });
+    lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 
     await checkOverdueMedications();
 

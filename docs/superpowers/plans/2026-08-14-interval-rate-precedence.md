@@ -927,11 +927,16 @@ Run:
 git diff origin/main..HEAD -- tests/ | grep '^-' | grep -v '^---'
 ```
 
-Expected: exactly **one** line — the `expect(slot).toEqual(lastTaken);` from the
-Task 3 Step 1 characterization test, which Step 4 deliberately flipped.
+Expected: **zero lines.**
 
-Anything else means a refactor changed behaviour. Stop and report rather than
-adjusting the test.
+This is a two-dot diff between `origin/main` and the final tree, so it shows
+the net change. The characterization test added in Task 3 Step 1 and replaced
+in Step 4 exists on neither endpoint, so it contributes no deletion here — the
+expectation is zero, not one. Every test that exists on `origin/main` must be
+present at HEAD, byte-identical.
+
+Any output at all means a pre-existing test line was deleted or modified, i.e.
+a refactor changed behaviour. Stop and report rather than adjusting the test.
 
 - [ ] **Step 3: Full verification**
 
@@ -1033,10 +1038,11 @@ The characterization harness landed **before** any behaviour moved, per the
 because the tests pinning the old contract were deleted and then the
 behaviour they protected was changed.
 
-- **Exactly one pre-existing-diff line changes** across `tests/`: the
-  assertion in the Task 3 characterization test that deliberately pinned the
-  bug before flipping it. Verified with
-  `git diff origin/main..HEAD -- tests/ | grep '^-' | grep -v '^---'`.
+- **Not one pre-existing test line is deleted or modified.** `tests/` is
+  additive-only against `origin/main`. Verified with
+  `git diff origin/main..HEAD -- tests/ | grep '^-' | grep -v '^---'`, which
+  returns nothing. This is the #114-grade signal, and it holds here because
+  every migration was a pure refactor sitting under a net that landed first.
 - Every new test was re-run against a deliberately broken copy to prove it
   can fail. That step earned itself again here: breaking the `MAX_INTERVAL_HOURS`
   guard is the only mechanical proof the weekly-injection case is under test.

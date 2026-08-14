@@ -31,6 +31,7 @@ Server-first SvelteKit app (Svelte 5 runes). Pages load via `+page.server.ts`, m
 - Live "time since" counters: client-side `$effect` + `setInterval(60s)` + `visibilitychange` recalc. No WebSocket.
 - All DB queries scoped by `user_id` — never trust client-provided user context
 - Audit log (`src/lib/server/audit.ts`) records all create/update/delete with JSONB diffs
+- `updatePreferences` in `src/lib/server/preferences.ts` is the **only** audited write path for user preferences — it reads the before-image, writes, and logs the diff itself. Callers (the three settings form actions and the `/api/v1` `update_preferences` command) just call it; never re-hand-roll a `computeChanges` subset at a door, and never write `user_preferences` directly. The diff is scoped to `Object.keys(updates)` because `updatedAt` is rewritten on every save and a whole-row diff would log a change on a no-op.
 - Inventory auto-decrements on dose log, auto-restores on delete
 - Refill forecasting lives in `src/lib/server/inventory.ts` — single source of truth for daily-rate selection (schedules first, legacy columns next, 30-day history for PRN). Both `dashboard/+page.server.ts` and `medications/+page.server.ts` consume it. The same module owns severity classification (`critical ≤3d`, `warning ≤7d`, `watch ≤14d`).
 - Analytics insights are deterministic — `buildInsights` in `src/lib/server/analytics.ts` is a pure function over already-computed stats. Add new rules by writing a small predicate that returns `Insight | null`; never inject prescriptive medical wording.

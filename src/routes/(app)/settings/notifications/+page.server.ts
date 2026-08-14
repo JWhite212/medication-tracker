@@ -5,7 +5,6 @@ import { sha256 } from "@oslojs/crypto/sha2";
 import { encodeHexLowerCase } from "@oslojs/encoding";
 import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferences";
 import { notificationSchema } from "$lib/utils/validation";
-import { logAudit, computeChanges } from "$lib/server/audit";
 import {
   getVapidPublicKey,
   getPushHealth,
@@ -50,25 +49,7 @@ export const actions: Actions = {
     const parsed = notificationSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { errors: parsed.error.flatten().fieldErrors });
 
-    const before = await getOrCreatePreferences(locals.user!.id);
-    const updated = await updatePreferences(locals.user!.id, parsed.data);
-
-    const changes = computeChanges(
-      {
-        overdueEmailReminders: before.overdueEmailReminders,
-        overduePushReminders: before.overduePushReminders,
-        lowInventoryEmailAlerts: before.lowInventoryEmailAlerts,
-        lowInventoryPushAlerts: before.lowInventoryPushAlerts,
-      },
-      {
-        overdueEmailReminders: updated.overdueEmailReminders,
-        overduePushReminders: updated.overduePushReminders,
-        lowInventoryEmailAlerts: updated.lowInventoryEmailAlerts,
-        lowInventoryPushAlerts: updated.lowInventoryPushAlerts,
-      },
-    );
-    if (changes)
-      await logAudit(locals.user!.id, "user_preferences", locals.user!.id, "update", changes);
+    await updatePreferences(locals.user!.id, parsed.data);
 
     return { success: true };
   },

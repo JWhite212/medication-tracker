@@ -10,6 +10,7 @@ import {
 import { sendReminderEmail, sendLowInventoryEmail, isEmailConfigured } from "./email";
 import { sendPushNotification, hasPushSubscriptions } from "./push";
 import { formatTimeSince } from "$lib/utils/time";
+import { lowInventoryTag, overdueTag } from "$lib/utils/push-payload";
 import {
   computeOverdueSlot,
   buildOverdueDedupeKey,
@@ -152,7 +153,7 @@ export async function checkOverdueMedications() {
               ? `Last logged ${formatTimeSince(new Date(row.lastEventAt))} ago`
               : "Not yet logged",
             url: "/dashboard",
-            tag: `overdue-${row.medicationId}`,
+            tag: overdueTag(row.medicationId),
           });
         }
       },
@@ -257,7 +258,7 @@ export async function checkLowInventoryMedications() {
             title: `Low inventory: ${med.medicationName}`,
             body: `${med.inventoryCount} doses remaining (threshold ${med.inventoryAlertThreshold}).`,
             url: "/medications",
-            tag: `low-inventory-${med.medicationId}`,
+            tag: lowInventoryTag(med.medicationId),
           });
         }
       },

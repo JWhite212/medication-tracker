@@ -47,7 +47,7 @@ vi.mock("web-push", () => ({
 
 const { sendTestPush, sendPushNotification, getPushHealth, describeTestPushResult } =
   await import("../../src/lib/server/push");
-const { TEST_PUSH_TAG } = await import("../../src/lib/utils/push");
+const { TEST_PUSH_TAG } = await import("../../src/lib/utils/push-payload");
 
 function subscription(id: string) {
   return {
@@ -107,7 +107,12 @@ describe("sendPushNotification delivery counts", () => {
       .mockRejectedValueOnce(pushError(500))
       .mockResolvedValueOnce(undefined);
 
-    const result = await sendPushNotification("user-1", { title: "t", body: "b" });
+    const result = await sendPushNotification("user-1", {
+      title: "t",
+      body: "b",
+      url: "/dashboard",
+      tag: TEST_PUSH_TAG,
+    });
 
     expect(result).toMatchObject({
       ok: true,
@@ -121,7 +126,12 @@ describe("sendPushNotification delivery counts", () => {
     selectQueue.push([subscription("sub-1"), subscription("sub-2")]);
     sendNotification.mockRejectedValueOnce(pushError(410)).mockResolvedValueOnce(undefined);
 
-    const result = await sendPushNotification("user-1", { title: "t", body: "b" });
+    const result = await sendPushNotification("user-1", {
+      title: "t",
+      body: "b",
+      url: "/dashboard",
+      tag: TEST_PUSH_TAG,
+    });
 
     expect(result).toMatchObject({
       ok: true,
@@ -136,7 +146,12 @@ describe("sendPushNotification delivery counts", () => {
     selectQueue.push([subscription("sub-1"), subscription("sub-2")]);
     sendNotification.mockRejectedValue(pushError(410));
 
-    const result = await sendPushNotification("user-1", { title: "t", body: "b" });
+    const result = await sendPushNotification("user-1", {
+      title: "t",
+      body: "b",
+      url: "/dashboard",
+      tag: TEST_PUSH_TAG,
+    });
 
     expect(result).toMatchObject({
       ok: false,

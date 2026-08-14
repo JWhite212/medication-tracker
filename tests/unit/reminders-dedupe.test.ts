@@ -11,7 +11,7 @@ const now = new Date("2026-05-01T15:00:00.000Z");
 
 function intervalRow(opts: {
   intervalHours?: string | null;
-  lastTakenAt?: Date | null;
+  lastEventAt?: Date | null;
   userTimezone?: string;
 }): OverdueRow {
   return {
@@ -20,7 +20,7 @@ function intervalRow(opts: {
     timeOfDay: null,
     daysOfWeek: null,
     userTimezone: opts.userTimezone ?? "UTC",
-    lastTakenAt: opts.lastTakenAt ?? null,
+    lastEventAt: opts.lastEventAt ?? null,
   };
 }
 
@@ -28,7 +28,7 @@ function fixedTimeRow(opts: {
   timeOfDay?: string | null;
   daysOfWeek?: number[] | null;
   userTimezone?: string;
-  lastTakenAt?: Date | null;
+  lastEventAt?: Date | null;
 }): OverdueRow {
   return {
     scheduleKind: "fixed_time",
@@ -36,7 +36,7 @@ function fixedTimeRow(opts: {
     timeOfDay: opts.timeOfDay ?? null,
     daysOfWeek: opts.daysOfWeek ?? null,
     userTimezone: opts.userTimezone ?? "UTC",
-    lastTakenAt: opts.lastTakenAt ?? null,
+    lastEventAt: opts.lastEventAt ?? null,
   };
 }
 
@@ -90,21 +90,21 @@ describe("isScheduleOverdue — interval schedules", () => {
   it("interval taken inside the window is not overdue", () => {
     const oneHourAgo = new Date(now.getTime() - 3_600_000);
     expect(
-      isScheduleOverdue(intervalRow({ intervalHours: "6", lastTakenAt: oneHourAgo }), now),
+      isScheduleOverdue(intervalRow({ intervalHours: "6", lastEventAt: oneHourAgo }), now),
     ).toBe(false);
   });
 
   it("interval taken longer ago than the window is overdue", () => {
     const eightHoursAgo = new Date(now.getTime() - 8 * 3_600_000);
     expect(
-      isScheduleOverdue(intervalRow({ intervalHours: "6", lastTakenAt: eightHoursAgo }), now),
+      isScheduleOverdue(intervalRow({ intervalHours: "6", lastEventAt: eightHoursAgo }), now),
     ).toBe(true);
   });
 
   it("interval at exactly the window boundary is not overdue (strict greater-than)", () => {
     const sixHoursAgo = new Date(now.getTime() - 6 * 3_600_000);
     expect(
-      isScheduleOverdue(intervalRow({ intervalHours: "6", lastTakenAt: sixHoursAgo }), now),
+      isScheduleOverdue(intervalRow({ intervalHours: "6", lastEventAt: sixHoursAgo }), now),
     ).toBe(false);
   });
 });
@@ -115,7 +115,7 @@ describe("isScheduleOverdue — fixed-time schedules (UTC)", () => {
     // occurrence is yesterday's. A dose at that slot satisfies it.
     const yesterdayEvening = new Date("2026-04-30T23:00:00.000Z");
     expect(
-      isScheduleOverdue(fixedTimeRow({ timeOfDay: "23:00", lastTakenAt: yesterdayEvening }), now),
+      isScheduleOverdue(fixedTimeRow({ timeOfDay: "23:00", lastEventAt: yesterdayEvening }), now),
     ).toBe(false);
   });
 
@@ -126,7 +126,7 @@ describe("isScheduleOverdue — fixed-time schedules (UTC)", () => {
   it("past slot today with a dose inside tolerance is not overdue", () => {
     const slotEightAm = new Date("2026-05-01T08:00:00.000Z");
     expect(
-      isScheduleOverdue(fixedTimeRow({ timeOfDay: "08:00", lastTakenAt: slotEightAm }), now),
+      isScheduleOverdue(fixedTimeRow({ timeOfDay: "08:00", lastEventAt: slotEightAm }), now),
     ).toBe(false);
   });
 
@@ -134,7 +134,7 @@ describe("isScheduleOverdue — fixed-time schedules (UTC)", () => {
     // Tolerance is 60 minutes; doses far earlier shouldn't suppress the slot.
     const wayEarlier = new Date("2026-04-30T05:00:00.000Z");
     expect(
-      isScheduleOverdue(fixedTimeRow({ timeOfDay: "08:00", lastTakenAt: wayEarlier }), now),
+      isScheduleOverdue(fixedTimeRow({ timeOfDay: "08:00", lastEventAt: wayEarlier }), now),
     ).toBe(true);
   });
 
@@ -154,10 +154,10 @@ describe("isScheduleOverdue — fixed-time schedules (UTC)", () => {
 });
 
 describe("computeOverdueSlot — returns the actual slot Date used in dedupe keys", () => {
-  it("interval slot is lastTakenAt + intervalHours", () => {
+  it("interval slot is lastEventAt + intervalHours", () => {
     const lastTaken = new Date("2026-05-01T03:00:00.000Z");
     const slot = computeOverdueSlot(
-      intervalRow({ intervalHours: "6", lastTakenAt: lastTaken }),
+      intervalRow({ intervalHours: "6", lastEventAt: lastTaken }),
       now,
     );
     expect(slot).not.toBeNull();
@@ -174,7 +174,7 @@ describe("computeOverdueSlot — returns the actual slot Date used in dedupe key
     // Today's 23:00 is still ahead and yesterday's was taken on time.
     const yesterdayEvening = new Date("2026-04-30T23:00:00.000Z");
     expect(
-      computeOverdueSlot(fixedTimeRow({ timeOfDay: "23:00", lastTakenAt: yesterdayEvening }), now),
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "23:00", lastEventAt: yesterdayEvening }), now),
     ).toBeNull();
   });
 
@@ -187,7 +187,7 @@ describe("computeOverdueSlot — returns the actual slot Date used in dedupe key
   it("interval & fixed-time produce DIFFERENT dedupe keys for the same med", () => {
     const lastTaken = new Date("2026-05-01T03:00:00.000Z");
     const intervalSlot = computeOverdueSlot(
-      intervalRow({ intervalHours: "6", lastTakenAt: lastTaken }),
+      intervalRow({ intervalHours: "6", lastEventAt: lastTaken }),
       now,
     )!;
     const fixedSlot = computeOverdueSlot(fixedTimeRow({ timeOfDay: "08:00" }), now)!;
@@ -262,14 +262,14 @@ describe("computeOverdueSlot — look-back across the cron tick", () => {
     // overdue the next morning would be a false alarm.
     const takenLate = new Date("2026-04-30T22:00:00.000Z");
     expect(
-      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastTakenAt: takenLate }), nineAmTick),
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastEventAt: takenLate }), nineAmTick),
     ).toBeNull();
   });
 
   it("a dose taken shortly BEFORE the slot still satisfies it", () => {
     const takenEarly = new Date("2026-04-30T19:30:00.000Z");
     expect(
-      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastTakenAt: takenEarly }), nineAmTick),
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastEventAt: takenEarly }), nineAmTick),
     ).toBeNull();
   });
 
@@ -277,7 +277,7 @@ describe("computeOverdueSlot — look-back across the cron tick", () => {
     const takenTwoDaysBefore = new Date("2026-04-28T20:00:00.000Z");
     expect(
       computeOverdueSlot(
-        fixedTimeRow({ timeOfDay: "20:00", lastTakenAt: takenTwoDaysBefore }),
+        fixedTimeRow({ timeOfDay: "20:00", lastEventAt: takenTwoDaysBefore }),
         nineAmTick,
       ),
     ).not.toBeNull();

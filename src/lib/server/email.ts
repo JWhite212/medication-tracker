@@ -157,13 +157,23 @@ export async function sendLowInventoryEmail(
 export async function sendReminderEmail(
   email: string,
   medicationName: string,
-  lastTaken: string,
+  /**
+   * How long since the dose was last HANDLED — taken or skipped — or
+   * "never". The caller's anchor counts skips, so the copy below says
+   * "logged" rather than "taken": a reminder can follow a skip, and
+   * claiming the dose was taken would be false.
+   */
+  lastLogged: string,
 ): Promise<EmailResult> {
+  // A fixed-time schedule reminds even when nothing was ever logged, so the
+  // caller can pass "never" — which does not read as a duration.
+  const since =
+    lastLogged === "never" ? "not logged yet" : `last logged ${escHtml(lastLogged)} ago`;
   return safeSend({
     from: env.EMAIL_FROM ?? FROM_FALLBACK,
     to: email,
     subject: `Reminder: ${medicationName}`,
-    html: `<p>You haven't taken <strong>${escHtml(medicationName)}</strong> since ${escHtml(lastTaken)}.</p>
+    html: `<p><strong>${escHtml(medicationName)}</strong> is due — ${since}.</p>
            <p>Log in to record your dose.</p>`,
   });
 }

@@ -33,16 +33,16 @@ export type OverdueRow = {
   timeOfDay: string | null;
   daysOfWeek: number[] | null;
   userTimezone: string;
-  lastTakenAt: Date | null;
+  lastEventAt: Date | null;
 };
 
 export type ReminderType = "overdue" | "low_inventory";
 
 export function computeOverdueSlot(row: OverdueRow, now: Date): Date | null {
   if (row.scheduleKind === "interval") {
-    if (!row.intervalHours || !row.lastTakenAt) return null;
+    if (!row.intervalHours || !row.lastEventAt) return null;
     const intervalMs = Number(row.intervalHours) * 3600000;
-    const lastMs = new Date(row.lastTakenAt).getTime();
+    const lastMs = new Date(row.lastEventAt).getTime();
     if (now.getTime() - lastMs <= intervalMs) return null;
     return new Date(lastMs + intervalMs);
   }
@@ -51,7 +51,7 @@ export function computeOverdueSlot(row: OverdueRow, now: Date): Date | null {
     if (!row.timeOfDay) return null;
     const tz = row.userTimezone || "UTC";
     const todayStr = getLocalDateString(now, tz);
-    const lastMs = row.lastTakenAt ? new Date(row.lastTakenAt).getTime() : null;
+    const lastMs = row.lastEventAt ? new Date(row.lastEventAt).getTime() : null;
 
     // Walk back day by day and return the most recent slot that has
     // already elapsed.

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_INTERVAL_HOURS } from "$lib/utils/schedule-rate";
 
 export const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -170,7 +171,7 @@ export type MedicationInput = z.infer<typeof medicationSchema>;
 export const scheduleRowSchema = z.discriminatedUnion("scheduleKind", [
   z.object({
     scheduleKind: z.literal("interval"),
-    intervalHours: z.coerce.number().positive().max(72),
+    intervalHours: z.coerce.number().positive().max(MAX_INTERVAL_HOURS),
   }),
   z.object({
     scheduleKind: z.literal("fixed_time"),

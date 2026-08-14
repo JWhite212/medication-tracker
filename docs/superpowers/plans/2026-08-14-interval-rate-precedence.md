@@ -869,7 +869,7 @@ and these are backups users reach for precisely when something has gone wrong.
 - [ ] **Step 5: Run the full suite**
 
 Run: `npx vitest run`
-Expected: PASS, **804 tests across 65 files**.
+Expected: PASS, **805 tests across 65 files**.
 
 Check `tests/unit/import-round-trip.test.ts` in particular — if a round-trip test flips, an interval the app itself writes is being demoted, which would mean the bound is wrong.
 
@@ -946,7 +946,7 @@ npm run check
 npm run lint
 ```
 
-Expected: 804 tests across 65 files, no type errors, no lint errors.
+Expected: 805 tests across 65 files, no type errors, no lint errors.
 
 - [ ] **Step 4: Record the invariant in CLAUDE.md**
 
@@ -1050,7 +1050,7 @@ behaviour they protected was changed.
   and stay green untouched — free regression checks on the two sites most
   likely to break silently.
 
-777 → 804 tests across 65 files.
+777 → 805 tests across 65 files.
 
 ## Deferred
 
@@ -1090,5 +1090,7 @@ Task 3 uses `parseIntervalHours` (needs the hours); Tasks 4 and 5 use
 (one needs hours for a division, one needs a null check); Task 7 uses both.
 
 **Test count arithmetic.** 777 baseline → +12 (Task 1) = 789 → +9 (Task 2) =
-798 → +3 (Task 3) = 801 → +3 (Task 7) = **804**. Tasks 4, 5 and 6
+798 → +3 (Task 3) = 801 → +1 (the non-finite pinning test added during Tasks
+4-6's review, see the ledger's accept-and-pin ruling) = 802 → +3 (Task 7) =
+**805**. Tasks 4, 5 and 6
 add none; they are pure refactors.

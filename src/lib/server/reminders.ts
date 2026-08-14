@@ -7,27 +7,15 @@ import {
   userPreferences,
   medicationSchedules,
 } from "$lib/server/db/schema";
-import {
-  sendReminderEmail,
-  sendLowInventoryEmail,
-  isEmailConfigured,
-  type EmailResult,
-} from "./email";
-import { sendPushNotification, hasPushSubscriptions, type PushResult } from "./push";
+import { sendReminderEmail, sendLowInventoryEmail, isEmailConfigured } from "./email";
+import { sendPushNotification, hasPushSubscriptions } from "./push";
 import { formatTimeSince } from "$lib/utils/time";
 import {
   computeOverdueSlot,
   buildOverdueDedupeKey,
   buildLowInventoryDedupeKey,
 } from "./reminders/domain";
-import {
-  claimReminderSlot,
-  completeReminder,
-  emailStatusFromResult,
-  pushStatusFromResult,
-  summariseError,
-  withReminderClaim,
-} from "./reminders/dispatch";
+import { withReminderClaim } from "./reminders/dispatch";
 
 export {
   computeOverdueSlot,
@@ -237,51 +225,37 @@ export async function checkLowInventoryMedications() {
     }
 
     const dedupeKey = buildLowInventoryDedupeKey(med.userId, med.medicationId, med.inventoryCount!);
-    const claim = await claimReminderSlot({
-      userId: med.userId,
-      medicationId: med.medicationId,
-      reminderType: "low_inventory",
-      dedupeKey,
-    });
-    if (!claim) continue;
-
-    let emailResult: EmailResult | null = null;
-    let pushResult: PushResult | null = null;
-    let dispatchError: string | null = null;
-
-    // Same try/catch contract as the overdue path. Email goes first so
-    // a transient push failure can't poison an already-sent email.
-    try {
-      if (emailWillFire) {
-        emailResult = await sendLowInventoryEmail(
-          med.userEmail,
-          med.medicationName,
-          med.inventoryCount!,
-          med.inventoryAlertThreshold!,
-        );
-      }
-      if (pushWillFire) {
-        pushResult = await sendPushNotification(med.userId, {
-          title: `Low inventory: ${med.medicationName}`,
-          body: `${med.inventoryCount} doses remaining (threshold ${med.inventoryAlertThreshold}).`,
-          url: "/medications",
-          tag: `low-inventory-${med.medicationId}`,
-        });
-      }
-    } catch (err) {
-      dispatchError = err instanceof Error ? err.message : "non-Error thrown during dispatch";
-      if (emailWillFire && emailResult === null) {
-        emailResult = { ok: false, reason: "provider_error", message: dispatchError };
-      }
-      if (pushWillFire && pushResult === null) {
-        pushResult = { ok: false, reason: "all_failed", message: dispatchError };
-      }
-    }
-
-    await completeReminder(claim.id, {
-      emailStatus: emailStatusFromResult(emailResult),
-      pushStatus: pushStatusFromResult(pushResult),
-      lastError: dispatchError ?? summariseError(emailResult, pushResult),
-    });
+    await withReminderClaim(
+      {
+        userId: med.userId,
+        medicationId: med.medicationId,
+        reminderType: "low_inventory",
+        dedupeKey,
+      },
+      // Post-probe values, not raw opt-in: unlike the overdue sweep the
+      // probe already ran and succeeded before the claim, so pushWillFire
+      // is the accurate intent here.
+      { email: emailWillFire, push: pushWillFire },
+      async (out) => {
+        // Email first so a transient push failure can't poison an
+        // already-sent email.
+        if (emailWillFire) {
+          out.email = await sendLowInventoryEmail(
+            med.userEmail,
+            med.medicationName,
+            med.inventoryCount!,
+            med.inventoryAlertThreshold!,
+          );
+        }
+        if (pushWillFire) {
+          out.push = await sendPushNotification(med.userId, {
+            title: `Low inventory: ${med.medicationName}`,
+            body: `${med.inventoryCount} doses remaining (threshold ${med.inventoryAlertThreshold}).`,
+            url: "/medications",
+            tag: `low-inventory-${med.medicationId}`,
+          });
+        }
+      },
+    );
   }
 }

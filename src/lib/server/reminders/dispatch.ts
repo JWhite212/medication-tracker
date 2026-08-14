@@ -125,12 +125,12 @@ export function deriveOverallStatus(
   return "failed";
 }
 
-export function emailStatusFromResult(result: EmailResult | null): ReminderChannelStatus {
+function emailStatusFromResult(result: EmailResult | null): ReminderChannelStatus {
   if (result === null) return "not_configured";
   return result.ok ? "sent" : "failed";
 }
 
-export function pushStatusFromResult(result: PushResult | null): ReminderChannelStatus {
+function pushStatusFromResult(result: PushResult | null): ReminderChannelStatus {
   if (result === null) return "not_configured";
   if (result.ok) return "sent";
   // The push module reports `not_configured` when VAPID is unset and
@@ -142,7 +142,7 @@ export function pushStatusFromResult(result: PushResult | null): ReminderChannel
   return "failed";
 }
 
-export function summariseError(email: EmailResult | null, push: PushResult | null): string | null {
+function summariseError(email: EmailResult | null, push: PushResult | null): string | null {
   const parts: string[] = [];
   if (email && !email.ok) parts.push(`email:${email.reason}=${email.message}`);
   if (push && !push.ok && push.reason === "all_failed") {

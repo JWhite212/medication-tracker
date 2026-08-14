@@ -303,6 +303,25 @@ describe("computeScheduleSlots — interval kind", () => {
     );
     expect(slots24).toHaveLength(1);
   });
+
+  it("produces no slots for a zero interval", () => {
+    const meds = [makeMed()];
+    const sched = schedMap([makeIntervalSchedule("med-1", "0")]);
+    const now = new Date("2026-04-16T10:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
+    expect(slots).toHaveLength(0);
+  });
+
+  it("produces a single slot for an interval longer than the day window", () => {
+    // 168h (weekly) is above the door cap but valid stored data. The anchor is
+    // dayStart when there is no prior dose, and the next step lands past dayEnd.
+    const meds = [makeMed()];
+    const sched = schedMap([makeIntervalSchedule("med-1", "168")]);
+    const now = new Date("2026-04-16T10:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
+    expect(slots).toHaveLength(1);
+    expect(slots[0].expectedTime).toBe("2026-04-16T00:00:00.000Z");
+  });
 });
 
 describe("computeScheduleSlots — fixed_time kind", () => {

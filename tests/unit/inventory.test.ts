@@ -119,6 +119,19 @@ describe("dailyRateFor", () => {
   it("falls back to 30-day average for legacy as_needed", () => {
     expect(dailyRateFor(undefined, "as_needed", null, 60)).toBe(2);
   });
+
+  it("ignores a zero schedule interval and falls through to history", () => {
+    // "0" is truthy as a string; dailyRateFor must not divide by it.
+    expect(dailyRateFor([intervalSchedule(0)], "as_needed", null, 30)).toBe(1);
+  });
+
+  it("ignores a zero legacy interval and falls through to history", () => {
+    expect(dailyRateFor(undefined, "scheduled", "0", 30)).toBe(1);
+  });
+
+  it("honours a legacy interval above the door cap", () => {
+    expect(dailyRateFor(undefined, "scheduled", "168", 0)).toBeCloseTo(24 / 168, 5);
+  });
 });
 
 describe("daysUntilRefill", () => {

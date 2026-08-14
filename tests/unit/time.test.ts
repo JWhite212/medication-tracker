@@ -119,6 +119,16 @@ describe("calculateDaysUntilRefill", () => {
   it("supports sub-daily schedules (8h interval = 3/day)", () => {
     expect(calculateDaysUntilRefill(30, 0, "scheduled", 8)).toBe(10);
   });
+
+  it("ignores a zero schedule interval and uses the historical average", () => {
+    // 0.5 doses/day → floor(20 / 0.5) = 40
+    expect(calculateDaysUntilRefill(20, 0.5, "scheduled", "0")).toBe(40);
+  });
+
+  it("honours a schedule interval above the door cap", () => {
+    // 168h → 1/7 doses/day → floor(20 / (1/7)) = 140
+    expect(calculateDaysUntilRefill(20, 0.5, "scheduled", "168")).toBe(140);
+  });
 });
 
 describe("formatDueIn", () => {

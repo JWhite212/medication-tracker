@@ -15,6 +15,7 @@ import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
 import { parseDateTimeLocal, startOfDay, computeTimingStatus } from "$lib/utils/time";
 import { computeScheduleSlots, timingStatusFromSlots } from "$lib/utils/schedule";
 import { getSchedulesForUser } from "$lib/server/schedules";
+import { parseIntervalHours } from "$lib/utils/schedule-rate";
 import type { Actions, PageServerLoad } from "./$types";
 import type { MedicationTimingStatus } from "$lib/types";
 
@@ -35,22 +36,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   const now = new Date();
 
-  // Timing status for QuickLogBar badges
+  // Timing status for QuickLogBar badges. `scheduleIntervalHours` is a
+  // Drizzle numeric and arrives as a string, so the interval is parsed
+  // (and non-positive/non-finite values excluded) through the shared
+  // primitive rather than a hand-rolled null check — see schedule-rate.ts.
   const timingStatus: MedicationTimingStatus[] = medications
-    .filter(
-      (m) =>
-        m.scheduleType === "scheduled" &&
-        m.scheduleIntervalHours !== null &&
-        m.scheduleIntervalHours !== undefined,
-    )
-    .map((m) => {
+    .filter((m) => m.scheduleType === "scheduled")
+    .flatMap((m) => {
+      const hours = parseIntervalHours(m.scheduleIntervalHours);
+      if (hours === null) return [];
       const lastEventAt = lastEventMap.get(m.id) ?? null;
-      const { status, minutesUntilDue } = computeTimingStatus(
-        Number(m.scheduleIntervalHours),
-        lastEventAt,
-        now,
-      );
-      return { medicationId: m.id, status, minutesUntilDue };
+      const { status, minutesUntilDue } = computeTimingStatus(hours, lastEventAt, now);
+      return [{ medicationId: m.id, status, minutesUntilDue }];
     });
 
   // Schedule slots for My Day timeline — anchor from last *taken* dose

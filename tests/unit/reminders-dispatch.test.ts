@@ -211,11 +211,24 @@ describe("withReminderClaim", () => {
       },
     );
 
+    // The claim must receive the caller's identity unmodified — a bug
+    // that swapped or dropped one of these would still "complete
+    // successfully" against the wrong row.
+    expect(claimCalls).toHaveLength(1);
+    expect(claimCalls[0].values.userId).toBe("u1");
+    expect(claimCalls[0].values.medicationId).toBe("m1");
+    expect(claimCalls[0].values.reminderType).toBe("overdue");
+    expect(claimCalls[0].values.dedupeKey).toBe("k1");
+
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0].payload.emailStatus).toBe("sent");
     expect(updateCalls[0].payload.pushStatus).toBe("sent");
     expect(updateCalls[0].payload.status).toBe("sent");
     expect(updateCalls[0].payload.lastError).toBeNull();
+    // The completion must target the exact row the claim returned, not
+    // some other row — a bug that completed the wrong reminder would
+    // still pass every assertion above.
+    expect(chunksContain(updateCalls[0].predicate, "evt-1")).toBe(true);
   });
 
   it("never runs the callback and never completes when the claim is refused", async () => {

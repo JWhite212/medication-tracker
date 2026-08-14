@@ -467,7 +467,7 @@ export async function withReminderClaim(
 - [ ] **Step 6: Run the tests**
 
 Run: `npx vitest run tests/unit/reminders-dispatch.test.ts`
-Expected: PASS, 11 tests (6 existing + 5 new).
+Expected: PASS, 19 tests (14 existing + 5 new).
 
 Run: `npx vitest run`
 Expected: PASS, 743 tests.

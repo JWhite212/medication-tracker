@@ -50,6 +50,10 @@ export type CompleteInput = {
  *     row would stay `pending` forever; treating a stale pending as
  *     abandoned (older than the same threshold) lets the next cron
  *     tick reclaim it instead of leaking the slot.
+ *
+ * @internal Production callers must go through `withReminderClaim`,
+ * which pairs this with `completeReminder`; it stays exported only so
+ * unit tests can call it directly.
  */
 export async function claimReminderSlot(input: {
   userId: string;
@@ -93,6 +97,10 @@ export async function claimReminderSlot(input: {
 /**
  * Record the outcome of a dispatched attempt. The overall `status`
  * is derived from the channel statuses by `deriveOverallStatus`.
+ *
+ * @internal Production callers must go through `withReminderClaim`,
+ * which pairs this with `claimReminderSlot`; it stays exported only so
+ * unit tests can call it directly.
  */
 export async function completeReminder(id: string, input: CompleteInput): Promise<void> {
   const status = deriveOverallStatus(input.emailStatus, input.pushStatus);

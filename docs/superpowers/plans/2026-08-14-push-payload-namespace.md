@@ -17,7 +17,7 @@
 - **The module lives in `src/lib/utils/`, never `src/lib/server/`.** The service worker imports it and may never reach `$lib/server`.
 - **`verbatimModuleSyntax` is on.** Type-only imports must use `import type` or inline `type` specifiers.
 - **Test-diff budget — the review gate.** Exactly **four** lines in existing test files may change: three payload arguments in `tests/unit/push-test-notification.test.ts` (lines 110, 124, 139) and the import path at line 50. **No `expect(...)` line may be edited.** Anything beyond those four means behaviour moved; stop and report.
-- **Baseline:** 743 tests across 62 files, green in ~5.3s. Run tests with `DATABASE_URL='postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require' npx vitest run` — the local `.env` has stale Neon credentials.
+- **Baseline:** 751 tests across 63 files on `origin/main` (`1d2ce25`), green in ~5.6s. Measure it on this branch, not on a pre-#113 branch — `tests/unit/preferences.test.ts` landed in #113 and is absent from #114's base. Run tests with `DATABASE_URL='postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require' npx vitest run` — the local `.env` has stale Neon credentials.
 - **Commit messages carry no AI/Claude attribution** of any kind — no trailers, no session URLs, no co-author lines.
 
 ---
@@ -73,7 +73,7 @@ Expected: FAIL with `expected 'medtracker-test-x' to be 'medtracker-test'`.
 DATABASE_URL='postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require' npx vitest run
 ```
 
-Expected: 744 tests passing across 62 files.
+Expected: 752 tests passing across 63 files.
 
 - [ ] **Step 5: Commit**
 
@@ -598,7 +598,7 @@ Change nothing else in this file. The `expect(payload.tag).toBe(TEST_PUSH_TAG)` 
 DATABASE_URL='postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require' npx vitest run
 ```
 
-Expected: 769 tests passing across 63 files. In particular `reminders.test.ts:213` (`overdue-med-A`) and `:532` (`low-inventory-med-LI`) must pass **untouched** — they are the proof the emitted tags did not change.
+Expected: 777 tests passing across 64 files. In particular `reminders.test.ts:213` (`overdue-med-A`) and `:532` (`low-inventory-med-LI`) must pass **untouched** — they are the proof the emitted tags did not change.
 
 - [ ] **Step 6: Check the test-diff budget**
 
@@ -714,7 +714,7 @@ Expected: `gone`.
 DATABASE_URL='postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require' npx vitest run
 ```
 
-Expected: 769 tests passing across 63 files, unchanged from Task 4 — this task touches no test.
+Expected: 777 tests passing across 64 files, unchanged from Task 4 — this task touches no test.
 
 - [ ] **Step 7: Commit**
 
@@ -768,7 +768,7 @@ In the Gotchas section, replace the existing bullet that begins "Notification `t
 DATABASE_URL='postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require' npx vitest run && npm run check && npm run lint && npm run build
 ```
 
-Expected: 769 tests across 63 files, no type errors, no lint errors, clean build.
+Expected: 777 tests across 64 files, no type errors, no lint errors, clean build.
 
 - [ ] **Step 3: Produce the review evidence**
 

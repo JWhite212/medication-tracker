@@ -258,7 +258,8 @@ So the signal is narrower and must hold exactly:
 
 Verified mechanically with `git diff origin/main..HEAD -- tests/`.
 
-Baseline is 743 tests across 62 files. Expect 769 across 63.
+Baseline is 751 tests across 63 files on `origin/main` (`1d2ce25`). Expect 777
+across 64.
 Verification: `npm run test`, `npm run check`, `npm run lint`.
 
 ## Behaviour changes

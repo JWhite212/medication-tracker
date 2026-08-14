@@ -26,6 +26,7 @@ import {
   emailStatusFromResult,
   pushStatusFromResult,
   summariseError,
+  withReminderClaim,
 } from "./reminders/dispatch";
 
 export {
@@ -124,75 +125,50 @@ export async function checkOverdueMedications() {
       slot,
     );
 
-    const claim = await claimReminderSlot({
-      userId: row.userId,
-      medicationId: row.medicationId,
-      reminderType: "overdue",
-      dedupeKey,
-    });
-    if (!claim) continue;
-
     const emailConfigured =
       row.userOverdueEmailReminders && emailGloballyConfigured && row.userEmailVerified;
     // "logged", not "taken": the anchor now counts skips, so a reminder can
     // follow a skip and asserting the dose was taken would be false.
     const sinceLabel = row.lastEventAt ? formatTimeSince(new Date(row.lastEventAt)) : "never";
 
-    let emailResult: EmailResult | null = null;
-    let pushResult: PushResult | null = null;
-    let pushConfigured = false;
-    let dispatchError: string | null = null;
-
-    // After a successful claim, every code path MUST reach
-    // completeReminder — otherwise the row stays at status='pending'
-    // and the retry predicate (which targets 'failed' or stale
-    // 'pending') won't pick it up promptly. A thrown error from
-    // hasPushSubscriptions, the email senders, or sendPushNotification
-    // is converted into a failed channel result here.
-    //
-    // Email is dispatched first so a transient failure inside the
-    // push channel (e.g. the subscription lookup hitting a DB blip)
-    // doesn't poison an already-successful email send.
-    try {
-      if (emailConfigured) {
-        emailResult = await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
-      }
-      // Push channel is configured when the user has opted in AND has
-      // an active subscription on at least one device.
-      if (row.userOverduePushReminders) {
-        pushConfigured = await hasPushSubscriptions(row.userId);
-      }
-      if (pushConfigured) {
-        pushResult = await sendPushNotification(row.userId, {
-          title: `${row.medicationName} overdue`,
-          body: row.lastEventAt
-            ? `Last logged ${formatTimeSince(new Date(row.lastEventAt))} ago`
-            : "Not yet logged",
-          url: "/dashboard",
-          tag: `overdue-${row.medicationId}`,
-        });
-      }
-    } catch (err) {
-      dispatchError = err instanceof Error ? err.message : "non-Error thrown during dispatch";
-      if (emailConfigured && emailResult === null) {
-        emailResult = { ok: false, reason: "provider_error", message: dispatchError };
-      }
-      // Use the opt-in intent (not pushConfigured) so a throw from
-      // hasPushSubscriptions itself still marks the channel as
-      // failed. Otherwise a probe-time DB blip would resolve the row
-      // to status=sent with both channels not_configured, consuming
-      // the dedupe slot for that overdue window with nothing
-      // delivered.
-      if (row.userOverduePushReminders && pushResult === null) {
-        pushResult = { ok: false, reason: "all_failed", message: dispatchError };
-      }
-    }
-
-    await completeReminder(claim.id, {
-      emailStatus: emailStatusFromResult(emailResult),
-      pushStatus: pushStatusFromResult(pushResult),
-      lastError: dispatchError ?? summariseError(emailResult, pushResult),
-    });
+    // Intent passes the raw push opt-in, NOT the post-probe value: the
+    // probe runs inside the callback below and may itself throw. Using
+    // the post-probe flag would let a probe-time DB blip resolve the row
+    // to status=sent with both channels not_configured, consuming the
+    // dedupe slot for that overdue window with nothing delivered.
+    await withReminderClaim(
+      {
+        userId: row.userId,
+        medicationId: row.medicationId,
+        reminderType: "overdue",
+        dedupeKey,
+      },
+      { email: emailConfigured, push: row.userOverduePushReminders },
+      async (out) => {
+        // Email first so a transient failure inside the push channel
+        // (e.g. the subscription lookup hitting a DB blip) doesn't
+        // poison an already-successful email send.
+        if (emailConfigured) {
+          out.email = await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
+        }
+        // Push is configured when the user has opted in AND has an
+        // active subscription on at least one device.
+        let pushConfigured = false;
+        if (row.userOverduePushReminders) {
+          pushConfigured = await hasPushSubscriptions(row.userId);
+        }
+        if (pushConfigured) {
+          out.push = await sendPushNotification(row.userId, {
+            title: `${row.medicationName} overdue`,
+            body: row.lastEventAt
+              ? `Last logged ${formatTimeSince(new Date(row.lastEventAt))} ago`
+              : "Not yet logged",
+            url: "/dashboard",
+            tag: `overdue-${row.medicationId}`,
+          });
+        }
+      },
+    );
   }
 }
 

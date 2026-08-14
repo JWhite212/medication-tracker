@@ -1,6 +1,7 @@
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import { classifyDueStatus } from "./time";
+import { parseIntervalHours } from "$lib/utils/schedule-rate";
 
 export type ScheduleSlotStatus = "taken" | "skipped" | "upcoming" | "overdue";
 
@@ -217,8 +218,8 @@ export function computeScheduleSlots(
       if (schedule.scheduleKind === "prn") continue;
 
       if (schedule.scheduleKind === "interval") {
-        const intervalHours = schedule.intervalHours ? Number(schedule.intervalHours) : 0;
-        if (!intervalHours || intervalHours <= 0) continue;
+        const intervalHours = parseIntervalHours(schedule.intervalHours);
+        if (intervalHours === null) continue;
         const lastDose = lastDoseByMedication[med.id];
         const anchor = lastDose ? new Date(lastDose.getTime()) : new Date(dayStartUtc.getTime());
         for (const t of expectedTimesForInterval(intervalHours, anchor, dayStartUtc, dayEndUtc)) {

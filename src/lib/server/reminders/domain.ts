@@ -1,4 +1,5 @@
 import { localTimeOnDateToUtc, getLocalDateString, getLocalDayOfWeek } from "$lib/utils/schedule";
+import { parseIntervalHours } from "$lib/utils/schedule-rate";
 
 export const FIXED_TIME_TOLERANCE_MS = 60 * 60 * 1000;
 
@@ -40,8 +41,9 @@ export type ReminderType = "overdue" | "low_inventory";
 
 export function computeOverdueSlot(row: OverdueRow, now: Date): Date | null {
   if (row.scheduleKind === "interval") {
-    if (!row.intervalHours || !row.lastEventAt) return null;
-    const intervalMs = Number(row.intervalHours) * 3600000;
+    const hours = parseIntervalHours(row.intervalHours);
+    if (hours === null || !row.lastEventAt) return null;
+    const intervalMs = hours * 3600000;
     const lastMs = new Date(row.lastEventAt).getTime();
     if (now.getTime() - lastMs <= intervalMs) return null;
     return new Date(lastMs + intervalMs);

@@ -196,15 +196,33 @@ describe("computeOverdueSlot — returns the actual slot Date used in dedupe key
     expect(intervalKey).not.toBe(fixedKey);
   });
 
-  it("CURRENT BEHAVIOUR (bug): a zero interval yields a slot equal to lastEventAt", () => {
-    // Flipped in the very next commit. `"0"` is truthy so the guard passes,
-    // intervalMs is 0, and the dose the user just logged comes back as overdue.
+  it("a zero interval is not a schedule and yields no slot", () => {
+    // `intervalHours` is a Drizzle numeric — a STRING — so `"0"` is truthy and
+    // `!row.intervalHours` never rejected it. intervalMs became 0, so the slot
+    // came back as lastEventAt and the medication was overdue the instant it
+    // was logged. One spurious reminder per dose.
     const lastTaken = new Date("2026-05-01T09:00:00.000Z");
+    expect(
+      computeOverdueSlot(intervalRow({ intervalHours: "0", lastEventAt: lastTaken }), now),
+    ).toBeNull();
+  });
+
+  it("a zero interval is not overdue", () => {
+    const lastTaken = new Date("2026-05-01T09:00:00.000Z");
+    expect(
+      isScheduleOverdue(intervalRow({ intervalHours: "0", lastEventAt: lastTaken }), now),
+    ).toBe(false);
+  });
+
+  it("an interval above the door cap still produces a slot", () => {
+    // 168h weekly. The cap is a door policy; readers must not apply it, or a
+    // weekly injection stops reminding entirely. See Decision 3.
+    const lastTaken = new Date("2026-04-01T09:00:00.000Z");
     const slot = computeOverdueSlot(
-      intervalRow({ intervalHours: "0", lastEventAt: lastTaken }),
+      intervalRow({ intervalHours: "168", lastEventAt: lastTaken }),
       now,
     );
-    expect(slot).toEqual(lastTaken);
+    expect(slot).toEqual(new Date("2026-04-08T09:00:00.000Z"));
   });
 });
 

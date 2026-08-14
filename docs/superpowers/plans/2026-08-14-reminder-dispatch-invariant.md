@@ -134,8 +134,16 @@ it("claims nothing when the push probe throws", async () => {
   // Unlike the overdue path, the low-inventory probe runs BEFORE the
   // claim, so a probe failure must leave no row at all — the next
   // cron tick retries cleanly.
+  //
+  // Email is deliberately left ENABLED so the downstream "no enabled
+  // channel can fire" gate cannot absorb a fall-through from the
+  // probe's catch. With email off, a catch that merely set
+  // pushWillFire = false would reach that gate and continue anyway,
+  // which is indistinguishable from the correct behaviour — the test
+  // would pass against broken code. With email on, only the probe's
+  // own `continue` prevents the claim.
   pushLowInventoryRow({
-    userLowInventoryEmailAlerts: false,
+    userLowInventoryEmailAlerts: true,
     userLowInventoryPushAlerts: true,
   });
   nextPushSubsThrows = new Error("transient db error");
@@ -144,7 +152,6 @@ it("claims nothing when the push probe throws", async () => {
 
   expect(claimCallCount).toBe(0);
   expect(updateCaptures).toHaveLength(0);
-  expect(sentEmails).toHaveLength(0);
   expect(sentPushes).toHaveLength(0);
 });
 
@@ -179,13 +186,15 @@ A characterization test that has never failed is unproven. Break the production 
 
 Break A — in `src/lib/server/reminders.ts`, inside `checkLowInventoryMedications`, change the pre-claim gate (~line 277) from `if (!emailWillFire && !pushWillFire) {` to `if (false) {`.
 Run: `npx vitest run tests/unit/reminders.test.ts`
-Expected: FAIL on `"claims nothing when email is opted in but unverified and push is off"`.
+Expected: FAIL on `"claims nothing when email is opted in but unverified and push is off"`. This break also fails one or more pre-existing cases that rely on the same gate — expected, and it does not weaken the evidence for the target test.
 Revert the line.
 
 Break B — in the same function, change the probe's `catch` block (~line 273) from `continue;` to `pushWillFire = false;`.
 Run: `npx vitest run tests/unit/reminders.test.ts`
-Expected: FAIL on `"claims nothing when the push probe throws"`.
+Expected: FAIL on `"claims nothing when the push probe throws"`, with `claimCallCount` 1 instead of 0.
 Revert the line.
+
+**This break only bites because that test enables email.** An earlier draft set `userLowInventoryEmailAlerts: false`, and the fall-through then hit `if (!emailWillFire && !pushWillFire)` — which continued anyway, so the break was invisible and the test passed against broken code. That is exactly the failure mode Step 5 exists to catch; if you find a break that does not fail its target, the test is the thing to fix, not the break.
 
 Break C — in the same function, delete the `catch` clause's body contents so the `try/catch` around the senders (~lines 316–324) becomes `catch { /* nothing */ }`, leaving `emailResult` null.
 Run: `npx vitest run tests/unit/reminders.test.ts`

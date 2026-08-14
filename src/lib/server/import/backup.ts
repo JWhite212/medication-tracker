@@ -12,6 +12,7 @@ import {
   importInventoryEventSchema,
   IMPORT_SUPPORTED_VERSION,
 } from "$lib/utils/validation";
+import { parseIntervalHours, MAX_INTERVAL_HOURS } from "$lib/utils/schedule-rate";
 import type { z } from "zod";
 import { stripBom } from "./detect";
 import type { ImportBundle, ImportMedication } from "./types";
@@ -97,9 +98,13 @@ export function parseBackup(rawText: string): ParseResult {
     // analytics don't expect — demote it to PRN, which is the honest
     // reading of "we don't know when this is taken".
     schedules: med.schedules.map((schedule, index) => {
+      // Parse FIRST, then bound the parsed number. `intervalHours` is a string
+      // off the wire and `"100" <= 72` is a string/number comparison — exactly
+      // the coercion class the primitive exists to eliminate.
+      const hours = parseIntervalHours(schedule.intervalHours);
       const usable =
         (schedule.scheduleKind === "fixed_time" && schedule.timeOfDay !== null) ||
-        (schedule.scheduleKind === "interval" && schedule.intervalHours !== null) ||
+        (schedule.scheduleKind === "interval" && hours !== null && hours <= MAX_INTERVAL_HOURS) ||
         schedule.scheduleKind === "prn";
 
       if (!usable) {

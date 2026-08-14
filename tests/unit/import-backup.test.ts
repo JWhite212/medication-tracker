@@ -334,4 +334,45 @@ describe("parseBackup — one bad row must not sink the file", () => {
     expect(result.bundle.medications[0].schedules[0].scheduleKind).toBe("prn");
     expect(result.bundle.warnings.join(" ")).toMatch(/as needed/);
   });
+
+  it("demotes a zero-interval schedule to PRN rather than writing a reminder trap", () => {
+    // The import door is the only one of three that admits "0" — the web form
+    // and /api/v1 both parse through scheduleRowSchema's positive().max(72).
+    // A live "0" interval row made the medication overdue the instant it was
+    // logged, once per dose.
+    const raw = backup();
+    (raw.medications as Json[])[0].schedules = [
+      { scheduleKind: "interval", intervalHours: "0", sortOrder: 0 },
+    ];
+    const result = parseBackup(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.medications[0].schedules[0].scheduleKind).toBe("prn");
+    expect(result.bundle.warnings.join(" ")).toMatch(/as needed/);
+  });
+
+  it("demotes an interval above the door cap, which the other two doors reject", () => {
+    const raw = backup();
+    (raw.medications as Json[])[0].schedules = [
+      { scheduleKind: "interval", intervalHours: "9999", sortOrder: 0 },
+    ];
+    const result = parseBackup(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.medications[0].schedules[0].scheduleKind).toBe("prn");
+  });
+
+  it("keeps a valid interval at the cap boundary", () => {
+    // 72 is admissible; 73 is not. The boundary is inclusive.
+    const raw = backup();
+    (raw.medications as Json[])[0].schedules = [
+      { scheduleKind: "interval", intervalHours: "72", sortOrder: 0 },
+    ];
+    const result = parseBackup(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.medications[0].schedules[0].scheduleKind).toBe("interval");
+    expect(result.bundle.medications[0].schedules[0].intervalHours).toBe("72");
+    expect(result.bundle.warnings).toEqual([]);
+  });
 });

@@ -6,7 +6,7 @@ declare let self: ServiceWorkerGlobalScope;
 
 import { build, files, version } from "$service-worker";
 import { TEST_PUSH_SHOWN_MESSAGE } from "$lib/utils/push";
-import { TEST_PUSH_TAG } from "$lib/utils/push-payload";
+import { isTestTag, safeNotificationUrl, toNotification } from "$lib/utils/push-payload";
 
 const CACHE = `medtracker-${version}`;
 const ASSETS = [...build, ...files];
@@ -56,17 +56,13 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  const data = event.data?.json() ?? {};
-  const tag = data.tag ?? "medication-reminder";
+  // Every decision that can be made from the payload alone lives in
+  // `toNotification`, where vitest can reach it — jsdom has no
+  // ServiceWorkerGlobalScope, so anything left in this file is untestable.
+  const { title, options } = toNotification(event.data?.json());
   event.waitUntil(
     self.registration
-      .showNotification(data.title ?? "MedTracker", {
-        body: data.body ?? "You have a medication reminder",
-        icon: "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
-        tag,
-        data: { url: data.url ?? "/dashboard" },
-      })
+      .showNotification(title, options)
       // "The push service accepted it" is not the same as "the user saw
       // it" — the OS can suppress a notification after delivery, which
       // is exactly the case someone reaches for the test button to
@@ -74,7 +70,7 @@ self.addEventListener("push", (event) => {
       // resolved closes that gap. Only test notifications report back,
       // so real reminders stay silent to the page.
       .then(async () => {
-        if (tag !== TEST_PUSH_TAG) return;
+        if (!isTestTag(options.tag)) return;
         const clients = await self.clients.matchAll({ type: "window" });
         for (const client of clients) {
           client.postMessage({ type: TEST_PUSH_SHOWN_MESSAGE });
@@ -129,10 +125,10 @@ self.addEventListener("pushsubscriptionchange", ((event: PushSubscriptionChangeE
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const raw = (event.notification.data?.url as string) ?? "/dashboard";
-  // Only allow same-origin relative paths to prevent open redirect —
-  // "//host" is protocol-relative and would leave the app.
-  const url = raw.startsWith("/") && !raw.startsWith("//") ? raw : "/dashboard";
+  // Re-guarded on read as well as on write: the url was sanitised when
+  // the notification was created, but a reader that trusts stored data
+  // is one refactor away from an open redirect. The guard is idempotent.
+  const url = safeNotificationUrl(event.notification.data?.url);
   event.waitUntil(
     self.clients.matchAll({ type: "window" }).then((list) => {
       for (const client of list) {

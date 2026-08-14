@@ -67,8 +67,14 @@ function chunksContain(sqlObj: unknown, needle: string): boolean {
   return json.includes(needle);
 }
 
-const { claimReminderSlot, completeReminder, deriveOverallStatus, MAX_ATTEMPTS, RETRY_DELAY_MS } =
-  await import("../../src/lib/server/reminders/dispatch");
+const {
+  claimReminderSlot,
+  completeReminder,
+  deriveOverallStatus,
+  withReminderClaim,
+  MAX_ATTEMPTS,
+  RETRY_DELAY_MS,
+} = await import("../../src/lib/server/reminders/dispatch");
 
 beforeEach(() => {
   claimCalls.length = 0;
@@ -191,5 +197,87 @@ describe("deriveOverallStatus", () => {
         push as Parameters<typeof deriveOverallStatus>[1],
       ),
     ).toBe(expected);
+  });
+});
+
+describe("withReminderClaim", () => {
+  it("completes with derived statuses on the happy path", async () => {
+    await withReminderClaim(
+      { userId: "u1", medicationId: "m1", reminderType: "overdue", dedupeKey: "k1" },
+      { email: true, push: true },
+      async (out) => {
+        out.email = { ok: true, id: "msg" };
+        out.push = { ok: true, deliveredCount: 1, attemptedCount: 1, prunedCount: 0 };
+      },
+    );
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].payload.emailStatus).toBe("sent");
+    expect(updateCalls[0].payload.pushStatus).toBe("sent");
+    expect(updateCalls[0].payload.status).toBe("sent");
+    expect(updateCalls[0].payload.lastError).toBeNull();
+  });
+
+  it("never runs the callback and never completes when the claim is refused", async () => {
+    nextClaimReturning = []; // row exists and is not retryable
+    let ran = false;
+
+    await withReminderClaim(
+      { userId: "u1", medicationId: "m1", reminderType: "overdue", dedupeKey: "k1" },
+      { email: true, push: true },
+      async () => {
+        ran = true;
+      },
+    );
+
+    expect(ran).toBe(false);
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("keeps a partial email success when the callback throws afterwards", async () => {
+    // Email is dispatched first precisely so a later push failure
+    // cannot poison an already-successful send.
+    await withReminderClaim(
+      { userId: "u1", medicationId: "m1", reminderType: "overdue", dedupeKey: "k1" },
+      { email: true, push: true },
+      async (out) => {
+        out.email = { ok: true, id: "msg" };
+        throw new Error("push blew up");
+      },
+    );
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].payload.emailStatus).toBe("sent");
+    expect(updateCalls[0].payload.pushStatus).toBe("failed");
+    expect(updateCalls[0].payload.status).toBe("sent"); // one configured channel succeeded
+    expect(String(updateCalls[0].payload.lastError)).toContain("push blew up");
+  });
+
+  it("leaves an unintended channel not_configured even when the callback throws", async () => {
+    await withReminderClaim(
+      { userId: "u1", medicationId: "m1", reminderType: "overdue", dedupeKey: "k1" },
+      { email: false, push: true },
+      async () => {
+        throw new Error("probe blew up");
+      },
+    );
+
+    expect(updateCalls[0].payload.emailStatus).toBe("not_configured");
+    expect(updateCalls[0].payload.pushStatus).toBe("failed");
+    expect(updateCalls[0].payload.status).toBe("failed");
+  });
+
+  it("still completes when the callback throws a non-Error", async () => {
+    await withReminderClaim(
+      { userId: "u1", medicationId: "m1", reminderType: "overdue", dedupeKey: "k1" },
+      { email: true, push: false },
+      async () => {
+        throw "just a string";
+      },
+    );
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].payload.emailStatus).toBe("failed");
+    expect(String(updateCalls[0].payload.lastError)).toContain("non-Error thrown during dispatch");
   });
 });

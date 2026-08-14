@@ -249,9 +249,7 @@ export async function getPerMedicationStats(
       const expectedPerDay =
         sched.length > 0
           ? expectedPerDayForSchedules(sched)
-          : b.scheduleIntervalHours
-            ? 24 / Number(b.scheduleIntervalHours)
-            : 0;
+          : intervalDosesPerDay(b.scheduleIntervalHours);
       // Clamp the analytics window against this medication's lifecycle
       // so a med added yesterday isn't penalised for the days before it
       // existed.

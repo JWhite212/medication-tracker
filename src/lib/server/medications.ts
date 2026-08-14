@@ -7,6 +7,7 @@ import { buildScheduleRows, MedicationOwnershipError, getSchedulesForUser } from
 import type { MedicationSchedule } from "./schedules";
 import { dailyRateFor, daysUntilRefill } from "./inventory";
 import { expectedPerDayForSchedules } from "./analytics";
+import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
 import type { MedicationInput, ScheduleInput } from "$lib/utils/validation";
 import type { Medication, MedicationWithStats } from "$lib/types";
 
@@ -106,11 +107,8 @@ export function medicationStatsFor(
   );
 
   const scheduledRate = schedules ? expectedPerDayForSchedules(schedules) : 0;
-  const legacyHrs = med.scheduleIntervalHours != null ? Number(med.scheduleIntervalHours) : NaN;
   const legacyRate =
-    med.scheduleType === "scheduled" && Number.isFinite(legacyHrs) && legacyHrs > 0
-      ? 24 / legacyHrs
-      : 0;
+    med.scheduleType === "scheduled" ? intervalDosesPerDay(med.scheduleIntervalHours) : 0;
 
   return {
     ...med,

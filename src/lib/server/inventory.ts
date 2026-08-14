@@ -4,6 +4,7 @@ import { medications, doseLogs } from "$lib/server/db/schema";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import { expectedPerDayForSchedules } from "$lib/server/analytics";
 import type { MedicationSchedule } from "$lib/server/schedules";
+import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
 // Types live in $lib/types so client components (RefillsCard) can
 // import without crossing the $lib/server boundary. Re-exported here
 // for backward-compatible callers.
@@ -44,8 +45,8 @@ export function dailyRateFor(
     // accurate even if schedule_table rows aren't.
   }
   if (legacyScheduleType === "scheduled") {
-    const hrs = legacyIntervalHours !== null ? Number(legacyIntervalHours) : NaN;
-    if (Number.isFinite(hrs) && hrs > 0) return 24 / hrs;
+    const legacyRate = intervalDosesPerDay(legacyIntervalHours);
+    if (legacyRate > 0) return legacyRate;
   }
   return thirtyDayDoseCount / 30;
 }

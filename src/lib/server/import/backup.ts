@@ -108,8 +108,10 @@ export function parseBackup(rawText: string): ParseResult {
         schedule.scheduleKind === "prn";
 
       if (!usable) {
+        const kindLabel = schedule.scheduleKind.replace("_", " ");
+        const article = schedule.scheduleKind === "interval" ? "An" : "A";
         warnings.push(
-          `A ${schedule.scheduleKind.replace("_", " ")} schedule on "${med.name}" was missing its details and was imported as "as needed".`,
+          `${article} ${kindLabel} schedule on "${med.name}" was missing a detail or had an unusable value, and was imported as "as needed".`,
         );
       }
 

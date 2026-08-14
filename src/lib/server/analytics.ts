@@ -327,9 +327,7 @@ function expectedPerDayFromLegacy(
   scheduleIntervalHours: number | string | null,
 ): number {
   if (scheduleType !== "scheduled") return 0;
-  const hrs = scheduleIntervalHours !== null ? Number(scheduleIntervalHours) : NaN;
-  if (!Number.isFinite(hrs) || hrs <= 0) return 0;
-  return 24 / hrs;
+  return intervalDosesPerDay(scheduleIntervalHours);
 }
 
 // Daily adherence approximation. Expected-per-day is derived from the

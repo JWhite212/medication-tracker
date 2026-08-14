@@ -6,7 +6,6 @@ import {
   users,
   userPreferences,
   medicationSchedules,
-  type ReminderChannelStatus,
 } from "$lib/server/db/schema";
 import {
   sendReminderEmail,
@@ -21,7 +20,13 @@ import {
   buildOverdueDedupeKey,
   buildLowInventoryDedupeKey,
 } from "./reminders/domain";
-import { claimReminderSlot, completeReminder } from "./reminders/dispatch";
+import {
+  claimReminderSlot,
+  completeReminder,
+  emailStatusFromResult,
+  pushStatusFromResult,
+  summariseError,
+} from "./reminders/dispatch";
 
 export {
   computeOverdueSlot,
@@ -29,32 +34,6 @@ export {
   buildOverdueDedupeKey,
   buildLowInventoryDedupeKey,
 } from "./reminders/domain";
-
-function emailStatusFromResult(result: EmailResult | null): ReminderChannelStatus {
-  if (result === null) return "not_configured";
-  return result.ok ? "sent" : "failed";
-}
-
-function pushStatusFromResult(result: PushResult | null): ReminderChannelStatus {
-  if (result === null) return "not_configured";
-  if (result.ok) return "sent";
-  // The push module reports `not_configured` when VAPID is unset and
-  // `no_subscriptions` when the user has none — neither is a "send
-  // attempt that failed", so they shouldn't be marked as failed.
-  if (result.reason === "not_configured" || result.reason === "no_subscriptions") {
-    return "not_configured";
-  }
-  return "failed";
-}
-
-function summariseError(email: EmailResult | null, push: PushResult | null): string | null {
-  const parts: string[] = [];
-  if (email && !email.ok) parts.push(`email:${email.reason}=${email.message}`);
-  if (push && !push.ok && push.reason === "all_failed") {
-    parts.push(`push:all_failed=${push.message}`);
-  }
-  return parts.length > 0 ? parts.join("; ") : null;
-}
 
 export async function checkOverdueMedications() {
   // SQL filter: include rows where at least one channel is enabled.

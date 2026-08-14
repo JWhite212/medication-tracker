@@ -190,11 +190,15 @@ that pin `checkLowInventoryMedications` invariants which no test currently cover
    throws
 5. the happy path derives statuses from the results and completes once
 
-**The review signal:** all 56 existing reminder tests — 18 in `reminders.test.ts`,
-6 in `reminders-dispatch.test.ts`, 32 in `reminders-dedupe.test.ts` — plus the 3
+**The review signal:** all 64 existing reminder tests — 18 in `reminders.test.ts`,
+14 in `reminders-dispatch.test.ts`, 32 in `reminders-dedupe.test.ts` — plus the 3
 added in wave 1, pass **completely unmodified**. Wave 2 only adds files' worth of
 new cases; it edits none. If any existing test needs an edit, the refactor changed
 behaviour and the work stops there. This is the property #110 lacked.
+
+(Counting note: `reminders-dispatch.test.ts` has 6 `it(...)` blocks plus an
+`it.each` over `deriveOverallStatus` that expands to 8 cases — 14 reported. Count
+these from a runner's output, not by grepping for `it(`.)
 
 ## Behaviour changes
 

@@ -195,6 +195,17 @@ describe("computeOverdueSlot — returns the actual slot Date used in dedupe key
     const fixedKey = buildOverdueDedupeKey("u", "m", "fixed_time", "s2", fixedSlot);
     expect(intervalKey).not.toBe(fixedKey);
   });
+
+  it("CURRENT BEHAVIOUR (bug): a zero interval yields a slot equal to lastEventAt", () => {
+    // Flipped in the very next commit. `"0"` is truthy so the guard passes,
+    // intervalMs is 0, and the dose the user just logged comes back as overdue.
+    const lastTaken = new Date("2026-05-01T09:00:00.000Z");
+    const slot = computeOverdueSlot(
+      intervalRow({ intervalHours: "0", lastEventAt: lastTaken }),
+      now,
+    );
+    expect(slot).toEqual(lastTaken);
+  });
 });
 
 // ---------------------------------------------------------------------

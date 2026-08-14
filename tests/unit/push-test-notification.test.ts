@@ -264,3 +264,13 @@ describe("describeTestPushResult", () => {
     expect(message).toMatch(/2/);
   });
 });
+
+describe("TEST_PUSH_TAG", () => {
+  // The literal, not the constant. Installed service workers compare
+  // against the value compiled into them at build time, so changing this
+  // string silently breaks the render-confirmation hop on every device
+  // that has not picked up the new worker yet.
+  it("is the exact string already deployed to installed service workers", () => {
+    expect(TEST_PUSH_TAG).toBe("medtracker-test");
+  });
+});

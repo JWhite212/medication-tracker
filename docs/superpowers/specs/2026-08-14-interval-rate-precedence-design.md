@@ -95,9 +95,42 @@ than `server/` in #115, for the same class of reason.
 4. **An unusable interval row demotes to PRN on import, with the warning that
    already exists**, reusing the `usable` gate at `import/backup.ts:99-119`
    verbatim in shape.
-5. **`medications.ts:109-113` is deleted, not migrated.** It re-derives the
-   legacy-column rate five lines below a `dailyRateFor(...)` call that already
-   contains that exact branch. It is a duplicate, not a sixth opinion.
+5. **`medications.ts:109-113` is migrated, not deleted.** See below — an
+   earlier draft of this design called it a duplicate of `dailyRateFor` and
+   proposed deleting it. That was wrong, and the reason is worth recording.
+
+### Why `medications.ts`'s legacy rate is not a duplicate
+
+It looks like one. `legacyRate` re-derives the legacy-column rate five lines
+below a `dailyRateFor(...)` call that contains an identical-looking branch.
+
+The two differ in what they do when there is **no scheduled rate at all**:
+
+```ts
+// inventory.ts:dailyRateFor — falls back to observed history
+return thirtyDayDoseCount / 30;
+
+// medications.ts — must yield null, not a history rate
+expectedDailyDoses: scheduledRate > 0 ? scheduledRate : legacyRate > 0 ? legacyRate : null;
+```
+
+`expectedDailyDoses` is the adherence _denominator_. `utils/adherence.ts:14`
+treats `null` as "this medication has no expected rate, render no adherence
+bar", and `tests/unit/medication-stats.test.ts:102` pins that null.
+
+Substituting `dailyRate` would hand a PRN medication its own 30-day dose
+history as an expected rate — inventing a schedule the user never set, and
+drawing an adherence bar measuring the user against their own past behaviour.
+`dailyRateFor` cannot express "no scheduled rate" because its whole contract is
+to always return a usable number.
+
+So `legacyRate` stays. Only its inline `Number.isFinite(...) && > 0` guard is
+replaced by the primitive:
+
+```ts
+const legacyRate =
+  med.scheduleType === "scheduled" ? intervalDosesPerDay(med.scheduleIntervalHours) : 0;
+```
 
 ### Why the cap is a door policy and not a read policy
 
@@ -153,7 +186,7 @@ opportunity to spell the guard a seventh way.
 | `import/backup.ts:102`               | `intervalHours !== null`           | see below — parse first, then bound the **parsed number** |
 | `analytics.ts:21-23`                 | inline guard + divide              | `intervalDosesPerDay(s.intervalHours)`                    |
 | `inventory.ts:47-49`                 | inline legacy guard                | `parseIntervalHours`                                      |
-| `medications.ts:109-113`             | inline legacy re-derivation        | **deleted** (Decision 5)                                  |
+| `medications.ts:109-113`             | inline legacy re-derivation        | `intervalDosesPerDay` — kept, see Decision 5              |
 | `time.ts:88-95`                      | inline guard                       | `parseIntervalHours`                                      |
 | `schedule.ts:127`, `:220-221`        | double guard, two spellings        | `parseIntervalHours`                                      |
 | `reminders/domain.ts:43-44`          | `!row.intervalHours` — **the bug** | `parseIntervalHours` → `null` means no slot               |

@@ -1,7 +1,7 @@
 import { env } from "$env/dynamic/private";
 import { db } from "$lib/server/db";
 import { pushSubscriptions, reminderEvents } from "$lib/server/db/schema";
-import { TEST_PUSH_TAG } from "$lib/utils/push";
+import { TEST_PUSH_TAG, type PushPayload } from "$lib/utils/push-payload";
 import { eq, sql } from "drizzle-orm";
 
 // Lazy so the web-push package is only loaded on paths that actually
@@ -59,7 +59,7 @@ export async function hasPushSubscriptions(userId: string): Promise<boolean> {
 
 export async function sendPushNotification(
   userId: string,
-  payload: { title: string; body: string; url?: string; tag?: string },
+  payload: PushPayload,
 ): Promise<PushResult> {
   if (!isVapidConfigured()) {
     return { ok: false, reason: "not_configured", message: "VAPID keys are not set." };

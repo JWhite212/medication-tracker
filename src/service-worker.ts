@@ -5,7 +5,8 @@
 declare let self: ServiceWorkerGlobalScope;
 
 import { build, files, version } from "$service-worker";
-import { TEST_PUSH_TAG, TEST_PUSH_SHOWN_MESSAGE } from "$lib/utils/push";
+import { TEST_PUSH_SHOWN_MESSAGE } from "$lib/utils/push";
+import { TEST_PUSH_TAG } from "$lib/utils/push-payload";
 
 const CACHE = `medtracker-${version}`;
 const ASSETS = [...build, ...files];

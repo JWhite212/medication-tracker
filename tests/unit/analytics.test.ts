@@ -319,6 +319,14 @@ describe("expectedPerDayForSchedules", () => {
     ).toBe(0);
   });
 
+  it("counts an interval above the door cap, which is stored data not new input", () => {
+    // The 72h bound lives at the write doors. A stored 168 (weekly injection)
+    // must still contribute a rate. See Decision 3 in the design doc.
+    expect(
+      expectedPerDayForSchedules([schedule({ scheduleKind: "interval", intervalHours: "168" })]),
+    ).toBeCloseTo(24 / 168, 5);
+  });
+
   it("counts an unrestricted fixed-time row as 1 dose/day", () => {
     expect(
       expectedPerDayForSchedules([schedule({ scheduleKind: "fixed_time", timeOfDay: "09:00" })]),

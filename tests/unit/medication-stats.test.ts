@@ -107,4 +107,18 @@ describe("medicationStatsFor", () => {
     const out = medicationStatsFor(med, [fixedRow("med-1", "08:00")], undefined);
     expect(out.daysUntilRefill).toBeNull();
   });
+
+  it("reports no expected rate for a zero legacy interval rather than a fabricated one", () => {
+    // expectedDailyDoses is the adherence DENOMINATOR. A zero interval is not a
+    // schedule, so it must yield null — not the 30-day history rate, which would
+    // draw an adherence bar measuring the user against their own past behaviour.
+    // This is why medications.ts keeps its own legacyRate (spec Decision 5).
+    const med = makeMed({ scheduleType: "scheduled", scheduleIntervalHours: "0" });
+    const out = medicationStatsFor(med, [], {
+      lastTakenAt: null,
+      weeklyDoseCount: 0,
+      thirtyDayDoseCount: 30,
+    });
+    expect(out.expectedDailyDoses).toBeNull();
+  });
 });

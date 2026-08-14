@@ -12,6 +12,9 @@ let selectCallIndex = 0;
 // Push [] for "row exists but is not retryable".
 const claimResults: Array<Array<{ id: string; attemptCount: number }>> = [];
 
+// Number of claimReminderSlot attempts (db.insert calls) this test made.
+let claimCallCount = 0;
+
 // Each completeReminder call appends the UPDATE payload here so tests
 // can assert on per-channel statuses.
 type UpdateCapture = {
@@ -68,6 +71,7 @@ vi.mock("$lib/server/db", () => ({
       return chain;
     },
     insert: () => {
+      claimCallCount++;
       const result = claimResults.shift() ?? [{ id: "evt", attemptCount: 1 }];
       const chain: Record<string, unknown> = {};
       const passthrough = () => chain;
@@ -108,13 +112,22 @@ const emailResults: Array<
   { ok: true; id?: string } | { ok: false; reason: string; message: string }
 > = [];
 const sentEmails: Array<{ to: string; medicationName: string; sinceLabel: string }> = [];
+// Tests opt into throwing behaviour by setting this to an Error.
+let nextLowInventoryEmailThrows: Error | null = null;
 
 vi.mock("$lib/server/email", () => ({
   sendReminderEmail: async (to: string, medicationName: string, sinceLabel: string) => {
     sentEmails.push({ to, medicationName, sinceLabel });
     return emailResults.shift() ?? { ok: true, id: "msg-r" };
   },
-  sendLowInventoryEmail: async () => emailResults.shift() ?? { ok: true, id: "msg-l" },
+  sendLowInventoryEmail: async () => {
+    if (nextLowInventoryEmailThrows) {
+      const err = nextLowInventoryEmailThrows;
+      nextLowInventoryEmailThrows = null;
+      throw err;
+    }
+    return emailResults.shift() ?? { ok: true, id: "msg-l" };
+  },
   isEmailConfigured: () => true,
 }));
 
@@ -165,6 +178,8 @@ beforeEach(() => {
   pushSubscribersByUser = { u1: true };
   nextPushSubsThrows = null;
   nextSendPushThrows = null;
+  claimCallCount = 0;
+  nextLowInventoryEmailThrows = null;
 });
 
 function pushDefaultOverdueRow(): void {
@@ -548,6 +563,60 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
     // after the user subscribes will record + send.
     expect(sentEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(0);
+    expect(updateCaptures).toHaveLength(0);
+  });
+
+  it("still reaches completeReminder when the low-inventory email sender throws", async () => {
+    // The claim is already taken at this point, so the throw must not
+    // escape without completing — a leaked row sits at status='pending'
+    // and is only reclaimed after RETRY_DELAY_MS.
+    pushLowInventoryRow({
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+    });
+    nextLowInventoryEmailThrows = new Error("resend exploded");
+
+    await checkLowInventoryMedications();
+
+    expect(updateCaptures).toHaveLength(1);
+    expect(updateCaptures[0].emailStatus).toBe("failed");
+    expect(updateCaptures[0].pushStatus).toBe("not_configured");
+    expect(updateCaptures[0].status).toBe("failed");
+    expect(updateCaptures[0].lastError).toContain("resend exploded");
+  });
+
+  it("claims nothing when the push probe throws", async () => {
+    // Unlike the overdue path, the low-inventory probe runs BEFORE the
+    // claim, so a probe failure must leave no row at all — the next
+    // cron tick retries cleanly.
+    pushLowInventoryRow({
+      userLowInventoryEmailAlerts: false,
+      userLowInventoryPushAlerts: true,
+    });
+    nextPushSubsThrows = new Error("transient db error");
+
+    await checkLowInventoryMedications();
+
+    expect(claimCallCount).toBe(0);
+    expect(updateCaptures).toHaveLength(0);
+    expect(sentEmails).toHaveLength(0);
+    expect(sentPushes).toHaveLength(0);
+  });
+
+  it("claims nothing when email is opted in but unverified and push is off", async () => {
+    // Neither channel can fire. Claiming here would consume the
+    // (user, medication, inventoryCount) dedupe key and complete as
+    // 'sent' with nothing delivered — and that key persists, so the
+    // user fixing their setup later would still hit the suppressed key.
+    pushLowInventoryRow({
+      userEmailVerified: false,
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+    });
+
+    await checkLowInventoryMedications();
+
+    expect(claimCallCount).toBe(0);
     expect(updateCaptures).toHaveLength(0);
   });
 });

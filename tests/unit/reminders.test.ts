@@ -622,9 +622,18 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
       userLowInventoryPushAlerts: false,
     });
 
-    await checkLowInventoryMedications();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await checkLowInventoryMedications();
 
-    expect(claimCallCount).toBe(0);
-    expect(updateCaptures).toHaveLength(0);
+      expect(claimCallCount).toBe(0);
+      expect(updateCaptures).toHaveLength(0);
+      // The console.warn is the only operator-visible signal that a
+      // low-inventory alert was silently suppressed — pin it so a
+      // regression that drops it can't go unnoticed.
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no enabled channel can fire"));
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

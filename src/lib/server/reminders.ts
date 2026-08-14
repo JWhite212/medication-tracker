@@ -205,6 +205,11 @@ export async function checkLowInventoryMedications() {
     //
     // If hasPushSubscriptions itself throws, skip the iteration: no
     // row is claimed, and the next cron tick retries cleanly.
+    //
+    // This gate is kept in the caller rather than in withReminderClaim
+    // because it is specific to this sweep: the overdue sweep's dedupe
+    // key includes the slot, so a stale suppression self-heals on the
+    // next slot, and it deliberately has no equivalent gate.
     let pushWillFire = false;
     if (pushOptIn) {
       try {

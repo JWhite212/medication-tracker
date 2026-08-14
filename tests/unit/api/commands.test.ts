@@ -541,7 +541,10 @@ describe("dispatchCommand — medication + schedule + preference + wipe commands
     expect(result).toEqual({ ok: true });
   });
 
-  it("update_preferences ensures the prefs row exists, calls updatePreferences with the parsed payload, and wraps the result", async () => {
+  // Row-existence and the audit row are updatePreferences' own guarantees
+  // now, pinned in tests/unit/preferences.test.ts — this only checks that
+  // the handler parses the payload and wraps the result.
+  it("update_preferences calls updatePreferences with the parsed payload and wraps the result", async () => {
     updatePreferences.mockResolvedValueOnce({ userId: "u1", accentColor: "#123456" });
 
     const result = await dispatchCommand("u1", "update_preferences", {
@@ -549,8 +552,6 @@ describe("dispatchCommand — medication + schedule + preference + wipe commands
       doseLogPageSize: 25,
     });
 
-    expect(getOrCreatePreferences).toHaveBeenCalledTimes(1);
-    expect(getOrCreatePreferences).toHaveBeenCalledWith("u1");
     expect(updatePreferences).toHaveBeenCalledTimes(1);
     expect(updatePreferences).toHaveBeenCalledWith("u1", {
       accentColor: "#123456",

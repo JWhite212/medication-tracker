@@ -4,7 +4,7 @@ import { db } from "$lib/server/db";
 import { users } from "$lib/server/db/schema";
 import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferences";
 import { dataSchema } from "$lib/utils/validation";
-import { logAudit, computeChanges } from "$lib/server/audit";
+import { logAudit } from "$lib/server/audit";
 import { lucia } from "$lib/server/auth/lucia";
 import { confirmReauth } from "$lib/server/auth/reauth";
 import type { Actions, PageServerLoad } from "./$types";
@@ -20,15 +20,7 @@ export const actions: Actions = {
     const parsed = dataSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { errors: parsed.error.flatten().fieldErrors });
 
-    const before = await getOrCreatePreferences(locals.user!.id);
-    const updated = await updatePreferences(locals.user!.id, parsed.data);
-
-    const changes = computeChanges(
-      { exportFormat: before.exportFormat },
-      { exportFormat: updated.exportFormat },
-    );
-    if (changes)
-      await logAudit(locals.user!.id, "user_preferences", locals.user!.id, "update", changes);
+    await updatePreferences(locals.user!.id, parsed.data);
 
     return { success: true };
   },

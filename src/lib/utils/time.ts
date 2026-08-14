@@ -1,3 +1,5 @@
+import { parseIntervalHours } from "$lib/utils/schedule-rate";
+
 export function formatTimeSince(date: Date): string {
   const now = Date.now();
   const diffMs = now - date.getTime();
@@ -85,14 +87,8 @@ export function calculateDaysUntilRefill(
 ): number | null {
   if (inventoryCount === null) return null;
 
-  const intervalHours =
-    scheduleIntervalHours !== null && scheduleIntervalHours !== undefined
-      ? Number(scheduleIntervalHours)
-      : NaN;
-  const scheduledDaily =
-    scheduleType === "scheduled" && Number.isFinite(intervalHours) && intervalHours > 0
-      ? 24 / intervalHours
-      : 0;
+  const hours = parseIntervalHours(scheduleIntervalHours);
+  const scheduledDaily = scheduleType === "scheduled" && hours !== null ? 24 / hours : 0;
 
   const dailyRate = scheduledDaily > 0 ? scheduledDaily : avgDailyConsumption;
   if (dailyRate <= 0) return null;

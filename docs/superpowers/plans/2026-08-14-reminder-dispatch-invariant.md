@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Zero behaviour change.** This is a pure refactor. Spec Decision 2.
-- **No existing test case may be edited.** All 56 existing reminder tests — 18 in `tests/unit/reminders.test.ts`, 6 in `tests/unit/reminders-dispatch.test.ts`, 32 in `tests/unit/reminders-dedupe.test.ts` — must pass with their bodies untouched. If a test needs an edit, the refactor changed behaviour: STOP and report.
+- **No existing test case may be edited.** All 64 existing reminder tests — 18 in `tests/unit/reminders.test.ts`, 14 in `tests/unit/reminders-dispatch.test.ts`, 32 in `tests/unit/reminders-dedupe.test.ts` — must pass with their bodies untouched. If a test needs an edit, the refactor changed behaviour: STOP and report. (`reminders-dispatch.test.ts` reports 14, not 6: it has 6 `it(...)` blocks plus an `it.each` over `deriveOverallStatus` expanding to 8 cases. Take these counts from a runner, never from grepping `it(`.)
   - Adding new opt-in hooks to the **shared mock setup** in `reminders.test.ts` (Task 1) is permitted and expected. That is test infrastructure, not a test case. The hooks default to inert so no existing case changes behaviour.
 - **Failure-result literals are load-bearing.** On a dispatch throw the substituted results must be exactly `{ ok: false, reason: "provider_error", message }` for email and `{ ok: false, reason: "all_failed", message }` for push. `summariseError` only reports push when `reason === "all_failed"`; `pushStatusFromResult` maps `not_configured`/`no_subscriptions` to `not_configured`, not `failed`. A different `reason` changes stored `last_error` and derived status.
 - **Non-`Error` throws** keep the message `"non-Error thrown during dispatch"`.

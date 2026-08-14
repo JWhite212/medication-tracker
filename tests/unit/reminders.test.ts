@@ -589,8 +589,16 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
     // Unlike the overdue path, the low-inventory probe runs BEFORE the
     // claim, so a probe failure must leave no row at all — the next
     // cron tick retries cleanly.
+    //
+    // Email is deliberately left ENABLED so the downstream "no enabled
+    // channel can fire" gate cannot absorb a fall-through from the
+    // probe's catch. With email off, a catch that merely set
+    // pushWillFire = false would reach that gate and continue anyway,
+    // which is indistinguishable from the correct behaviour — the test
+    // would pass against broken code. With email on, only the probe's
+    // own `continue` prevents the claim.
     pushLowInventoryRow({
-      userLowInventoryEmailAlerts: false,
+      userLowInventoryEmailAlerts: true,
       userLowInventoryPushAlerts: true,
     });
     nextPushSubsThrows = new Error("transient db error");

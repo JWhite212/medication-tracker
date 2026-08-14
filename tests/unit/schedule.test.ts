@@ -312,6 +312,22 @@ describe("computeScheduleSlots — interval kind", () => {
     expect(slots).toHaveLength(0);
   });
 
+  it("produces no slots for an interval that parses to Infinity", () => {
+    // Unreachable through any write door: the Zod schemas cap at
+    // MAX_INTERVAL_HOURS, and the import door's numericString is capped at 32
+    // characters, so the largest importable value is ~1e32 — finite. Pinned
+    // because it is a deliberate tightening, not an accident: before the
+    // primitive, a non-finite interval was truthy, passed the guard, and
+    // yielded one phantom slot at the anchor, asserting a dose was due at the
+    // instant the last one was taken. No slots is the honest reading of an
+    // infinitely-spaced schedule.
+    const meds = [makeMed()];
+    const sched = schedMap([makeIntervalSchedule("med-1", "Infinity")]);
+    const now = new Date("2026-04-16T10:00:00Z");
+    const slots = computeScheduleSlots(meds, sched, [], {}, dayStart, dayEnd, timezone, now);
+    expect(slots).toHaveLength(0);
+  });
+
   it("produces a single slot for an interval longer than the day window", () => {
     // 168h (weekly) is above the door cap but valid stored data. The anchor is
     // dayStart when there is no prior dose, and the next step lands past dayEnd.

@@ -6,6 +6,7 @@ import { getSchedulesForUser } from "$lib/server/schedules";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import type { DoseLogStatus } from "$lib/server/db/schema";
 import { clampEffectiveDays, isActiveOn } from "$lib/server/analytics/lifecycle";
+import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
 
 /**
  * Sum expected doses per day across a medication's schedule rows.
@@ -18,9 +19,8 @@ export function expectedPerDayForSchedules(schedules: MedicationSchedule[]): num
   let perDay = 0;
   for (const s of schedules) {
     if (s.scheduleKind === "prn") continue;
-    if (s.scheduleKind === "interval" && s.intervalHours) {
-      const hrs = Number(s.intervalHours);
-      if (hrs > 0) perDay += 24 / hrs;
+    if (s.scheduleKind === "interval") {
+      perDay += intervalDosesPerDay(s.intervalHours);
     } else if (s.scheduleKind === "fixed_time" && s.timeOfDay) {
       const dayFraction = s.daysOfWeek && s.daysOfWeek.length > 0 ? s.daysOfWeek.length / 7 : 1;
       perDay += dayFraction;

@@ -1,26 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Table identity only matters for the mock's own bookkeeping — real
-// column refs aren't touched below, ops are keyed by table name.
-const tableNames = new WeakMap<object, string>();
-const doseLogsTable = {};
-const medicationsTable = {};
-const usersTable = {};
-tableNames.set(doseLogsTable, "dose_logs");
-tableNames.set(medicationsTable, "medications");
-tableNames.set(usersTable, "users");
-
-vi.mock("$lib/server/db/schema", () => ({
-  doseLogs: doseLogsTable,
-  medications: medicationsTable,
-  users: usersTable,
-}));
+import { fakeDb } from "../helpers/fake-db";
+import { doseLogs, medications } from "$lib/server/db/schema";
 
 type Op = { kind: "delete"; table: string } | { kind: "update"; table: string; values: unknown };
 
-let ops: Op[] = [];
-let deletedRows: Array<{ id: string }> = [];
-let nextDeleteThrows: Error | null = null;
+// The durable view: what a database would still show after the transaction
+// resolved. fakeDb.committed is truncated when the callback throws, so a
+// rolled-back run reports [] exactly as the hand-rolled snapshot did.
+function ops(): Op[] {
+  return fakeDb.committed.map((c) =>
+    c.op === "delete"
+      ? { kind: "delete", table: c.table }
+      : { kind: c.op as "update", table: c.table, values: c.payload },
+  );
+}
 
 const auditCalls: Array<{
   userId: string;
@@ -57,74 +51,47 @@ vi.mock("$lib/server/audit", () => ({
   ) => logAudit(userId, entityType, entityId, action, changes, client),
 }));
 
-function buildTxClient() {
-  const tx = {
-    delete: (tableRef: object) => ({
-      where: () => ({
-        returning: () => {
-          const tableName = tableNames.get(tableRef) ?? "unknown";
-          if (nextDeleteThrows) {
-            const err = nextDeleteThrows;
-            nextDeleteThrows = null;
-            return Promise.reject(err);
-          }
-          ops.push({ kind: "delete", table: tableName });
-          return Promise.resolve(deletedRows);
-        },
-      }),
-    }),
-    update: (tableRef: object) => ({
-      set: (values: unknown) => ({
-        where: () => {
-          const tableName = tableNames.get(tableRef) ?? "unknown";
-          ops.push({ kind: "update", table: tableName, values });
-          return Promise.resolve();
-        },
-      }),
-    }),
-  };
-  return tx;
-}
-
-vi.mock("$lib/server/db", () => ({
-  dbTx: {
-    transaction: async <T>(cb: (tx: ReturnType<typeof buildTxClient>) => Promise<T>) => {
-      const tx = buildTxClient();
-      // Mirror Postgres all-or-nothing commit: snapshot state at entry,
-      // restore it (and drop any audit calls the callback made) on throw.
-      const opsSnapshot = ops.slice();
-      const auditSnapshot = auditCalls.slice();
-      try {
-        return await cb(tx);
-      } catch (err) {
-        ops = opsSnapshot;
-        auditCalls.length = 0;
-        for (const a of auditSnapshot) auditCalls.push(a);
-        throw err;
-      }
+// Database traffic rolls back through the shared seam's `committed` view.
+// `auditCalls` does NOT: logAudit is mocked at module level, so its calls are
+// not database traffic and `committed` structurally cannot see them. That one
+// array keeps a local snapshot here rather than teaching the shared fake about
+// arbitrary mocked modules.
+vi.mock("$lib/server/db", async () => {
+  const { fakeDb: fake } = await import("../helpers/fake-db");
+  return {
+    db: fake.db,
+    dbTx: {
+      async transaction<T>(cb: (tx: typeof fake.db) => Promise<T>): Promise<T> {
+        const auditSnapshot = auditCalls.slice();
+        try {
+          return await fake.dbTx.transaction(cb);
+        } catch (err) {
+          auditCalls.length = 0;
+          for (const a of auditSnapshot) auditCalls.push(a);
+          throw err;
+        }
+      },
     },
-  },
-}));
+  };
+});
 
 const { wipeDoseHistory, wipeArchivedMedications } =
   await import("../../../src/lib/server/api/wipe");
 
 beforeEach(() => {
-  ops = [];
-  deletedRows = [];
-  nextDeleteThrows = null;
+  fakeDb.reset();
   auditCalls.length = 0;
   logAudit.mockClear();
 });
 
 describe("wipeDoseHistory", () => {
   it("deletes dose logs, bumps syncEpoch, and audits — all inside one transaction — returning the deleted count", async () => {
-    deletedRows = [{ id: "d1" }, { id: "d2" }, { id: "d3" }];
+    fakeDb.seed(doseLogs, [{ id: "d1" }, { id: "d2" }, { id: "d3" }]);
 
     const result = await wipeDoseHistory("u1");
 
     expect(result).toEqual({ deleted: 3 });
-    expect(ops).toEqual([
+    expect(ops()).toEqual([
       { kind: "delete", table: "dose_logs" },
       {
         kind: "update",
@@ -148,7 +115,7 @@ describe("wipeDoseHistory", () => {
   });
 
   it("returns {deleted: 0} when there is nothing to wipe", async () => {
-    deletedRows = [];
+    fakeDb.seed(doseLogs, []);
 
     const result = await wipeDoseHistory("u1");
 
@@ -157,23 +124,23 @@ describe("wipeDoseHistory", () => {
   });
 
   it("rolls back the epoch bump and audit when the delete throws — nothing durably committed", async () => {
-    nextDeleteThrows = new Error("connection reset");
+    fakeDb.failNext("delete", { error: new Error("connection reset") });
 
     await expect(wipeDoseHistory("u1")).rejects.toThrow("connection reset");
 
-    expect(ops).toEqual([]);
+    expect(ops()).toEqual([]);
     expect(auditCalls).toEqual([]);
   });
 });
 
 describe("wipeArchivedMedications", () => {
   it("deletes archived medications, bumps syncEpoch, and audits — all inside one transaction — returning the deleted count", async () => {
-    deletedRows = [{ id: "m1" }, { id: "m2" }];
+    fakeDb.seed(medications, [{ id: "m1" }, { id: "m2" }]);
 
     const result = await wipeArchivedMedications("u1");
 
     expect(result).toEqual({ deleted: 2 });
-    expect(ops).toEqual([
+    expect(ops()).toEqual([
       { kind: "delete", table: "medications" },
       {
         kind: "update",
@@ -195,11 +162,11 @@ describe("wipeArchivedMedications", () => {
   });
 
   it("rolls back the epoch bump and audit when the delete throws — nothing durably committed", async () => {
-    nextDeleteThrows = new Error("connection reset");
+    fakeDb.failNext("delete", { error: new Error("connection reset") });
 
     await expect(wipeArchivedMedications("u1")).rejects.toThrow("connection reset");
 
-    expect(ops).toEqual([]);
+    expect(ops()).toEqual([]);
     expect(auditCalls).toEqual([]);
   });
 });

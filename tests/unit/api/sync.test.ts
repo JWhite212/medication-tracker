@@ -21,7 +21,7 @@ vi.mock("drizzle-orm", async (importOriginal) => {
 // identity — so this file mocks no schema and binds to the real tables.
 vi.mock("$lib/server/db", async () => (await import("../helpers/fake-db")).dbMock);
 
-import { fakeDb, type Row } from "../helpers/fake-db";
+import { fakeDb, predicateIncludes, type Row } from "../helpers/fake-db";
 import {
   medications,
   doseLogs,
@@ -193,6 +193,30 @@ beforeEach(() => {
   fakeDb.seed(auditLogs, [auditLogRow]);
   fakeDb.seed(userPreferences, [preferencesRow]);
   fakeDb.seed(syncTombstones, [tombstoneRow]);
+});
+
+describe("buildSyncResponse — user scoping", () => {
+  // CLAUDE.md: "All DB queries scoped by user_id — never trust
+  // client-provided user context." Nothing verified that until predicates
+  // became inspectable: every fake in this repo discarded the where clause,
+  // so a regression dropping a user_id filter left the suite green.
+  it("scopes every per-user read to the requesting user", async () => {
+    await buildSyncResponse("u1", null, 2);
+
+    const reads = fakeDb.attempted.filter((c) => c.op === "select");
+    expect(reads.length).toBeGreaterThan(0);
+
+    for (const read of reads) {
+      // `users` is the one legitimate exception: it is keyed by its own id,
+      // which IS the user id, so it carries no user_id column.
+      if (read.table === "users") {
+        expect(predicateIncludes(read.predicate, "u1")).toBe(true);
+        continue;
+      }
+      expect(predicateIncludes(read.predicate, "user_id")).toBe(true);
+      expect(predicateIncludes(read.predicate, "u1")).toBe(true);
+    }
+  });
 });
 
 describe("buildSyncResponse", () => {

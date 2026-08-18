@@ -156,11 +156,18 @@ export function createFakeDb() {
       },
       onConflictDoNothing: (..._args: unknown[]) => chain,
       onConflictDoUpdate: (..._args: unknown[]) => chain,
-      /** A real write materialises the row, so a later read sees it. Model
-          that by returning whatever the table is seeded with — without it,
-          `preferences.test.ts`'s before-image comes back undefined. */
+      /** `INSERT ... RETURNING` yields the row as materialised, so it reads
+          from the standing seed — that is what lets a caller's next read see
+          what it just created. `UPDATE ... RETURNING` yields the AFTER image,
+          which a test can prime separately with `seedReturning`. Collapsing
+          the two would make `getOrCreatePreferences`'s insert hand back the
+          update's after-image, and the before/after diff would vanish. */
       returning: (..._args: unknown[]) =>
-        resolve(returningRows.get(table) ?? seeded.get(table) ?? []),
+        resolve(
+          op === "update"
+            ? (returningRows.get(table) ?? seeded.get(table) ?? [])
+            : (seeded.get(table) ?? []),
+        ),
       then: (onFulfilled: (v: undefined) => unknown, onRejected?: (e: unknown) => unknown) =>
         resolve(undefined).then(onFulfilled, onRejected),
     };

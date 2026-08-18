@@ -94,3 +94,61 @@ describe("createFakeDb — predicate capture", () => {
     expect(f.attempted).toHaveLength(0);
   });
 });
+
+describe("createFakeDb — writes", () => {
+  const f = createFakeDb();
+  beforeEach(() => f.reset());
+
+  it("records an insert with its values", async () => {
+    await f.db.insert(medications).values({ id: "m1", name: "Vitamin D" });
+    expect(f.attempted).toEqual([
+      {
+        op: "insert",
+        table: "medications",
+        payload: { id: "m1", name: "Vitamin D" },
+        predicate: undefined,
+      },
+    ]);
+  });
+
+  it("records a bulk insert as a single call carrying the array", async () => {
+    await f.db.insert(doseLogs).values([{ id: "d1" }, { id: "d2" }]);
+    expect(f.attempted[0].payload).toEqual([{ id: "d1" }, { id: "d2" }]);
+  });
+
+  it("returning() yields the rows seeded for the table", async () => {
+    f.seed(medications, [{ id: "m1" }]);
+    const out = await f.db.insert(medications).values({ id: "m1" }).returning();
+    expect(out).toEqual([{ id: "m1" }]);
+  });
+
+  it("passes through onConflictDoNothing and onConflictDoUpdate", async () => {
+    f.seed(medications, [{ id: "m1" }]);
+    const out = await f.db
+      .insert(medications)
+      .values({ id: "m1" })
+      .onConflictDoNothing()
+      .returning();
+    expect(out).toEqual([{ id: "m1" }]);
+    expect(f.attempted).toHaveLength(1);
+  });
+
+  it("records an update with its set payload and predicate", async () => {
+    await f.db.update(medications).set({ name: "B12" }).where(eq(medications.id, "m1"));
+    expect(f.attempted[0].op).toBe("update");
+    expect(f.attempted[0].payload).toEqual({ name: "B12" });
+    expect(predicateIncludes(f.attempted[0].predicate, "m1")).toBe(true);
+  });
+
+  it("records a delete with its predicate", async () => {
+    await f.db.delete(doseLogs).where(eq(doseLogs.id, "d1"));
+    expect(f.attempted[0].op).toBe("delete");
+    expect(f.attempted[0].table).toBe("dose_logs");
+    expect(predicateIncludes(f.attempted[0].predicate, "d1")).toBe(true);
+  });
+
+  it("awaiting insert().values(...) directly resolves, for callers that never call returning()", async () => {
+    await expect(f.db.insert(medications).values({ id: "m1" })).resolves.toBeUndefined();
+    expect(f.attempted).toHaveLength(1);
+  });
+});

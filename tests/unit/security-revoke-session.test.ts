@@ -1,30 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeDb } from "./helpers/fake-db";
+import { sessions } from "$lib/server/db/schema";
 
 // revokeSession must only report success when a session row was
 // actually invalidated. A missing/own/stale sessionId previously fell
 // through every guard and still returned { sessionRevoked: true }.
-const state = {
-  selectQueue: [] as Array<Record<string, unknown>[]>,
-};
+const state = {};
 
 const invalidateSession = vi.fn(async (_id: string) => {});
 vi.mock("$lib/server/auth/lucia", () => ({
   lucia: { invalidateSession: (id: string) => invalidateSession(id) },
 }));
 
-vi.mock("$lib/server/db/schema", () => ({ users: {}, sessions: {} }));
-vi.mock("$lib/server/db", () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => state.selectQueue.shift() ?? [],
-        }),
-      }),
-    }),
-    update: () => ({ set: () => ({ where: async () => {} }) }),
-  },
-}));
+// The database comes from the shared seam, which dispatches on real table
+// identity — so this file mocks no schema and binds to the real sessions table.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 vi.mock("$lib/server/auth/password", () => ({
   hashPassword: async () => "hashed",
   verifyPassword: async () => true,
@@ -50,14 +40,14 @@ function formRequest(fields: Record<string, string>) {
 const locals = { user: { id: "u1", timezone: "UTC" }, session: { id: "my-session" } };
 
 beforeEach(() => {
-  state.selectQueue = [];
+  fakeDb.reset();
   invalidateSession.mockClear();
 });
 
 describe("revokeSession action", () => {
   it("fails when the target session is stale or not owned, instead of claiming success", async () => {
     // Ownership lookup finds nothing (expired or another user's).
-    state.selectQueue = [[]];
+    fakeDb.seedQueue(sessions, [[]]);
     const res = await actions.revokeSession({
       request: formRequest({ sessionId: "stale-session" }),
       locals,
@@ -85,7 +75,7 @@ describe("revokeSession action", () => {
   });
 
   it("revokes and reports success for a valid owned target", async () => {
-    state.selectQueue = [[{ id: "other-session" }]];
+    fakeDb.seedQueue(sessions, [[{ id: "other-session" }]]);
     const res = await actions.revokeSession({
       request: formRequest({ sessionId: "other-session" }),
       locals,

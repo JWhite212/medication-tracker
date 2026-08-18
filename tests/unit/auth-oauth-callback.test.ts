@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeDb } from "./helpers/fake-db";
+import { users, oauthAccounts } from "$lib/server/db/schema";
 
 // Exercises the OAuth callback's post-verification branch: an existing
 // oauth_accounts link must route a 2FA-enabled user through the same
@@ -6,9 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // minting a session directly. The GitHub provider is used because its
 // exchange has no PKCE cookie, keeping the fixture minimal; the branch
 // under test is provider-agnostic.
-const state = {
-  selectQueue: [] as Array<Record<string, unknown>[]>,
-};
+const state = {};
 
 vi.mock("$app/environment", () => ({ dev: true }));
 
@@ -32,28 +32,13 @@ vi.mock("$lib/server/auth/lucia", () => ({
   },
 }));
 
-vi.mock("$lib/server/db/schema", () => ({
-  users: { id: {}, email: {} },
-  oauthAccounts: { provider: {}, providerUserId: {}, userId: {} },
-}));
+// The database comes from the shared seam. The old fake served one ordered
+// queue for BOTH selects; table identity separates them, so the link lookup
+// and the user lookup no longer depend on which runs first.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
-const inserts: Array<{ values: unknown }> = [];
-vi.mock("$lib/server/db", () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => state.selectQueue.shift() ?? [],
-        }),
-      }),
-    }),
-    insert: () => ({
-      values: async (values: unknown) => {
-        inserts.push({ values });
-      },
-    }),
-  },
-}));
+const inserts = () =>
+  fakeDb.attempted.filter((c) => c.op === "insert").map((c) => ({ values: c.payload }));
 
 const { GET } = await import("../../src/routes/auth/callback/[provider]/+server");
 
@@ -98,8 +83,7 @@ const baseUser = {
 };
 
 beforeEach(() => {
-  state.selectQueue = [];
-  inserts.length = 0;
+  fakeDb.reset();
   createSession.mockClear();
   vi.stubGlobal("fetch", githubFetchStub());
 });
@@ -107,7 +91,8 @@ beforeEach(() => {
 describe("GET /auth/callback/[provider] — existing linked account", () => {
   it("redirects a 2FA-enabled user to /auth/2fa without creating a session", async () => {
     // 1st select: oauthAccounts link. 2nd select: linked user with 2FA on.
-    state.selectQueue = [[{ userId: "u1" }], [{ ...baseUser, twoFactorEnabled: true }]];
+    fakeDb.seed(oauthAccounts, [{ userId: "u1" }]);
+    fakeDb.seed(users, [{ ...baseUser, twoFactorEnabled: true }]);
     const cookies = makeCookies();
 
     await expect(call(cookies)).rejects.toMatchObject({ status: 302, location: "/auth/2fa" });
@@ -121,7 +106,8 @@ describe("GET /auth/callback/[provider] — existing linked account", () => {
   });
 
   it("still creates a session directly when the linked user has 2FA disabled", async () => {
-    state.selectQueue = [[{ userId: "u1" }], [{ ...baseUser }]];
+    fakeDb.seed(oauthAccounts, [{ userId: "u1" }]);
+    fakeDb.seed(users, [{ ...baseUser }]);
     const cookies = makeCookies();
 
     await expect(call(cookies)).rejects.toMatchObject({ status: 302, location: "/dashboard" });

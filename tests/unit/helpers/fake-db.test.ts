@@ -250,6 +250,27 @@ describe("createFakeDb — failNext", () => {
   });
 });
 
+describe("createFakeDb — seedReturning", () => {
+  const f = createFakeDb();
+  beforeEach(() => f.reset());
+
+  it("keeps the after-image distinct from what reads see", async () => {
+    f.seed(medications, [{ id: "m1", name: "before" }]);
+    f.seedReturning(medications, [{ id: "m1", name: "after" }]);
+
+    // A read sees the before image...
+    expect(await f.db.select().from(medications)).toEqual([{ id: "m1", name: "before" }]);
+    // ...while UPDATE ... RETURNING yields the after image.
+    const out = await f.db.update(medications).set({ name: "after" }).where(undefined).returning();
+    expect(out).toEqual([{ id: "m1", name: "after" }]);
+  });
+
+  it("falls back to the standing seed when no after-image is set", async () => {
+    f.seed(medications, [{ id: "m1" }]);
+    expect(await f.db.insert(medications).values({ id: "m1" }).returning()).toEqual([{ id: "m1" }]);
+  });
+});
+
 describe("unusedDb", () => {
   it("throws by name when a supposedly-unused db is touched", async () => {
     const { unusedDb } = await import("./fake-db");

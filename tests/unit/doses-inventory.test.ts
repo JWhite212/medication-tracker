@@ -1,22 +1,41 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { getTableName } from "drizzle-orm";
 import { medications, doseLogs, inventoryEvents, syncTombstones } from "$lib/server/db/schema";
 
-// What db.select(...).limit(1) returns. Tests prime this before calling
-// the function under test to simulate "the dose row that exists in the DB".
-let nextSelectRow: Record<string, unknown> | undefined;
+// The database comes from the shared seam. This file reads `attempted`, not
+// `committed`: its transaction is a pass-through, and what these tests check
+// is how far execution got before a simulated failure — a write that was
+// tried still counts, even though a real database would have rolled it back.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
-// What db.update(doseLogs)...returning() returns from updateDose.
-let nextUpdatedRow: Record<string, unknown> | undefined;
+import { fakeDb } from "./helpers/fake-db";
 
-// When set to a Drizzle table identity, the next `update(table)` call
-// against that table throws synchronously — used to simulate a mid-
-// transaction failure so the rollback path can be tested.
-let failOnUpdateOf: unknown | null = null;
+// Recorded traffic carries table NAMES; map them back to the real table
+// objects so every assertion below still reads `u.table === medications`.
+const tableByName = new Map<string, unknown>(
+  [medications, doseLogs, inventoryEvents, syncTombstones].map((t) => [
+    getTableName(t),
+    t as unknown,
+  ]),
+);
 
-// Operations recorded by the mock so tests can assert what was called.
-const updates: Array<{ table: unknown; values: unknown }> = [];
-const deletes: Array<{ table: unknown }> = [];
-const inserts: Array<{ table: unknown; values: unknown }> = [];
+function opsOf(kind: "update" | "delete" | "insert") {
+  return fakeDb.attempted
+    .filter((c) => c.op === kind)
+    .map((c) => ({ table: tableByName.get(c.table), values: c.payload }));
+}
+const updates = () => opsOf("update");
+const deletes = () => opsOf("delete");
+const inserts = () => opsOf("insert");
+
+// What a select returns. The old fake was table-agnostic — one primed row
+// answered every select — so both tables that get read are seeded with it,
+// preserving that behaviour exactly rather than narrowing it here.
+function seedSelect(row: Record<string, unknown> | undefined) {
+  const rows = row ? [row] : [];
+  fakeDb.seed(medications, rows);
+  fakeDb.seed(doseLogs, rows);
+}
 
 // logAudit calls observed via the audit module mock — used to verify
 // that audit-log writes do NOT happen on a rolled-back transaction.
@@ -29,79 +48,10 @@ vi.mock("$lib/server/audit", () => ({
   computeChanges: () => null,
 }));
 
-// Shared chainable mock — used by both `db` (HTTP, for read paths)
-// and the `tx` handle yielded by dbTx.transaction. The mocked
-// transaction invokes its callback with a fresh chainable that
-// records into the same updates/deletes arrays, so test assertions
-// don't care which client executed the write.
-function buildChainable() {
-  return {
-    select: () => {
-      const chain: Record<string, unknown> = {};
-      const passthrough = () => chain;
-      chain.from = passthrough;
-      chain.where = passthrough;
-      chain.limit = () => Promise.resolve(nextSelectRow ? [nextSelectRow] : []);
-      return chain;
-    },
-    update: (table: unknown) => ({
-      set: (values: unknown) => {
-        updates.push({ table, values });
-        if (failOnUpdateOf !== null && failOnUpdateOf === table) {
-          const err = new Error("simulated update failure");
-          const failingChain = {
-            returning: () => Promise.reject(err),
-            then: (_onFulfilled: unknown, onRejected?: (e: unknown) => unknown) =>
-              onRejected ? Promise.resolve().then(() => onRejected(err)) : Promise.reject(err),
-          };
-          return { where: () => failingChain };
-        }
-        const whereChain = {
-          returning: () => Promise.resolve(nextUpdatedRow ? [nextUpdatedRow] : []),
-          then: (onFulfilled: (v: unknown) => unknown) =>
-            Promise.resolve().then(() => onFulfilled(undefined)),
-        };
-        return { where: () => whereChain };
-      },
-    }),
-    delete: (table: unknown) => {
-      deletes.push({ table });
-      return { where: () => Promise.resolve() };
-    },
-    insert: (table: unknown) => ({
-      // Some call sites do .values(...) standalone; logDose chains
-      // .values(...).returning() expecting an inserted-row array. The
-      // values() return value supports both shapes.
-      values: (rows: unknown) => {
-        inserts.push({ table, values: rows });
-        const valuesChain = {
-          returning: () => Promise.resolve([{ id: "stub" }]),
-          then: (onFulfilled: (v: unknown) => unknown) =>
-            Promise.resolve().then(() => onFulfilled(undefined)),
-        };
-        return valuesChain;
-      },
-    }),
-  };
-}
-
-vi.mock("$lib/server/db", () => ({
-  db: buildChainable(),
-  dbTx: {
-    transaction: <T>(cb: (tx: ReturnType<typeof buildChainable>) => Promise<T>) =>
-      cb(buildChainable()),
-  },
-}));
-
 const { logDose, deleteDose, updateDose } = await import("../../src/lib/server/doses");
 
 beforeEach(() => {
-  nextSelectRow = undefined;
-  nextUpdatedRow = undefined;
-  failOnUpdateOf = null;
-  updates.length = 0;
-  deletes.length = 0;
-  inserts.length = 0;
+  fakeDb.reset();
   auditCalls.length = 0;
 });
 
@@ -126,30 +76,30 @@ function skippedDose(overrides: Partial<Record<string, unknown>> = {}) {
 
 describe("deleteDose — status-aware inventory restore", () => {
   it("restores inventory when deleting a TAKEN dose", async () => {
-    nextSelectRow = takenDose();
+    seedSelect(takenDose());
     const ok = await deleteDose("u1", "d1");
     expect(ok).toBe(true);
-    expect(updates.some((u) => u.table === medications)).toBe(true);
-    expect(deletes.some((d) => d.table === doseLogs)).toBe(true);
+    expect(updates().some((u) => u.table === medications)).toBe(true);
+    expect(deletes().some((d) => d.table === doseLogs)).toBe(true);
   });
 
   it("does NOT restore inventory when deleting a SKIPPED dose", async () => {
-    nextSelectRow = skippedDose();
+    seedSelect(skippedDose());
     const ok = await deleteDose("u1", "d1");
     expect(ok).toBe(true);
-    expect(updates.some((u) => u.table === medications)).toBe(false);
-    expect(deletes.some((d) => d.table === doseLogs)).toBe(true);
+    expect(updates().some((u) => u.table === medications)).toBe(false);
+    expect(deletes().some((d) => d.table === doseLogs)).toBe(true);
   });
 
   it("does NOT restore inventory when deleting a MISSED dose", async () => {
-    nextSelectRow = takenDose({ status: "missed" });
+    seedSelect(takenDose({ status: "missed" }));
     const ok = await deleteDose("u1", "d1");
     expect(ok).toBe(true);
-    expect(updates.some((u) => u.table === medications)).toBe(false);
+    expect(updates().some((u) => u.table === medications)).toBe(false);
   });
 
   it("returns false and does nothing when the dose does not exist", async () => {
-    nextSelectRow = undefined;
+    seedSelect(undefined);
     const ok = await deleteDose("u1", "missing");
     expect(ok).toBe(false);
     expect(updates).toHaveLength(0);
@@ -159,30 +109,33 @@ describe("deleteDose — status-aware inventory restore", () => {
 
 describe("updateDose — status-aware inventory diff", () => {
   it("applies inventory diff when editing TAKEN dose quantity", async () => {
-    nextSelectRow = takenDose({ quantity: 1 });
-    nextUpdatedRow = takenDose({ quantity: 2 });
+    seedSelect(takenDose({ quantity: 1 }));
+    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
     await updateDose("u1", "d1", { quantity: 2 });
-    expect(updates.some((u) => u.table === medications)).toBe(true);
-    expect(updates.some((u) => u.table === doseLogs)).toBe(true);
+    expect(updates().some((u) => u.table === medications)).toBe(true);
+    expect(updates().some((u) => u.table === doseLogs)).toBe(true);
   });
 
   it("does NOT apply inventory diff when editing SKIPPED dose quantity", async () => {
-    nextSelectRow = skippedDose({ quantity: 1 });
-    nextUpdatedRow = skippedDose({ quantity: 2 });
+    seedSelect(skippedDose({ quantity: 1 }));
+    fakeDb.seedReturning(
+      doseLogs,
+      skippedDose({ quantity: 2 }) ? [skippedDose({ quantity: 2 })] : [],
+    );
     await updateDose("u1", "d1", { quantity: 2 });
-    expect(updates.some((u) => u.table === medications)).toBe(false);
-    expect(updates.some((u) => u.table === doseLogs)).toBe(true);
+    expect(updates().some((u) => u.table === medications)).toBe(false);
+    expect(updates().some((u) => u.table === doseLogs)).toBe(true);
   });
 
   it("no inventory diff when quantity is unchanged on a TAKEN dose", async () => {
-    nextSelectRow = takenDose({ quantity: 2 });
-    nextUpdatedRow = takenDose({ quantity: 2 });
+    seedSelect(takenDose({ quantity: 2 }));
+    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
     await updateDose("u1", "d1", { quantity: 2, notes: "edited note" });
-    expect(updates.some((u) => u.table === medications)).toBe(false);
+    expect(updates().some((u) => u.table === medications)).toBe(false);
   });
 
   it("returns null when the dose does not exist", async () => {
-    nextSelectRow = undefined;
+    seedSelect(undefined);
     const result = await updateDose("u1", "missing", { quantity: 5 });
     expect(result).toBeNull();
     expect(updates).toHaveLength(0);
@@ -193,16 +146,19 @@ describe("transactional atomicity (Phase 2.1)", () => {
   it("logDose rolls back: a failed inventory decrement skips the audit log entirely", async () => {
     // Ownership check passes (assertMedicationBelongsToUser does a
     // SELECT that returns the medication row).
-    nextSelectRow = { id: "m1" };
+    seedSelect({ id: "m1" });
     // Make the medications UPDATE inside the transaction throw —
     // simulates a concurrent constraint violation or network blip.
-    failOnUpdateOf = medications;
+    fakeDb.failNext("update", {
+      table: medications,
+      error: new Error("simulated update failure"),
+    });
 
     await expect(logDose("u1", "m1", 1)).rejects.toThrow("simulated update failure");
 
     // Both writes were attempted inside the transaction (the mock
     // recorded the update call before the simulated throw).
-    expect(updates.some((u) => u.table === medications)).toBe(true);
+    expect(updates().some((u) => u.table === medications)).toBe(true);
     // CRITICAL: the audit log was NOT called — logAudit is now called
     // INSIDE dbTx.transaction(...), after the inventory update, so the
     // throw happens before that call is ever reached. In a real DB, the
@@ -212,9 +168,12 @@ describe("transactional atomicity (Phase 2.1)", () => {
   });
 
   it("updateDose rolls back: an inventory diff failure skips the audit log", async () => {
-    nextSelectRow = takenDose({ quantity: 1 });
-    nextUpdatedRow = takenDose({ quantity: 2 });
-    failOnUpdateOf = medications;
+    seedSelect(takenDose({ quantity: 1 }));
+    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
+    fakeDb.failNext("update", {
+      table: medications,
+      error: new Error("simulated update failure"),
+    });
 
     await expect(updateDose("u1", "d1", { quantity: 2 })).rejects.toThrow(
       "simulated update failure",
@@ -226,10 +185,10 @@ describe("transactional atomicity (Phase 2.1)", () => {
 
 describe("inventory event recording", () => {
   it("logs a dose_taken event when a TAKEN dose is recorded against tracked inventory", async () => {
-    nextSelectRow = { id: "m1", inventoryCount: 30 };
+    seedSelect({ id: "m1", inventoryCount: 30 });
     await logDose("u1", "m1", 1);
 
-    const events = inserts.filter((i) => i.table === inventoryEvents);
+    const events = inserts().filter((i) => i.table === inventoryEvents);
     expect(events).toHaveLength(1);
     const row = events[0].values as Record<string, unknown>;
     expect(row.eventType).toBe("dose_taken");
@@ -239,18 +198,18 @@ describe("inventory event recording", () => {
   });
 
   it("does NOT record an event when the medication has no inventory tracking", async () => {
-    nextSelectRow = { id: "m1", inventoryCount: null };
+    seedSelect({ id: "m1", inventoryCount: null });
     await logDose("u1", "m1", 1);
-    expect(inserts.filter((i) => i.table === inventoryEvents)).toHaveLength(0);
+    expect(inserts().filter((i) => i.table === inventoryEvents)).toHaveLength(0);
   });
 
   it("logs a dose_deleted event when a TAKEN dose is removed", async () => {
-    nextSelectRow = takenDose({ quantity: 1, medicationId: "m1" });
+    seedSelect(takenDose({ quantity: 1, medicationId: "m1" }));
     // The deleteDose path does a fresh select inside the transaction
-    // for the inventory snapshot. The mock's select returns the same
-    // nextSelectRow shape regardless; previousCount lookup pulls
-    // `inventoryCount` from this row, so include it.
-    nextSelectRow = {
+    // for the inventory snapshot. Seeding is table-wide rather than
+    // per-call, so this row answers that select too; the previousCount
+    // lookup pulls `inventoryCount` from it, so include it.
+    seedSelect({
       id: "d1",
       userId: "u1",
       medicationId: "m1",
@@ -261,11 +220,11 @@ describe("inventory event recording", () => {
       notes: null,
       sideEffects: null,
       inventoryCount: 28,
-    };
+    });
 
     await deleteDose("u1", "d1");
 
-    const events = inserts.filter((i) => i.table === inventoryEvents);
+    const events = inserts().filter((i) => i.table === inventoryEvents);
     expect(events).toHaveLength(1);
     const row = events[0].values as Record<string, unknown>;
     expect(row.eventType).toBe("dose_deleted");
@@ -273,13 +232,13 @@ describe("inventory event recording", () => {
   });
 
   it("does NOT record an event when a SKIPPED dose is removed", async () => {
-    nextSelectRow = skippedDose({ quantity: 1 });
+    seedSelect(skippedDose({ quantity: 1 }));
     await deleteDose("u1", "d1");
-    expect(inserts.filter((i) => i.table === inventoryEvents)).toHaveLength(0);
+    expect(inserts().filter((i) => i.table === inventoryEvents)).toHaveLength(0);
   });
 
   it("logs a dose_quantity_updated event when a TAKEN dose's quantity changes", async () => {
-    nextSelectRow = {
+    seedSelect({
       id: "d1",
       userId: "u1",
       medicationId: "m1",
@@ -290,11 +249,11 @@ describe("inventory event recording", () => {
       notes: null,
       sideEffects: null,
       inventoryCount: 30,
-    };
-    nextUpdatedRow = takenDose({ quantity: 2 });
+    });
+    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
     await updateDose("u1", "d1", { quantity: 2 });
 
-    const events = inserts.filter((i) => i.table === inventoryEvents);
+    const events = inserts().filter((i) => i.table === inventoryEvents);
     expect(events).toHaveLength(1);
     const row = events[0].values as Record<string, unknown>;
     expect(row.eventType).toBe("dose_quantity_updated");
@@ -304,19 +263,19 @@ describe("inventory event recording", () => {
 
 describe("sync-aware mutations (Task 2)", () => {
   it("updateDose bumps updatedAt", async () => {
-    nextSelectRow = takenDose({ quantity: 1 });
-    nextUpdatedRow = takenDose({ quantity: 2 });
+    seedSelect(takenDose({ quantity: 1 }));
+    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
     await updateDose("u1", "d1", { quantity: 2 });
 
-    const doseUpdate = updates.find((u) => u.table === doseLogs);
+    const doseUpdate = updates().find((u) => u.table === doseLogs);
     expect(doseUpdate?.values).toHaveProperty("updatedAt");
   });
 
   it("deleteDose writes a tombstone", async () => {
-    nextSelectRow = takenDose();
+    seedSelect(takenDose());
     await deleteDose("u1", "d1");
 
-    const tomb = inserts.find((i) => i.table === syncTombstones);
+    const tomb = inserts().find((i) => i.table === syncTombstones);
     expect(tomb?.values).toMatchObject({ entityType: "dose_log", entityId: "d1" });
   });
 });

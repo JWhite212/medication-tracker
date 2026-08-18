@@ -1,72 +1,52 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHash } from "crypto";
 
-// Module-level switches the mock reads. Set these per-test to drive
-// the verifier and the mock DB without rebuilding everything.
+// The database comes from the shared seam, which dispatches on real table
+// identity — so the two selects are told apart by the table itself rather
+// than by duck-typing a mocked table's keys.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
+
+import { fakeDb } from "./helpers/fake-db";
+import { users, reauthTokens } from "$lib/server/db/schema";
+
+// Same surface the hand-rolled mock exposed, so every assertion below reads
+// unchanged: the two writable fields seed a table, the two readable ones are
+// derived from recorded traffic.
 const state = {
-  passwordHash: null as string | null,
   verifyResult: false,
-  inserted: [] as Array<Record<string, unknown>>,
-  selectMatchRowId: null as string | null,
-  updateCalls: 0,
+
+  set passwordHash(hash: string | null) {
+    fakeDb.seed(users, hash !== null ? [{ passwordHash: hash }] : []);
+  },
+
+  set selectMatchRowId(id: string | null) {
+    fakeDb.seed(reauthTokens, id ? [{ id }] : []);
+  },
+
+  get inserted() {
+    return fakeDb.attempted
+      .filter((c) => c.op === "insert")
+      .map((c) => c.payload as Record<string, unknown>);
+  },
+
+  get updateCalls() {
+    return fakeDb.attempted.filter((c) => c.op === "update").length;
+  },
 };
 
 vi.mock("$lib/server/auth/password", () => ({
   verifyPassword: async () => state.verifyResult,
 }));
 
-vi.mock("$lib/server/db/schema", () => ({
-  users: { id: {}, passwordHash: {} },
-  reauthTokens: {
-    id: {},
-    userId: {},
-    tokenHash: {},
-    purpose: {},
-    expiresAt: {},
-    usedAt: {},
-  },
-}));
-
-vi.mock("$lib/server/db", () => ({
-  db: {
-    select: () => ({
-      from: (tableRef: unknown) => ({
-        where: () => ({
-          limit: async () => {
-            // Distinguish users.select vs reauthTokens.select by which
-            // table key was passed in.
-            const tbl = tableRef as { passwordHash?: unknown; tokenHash?: unknown };
-            if (tbl.passwordHash !== undefined) {
-              return state.passwordHash !== null ? [{ passwordHash: state.passwordHash }] : [];
-            }
-            return state.selectMatchRowId ? [{ id: state.selectMatchRowId }] : [];
-          },
-        }),
-      }),
-    }),
-    insert: () => ({
-      values: async (row: Record<string, unknown>) => {
-        state.inserted.push(row);
-      },
-    }),
-    update: () => ({
-      set: () => ({
-        where: async () => {
-          state.updateCalls++;
-        },
-      }),
-    }),
-  },
-}));
-
 const { confirmReauth, requireRecentReauth } = await import("../../src/lib/server/auth/reauth");
 
 beforeEach(() => {
+  // reset() clears both seeds and recorded traffic, which is what the four
+  // separate resets here used to do by hand.
+  fakeDb.reset();
   state.passwordHash = null;
   state.verifyResult = false;
-  state.inserted = [];
   state.selectMatchRowId = null;
-  state.updateCalls = 0;
 });
 
 describe("confirmReauth", () => {

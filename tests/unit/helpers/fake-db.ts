@@ -50,9 +50,31 @@ export function createFakeDb() {
   const attempted: RecordedCall[] = [];
   const committed: RecordedCall[] = [];
 
+  /** Per-table result queues, for callers that need successive reads of the
+      same table to differ. Drained before the standing seed is consulted. */
+  const queued = new Map<string, Row[][]>();
+
+  /** At most one pending failure per operation, matched on table when one was
+      given, consumed on first match. */
+  const pendingFailures = new Map<RecordedCall["op"], { table?: string; error: Error }>();
+
   function record(call: RecordedCall) {
     attempted.push(call);
     committed.push(call);
+  }
+
+  function rowsFor(table: string): Row[] {
+    const queue = queued.get(table);
+    if (queue && queue.length > 0) return queue.shift() as Row[];
+    return seeded.get(table) ?? [];
+  }
+
+  function takeFailure(op: RecordedCall["op"], table: string): Error | null {
+    const pending = pendingFailures.get(op);
+    if (!pending) return null;
+    if (pending.table !== undefined && pending.table !== table) return null;
+    pendingFailures.delete(op);
+    return pending.error;
   }
 
   /** Every step of a Drizzle chain is both chainable and awaitable:
@@ -68,7 +90,7 @@ export function createFakeDb() {
         recorded = true;
         record({ op: "select", table, predicate });
       }
-      return seeded.get(table) ?? [];
+      return rowsFor(table);
     };
 
     const chain = {
@@ -77,10 +99,14 @@ export function createFakeDb() {
         predicate = p;
         return chain;
       },
-      innerJoin: () => chain,
-      leftJoin: () => chain,
-      groupBy: () => chain,
-      orderBy: () => chain,
+      // Variadic: real callers pass a table and an ON condition to the joins,
+      // and one or more columns to groupBy/orderBy. The fake ignores them —
+      // it dispatches on the table given to .from() — but the arity has to
+      // match or migrated tests fail to type-check.
+      innerJoin: (..._args: unknown[]) => chain,
+      leftJoin: (..._args: unknown[]) => chain,
+      groupBy: (..._args: unknown[]) => chain,
+      orderBy: (..._args: unknown[]) => chain,
       limit: (n: number) => Promise.resolve(resolve().slice(0, n)),
       then: (onFulfilled: (v: Row[]) => unknown, onRejected?: (e: unknown) => unknown) =>
         Promise.resolve(resolve()).then(onFulfilled, onRejected),
@@ -101,7 +127,10 @@ export function createFakeDb() {
         recorded = true;
         record({ op, table, predicate, payload });
       }
-      return Promise.resolve(value);
+      // Recorded before rejecting: a write that was attempted and then failed
+      // still happened, and `doses-inventory.test.ts` asserts exactly that.
+      const failure = takeFailure(op, table);
+      return failure ? Promise.reject(failure) : Promise.resolve(value);
     };
 
     const chain = {
@@ -117,12 +146,12 @@ export function createFakeDb() {
         predicate = p;
         return chain;
       },
-      onConflictDoNothing: () => chain,
-      onConflictDoUpdate: () => chain,
+      onConflictDoNothing: (..._args: unknown[]) => chain,
+      onConflictDoUpdate: (..._args: unknown[]) => chain,
       /** A real write materialises the row, so a later read sees it. Model
           that by returning whatever the table is seeded with — without it,
           `preferences.test.ts`'s before-image comes back undefined. */
-      returning: () => resolve(seeded.get(table) ?? []),
+      returning: (..._args: unknown[]) => resolve(seeded.get(table) ?? []),
       then: (onFulfilled: (v: undefined) => unknown, onRejected?: (e: unknown) => unknown) =>
         resolve(undefined).then(onFulfilled, onRejected),
     };
@@ -155,6 +184,17 @@ export function createFakeDb() {
       seeded.set(nameOf(table), rows);
     },
 
+    seedQueue(table: Table, batches: Row[][]) {
+      queued.set(nameOf(table), [...batches]);
+    },
+
+    failNext(op: RecordedCall["op"], opts: { table?: Table; error: Error }) {
+      pendingFailures.set(op, {
+        table: opts.table === undefined ? undefined : nameOf(opts.table),
+        error: opts.error,
+      });
+    },
+
     get attempted(): readonly RecordedCall[] {
       return attempted;
     },
@@ -165,6 +205,8 @@ export function createFakeDb() {
 
     reset() {
       seeded.clear();
+      queued.clear();
+      pendingFailures.clear();
       attempted.length = 0;
       committed.length = 0;
     },
@@ -173,3 +215,37 @@ export function createFakeDb() {
 
 /** The shape every consumer sees, including `dbTx.transaction`'s callback. */
 export type FakeClient = ReturnType<typeof createFakeDb>["db"];
+
+function throwingProxy(label: string) {
+  return new Proxy(
+    {},
+    {
+      get(_target, prop) {
+        throw new Error(
+          `Unexpected ${label}.${String(prop)} — this test mocks the database as unused. ` +
+            `If the module under test now queries the database, switch it to createFakeDb().`,
+        );
+      },
+    },
+  );
+}
+
+/** For modules that import `db` but must never reach it. Any property access
+    throws, so an accidental query fails loudly and by name rather than
+    silently returning []. Do not "upgrade" these to createFakeDb() — that
+    trades a loud failure for a silent one. */
+export const unusedDb = {
+  db: throwingProxy("db") as FakeClient,
+  dbTx: throwingProxy("dbTx") as { transaction: never },
+};
+
+/** Per-file singleton. `vi.mock` is hoisted above module-level consts, but ES
+    modules resolve to one instance, so a test's mock factory and its body share
+    this object without `vi.hoisted`. Vitest's default `isolate: true` gives each
+    test file its own module registry, so this is not shared across the suite.
+
+        vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
+        import { fakeDb } from "./helpers/fake-db";
+*/
+export const fakeDb = createFakeDb();
+export const dbMock = { db: fakeDb.db, dbTx: fakeDb.dbTx };

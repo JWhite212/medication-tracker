@@ -1,71 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeDb, predicateIncludes } from "./helpers/fake-db";
+import { reminderEvents } from "$lib/server/db/schema";
 
 // Capture the values, conflict config, and where clauses that the
 // claim helper builds so tests can assert the SQL is shaped the way
 // we expect.
-type ClaimCall = {
-  values: Record<string, unknown>;
-  conflict: Record<string, unknown> | null;
-};
-const claimCalls: ClaimCall[] = [];
-let nextClaimReturning: Array<{ id: string; attemptCount: number }> = [
-  { id: "evt-1", attemptCount: 1 },
-];
 
-const updateCalls: Array<{ payload: Record<string, unknown>; predicate: unknown }> = [];
+// The database comes from the shared seam, which captures the predicate and
+// the .set(...) payload of every write — which is all this file asserted on.
+// chunksContain used to live here in a second copy; predicateIncludes is the
+// shared, unit-tested reader with the same circular-safe replacer.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
-vi.mock("$lib/server/db", () => ({
-  db: {
-    insert: () => {
-      const captured: Partial<ClaimCall> = {};
-      const chain: Record<string, unknown> = {};
-      chain.values = (v: Record<string, unknown>) => {
-        captured.values = v;
-        return chain;
-      };
-      chain.onConflictDoUpdate = (c: Record<string, unknown>) => {
-        captured.conflict = c;
-        return chain;
-      };
-      chain.returning = () => {
-        claimCalls.push({ values: captured.values ?? {}, conflict: captured.conflict ?? null });
-        return Promise.resolve(nextClaimReturning);
-      };
-      return chain;
-    },
-    update: () => {
-      let captured: Record<string, unknown> = {};
-      const chain: Record<string, unknown> = {};
-      chain.set = (payload: Record<string, unknown>) => {
-        captured = payload;
-        return chain;
-      };
-      chain.where = (predicate: unknown) => {
-        updateCalls.push({ payload: captured, predicate });
-        return Promise.resolve();
-      };
-      return chain;
-    },
-  },
-}));
+const claimCalls = () =>
+  fakeDb.attempted
+    .filter((c) => c.op === "insert")
+    .map((c) => ({
+      values: (c.payload ?? {}) as Record<string, unknown>,
+      conflict: c.conflict ?? null,
+    }));
 
-// Drizzle SQL objects expose their template chunks as `.queryChunks`,
-// each chunk being either a string fragment, a column reference, or a
-// param. Stringifying the tree is enough to assert which columns and
-// literals the predicate references, but we need a circular-safe
-// replacer because Drizzle column nodes hold a back-pointer to their
-// table.
-function chunksContain(sqlObj: unknown, needle: string): boolean {
-  const seen = new WeakSet<object>();
-  const json = JSON.stringify(sqlObj, (_key, value) => {
-    if (typeof value === "object" && value !== null) {
-      if (seen.has(value)) return undefined;
-      seen.add(value);
-    }
-    return value;
-  });
-  return json.includes(needle);
-}
+const updateCalls = () =>
+  fakeDb.attempted
+    .filter((c) => c.op === "update")
+    .map((c) => ({
+      payload: (c.payload ?? {}) as Record<string, unknown>,
+      predicate: c.predicate,
+    }));
 
 const {
   claimReminderSlot,
@@ -77,9 +38,8 @@ const {
 } = await import("../../src/lib/server/reminders/dispatch");
 
 beforeEach(() => {
-  claimCalls.length = 0;
-  updateCalls.length = 0;
-  nextClaimReturning = [{ id: "evt-1", attemptCount: 1 }];
+  fakeDb.reset();
+  fakeDb.seed(reminderEvents, [{ id: "evt-1", attemptCount: 1 }]);
 });
 
 describe("claimReminderSlot", () => {
@@ -92,12 +52,12 @@ describe("claimReminderSlot", () => {
     });
 
     expect(claim).toEqual({ id: "evt-1", attemptCount: 1 });
-    expect(claimCalls).toHaveLength(1);
-    expect(claimCalls[0].values.dedupeKey).toBe("key-1");
-    expect(claimCalls[0].values.status).toBe("pending");
-    expect(claimCalls[0].values.attemptCount).toBe(1);
+    expect(claimCalls()).toHaveLength(1);
+    expect(claimCalls()[0].values.dedupeKey).toBe("key-1");
+    expect(claimCalls()[0].values.status).toBe("pending");
+    expect(claimCalls()[0].values.attemptCount).toBe(1);
 
-    const conflict = claimCalls[0].conflict;
+    const conflict = claimCalls()[0].conflict;
     expect(conflict).not.toBeNull();
     expect(conflict?.target).toBeDefined();
 
@@ -117,15 +77,15 @@ describe("claimReminderSlot", () => {
     // guard AND must accept stale 'pending' rows for lease recovery.
     const setWhere = conflict?.setWhere;
     expect(setWhere).toBeDefined();
-    expect(chunksContain(setWhere, "status")).toBe(true);
-    expect(chunksContain(setWhere, "attempt_count")).toBe(true);
-    expect(chunksContain(setWhere, "last_attempt_at")).toBe(true);
-    expect(chunksContain(setWhere, "failed")).toBe(true);
-    expect(chunksContain(setWhere, "pending")).toBe(true);
+    expect(predicateIncludes(setWhere, "status")).toBe(true);
+    expect(predicateIncludes(setWhere, "attempt_count")).toBe(true);
+    expect(predicateIncludes(setWhere, "last_attempt_at")).toBe(true);
+    expect(predicateIncludes(setWhere, "failed")).toBe(true);
+    expect(predicateIncludes(setWhere, "pending")).toBe(true);
   });
 
   it("returns null when the database refused the upsert (row exists, not retryable)", async () => {
-    nextClaimReturning = [];
+    fakeDb.seed(reminderEvents, []);
     const claim = await claimReminderSlot({
       userId: "u1",
       medicationId: "med-A",
@@ -148,8 +108,8 @@ describe("completeReminder", () => {
       pushStatus: "failed",
       lastError: "push:all_failed=boom",
     });
-    expect(updateCalls).toHaveLength(1);
-    const payload = updateCalls[0].payload;
+    expect(updateCalls()).toHaveLength(1);
+    const payload = updateCalls()[0].payload;
     expect(payload.status).toBe("sent");
     expect(payload.emailStatus).toBe("sent");
     expect(payload.pushStatus).toBe("failed");
@@ -157,8 +117,8 @@ describe("completeReminder", () => {
     expect(payload.lastAttemptAt).toBeInstanceOf(Date);
     // Predicate captured by the mock proves the UPDATE targets the
     // specific evt id we claimed, not a global match.
-    expect(updateCalls[0].predicate).toBeDefined();
-    expect(chunksContain(updateCalls[0].predicate, "evt-1")).toBe(true);
+    expect(updateCalls()[0].predicate).toBeDefined();
+    expect(predicateIncludes(updateCalls()[0].predicate, "evt-1")).toBe(true);
   });
 
   it("derives status=failed when every configured channel failed", async () => {
@@ -167,7 +127,7 @@ describe("completeReminder", () => {
       pushStatus: "failed",
       lastError: "all channels failed",
     });
-    expect(updateCalls[0].payload.status).toBe("failed");
+    expect(updateCalls()[0].payload.status).toBe("failed");
   });
 
   it("derives status=sent when both channels are not_configured (nothing to retry)", async () => {
@@ -176,7 +136,7 @@ describe("completeReminder", () => {
       pushStatus: "not_configured",
       lastError: null,
     });
-    expect(updateCalls[0].payload.status).toBe("sent");
+    expect(updateCalls()[0].payload.status).toBe("sent");
   });
 });
 
@@ -214,25 +174,25 @@ describe("withReminderClaim", () => {
     // The claim must receive the caller's identity unmodified — a bug
     // that swapped or dropped one of these would still "complete
     // successfully" against the wrong row.
-    expect(claimCalls).toHaveLength(1);
-    expect(claimCalls[0].values.userId).toBe("u1");
-    expect(claimCalls[0].values.medicationId).toBe("m1");
-    expect(claimCalls[0].values.reminderType).toBe("overdue");
-    expect(claimCalls[0].values.dedupeKey).toBe("k1");
+    expect(claimCalls()).toHaveLength(1);
+    expect(claimCalls()[0].values.userId).toBe("u1");
+    expect(claimCalls()[0].values.medicationId).toBe("m1");
+    expect(claimCalls()[0].values.reminderType).toBe("overdue");
+    expect(claimCalls()[0].values.dedupeKey).toBe("k1");
 
-    expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].payload.emailStatus).toBe("sent");
-    expect(updateCalls[0].payload.pushStatus).toBe("sent");
-    expect(updateCalls[0].payload.status).toBe("sent");
-    expect(updateCalls[0].payload.lastError).toBeNull();
+    expect(updateCalls()).toHaveLength(1);
+    expect(updateCalls()[0].payload.emailStatus).toBe("sent");
+    expect(updateCalls()[0].payload.pushStatus).toBe("sent");
+    expect(updateCalls()[0].payload.status).toBe("sent");
+    expect(updateCalls()[0].payload.lastError).toBeNull();
     // The completion must target the exact row the claim returned, not
     // some other row — a bug that completed the wrong reminder would
     // still pass every assertion above.
-    expect(chunksContain(updateCalls[0].predicate, "evt-1")).toBe(true);
+    expect(predicateIncludes(updateCalls()[0].predicate, "evt-1")).toBe(true);
   });
 
   it("never runs the callback and never completes when the claim is refused", async () => {
-    nextClaimReturning = []; // row exists and is not retryable
+    fakeDb.seed(reminderEvents, []); // row exists and is not retryable
     let ran = false;
 
     await withReminderClaim(
@@ -244,7 +204,7 @@ describe("withReminderClaim", () => {
     );
 
     expect(ran).toBe(false);
-    expect(updateCalls).toHaveLength(0);
+    expect(updateCalls()).toHaveLength(0);
   });
 
   it("keeps a partial email success when the callback throws afterwards", async () => {
@@ -259,11 +219,11 @@ describe("withReminderClaim", () => {
       },
     );
 
-    expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].payload.emailStatus).toBe("sent");
-    expect(updateCalls[0].payload.pushStatus).toBe("failed");
-    expect(updateCalls[0].payload.status).toBe("sent"); // one configured channel succeeded
-    expect(String(updateCalls[0].payload.lastError)).toContain("push blew up");
+    expect(updateCalls()).toHaveLength(1);
+    expect(updateCalls()[0].payload.emailStatus).toBe("sent");
+    expect(updateCalls()[0].payload.pushStatus).toBe("failed");
+    expect(updateCalls()[0].payload.status).toBe("sent"); // one configured channel succeeded
+    expect(String(updateCalls()[0].payload.lastError)).toContain("push blew up");
   });
 
   it("leaves an unintended channel not_configured even when the callback throws", async () => {
@@ -275,9 +235,9 @@ describe("withReminderClaim", () => {
       },
     );
 
-    expect(updateCalls[0].payload.emailStatus).toBe("not_configured");
-    expect(updateCalls[0].payload.pushStatus).toBe("failed");
-    expect(updateCalls[0].payload.status).toBe("failed");
+    expect(updateCalls()[0].payload.emailStatus).toBe("not_configured");
+    expect(updateCalls()[0].payload.pushStatus).toBe("failed");
+    expect(updateCalls()[0].payload.status).toBe("failed");
   });
 
   it("still completes when the callback throws a non-Error", async () => {
@@ -289,8 +249,10 @@ describe("withReminderClaim", () => {
       },
     );
 
-    expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].payload.emailStatus).toBe("failed");
-    expect(String(updateCalls[0].payload.lastError)).toContain("non-Error thrown during dispatch");
+    expect(updateCalls()).toHaveLength(1);
+    expect(updateCalls()[0].payload.emailStatus).toBe("failed");
+    expect(String(updateCalls()[0].payload.lastError)).toContain(
+      "non-Error thrown during dispatch",
+    );
   });
 });

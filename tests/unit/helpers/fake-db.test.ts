@@ -107,8 +107,20 @@ describe("createFakeDb — writes", () => {
         table: "medications",
         payload: { id: "m1", name: "Vitamin D" },
         predicate: undefined,
+        conflict: null,
       },
     ]);
+  });
+
+  it("captures the onConflictDoUpdate config — the upsert's dedupe shape", async () => {
+    const config = { target: ["dedupe_key"], set: { attemptCount: 2 } };
+    await f.db.insert(medications).values({ id: "m1" }).onConflictDoUpdate(config).returning();
+    expect(f.attempted[0].conflict).toBe(config);
+  });
+
+  it("leaves conflict null when the write has no upsert clause", async () => {
+    await f.db.insert(medications).values({ id: "m1" });
+    expect(f.attempted[0].conflict).toBeNull();
   });
 
   it("records a bulk insert as a single call carrying the array", async () => {

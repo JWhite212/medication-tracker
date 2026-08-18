@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeDb } from "./helpers/fake-db";
+import { pushSubscriptions, reminderEvents } from "$lib/server/db/schema";
 
 // Env is read at call time by isVapidConfigured(), so tests flip these
 // between cases rather than re-importing the module.
@@ -10,32 +12,13 @@ vi.mock("$env/dynamic/private", () => ({
 }));
 
 // Rows handed to successive db.select(...) calls, in order.
-const selectQueue: Array<unknown[]> = [];
-let deleteCount = 0;
 
-vi.mock("$lib/server/db", () => {
-  const makeSelectChain = () => {
-    const rows = selectQueue.shift() ?? [];
-    const resolve = () => Promise.resolve(rows);
-    const chain: Record<string, unknown> = {};
-    chain.from = () => chain;
-    chain.where = () => chain;
-    chain.limit = resolve;
-    chain.then = (onFulfilled: (v: unknown) => unknown) => resolve().then(onFulfilled);
-    return chain;
-  };
-  return {
-    db: {
-      select: makeSelectChain,
-      delete: () => ({
-        where: () => {
-          deleteCount++;
-          return Promise.resolve();
-        },
-      }),
-    },
-  };
-});
+// The database comes from the shared seam, which dispatches on real table
+// identity. The old fake shifted one ordered queue; a single push-
+// subscriptions seed replaces it, and deletes are counted from traffic.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
+
+const deleteCount = () => fakeDb.attempted.filter((c) => c.op === "delete").length;
 
 const sendNotification = vi.fn();
 vi.mock("web-push", () => ({
@@ -65,8 +48,7 @@ function pushError(statusCode: number, message = "push failed") {
 }
 
 beforeEach(() => {
-  selectQueue.length = 0;
-  deleteCount = 0;
+  fakeDb.reset();
   sendNotification.mockReset();
   sendNotification.mockResolvedValue(undefined);
   envState.VAPID_PUBLIC_KEY = "test-public-key";
@@ -75,7 +57,7 @@ beforeEach(() => {
 
 describe("sendTestPush", () => {
   it("tags the test distinctly so it cannot replace a pending reminder", async () => {
-    selectQueue.push([subscription("sub-1")]);
+    fakeDb.seed(pushSubscriptions, [subscription("sub-1")]);
 
     await sendTestPush("user-1");
 
@@ -87,7 +69,7 @@ describe("sendTestPush", () => {
   });
 
   it("reports no_subscriptions when the user has no registered devices", async () => {
-    selectQueue.push([]);
+    fakeDb.seed(pushSubscriptions, []);
 
     const result = await sendTestPush("user-1");
 
@@ -101,7 +83,11 @@ describe("sendTestPush", () => {
 
 describe("sendPushNotification delivery counts", () => {
   it("reports how many devices were attempted alongside how many delivered", async () => {
-    selectQueue.push([subscription("sub-1"), subscription("sub-2"), subscription("sub-3")]);
+    fakeDb.seed(pushSubscriptions, [
+      subscription("sub-1"),
+      subscription("sub-2"),
+      subscription("sub-3"),
+    ]);
     sendNotification
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(pushError(500))
@@ -123,7 +109,7 @@ describe("sendPushNotification delivery counts", () => {
   });
 
   it("counts expired subscriptions it pruned", async () => {
-    selectQueue.push([subscription("sub-1"), subscription("sub-2")]);
+    fakeDb.seed(pushSubscriptions, [subscription("sub-1"), subscription("sub-2")]);
     sendNotification.mockRejectedValueOnce(pushError(410)).mockResolvedValueOnce(undefined);
 
     const result = await sendPushNotification("user-1", {
@@ -139,11 +125,11 @@ describe("sendPushNotification delivery counts", () => {
       attemptedCount: 2,
       prunedCount: 1,
     });
-    expect(deleteCount).toBe(1);
+    expect(deleteCount()).toBe(1);
   });
 
   it("still reports counts when every device failed", async () => {
-    selectQueue.push([subscription("sub-1"), subscription("sub-2")]);
+    fakeDb.seed(pushSubscriptions, [subscription("sub-1"), subscription("sub-2")]);
     sendNotification.mockRejectedValue(pushError(410));
 
     const result = await sendPushNotification("user-1", {
@@ -166,8 +152,8 @@ describe("getPushHealth", () => {
   it("reports device registrations and when reminders last ran for the user", async () => {
     const oldest = new Date("2026-01-04T09:00:00Z");
     const lastReminder = new Date("2026-08-10T07:30:00Z");
-    selectQueue.push([{ deviceCount: 2, oldestRegisteredAt: oldest }]);
-    selectQueue.push([{ lastReminderAt: lastReminder }]);
+    fakeDb.seed(pushSubscriptions, [{ deviceCount: 2, oldestRegisteredAt: oldest }]);
+    fakeDb.seed(reminderEvents, [{ lastReminderAt: lastReminder }]);
 
     const health = await getPushHealth("user-1");
 
@@ -180,8 +166,8 @@ describe("getPushHealth", () => {
   });
 
   it("reports zero devices and no reminder history for a fresh account", async () => {
-    selectQueue.push([{ deviceCount: 0, oldestRegisteredAt: null }]);
-    selectQueue.push([{ lastReminderAt: null }]);
+    fakeDb.seed(pushSubscriptions, [{ deviceCount: 0, oldestRegisteredAt: null }]);
+    fakeDb.seed(pushSubscriptions, [{ lastReminderAt: null }]);
 
     const health = await getPushHealth("user-1");
 
@@ -194,8 +180,10 @@ describe("getPushHealth", () => {
 
   it("flags the deployment as unconfigured when VAPID keys are missing", async () => {
     delete envState.VAPID_PRIVATE_KEY;
-    selectQueue.push([{ deviceCount: 1, oldestRegisteredAt: new Date("2026-01-04T09:00:00Z") }]);
-    selectQueue.push([{ lastReminderAt: null }]);
+    fakeDb.seed(pushSubscriptions, [
+      { deviceCount: 1, oldestRegisteredAt: new Date("2026-01-04T09:00:00Z") },
+    ]);
+    fakeDb.seed(pushSubscriptions, [{ lastReminderAt: null }]);
 
     const health = await getPushHealth("user-1");
 

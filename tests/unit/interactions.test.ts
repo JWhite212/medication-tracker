@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { fakeDb } from "./helpers/fake-db";
+import { medications } from "$lib/server/db/schema";
 
 // Allow each test to swap the env value before importing the module.
 const envState: { INTERACTIONS_ENABLED?: string } = {};
@@ -10,23 +12,23 @@ vi.mock("$env/dynamic/private", () => ({
   }),
 }));
 
-// Stub the db so checkInteractions doesn't try to talk to Postgres.
+// The database comes from the shared seam, which dispatches on real table
+// identity — checkInteractions reads the user's medications.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
+
+// Accumulated per test, then pushed to the seam as one seed.
 const mockMedications: Array<{ name: string }> = [];
-vi.mock("$lib/server/db", () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: async () => mockMedications,
-      }),
-    }),
-  },
-}));
+function pushMedication(row: { name: string }) {
+  mockMedications.push(row);
+  fakeDb.seed(medications, mockMedications);
+}
 
 const { isInteractionsEnabled, checkInteractions, __testing__ } =
   await import("../../src/lib/server/interactions");
 
 beforeEach(() => {
   __testing__.clearCache();
+  fakeDb.reset();
   mockMedications.length = 0;
   delete envState.INTERACTIONS_ENABLED;
 });
@@ -74,7 +76,7 @@ describe("checkInteractions", () => {
 
   it("returns [] gracefully when openFDA is unreachable (network error)", async () => {
     envState.INTERACTIONS_ENABLED = "true";
-    mockMedications.push({ name: "Aspirin" });
+    pushMedication({ name: "Aspirin" });
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
 
     const result = await checkInteractions("u1", "Ibuprofen");
@@ -83,7 +85,7 @@ describe("checkInteractions", () => {
 
   it("returns [] gracefully when openFDA returns non-OK status", async () => {
     envState.INTERACTIONS_ENABLED = "true";
-    mockMedications.push({ name: "Aspirin" });
+    pushMedication({ name: "Aspirin" });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("rate limited", { status: 429 }));
 
     const result = await checkInteractions("u1", "Ibuprofen");
@@ -92,7 +94,7 @@ describe("checkInteractions", () => {
 
   it("flags an interaction when openFDA text mentions an existing medication", async () => {
     envState.INTERACTIONS_ENABLED = "true";
-    mockMedications.push({ name: "Aspirin" });
+    pushMedication({ name: "Aspirin" });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -108,7 +110,7 @@ describe("checkInteractions", () => {
 
   it("caches the openFDA response per drug name", async () => {
     envState.INTERACTIONS_ENABLED = "true";
-    mockMedications.push({ name: "Aspirin" });
+    pushMedication({ name: "Aspirin" });
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ results: [{ drug_interactions: ["aspirin"] }] }), {
         status: 200,

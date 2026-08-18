@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeDb } from "./helpers/fake-db";
+import { users } from "$lib/server/db/schema";
+
+// The row the login query finds; null means "no such user".
+function seedUser(row: Record<string, unknown> | null) {
+  fakeDb.seed(users, row ? [row] : []);
+}
 
 // Focused on the anti-enumeration timing behavior: unknown or
 // password-less accounts must still burn an Argon2 verification so
 // response timing cannot distinguish them from real accounts.
 const state = {
-  userRow: null as Record<string, unknown> | null,
   verifyResult: false,
 };
 
@@ -35,22 +41,9 @@ vi.mock("$lib/server/auth/lucia", () => ({
   },
 }));
 
-vi.mock("$lib/server/db/schema", () => ({
-  users: { id: {}, email: {}, passwordHash: {} },
-}));
-
-vi.mock("$lib/server/db", () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => (state.userRow ? [state.userRow] : []),
-        }),
-      }),
-    }),
-    update: () => ({ set: () => ({ where: async () => {} }) }),
-  },
-}));
+// The database comes from the shared seam, which dispatches on real table
+// identity — so this file mocks no schema and binds to the real users table.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
 const { actions } = await import("../../src/routes/auth/login/+page.server");
 
@@ -72,7 +65,8 @@ const baseUser = {
 };
 
 beforeEach(() => {
-  state.userRow = null;
+  fakeDb.reset();
+  seedUser(null);
   state.verifyResult = false;
   verifyPassword.mockClear();
   verifyDummyPassword.mockClear();
@@ -80,7 +74,7 @@ beforeEach(() => {
 
 describe("web login action — enumeration timing", () => {
   it("burns a dummy Argon2 verify for an unknown email", async () => {
-    state.userRow = null;
+    seedUser(null);
 
     const result = (await call("nobody@b.com", "whatever")) as { status: number };
     expect(result.status).toBe(400);
@@ -89,7 +83,7 @@ describe("web login action — enumeration timing", () => {
   });
 
   it("burns a dummy Argon2 verify for an OAuth-only account with no password hash", async () => {
-    state.userRow = { ...baseUser, passwordHash: null };
+    seedUser({ ...baseUser, passwordHash: null });
 
     const result = (await call(baseUser.email, "whatever")) as { status: number };
     expect(result.status).toBe(400);
@@ -98,7 +92,7 @@ describe("web login action — enumeration timing", () => {
   });
 
   it("verifies against the real hash (no dummy) for a known account", async () => {
-    state.userRow = { ...baseUser };
+    seedUser({ ...baseUser });
     state.verifyResult = false;
 
     const result = (await call(baseUser.email, "wrong")) as { status: number };

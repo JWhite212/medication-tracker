@@ -21,6 +21,13 @@ const dbState: {
   lastStampedCounter: null,
 };
 
+// DELIBERATELY NOT on tests/unit/helpers/fake-db.ts, and not duplication.
+// The update below does not record a write — it SIMULATES the production
+// WHERE clause, only stamping when the stored counter is null or strictly
+// less than the new step. That compare-and-set is the whole mechanism behind
+// "rejects a second consume of the same code (replay)", and the shared seam
+// captures predicates without evaluating them, by design. Moving this file
+// onto the seam would make the replay test pass unconditionally.
 vi.mock("$lib/server/db", () => {
   const select = () => ({
     from: () => ({

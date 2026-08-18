@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeDb } from "./helpers/fake-db";
+import { doseLogs } from "$lib/server/db/schema";
 
 // getPerMedicationStats falls back to a medication's legacy
 // scheduleIntervalHours column only when it has no medication_schedules
@@ -25,19 +27,9 @@ const row = {
 // the chainable-stub pattern in tests/unit/doses-inventory.test.ts.
 // `.groupBy()` is the terminal call and is awaited directly, so it can
 // resolve a plain Promise rather than needing a `.then()` on the chain.
-function chainableRows(rows: unknown[]) {
-  const chain: Record<string, unknown> = {};
-  const passthrough = () => chain;
-  chain.from = passthrough;
-  chain.innerJoin = passthrough;
-  chain.where = passthrough;
-  chain.groupBy = () => Promise.resolve(rows);
-  return chain;
-}
-
-vi.mock("$lib/server/db", () => ({
-  db: { select: () => chainableRows([row]) },
-}));
+// The database comes from the shared seam, which dispatches on real table
+// identity. getPerMedicationStats runs one aggregate over dose_logs.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
 // No medication_schedules rows for this medication, so
 // getPerMedicationStats must fall back to the legacy column.
@@ -46,6 +38,11 @@ vi.mock("$lib/server/schedules", () => ({
 }));
 
 const { getPerMedicationStats } = await import("../../src/lib/server/analytics");
+
+beforeEach(() => {
+  fakeDb.reset();
+  fakeDb.seed(doseLogs, [row]);
+});
 
 describe("getPerMedicationStats legacy interval fallback", () => {
   it('yields a finite expectedTotal for a stored "0" interval instead of Infinity', async () => {

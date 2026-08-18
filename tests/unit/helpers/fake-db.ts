@@ -9,6 +9,10 @@ export interface RecordedCall {
   predicate?: unknown;
   /** `.values(...)` for an insert, `.set(...)` for an update. */
   payload?: Row | Row[];
+  /** The config handed to `.onConflictDoUpdate(...)`. This is the upsert's
+      target and set clause — for `claimReminderSlot` it IS the dedupe
+      mechanism, so it is part of the write's shape, not incidental. */
+  conflict?: Row | null;
 }
 
 /** Resolve a Drizzle table reference to its SQL name. Falls back to a
@@ -128,12 +132,13 @@ export function createFakeDb() {
   function writeChain(op: RecordedCall["op"], table: string) {
     let payload: Row | Row[] | undefined;
     let predicate: unknown;
+    let conflict: Row | null = null;
     let recorded = false;
 
     const resolve = <T>(value: T): Promise<T> => {
       if (!recorded) {
         recorded = true;
-        record({ op, table, predicate, payload });
+        record({ op, table, predicate, payload, conflict });
       }
       // Recorded before rejecting: a write that was attempted and then failed
       // still happened, and `doses-inventory.test.ts` asserts exactly that.
@@ -155,7 +160,10 @@ export function createFakeDb() {
         return chain;
       },
       onConflictDoNothing: (..._args: unknown[]) => chain,
-      onConflictDoUpdate: (..._args: unknown[]) => chain,
+      onConflictDoUpdate: (config?: Row, ..._rest: unknown[]) => {
+        conflict = config ?? null;
+        return chain;
+      },
       /** `INSERT ... RETURNING` yields the row as materialised, so it reads
           from the standing seed — that is what lets a caller's next read see
           what it just created. `UPDATE ... RETURNING` yields the AFTER image,

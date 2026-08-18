@@ -30,7 +30,14 @@ Two things were learned in flight and are already in the helper:
 1. **`orderBy` / `innerJoin` / `groupBy` / `onConflict*` / `returning` must be variadic.** Zero-arg signatures type-check fine in isolation and then fail in every migrated test, because real callers pass columns and join conditions. Caught by `svelte-check`, not by vitest.
 2. **`seedReturning(table, rows)` was added** (Task 5's surface, one extra method). `UPDATE ... RETURNING` yields the row's AFTER image while a preceding SELECT saw the BEFORE image, and `updatePreferences` diffs one against the other. Without a separate after-image the fake collapses them and `preferences.test.ts`'s four audit-scoping assertions — the ones PR #113 added — stop meaning anything.
 
-**Tasks 7–16 remain.** Nothing about them has changed except that Task 7's `preferences.test.ts` now has a known shape (below).
+**Task 7 is 2/3 done** — `preferences.test.ts` and `auth-reauth.test.ts` are migrated and mutation-verified. `api/wipe.test.ts` remains, and two more findings landed in the helper:
+
+3. **`returning()` is op-aware.** `INSERT ... RETURNING` reads the standing seed (the row _as materialised_, which is what lets `getOrCreatePreferences`'s re-read find what it just created); `UPDATE ... RETURNING` reads `seedReturning` (the _after_-image). Collapsing them made the insert hand back the update's after-image, so the before/after diff compared a row against itself and all four audit-scoping assertions went vacuous while staying green. Exactly the #110 failure mode, caught only because the mutation check was run.
+4. **The "row absent" path is modelled with `seedQueue([[]])` in front of a standing seed** — first read misses, insert materialises, re-read hits.
+
+**`api/wipe.test.ts` needs one thing the fake does not provide.** Its hand-rolled transaction rolls back _two_ things on throw: the db `ops` array **and** a separately-mocked `auditCalls` array (`logAudit` is mocked at module level, so its calls are not db traffic and `committed` cannot see them). Do **not** extend the fake to know about arbitrary mocked modules — that is unbounded scope. Instead keep a three-line local snapshot of `auditCalls` in that file's `dbTx.transaction` wrapper, take `ops` from `fakeDb.committed`, and note in a comment why the file keeps a partial wrapper.
+
+**Tasks 8–16 remain** and are otherwise unchanged.
 
 ---
 

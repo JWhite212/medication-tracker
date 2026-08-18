@@ -1,65 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeDb } from "../helpers/fake-db";
+import { apiCommands } from "$lib/server/db/schema";
 import { upsertMedicationPayload } from "$lib/utils/validation";
-
-// api_commands is the idempotency ledger — table identity only matters
-// for drizzle's typings here, the mock db below ignores the actual
-// column refs and is driven entirely by `reserveResult`/`selectRows`/`inserts`.
-const apiCommandsTable = { idempotencyKey: "idempotencyKey" };
-vi.mock("$lib/server/db/schema", () => ({ apiCommands: apiCommandsTable }));
 
 // Controllable mock state for each db operation used by the reserve-first
 // algorithm in runCommands.
-let reserveResult: Array<{ idempotencyKey: string }> = [];
-let selectRows: Array<{ result: unknown }> = [];
-const inserts: Array<{ userId: string; idempotencyKey: string; result: unknown }> = [];
-const updates: Array<{ result: unknown }> = [];
-const deletes: number[] = [];
-// When true, the NEXT update(...).set(...).where(...) call rejects instead
-// of resolving (and resets the flag) — simulates the result-write failing
-// after a successful dispatch.
-let updateShouldRejectOnce = false;
 
-function buildDb() {
-  return {
-    select: () => ({
-      from: (_table: unknown) => ({
-        where: (_cond: unknown) => ({
-          limit: (_n: number) => Promise.resolve(selectRows),
-        }),
-      }),
-    }),
-    insert: (_table: unknown) => ({
-      values: (row: { userId: string; idempotencyKey: string; result: unknown }) => ({
-        onConflictDoNothing: () => ({
-          returning: (_cols: unknown) => {
-            inserts.push(row);
-            return Promise.resolve(reserveResult);
-          },
-        }),
-      }),
-    }),
-    update: (_table: unknown) => ({
-      set: (row: { result: unknown }) => ({
-        where: (_cond: unknown) => {
-          updates.push(row);
-          if (updateShouldRejectOnce) {
-            updateShouldRejectOnce = false;
-            return Promise.reject(new Error("result write failed"));
-          }
-          return Promise.resolve();
-        },
-      }),
-    }),
-    delete: (_table: unknown) => ({
-      where: (_cond: unknown) => {
-        deletes.push(1);
-        return Promise.resolve();
-      },
-    }),
-  };
-}
+// The database comes from the shared seam, which dispatches on real table
+// identity — so this file mocks no schema and binds to the real apiCommands
+// table. The reserve INSERT ... RETURNING reads the standing seed, while the
+// replay SELECT reads a one-shot queue in front of it, which is how the two
+// stay independently primed on the same table.
+vi.mock("$lib/server/db", async () => (await import("../helpers/fake-db")).dbMock);
 
-vi.mock("$lib/server/db", () => ({ db: buildDb() }));
+const payloadsOf = (kind: "insert" | "update" | "delete") =>
+  fakeDb.attempted.filter((c) => c.op === kind).map((c) => c.payload);
+
+const inserts = () => payloadsOf("insert");
+const updates = () => payloadsOf("update");
+// The old fake pushed a bare 1 per delete; preserve that shape.
+const deletes = () => payloadsOf("delete").map(() => 1);
 
 const logDose = vi.fn(
   async (
@@ -202,12 +162,7 @@ const { runCommands, dispatchCommand, UnknownCommandError } =
   await import("../../../src/lib/server/api/commands");
 
 beforeEach(() => {
-  reserveResult = [];
-  selectRows = [];
-  inserts.length = 0;
-  updates.length = 0;
-  deletes.length = 0;
-  updateShouldRejectOnce = false;
+  fakeDb.reset();
   logDose.mockClear();
   logSkippedDose.mockClear();
   updateDose.mockClear();
@@ -227,7 +182,7 @@ beforeEach(() => {
 
 describe("runCommands", () => {
   it("fresh command: reserves, dispatches, and records the result", async () => {
-    reserveResult = [{ idempotencyKey: "cmd-1" }];
+    fakeDb.seed(apiCommands, [{ idempotencyKey: "cmd-1" }]);
     const commands = [
       {
         id: "cmd-1",
@@ -241,55 +196,55 @@ describe("runCommands", () => {
     expect(logDose).toHaveBeenCalledTimes(1);
     expect(logDose).toHaveBeenCalledWith("u1", "med-1", 2, undefined, "with food", undefined);
 
-    expect(inserts).toEqual([{ userId: "u1", idempotencyKey: "cmd-1", result: null }]);
-    expect(updates).toEqual([{ result: { id: "dose-1" } }]);
-    expect(deletes).toEqual([]);
+    expect(inserts()).toEqual([{ userId: "u1", idempotencyKey: "cmd-1", result: null }]);
+    expect(updates()).toEqual([{ result: { id: "dose-1" } }]);
+    expect(deletes()).toEqual([]);
 
     expect(results).toEqual([{ id: "cmd-1", ok: true, result: { id: "dose-1" } }]);
   });
 
   it("completed replay: reserve loses, cached result is returned without re-executing", async () => {
-    reserveResult = [];
-    selectRows = [{ result: { id: "dose-cached" } }];
+    fakeDb.seed(apiCommands, []);
+    fakeDb.seedQueue(apiCommands, [[{ result: { id: "dose-cached" } }]]);
     const commands = [{ id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1" } }];
 
     const results = await runCommands("u1", commands);
 
     expect(logDose).not.toHaveBeenCalled();
-    expect(updates).toEqual([]);
-    expect(deletes).toEqual([]);
+    expect(updates()).toEqual([]);
+    expect(deletes()).toEqual([]);
     expect(results).toEqual([{ id: "cmd-1", ok: true, result: { id: "dose-cached" } }]);
   });
 
   it("in-progress: reserve loses, existing row has null result — never re-executes", async () => {
-    reserveResult = [];
-    selectRows = [{ result: null }];
+    fakeDb.seed(apiCommands, []);
+    fakeDb.seedQueue(apiCommands, [[{ result: null }]]);
     const commands = [{ id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1" } }];
 
     const results = await runCommands("u1", commands);
 
     expect(logDose).not.toHaveBeenCalled();
-    expect(updates).toEqual([]);
-    expect(deletes).toEqual([]);
+    expect(updates()).toEqual([]);
+    expect(deletes()).toEqual([]);
     expect(results).toEqual([{ id: "cmd-1", ok: false, error: "in_progress" }]);
   });
 
   it("dispatch failure: reservation is released so the id can be retried", async () => {
-    reserveResult = [{ idempotencyKey: "cmd-1" }];
+    fakeDb.seed(apiCommands, [{ idempotencyKey: "cmd-1" }]);
     logDose.mockRejectedValueOnce(new Error("db write failed"));
     const commands = [{ id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1" } }];
 
     const results = await runCommands("u1", commands);
 
     expect(logDose).toHaveBeenCalledTimes(1);
-    expect(deletes).toEqual([1]);
-    expect(updates).toEqual([]);
+    expect(deletes()).toEqual([1]);
+    expect(updates()).toEqual([]);
     expect(results).toEqual([{ id: "cmd-1", ok: false, error: "db write failed" }]);
   });
 
   it("result-write failure: reservation preserved, caller still gets its result, replay never re-dispatches", async () => {
-    reserveResult = [{ idempotencyKey: "cmd-1" }];
-    updateShouldRejectOnce = true;
+    fakeDb.seed(apiCommands, [{ idempotencyKey: "cmd-1" }]);
+    fakeDb.failNext("update", { error: new Error("result write failed") });
     const commands = [{ id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1" } }];
 
     const results = await runCommands("u1", commands);
@@ -298,7 +253,7 @@ describe("runCommands", () => {
     expect(logDose).toHaveBeenCalledTimes(1);
     // ...but the reservation was NOT released, because the mutation is
     // already durably committed at this point (only the ledger write failed).
-    expect(deletes).toEqual([]);
+    expect(deletes()).toEqual([]);
     // The caller that actually ran the dispatch still gets its result back
     // this turn, even though persisting it to the ledger failed.
     expect(results).toEqual([{ id: "cmd-1", ok: true, result: { id: "dose-1" } }]);
@@ -306,8 +261,8 @@ describe("runCommands", () => {
     // Simulate a retry/replay of the same command id: the reservation still
     // exists (insert loses the race) and its result column is still null
     // because the update above failed to persist it.
-    reserveResult = [];
-    selectRows = [{ result: null }];
+    fakeDb.seed(apiCommands, []);
+    fakeDb.seedQueue(apiCommands, [[{ result: null }]]);
 
     const replay = await runCommands("u1", commands);
 
@@ -316,14 +271,14 @@ describe("runCommands", () => {
   });
 
   it("unknown command type: caught by the dispatch-fail path, reservation released", async () => {
-    reserveResult = [{ idempotencyKey: "cmd-1" }];
+    fakeDb.seed(apiCommands, [{ idempotencyKey: "cmd-1" }]);
     const commands = [{ id: "cmd-1", type: "not_a_real_command", payload: {} }];
 
     const results = await runCommands("u1", commands);
 
     expect(logDose).not.toHaveBeenCalled();
-    expect(deletes).toEqual([1]);
-    expect(updates).toEqual([]);
+    expect(deletes()).toEqual([1]);
+    expect(updates()).toEqual([]);
     expect(results).toEqual([
       { id: "cmd-1", ok: false, error: "Unknown command: not_a_real_command" },
     ]);

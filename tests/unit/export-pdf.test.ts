@@ -3,7 +3,10 @@ import { describe, it, expect, vi } from "vitest";
 // export-pdf.ts imports $lib/server/db, which evaluates neon() at module
 // load. Stub it out so this unit test doesn't need a database — same
 // pattern as tests/unit/export-csv.test.ts.
-vi.mock("$lib/server/db", () => ({ db: {} }));
+// This module imports `db` but must never reach it. unusedDb THROWS on any
+// property access, so an accidental query fails loudly instead of silently
+// returning [] — do not "upgrade" this to createFakeDb().
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unusedDb);
 
 const { formatDoseLogLine } = await import("../../src/lib/server/export-pdf");
 

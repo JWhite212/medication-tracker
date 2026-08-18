@@ -6,7 +6,10 @@ import type { MedicationSchedule } from "$lib/server/schedules";
 // .ts dailyRateFor — the documented single source of truth) instead of
 // only the deprecated legacy columns, which are null for fixed-time
 // medications and made daysUntilRefill silently wrong for them.
-vi.mock("$lib/server/db", () => ({ db: {}, dbTx: {} }));
+// This module imports `db` but must never reach it. unusedDb THROWS on any
+// property access, so an accidental query fails loudly instead of silently
+// returning [] — do not "upgrade" this to createFakeDb().
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unusedDb);
 
 const { medicationStatsFor } = await import("../../src/lib/server/medications");
 

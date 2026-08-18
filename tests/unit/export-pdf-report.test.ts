@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { fakeDb } from "./helpers/fake-db";
+import { doseLogs, medications } from "$lib/server/db/schema";
 
 // The unit tests next door prove formatDoseLogLine is correct. This file
 // proves generateReport actually USES it — extracting a formatter and then
@@ -80,24 +82,12 @@ const medRows = [
 
 // generateReport issues its two queries inside one Promise.all, in a fixed
 // order: doses first, then the medication summary.
-let queryIndex = 0;
 
-function chain(rows: unknown[]) {
-  const c: Record<string, unknown> = {};
-  const passthrough = () => c;
-  c.from = passthrough;
-  c.innerJoin = passthrough;
-  c.where = passthrough;
-  c.orderBy = () => Promise.resolve(rows);
-  c.then = (onFulfilled: (v: unknown) => unknown) => Promise.resolve(rows).then(onFulfilled);
-  return c;
-}
-
-vi.mock("$lib/server/db", () => ({
-  db: {
-    select: () => chain([doseRows, medRows][queryIndex++] ?? []),
-  },
-}));
+// The database comes from the shared seam. The old fake dispatched by call
+// index ([doseRows, medRows][queryIndex++]) — but the two queries read
+// DIFFERENT tables (dose_logs, then medications), so seeding per table
+// delivers the same rows without depending on which runs first.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
 vi.mock("$lib/server/analytics", () => ({
   getDoseStatusBreakdown: async () => ({
@@ -115,7 +105,9 @@ const { generateReport } = await import("../../src/lib/server/export-pdf");
 
 beforeEach(() => {
   textCalls.length = 0;
-  queryIndex = 0;
+  fakeDb.reset();
+  fakeDb.seed(doseLogs, doseRows);
+  fakeDb.seed(medications, medRows);
 });
 
 describe("generateReport — dose log rendering", () => {

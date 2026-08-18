@@ -1,4 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fakeDb } from "../helpers/fake-db";
+import { users } from "$lib/server/db/schema";
+
+// The row the user lookup finds; null means "no such user".
+function seedUser(row: Record<string, unknown> | null) {
+  fakeDb.seed(users, row ? [row] : []);
+}
 
 // Module-level switches the mocks read. Set per-test to drive the
 // (mocked) preauth/totp/db behavior without rebuilding the mock chain
@@ -7,7 +14,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const state = {
   preAuthClaims: null as { userId: string; jti: string; exp: number } | null,
   totpResult: false,
-  userRow: null as Record<string, unknown> | null,
   rateLimit: { allowed: true, retryAfterMs: 0 },
   consume: { allowed: true, retryAfterMs: 0 },
 };
@@ -38,21 +44,9 @@ vi.mock("$lib/server/auth/lucia", () => ({
   lucia: { createSession: (userId: string, attrs: object) => createSession(userId, attrs) },
 }));
 
-vi.mock("$lib/server/db/schema", () => ({
-  users: { id: {}, email: {} },
-}));
-
-vi.mock("$lib/server/db", () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => (state.userRow ? [state.userRow] : []),
-        }),
-      }),
-    }),
-  },
-}));
+// The database comes from the shared seam, which dispatches on real table
+// identity — so this file mocks no schema and binds to the real users table.
+vi.mock("$lib/server/db", async () => (await import("../helpers/fake-db")).dbMock);
 
 const { POST } = await import("../../../src/routes/api/v1/auth/2fa/+server");
 
@@ -81,7 +75,8 @@ const claims = () => ({ userId: "u1", jti: "jti-1", exp: Date.now() + 300_000 })
 beforeEach(() => {
   state.preAuthClaims = null;
   state.totpResult = false;
-  state.userRow = null;
+  fakeDb.reset();
+  seedUser(null);
   state.rateLimit = { allowed: true, retryAfterMs: 0 };
   state.consume = { allowed: true, retryAfterMs: 0 };
   rlCalls.length = 0;
@@ -132,7 +127,7 @@ describe("POST /api/v1/auth/2fa", () => {
   it("returns { token, user } for a valid code and consumes the token single-use", async () => {
     state.preAuthClaims = claims();
     state.totpResult = true;
-    state.userRow = { ...baseUser };
+    seedUser({ ...baseUser });
 
     const res = await call({ preAuthToken: "pretok", code: "123456" });
     expect(res.status).toBe(200);
@@ -158,7 +153,7 @@ describe("POST /api/v1/auth/2fa", () => {
   it("returns 401 for a replayed token that was already consumed, without minting a session", async () => {
     state.preAuthClaims = claims();
     state.totpResult = true;
-    state.userRow = { ...baseUser };
+    seedUser({ ...baseUser });
     state.consume = { allowed: false, retryAfterMs: 200_000 };
 
     await expect(call({ preAuthToken: "pretok", code: "123456" })).rejects.toMatchObject({

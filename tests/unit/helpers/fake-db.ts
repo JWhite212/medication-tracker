@@ -134,16 +134,32 @@ export function createFakeDb() {
     let predicate: unknown;
     let conflict: Row | null = null;
     let recorded = false;
+    let pendingRejection: Error | null = null;
 
     const resolve = <T>(value: T): Promise<T> => {
       if (!recorded) {
         recorded = true;
-        record({ op, table, predicate, payload, conflict });
+        const call: RecordedCall = { op, table, predicate, payload, conflict };
+        // The write was tried, so it is always `attempted` — that is what
+        // `doses-inventory.test.ts` asserts after a simulated failure.
+        attempted.push(call);
+        const failure = takeFailure(op, table);
+        if (failure) {
+          // ...but a rejected write never lands in `committed`. Transaction
+          // rollback alone is not enough: a callback that CATCHES the
+          // rejection and completes would otherwise leave a write in the
+          // durable view that never succeeded.
+          pendingRejection = failure;
+        } else {
+          committed.push(call);
+        }
       }
-      // Recorded before rejecting: a write that was attempted and then failed
-      // still happened, and `doses-inventory.test.ts` asserts exactly that.
-      const failure = takeFailure(op, table);
-      return failure ? Promise.reject(failure) : Promise.resolve(value);
+      if (pendingRejection) {
+        const failure = pendingRejection;
+        pendingRejection = null;
+        return Promise.reject(failure);
+      }
+      return Promise.resolve(value);
     };
 
     const chain = {

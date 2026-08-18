@@ -256,6 +256,32 @@ describe("createFakeDb — failNext", () => {
     expect(f.attempted).toHaveLength(1);
   });
 
+  it("keeps a rejected write OUT of committed", async () => {
+    f.failNext("insert", { table: medications, error: new Error("boom") });
+    await expect(f.db.insert(medications).values({ id: "m1" })).rejects.toThrow("boom");
+    expect(f.attempted).toHaveLength(1);
+    expect(f.committed).toHaveLength(0);
+  });
+
+  it("keeps a rejected write out of committed even when the caller swallows it", async () => {
+    // Transaction rollback alone does not cover this: the callback catches the
+    // rejection and completes, so there is no throw for the rollback to
+    // trigger on. A write that never succeeded must still not be durable.
+    f.failNext("insert", { table: medications, error: new Error("boom") });
+
+    await f.dbTx.transaction(async (tx) => {
+      try {
+        await tx.insert(medications).values({ id: "m1" });
+      } catch {
+        // deliberately swallowed
+      }
+      await tx.insert(doseLogs).values({ id: "d1" });
+    });
+
+    expect(f.attempted.map((c) => c.table)).toEqual(["medications", "dose_logs"]);
+    expect(f.committed.map((c) => c.table)).toEqual(["dose_logs"]);
+  });
+
   it("leaves other tables alone", async () => {
     f.failNext("insert", { table: medications, error: new Error("boom") });
     await expect(f.db.insert(doseLogs).values({ id: "d1" })).resolves.not.toThrow();

@@ -102,15 +102,15 @@ describe("deleteDose — status-aware inventory restore", () => {
     seedSelect(undefined);
     const ok = await deleteDose("u1", "missing");
     expect(ok).toBe(false);
-    expect(updates).toHaveLength(0);
-    expect(deletes).toHaveLength(0);
+    expect(updates()).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
   });
 });
 
 describe("updateDose — status-aware inventory diff", () => {
   it("applies inventory diff when editing TAKEN dose quantity", async () => {
     seedSelect(takenDose({ quantity: 1 }));
-    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
+    fakeDb.seedReturning(doseLogs, [takenDose({ quantity: 2 })]);
     await updateDose("u1", "d1", { quantity: 2 });
     expect(updates().some((u) => u.table === medications)).toBe(true);
     expect(updates().some((u) => u.table === doseLogs)).toBe(true);
@@ -118,10 +118,7 @@ describe("updateDose — status-aware inventory diff", () => {
 
   it("does NOT apply inventory diff when editing SKIPPED dose quantity", async () => {
     seedSelect(skippedDose({ quantity: 1 }));
-    fakeDb.seedReturning(
-      doseLogs,
-      skippedDose({ quantity: 2 }) ? [skippedDose({ quantity: 2 })] : [],
-    );
+    fakeDb.seedReturning(doseLogs, [skippedDose({ quantity: 2 })]);
     await updateDose("u1", "d1", { quantity: 2 });
     expect(updates().some((u) => u.table === medications)).toBe(false);
     expect(updates().some((u) => u.table === doseLogs)).toBe(true);
@@ -129,7 +126,7 @@ describe("updateDose — status-aware inventory diff", () => {
 
   it("no inventory diff when quantity is unchanged on a TAKEN dose", async () => {
     seedSelect(takenDose({ quantity: 2 }));
-    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
+    fakeDb.seedReturning(doseLogs, [takenDose({ quantity: 2 })]);
     await updateDose("u1", "d1", { quantity: 2, notes: "edited note" });
     expect(updates().some((u) => u.table === medications)).toBe(false);
   });
@@ -138,7 +135,7 @@ describe("updateDose — status-aware inventory diff", () => {
     seedSelect(undefined);
     const result = await updateDose("u1", "missing", { quantity: 5 });
     expect(result).toBeNull();
-    expect(updates).toHaveLength(0);
+    expect(updates()).toHaveLength(0);
   });
 });
 
@@ -169,7 +166,7 @@ describe("transactional atomicity (Phase 2.1)", () => {
 
   it("updateDose rolls back: an inventory diff failure skips the audit log", async () => {
     seedSelect(takenDose({ quantity: 1 }));
-    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
+    fakeDb.seedReturning(doseLogs, [takenDose({ quantity: 2 })]);
     fakeDb.failNext("update", {
       table: medications,
       error: new Error("simulated update failure"),
@@ -204,23 +201,13 @@ describe("inventory event recording", () => {
   });
 
   it("logs a dose_deleted event when a TAKEN dose is removed", async () => {
-    seedSelect(takenDose({ quantity: 1, medicationId: "m1" }));
-    // The deleteDose path does a fresh select inside the transaction
-    // for the inventory snapshot. Seeding is table-wide rather than
-    // per-call, so this row answers that select too; the previousCount
-    // lookup pulls `inventoryCount` from it, so include it.
-    seedSelect({
-      id: "d1",
-      userId: "u1",
-      medicationId: "m1",
-      quantity: 1,
-      status: "taken",
-      takenAt: new Date(),
-      loggedAt: new Date(),
-      notes: null,
-      sideEffects: null,
-      inventoryCount: 28,
-    });
+    // deleteDose reads the dose, then takes a fresh inventory snapshot from
+    // the medication inside the transaction. Two different tables, so they
+    // are seeded independently — a single table-wide seed would have the
+    // second call overwrite the first, and the test would pass only because
+    // one row happened to be a superset of the other.
+    fakeDb.seed(doseLogs, [takenDose({ quantity: 1, medicationId: "m1" })]);
+    fakeDb.seed(medications, [{ id: "m1", inventoryCount: 28 }]);
 
     await deleteDose("u1", "d1");
 
@@ -250,7 +237,7 @@ describe("inventory event recording", () => {
       sideEffects: null,
       inventoryCount: 30,
     });
-    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
+    fakeDb.seedReturning(doseLogs, [takenDose({ quantity: 2 })]);
     await updateDose("u1", "d1", { quantity: 2 });
 
     const events = inserts().filter((i) => i.table === inventoryEvents);
@@ -264,7 +251,7 @@ describe("inventory event recording", () => {
 describe("sync-aware mutations (Task 2)", () => {
   it("updateDose bumps updatedAt", async () => {
     seedSelect(takenDose({ quantity: 1 }));
-    fakeDb.seedReturning(doseLogs, takenDose({ quantity: 2 }) ? [takenDose({ quantity: 2 })] : []);
+    fakeDb.seedReturning(doseLogs, [takenDose({ quantity: 2 })]);
     await updateDose("u1", "d1", { quantity: 2 });
 
     const doseUpdate = updates().find((u) => u.table === doseLogs);

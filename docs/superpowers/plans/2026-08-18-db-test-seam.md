@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **`git diff main..HEAD -- src/` must be empty.** This change touches no production code. Verified as a gate in Task 16.
+- **`git diff origin/main..HEAD -- src/` must be empty.** This change touches no production code. Verified as a gate in Task 16.
 - **No new runtime or dev dependencies.** `getTableName` already ships in `drizzle-orm`. PGlite is stage 2, a separate PR.
 - Suite baseline on `main` (`f806dba`): **807 tests across 66 files**, green in ~6.7s. Every task ends with the full suite green and the test count accounted for.
 - All test commands need the CI placeholder: `DATABASE_URL='postgresql://placeholder:placeholder@placeholder/placeholder?sslmode=require'`.
@@ -1221,7 +1221,7 @@ git commit -m "docs: record the unit-test database seam"
 - [ ] **Step 1: Prove no production code changed**
 
 ```bash
-git diff main..HEAD --stat -- src/
+git diff origin/main..HEAD --stat -- src/
 ```
 
 Expected: **empty**. Any output is a plan violation — the change is test-only.
@@ -1229,7 +1229,7 @@ Expected: **empty**. Any output is a plan violation — the change is test-only.
 - [ ] **Step 2: Prove no assertions were deleted**
 
 ```bash
-git diff main..HEAD -- tests/ | grep '^-' | grep -v '^---' | grep 'expect('
+git diff origin/main..HEAD -- tests/ | grep '^-' | grep -v '^---' | grep 'expect('
 ```
 
 Expected: only lines whose replacement is visible in the same hunk (`chunksContain` → `predicateIncludes` rewrites, and `updates.some(...)` → `fakeDb.attempted.some(...)` rewrites). Any assertion deleted without a replacement must be justified in writing or restored.

@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { getTableName } from "drizzle-orm";
+import { fakeDb } from "./helpers/fake-db";
 import {
   doseLogs,
   inventoryEvents,
@@ -12,9 +14,6 @@ import {
 // "it worked" but exactly which tables were touched and with what — the
 // safety properties here are about what must NOT happen (no foreign
 // userId, no per-row audit spam, no delete in merge mode).
-const inserts: Array<{ table: unknown; values: Record<string, unknown>[] }> = [];
-const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
-const deletes: Array<{ table: unknown }> = [];
 const auditCalls: Array<{
   entityType: string;
   entityId: string;
@@ -35,52 +34,37 @@ vi.mock("$lib/server/audit", () => ({
   computeChanges: () => null,
 }));
 
-function buildChainable() {
-  const thenable = <T>(value: T) => ({
-    then: (onFulfilled: (v: T) => unknown) => Promise.resolve().then(() => onFulfilled(value)),
-  });
+// The database comes from the shared seam. Recorded traffic carries table
+// NAMES; map them back to the real table objects so every assertion below
+// still reads `i.table === medications`.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
-  return {
-    select: () => {
-      const chain: Record<string, unknown> = {};
-      const passthrough = () => chain;
-      chain.from = passthrough;
-      chain.where = passthrough;
-      chain.limit = () => Promise.resolve([]);
-      return chain;
-    },
-    update: (table: unknown) => ({
-      set: (values: Record<string, unknown>) => {
-        updates.push({ table, values });
-        return { where: () => thenable(undefined) };
-      },
-    }),
-    delete: (table: unknown) => {
-      deletes.push({ table });
-      return { where: () => thenable(undefined) };
-    },
-    insert: (table: unknown) => ({
-      values: (rows: Record<string, unknown> | Record<string, unknown>[]) => {
-        inserts.push({ table, values: Array.isArray(rows) ? rows : [rows] });
-        return {
-          returning: () => Promise.resolve([{ id: "stub" }]),
-          onConflictDoUpdate: () => thenable(undefined),
-          onConflictDoNothing: () => ({ returning: () => Promise.resolve([{ id: "stub" }]) }),
-          then: (onFulfilled: (v: unknown) => unknown) =>
-            Promise.resolve().then(() => onFulfilled(undefined)),
-        };
-      },
-    }),
-  };
+const tableByName = new Map<string, unknown>(
+  [doseLogs, inventoryEvents, medicationSchedules, medications, userPreferences, users].map((t) => [
+    getTableName(t),
+    t as unknown,
+  ]),
+);
+
+function opsOf(kind: "insert" | "update" | "delete") {
+  return fakeDb.attempted
+    .filter((c) => c.op === kind)
+    .map((c) => ({
+      table: tableByName.get(c.table),
+      // The old fake normalised a single-row insert to a one-element array.
+      // A write with no payload records as [] rather than [undefined].
+      values: (Array.isArray(c.payload) ? c.payload : c.payload ? [c.payload] : []) as Record<
+        string,
+        unknown
+      >[],
+    }));
 }
 
-vi.mock("$lib/server/db", () => ({
-  db: buildChainable(),
-  dbTx: {
-    transaction: <T>(cb: (tx: ReturnType<typeof buildChainable>) => Promise<T>) =>
-      cb(buildChainable()),
-  },
-}));
+const inserts = () => opsOf("insert");
+const deletes = () => opsOf("delete");
+// Updates carry a single row, not an array — unwrap to match the old shape.
+const updates = () =>
+  opsOf("update").map((o) => ({ table: o.table, values: o.values[0] as Record<string, unknown> }));
 
 const { applyImport } = await import("../../src/lib/server/import/apply");
 const { buildImportPlan } = await import("../../src/lib/server/import/plan");
@@ -175,13 +159,13 @@ function plan(
 }
 
 function rowsFor(table: unknown): Record<string, unknown>[] {
-  return inserts.filter((i) => i.table === table).flatMap((i) => i.values);
+  return inserts()
+    .filter((i) => i.table === table)
+    .flatMap((i) => i.values);
 }
 
 beforeEach(() => {
-  inserts.length = 0;
-  updates.length = 0;
-  deletes.length = 0;
+  fakeDb.reset();
   auditCalls.length = 0;
 });
 
@@ -283,7 +267,7 @@ describe("applyImport — inventory", () => {
     // logDose decrements per dose, but a backup already carries the
     // post-decrement count — replaying through it would double-count.
     await applyImport(USER, plan());
-    const medicationUpdates = updates.filter((u) => u.table === medications);
+    const medicationUpdates = updates().filter((u) => u.table === medications);
     expect(medicationUpdates).toHaveLength(0);
   });
 
@@ -315,7 +299,7 @@ describe("applyImport — inventory", () => {
 describe("applyImport — merge vs replace", () => {
   it("DELETES NOTHING in merge mode", async () => {
     await applyImport(USER, plan());
-    expect(deletes).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
   });
 
   it("attaches doses to the existing row when a medication is reused", async () => {
@@ -332,14 +316,14 @@ describe("applyImport — merge vs replace", () => {
 
   it("deletes medications in replace mode, letting cascades take the children", async () => {
     await applyImport(USER, plan(bundle(), snapshot(), "replace"));
-    expect(deletes.map((d) => d.table)).toEqual([medications]);
+    expect(deletes().map((d) => d.table)).toEqual([medications]);
   });
 });
 
 describe("applyImport — sync and audit", () => {
   it("bumps syncEpoch so native clients force a full resync", async () => {
     await applyImport(USER, plan());
-    const userUpdates = updates.filter((u) => u.table === users);
+    const userUpdates = updates().filter((u) => u.table === users);
     expect(userUpdates.some((u) => "syncEpoch" in u.values)).toBe(true);
   });
 
@@ -374,7 +358,7 @@ describe("applyImport — profile and preferences", () => {
   it("updates only name and timezone from the profile", async () => {
     const b = bundle({ profile: { name: "Restored", timezone: "Europe/Paris" } });
     await applyImport(USER, plan(b));
-    const profileUpdate = updates.find((u) => u.table === users && "name" in u.values);
+    const profileUpdate = updates().find((u) => u.table === users && "name" in u.values);
     expect(profileUpdate?.values).toMatchObject({ name: "Restored", timezone: "Europe/Paris" });
     expect(profileUpdate?.values).not.toHaveProperty("email");
     expect(profileUpdate?.values).not.toHaveProperty("passwordHash");
@@ -397,7 +381,7 @@ describe("applyImport — profile and preferences", () => {
       plan(b, snapshot(), "merge", { inventory: true, preferences: false, profile: false }),
     );
     expect(rowsFor(userPreferences)).toHaveLength(0);
-    expect(updates.filter((u) => u.table === users && "name" in u.values)).toHaveLength(0);
+    expect(updates().filter((u) => u.table === users && "name" in u.values)).toHaveLength(0);
   });
 });
 
@@ -417,7 +401,7 @@ describe("applyImport — bulk behaviour", () => {
     }));
     await applyImport(USER, plan(bundle({ doses })));
 
-    const doseInserts = inserts.filter((i) => i.table === doseLogs);
+    const doseInserts = inserts().filter((i) => i.table === doseLogs);
     expect(doseInserts).toHaveLength(3);
     expect(doseInserts.every((i) => i.values.length <= 500)).toBe(true);
     expect(rowsFor(doseLogs)).toHaveLength(1200);

@@ -1,33 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// The database comes from the shared seam, which dispatches on real table
+// identity — so this file mocks no schema and binds to the real tables.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
+
+import { fakeDb } from "./helpers/fake-db";
+import { medications, medicationSchedules, auditLogs } from "$lib/server/db/schema";
+
 type Op =
   | { kind: "select"; table: string }
   | { kind: "update"; table: string; values: unknown }
   | { kind: "delete"; table: string }
   | { kind: "insert"; table: string; values: unknown };
 
-const ops: Op[] = [];
-let nextThrows: { onKind: Op["kind"]; onTable: string; error: Error } | null = null;
-let medExists = true;
-
-const tableNames = new WeakMap<object, string>();
-const medicationsTable = {};
-const medicationSchedulesTable = {};
-const auditLogsTable = {};
-tableNames.set(medicationsTable, "medications");
-tableNames.set(medicationSchedulesTable, "medication_schedules");
-tableNames.set(auditLogsTable, "audit_logs");
-
-vi.mock("$lib/server/db/schema", () => ({
-  medications: medicationsTable,
-  medicationSchedules: medicationSchedulesTable,
-  auditLogs: auditLogsTable,
-  doseLogs: {},
-  users: {},
-  userPreferences: {},
-  pushSubscriptions: {},
-  reminderEvents: {},
-}));
+// The durable view. The existence-check select runs BEFORE the transaction,
+// so it sits outside the rollback mark and survives — which is what the
+// `ops[0].kind === "select"` assertions on the failure paths rely on.
+function ops(): Op[] {
+  return fakeDb.committed.map((c) => ({ kind: c.op, table: c.table, values: c.payload }) as Op);
+}
 
 const beforeRow = {
   id: "med1",
@@ -37,80 +28,11 @@ const beforeRow = {
   dosageUnit: "mg",
 };
 
-function maybeThrow(kind: Op["kind"], table: string) {
-  if (nextThrows && nextThrows.onKind === kind && nextThrows.onTable === table) {
-    const err = nextThrows.error;
-    nextThrows = null;
-    throw err;
-  }
-}
-
-function buildClient() {
-  return {
-    select: () => ({
-      from: (tableRef: object) => ({
-        where: () => ({
-          limit: () => {
-            const tableName = tableNames.get(tableRef) ?? "unknown";
-            ops.push({ kind: "select", table: tableName });
-            if (tableName === "medications" && !medExists) return Promise.resolve([]);
-            return Promise.resolve([beforeRow]);
-          },
-        }),
-      }),
-    }),
-    update: (tableRef: object) => ({
-      set: (values: unknown) => ({
-        where: () => ({
-          returning: () => {
-            const tableName = tableNames.get(tableRef) ?? "unknown";
-            maybeThrow("update", tableName);
-            ops.push({ kind: "update", table: tableName, values });
-            if (tableName === "medications" && !medExists) return Promise.resolve([]);
-            return Promise.resolve([{ ...beforeRow, ...(values as object) }]);
-          },
-        }),
-      }),
-    }),
-    delete: (tableRef: object) => ({
-      where: () => {
-        const tableName = tableNames.get(tableRef) ?? "unknown";
-        maybeThrow("delete", tableName);
-        ops.push({ kind: "delete", table: tableName });
-        return Promise.resolve();
-      },
-    }),
-    insert: (tableRef: object) => ({
-      values: (rows: unknown) => {
-        const tableName = tableNames.get(tableRef) ?? "unknown";
-        maybeThrow("insert", tableName);
-        ops.push({ kind: "insert", table: tableName, values: rows });
-        return Promise.resolve();
-      },
-    }),
-  };
-}
-
-vi.mock("$lib/server/db", () => {
-  const client = buildClient();
-  return {
-    db: client,
-    dbTx: {
-      transaction: async <T>(cb: (tx: ReturnType<typeof buildClient>) => Promise<T>) => {
-        // Mirror Postgres all-or-nothing: snapshot ops at entry,
-        // restore on throw.
-        const snapshot = ops.slice();
-        try {
-          return await cb(client);
-        } catch (err) {
-          ops.length = 0;
-          for (const o of snapshot) ops.push(o);
-          throw err;
-        }
-      },
-    },
-  };
-});
+// What UPDATE ... RETURNING hands back: the before row with the submitted
+// fields applied. The old fake computed this from `.set(...)`'s argument;
+// seeding it statically is equivalent for `baseInput`. It has to differ from
+// beforeRow or computeChanges finds nothing and the audit insert never runs.
+const afterRow = { ...beforeRow, name: "New Name", dosageAmount: "1000", dosageUnit: "IU" };
 
 const { updateMedicationWithSchedules } = await import("../../src/lib/server/medications");
 
@@ -127,9 +49,10 @@ const baseInput = {
 };
 
 beforeEach(() => {
-  ops.length = 0;
-  nextThrows = null;
-  medExists = true;
+  fakeDb.reset();
+  // The existence check finds the medication unless a test says otherwise.
+  fakeDb.seed(medications, [beforeRow]);
+  fakeDb.seedReturning(medications, [afterRow]);
 });
 
 describe("updateMedicationWithSchedules", () => {
@@ -141,7 +64,7 @@ describe("updateMedicationWithSchedules", () => {
     // First select runs BEFORE the transaction (the existence check).
     // Inside the transaction: update meds, delete schedules, insert
     // schedules, insert audit.
-    const txOps = ops.slice(1);
+    const txOps = ops().slice(1);
     expect(txOps.map((o) => `${o.kind}:${o.table}`)).toEqual([
       "update:medications",
       "delete:medication_schedules",
@@ -151,20 +74,19 @@ describe("updateMedicationWithSchedules", () => {
   });
 
   it("returns null without touching the DB when the medication does not exist", async () => {
-    medExists = false;
+    fakeDb.seed(medications, []);
     const result = await updateMedicationWithSchedules("u1", "missing", baseInput, []);
     expect(result).toBeNull();
     // Only the existence-check select should have run.
-    expect(ops).toHaveLength(1);
-    expect(ops[0].kind).toBe("select");
+    expect(ops()).toHaveLength(1);
+    expect(ops()[0].kind).toBe("select");
   });
 
   it("rolls back the entire transaction when the schedules insert throws", async () => {
-    nextThrows = {
-      onKind: "insert",
-      onTable: "medication_schedules",
+    fakeDb.failNext("insert", {
+      table: medicationSchedules,
       error: new Error("schedule constraint failed"),
-    };
+    });
 
     await expect(
       updateMedicationWithSchedules("u1", "med1", baseInput, [
@@ -174,28 +96,26 @@ describe("updateMedicationWithSchedules", () => {
 
     // Snapshot rollback restores ops to the pre-transaction state
     // (the existence check select).
-    expect(ops).toHaveLength(1);
-    expect(ops[0].kind).toBe("select");
+    expect(ops()).toHaveLength(1);
+    expect(ops()[0].kind).toBe("select");
   });
 
   it("rolls back the transaction when the audit insert throws", async () => {
-    nextThrows = {
-      onKind: "insert",
-      onTable: "audit_logs",
-      error: new Error("audit table down"),
-    };
+    fakeDb.failNext("insert", { table: auditLogs, error: new Error("audit table down") });
 
     await expect(
       updateMedicationWithSchedules("u1", "med1", baseInput, [{ scheduleKind: "prn" }]),
     ).rejects.toThrow("audit table down");
 
-    expect(ops).toHaveLength(1);
-    expect(ops[0].kind).toBe("select");
+    expect(ops()).toHaveLength(1);
+    expect(ops()[0].kind).toBe("select");
   });
 
   it("skips the schedules insert when the new schedules array is empty", async () => {
     await updateMedicationWithSchedules("u1", "med1", baseInput, []);
-    const tables = ops.slice(1).map((o) => `${o.kind}:${o.table}`);
+    const tables = ops()
+      .slice(1)
+      .map((o) => `${o.kind}:${o.table}`);
     expect(tables).toEqual([
       "update:medications",
       "delete:medication_schedules",

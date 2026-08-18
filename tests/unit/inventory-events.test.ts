@@ -1,53 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// The database comes from the shared seam, which dispatches on real table
+// identity — so this file mocks no schema and binds to the real tables.
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
+
+import { fakeDb } from "./helpers/fake-db";
+import { medications } from "$lib/server/db/schema";
+
 type Insert = { table: string; values: unknown };
-const inserts: Insert[] = [];
-let nextSelectRow: { inventoryCount: number | null } | undefined;
 
-const tableNames = new WeakMap<object, string>();
-const inventoryEventsTable = {};
-const medicationsTable = {};
-tableNames.set(inventoryEventsTable, "inventory_events");
-tableNames.set(medicationsTable, "medications");
-
-vi.mock("$lib/server/db/schema", () => ({
-  inventoryEvents: inventoryEventsTable,
-  medications: medicationsTable,
-  // Other tables unused here; placeholders keep the import happy.
-  users: {},
-  doseLogs: {},
-  userPreferences: {},
-  pushSubscriptions: {},
-  reminderEvents: {},
-  auditLogs: {},
-}));
-
-function buildClient() {
-  return {
-    insert: (tableRef: object) => ({
-      values: (rows: unknown) => {
-        inserts.push({ table: tableNames.get(tableRef) ?? "unknown", values: rows });
-        return Promise.resolve();
-      },
-    }),
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve(nextSelectRow ? [nextSelectRow] : []),
-          orderBy: () => ({ limit: () => Promise.resolve([]) }),
-        }),
-      }),
-    }),
-    update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
-  };
+// `attempted`, not `committed`: this module's transaction is a pass-through
+// and nothing here simulates a mid-transaction failure, so the two views
+// agree — attempted is the one that matches the old fake exactly.
+function inserts(): Insert[] {
+  return fakeDb.attempted
+    .filter((c) => c.op === "insert")
+    .map((c) => ({ table: c.table, values: c.payload }));
 }
-
-vi.mock("$lib/server/db", () => ({
-  db: buildClient(),
-  dbTx: {
-    transaction: <T>(cb: (tx: ReturnType<typeof buildClient>) => Promise<T>) => cb(buildClient()),
-  },
-}));
 
 const {
   recordInventoryEvent,
@@ -59,13 +28,12 @@ const {
 } = await import("../../src/lib/server/inventory-events");
 
 beforeEach(() => {
-  inserts.length = 0;
-  nextSelectRow = undefined;
+  fakeDb.reset();
 });
 
 describe("recordInventoryEvent", () => {
   it("inserts a row with the supplied event payload", async () => {
-    const client = buildClient() as unknown as Parameters<typeof recordInventoryEvent>[0];
+    const client = fakeDb.db as unknown as Parameters<typeof recordInventoryEvent>[0];
     await recordInventoryEvent(client, {
       userId: "u1",
       medicationId: "med-A",
@@ -75,9 +43,9 @@ describe("recordInventoryEvent", () => {
       newCount: 29,
     });
 
-    expect(inserts).toHaveLength(1);
-    expect(inserts[0].table).toBe("inventory_events");
-    const row = inserts[0].values as Record<string, unknown>;
+    expect(inserts()).toHaveLength(1);
+    expect(inserts()[0].table).toBe("inventory_events");
+    const row = inserts()[0].values as Record<string, unknown>;
     expect(row.userId).toBe("u1");
     expect(row.eventType).toBe("dose_taken");
     expect(row.quantityChange).toBe(-1);
@@ -87,7 +55,7 @@ describe("recordInventoryEvent", () => {
   });
 
   it("preserves the supplied note when present", async () => {
-    const client = buildClient() as unknown as Parameters<typeof recordInventoryEvent>[0];
+    const client = fakeDb.db as unknown as Parameters<typeof recordInventoryEvent>[0];
     await recordInventoryEvent(client, {
       userId: "u1",
       medicationId: "med-A",
@@ -97,7 +65,7 @@ describe("recordInventoryEvent", () => {
       newCount: 35,
       note: "picked up at pharmacy",
     });
-    const row = inserts[0].values as Record<string, unknown>;
+    const row = inserts()[0].values as Record<string, unknown>;
     expect(row.note).toBe("picked up at pharmacy");
   });
 });
@@ -116,18 +84,18 @@ describe("refillMedication", () => {
   });
 
   it("throws MedicationNotFoundError when the medication doesn't belong to the user", async () => {
-    nextSelectRow = undefined;
+    fakeDb.seed(medications, []);
     await expect(refillMedication("u1", "missing", 30)).rejects.toBeInstanceOf(
       MedicationNotFoundError,
     );
   });
 
   it("records a refill event with previous and new counts on success", async () => {
-    nextSelectRow = { inventoryCount: 5 };
+    fakeDb.seed(medications, [{ inventoryCount: 5 }]);
     const result = await refillMedication("u1", "med-A", 30, "pharmacy run");
     expect(result).toEqual({ previousCount: 5, newCount: 35 });
 
-    const eventInsert = inserts.find((i) => i.table === "inventory_events");
+    const eventInsert = inserts().find((i) => i.table === "inventory_events");
     expect(eventInsert).toBeDefined();
     const row = eventInsert!.values as Record<string, unknown>;
     expect(row.eventType).toBe("refill");
@@ -138,10 +106,10 @@ describe("refillMedication", () => {
   });
 
   it("seeds the count from null when inventory tracking was never enabled", async () => {
-    nextSelectRow = { inventoryCount: null };
+    fakeDb.seed(medications, [{ inventoryCount: null }]);
     const result = await refillMedication("u1", "med-A", 30);
     expect(result).toEqual({ previousCount: null, newCount: 30 });
-    const eventInsert = inserts.find((i) => i.table === "inventory_events");
+    const eventInsert = inserts().find((i) => i.table === "inventory_events");
     const row = eventInsert!.values as Record<string, unknown>;
     expect(row.previousCount).toBeNull();
     expect(row.newCount).toBe(30);
@@ -150,7 +118,7 @@ describe("refillMedication", () => {
 
 describe("adjustInventory", () => {
   it("rejects negative or non-integer new counts", async () => {
-    nextSelectRow = { inventoryCount: 5 };
+    fakeDb.seed(medications, [{ inventoryCount: 5 }]);
     await expect(adjustInventory("u1", "med-A", -1)).rejects.toBeInstanceOf(InvalidAdjustmentError);
     await expect(adjustInventory("u1", "med-A", 4.2)).rejects.toBeInstanceOf(
       InvalidAdjustmentError,
@@ -158,23 +126,23 @@ describe("adjustInventory", () => {
   });
 
   it("throws MedicationNotFoundError when the medication is not owned by the user", async () => {
-    nextSelectRow = undefined;
+    fakeDb.seed(medications, []);
     await expect(adjustInventory("u1", "missing", 10)).rejects.toBeInstanceOf(
       MedicationNotFoundError,
     );
   });
 
   it("rejects an adjustment that equals the current count (no-op)", async () => {
-    nextSelectRow = { inventoryCount: 12 };
+    fakeDb.seed(medications, [{ inventoryCount: 12 }]);
     await expect(adjustInventory("u1", "med-A", 12)).rejects.toBeInstanceOf(InvalidAdjustmentError);
   });
 
   it("records a manual_adjustment event with the signed delta when count decreases", async () => {
-    nextSelectRow = { inventoryCount: 30 };
+    fakeDb.seed(medications, [{ inventoryCount: 30 }]);
     const result = await adjustInventory("u1", "med-A", 26, "spilled 4 pills");
     expect(result).toEqual({ previousCount: 30, newCount: 26, quantityChange: -4 });
 
-    const eventInsert = inserts.find((i) => i.table === "inventory_events");
+    const eventInsert = inserts().find((i) => i.table === "inventory_events");
     expect(eventInsert).toBeDefined();
     const row = eventInsert!.values as Record<string, unknown>;
     expect(row.eventType).toBe("manual_adjustment");
@@ -185,17 +153,17 @@ describe("adjustInventory", () => {
   });
 
   it("records a positive delta when count increases (e.g. found extra stock)", async () => {
-    nextSelectRow = { inventoryCount: 5 };
+    fakeDb.seed(medications, [{ inventoryCount: 5 }]);
     const result = await adjustInventory("u1", "med-A", 12);
     expect(result.quantityChange).toBe(7);
-    const eventInsert = inserts.find((i) => i.table === "inventory_events");
+    const eventInsert = inserts().find((i) => i.table === "inventory_events");
     const row = eventInsert!.values as Record<string, unknown>;
     expect(row.quantityChange).toBe(7);
     expect(row.note).toBeNull();
   });
 
   it("treats a null previousCount as 0 when computing the delta", async () => {
-    nextSelectRow = { inventoryCount: null };
+    fakeDb.seed(medications, [{ inventoryCount: null }]);
     const result = await adjustInventory("u1", "med-A", 30);
     expect(result).toEqual({ previousCount: null, newCount: 30, quantityChange: 30 });
   });

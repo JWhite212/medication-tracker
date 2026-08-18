@@ -269,6 +269,21 @@ describe("createFakeDb — seedReturning", () => {
     f.seed(medications, [{ id: "m1" }]);
     expect(await f.db.insert(medications).values({ id: "m1" }).returning()).toEqual([{ id: "m1" }]);
   });
+
+  it("leaves INSERT ... RETURNING on the materialised row, not the after-image", async () => {
+    // getOrCreatePreferences inserts, then treats what comes back as the
+    // BEFORE image for its diff. If the insert handed back the update's
+    // after-image the diff would compare a row against itself.
+    f.seed(medications, [{ id: "m1", name: "materialised" }]);
+    f.seedReturning(medications, [{ id: "m1", name: "after" }]);
+
+    expect(await f.db.insert(medications).values({ id: "m1" }).returning()).toEqual([
+      { id: "m1", name: "materialised" },
+    ]);
+    expect(await f.db.update(medications).set({}).where(undefined).returning()).toEqual([
+      { id: "m1", name: "after" },
+    ]);
+  });
 });
 
 describe("unusedDb", () => {

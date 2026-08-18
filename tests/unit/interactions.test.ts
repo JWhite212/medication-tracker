@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fakeDb } from "./helpers/fake-db";
+import { fakeDb, predicateIncludes } from "./helpers/fake-db";
 import { medications } from "$lib/server/db/schema";
 
 // Allow each test to swap the env value before importing the module.
@@ -90,6 +90,28 @@ describe("checkInteractions", () => {
 
     const result = await checkInteractions("u1", "Ibuprofen");
     expect(result).toEqual([]);
+  });
+
+  it("scopes the medication lookup to the requesting user", async () => {
+    // CLAUDE.md: "All DB queries scoped by user_id." This one reads another
+    // user's medication names if the filter is ever dropped, so the predicate
+    // is asserted rather than assumed.
+    envState.INTERACTIONS_ENABLED = "true";
+    pushMedication({ name: "Aspirin" });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await checkInteractions("u1", "Warfarin");
+
+    const reads = fakeDb.attempted.filter((c) => c.op === "select");
+    expect(reads.length).toBeGreaterThan(0);
+    for (const read of reads) {
+      expect(predicateIncludes(read.predicate, "user_id")).toBe(true);
+      expect(predicateIncludes(read.predicate, "u1")).toBe(true);
+    }
   });
 
   it("flags an interaction when openFDA text mentions an existing medication", async () => {

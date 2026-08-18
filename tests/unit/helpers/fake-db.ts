@@ -79,10 +79,56 @@ export function createFakeDb() {
     return chain;
   }
 
+  /** Writes record exactly once at resolution, and are awaitable at every
+      step because callers differ: `logAudit` awaits `.values(...)` directly,
+      while `createMedicationWithSchedules` calls `.returning()`. */
+  function writeChain(op: RecordedCall["op"], table: string) {
+    let payload: Row | Row[] | undefined;
+    let predicate: unknown;
+    let recorded = false;
+
+    const resolve = <T>(value: T): Promise<T> => {
+      if (!recorded) {
+        recorded = true;
+        record({ op, table, predicate, payload });
+      }
+      return Promise.resolve(value);
+    };
+
+    const chain = {
+      values: (v: Row | Row[]) => {
+        payload = v;
+        return chain;
+      },
+      set: (v: Row) => {
+        payload = v;
+        return chain;
+      },
+      where: (p?: unknown) => {
+        predicate = p;
+        return chain;
+      },
+      onConflictDoNothing: () => chain,
+      onConflictDoUpdate: () => chain,
+      /** A real write materialises the row, so a later read sees it. Model
+          that by returning whatever the table is seeded with — without it,
+          `preferences.test.ts`'s before-image comes back undefined. */
+      returning: () => resolve(seeded.get(table) ?? []),
+      then: (onFulfilled: (v: undefined) => unknown, onRejected?: (e: unknown) => unknown) =>
+        resolve(undefined).then(onFulfilled, onRejected),
+    };
+    return chain;
+  }
+
+  const client = {
+    select: () => selectChain("<unselected>"),
+    insert: (t: unknown) => writeChain("insert", nameOf(t)),
+    update: (t: unknown) => writeChain("update", nameOf(t)),
+    delete: (t: unknown) => writeChain("delete", nameOf(t)),
+  };
+
   return {
-    db: {
-      select: () => selectChain("<unselected>"),
-    },
+    db: client,
 
     seed(table: Table, rows: Row[]) {
       seeded.set(nameOf(table), rows);
@@ -98,3 +144,6 @@ export function createFakeDb() {
     },
   };
 }
+
+/** The shape every consumer sees, including `dbTx.transaction`'s callback. */
+export type FakeClient = ReturnType<typeof createFakeDb>["db"];

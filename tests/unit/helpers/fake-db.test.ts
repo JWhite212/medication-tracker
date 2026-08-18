@@ -152,3 +152,50 @@ describe("createFakeDb — writes", () => {
     expect(f.attempted).toHaveLength(1);
   });
 });
+
+describe("createFakeDb — transactions", () => {
+  const f = createFakeDb();
+  beforeEach(() => f.reset());
+
+  it("commits writes made inside a successful transaction", async () => {
+    await f.dbTx.transaction(async (tx) => {
+      await tx.insert(medications).values({ id: "m1" });
+    });
+    expect(f.committed).toHaveLength(1);
+    expect(f.attempted).toHaveLength(1);
+  });
+
+  it("rolls back committed but preserves attempted when the callback throws", async () => {
+    await expect(
+      f.dbTx.transaction(async (tx) => {
+        await tx.insert(medications).values({ id: "m1" });
+        throw new Error("constraint failed");
+      }),
+    ).rejects.toThrow("constraint failed");
+
+    // What a real database would show afterwards: nothing.
+    expect(f.committed).toHaveLength(0);
+    // How far execution actually got before the throw.
+    expect(f.attempted).toHaveLength(1);
+    expect(f.attempted[0].table).toBe("medications");
+  });
+
+  it("preserves writes made before the transaction started", async () => {
+    await f.db.insert(doseLogs).values({ id: "d1" });
+    await expect(
+      f.dbTx.transaction(async (tx) => {
+        await tx.insert(medications).values({ id: "m1" });
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+
+    expect(f.committed).toHaveLength(1);
+    expect(f.committed[0].table).toBe("dose_logs");
+  });
+
+  it("the tx handle reads the same seeded rows as db", async () => {
+    f.seed(medications, [{ id: "m1" }]);
+    const rows = await f.dbTx.transaction(async (tx) => tx.select().from(medications));
+    expect(rows).toEqual([{ id: "m1" }]);
+  });
+});

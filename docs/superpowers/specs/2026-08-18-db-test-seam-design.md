@@ -163,6 +163,28 @@ both: **`attempted` is append-only and never rolled back; `committed` is
 reverted to its pre-transaction snapshot when the callback throws.** Neither
 test loses an assertion, and neither has to compromise.
 
+### Decision 3a — the trivial stubs do not get the full fake
+
+Discovered while planning, and it reverses the obvious move. The nine trivial
+stubs mock the database as `{}`, so an accidental query throws
+`db.select is not a function` immediately. Putting them on `createFakeDb()`
+would make that same accident **silently return `[]`** instead — a real loss of
+safety bought with extra machinery, for files that by definition run no query.
+
+They get a shared `unusedDb` export instead, which preserves the loud failure
+and improves the message:
+
+```ts
+/** For modules that import `db` but must never reach it. Any property
+    access throws, so an accidental query fails loudly and by name. */
+export const unusedDb = {
+  db: throwingProxy("db"),
+  dbTx: throwingProxy("dbTx"),
+};
+```
+
+One pattern in the repository, and the stricter of the two behaviours wins.
+
 ### Decision 4 — priming and failure injection are generalised, not invented
 
 `seed(table, rows)` sets a standing result. `seedQueue(table, [rowsA, rowsB])`

@@ -21,6 +21,17 @@
 - The helper never evaluates predicates, never filters rows by them, and never orders results. If a task seems to need that, stop — it is stage 2 work.
 - TypeScript strict: no `any` in the helper's exported surface. `unknown` plus narrowing.
 
+## Progress
+
+**Tasks 1–6 are DONE** on `refactor/db-test-seam` (branched from `origin/main` `f806dba`). Suite: **841 tests / 67 files**, green; ESLint clean; `svelte-check` 0 errors; `git diff origin/main..HEAD -- src/` empty; zero `expect(...)` lines deleted.
+
+Two things were learned in flight and are already in the helper:
+
+1. **`orderBy` / `innerJoin` / `groupBy` / `onConflict*` / `returning` must be variadic.** Zero-arg signatures type-check fine in isolation and then fail in every migrated test, because real callers pass columns and join conditions. Caught by `svelte-check`, not by vitest.
+2. **`seedReturning(table, rows)` was added** (Task 5's surface, one extra method). `UPDATE ... RETURNING` yields the row's AFTER image while a preceding SELECT saw the BEFORE image, and `updatePreferences` diffs one against the other. Without a separate after-image the fake collapses them and `preferences.test.ts`'s four audit-scoping assertions — the ones PR #113 added — stop meaning anything.
+
+**Tasks 7–16 remain.** Nothing about them has changed except that Task 7's `preferences.test.ts` now has a known shape (below).
+
 ---
 
 ### Task 1: Helper skeleton — table identity, select chain, seed/reset
@@ -872,7 +883,18 @@ Same procedure as Task 6, Step 1, one capture per file.
 
 - [ ] **Step 2: Migrate `preferences.test.ts`**
 
-Delete `buildChainable`, `storedRow`, `updatedRow`, `inserts`, `updates`. Seed `userPreferences` and read writes from `fakeDb.attempted`. Keep every existing assertion verbatim — in particular the four scoping tests that pin the audit diff to `Object.keys(updates)`.
+Delete `buildChainable`, `storedRow`, `updatedRow`, `inserts`, `updates`. Keep every existing assertion verbatim — in particular the four scoping tests that pin the audit diff to `Object.keys(updates)`.
+
+The substitution is mechanical and touches only setup lines, never assertions. Note that `storedRow` and `updatedRow` are assigned **inside individual `it` bodies**, after `beforeEach` has run, so the seeding has to move to those same lines rather than into `beforeEach`:
+
+| Before                | After                                                           |
+| --------------------- | --------------------------------------------------------------- |
+| `storedRow = X`       | `fakeDb.seed(userPreferences, X ? [X] : [])`                    |
+| `updatedRow = X`      | `fakeDb.seedReturning(userPreferences, X ? [X] : [])`           |
+| `inserts` / `updates` | `fakeDb.attempted.filter((c) => c.op === "insert" \| "update")` |
+| `auditRows()`         | `fakeDb.attempted.filter((c) => c.table === "audit_logs")`      |
+
+The insert-materialisation branch in the old fake (`if (table === userPreferences && !storedRow) storedRow = {...}`) is what `returning()`'s seed fallback now models; the row-absent test at line ~200 (`storedRow = undefined`) is the one that exercises it, so run that test specifically before and after.
 
 - [ ] **Step 3: Run, diff against baseline, and mutation-check**
 

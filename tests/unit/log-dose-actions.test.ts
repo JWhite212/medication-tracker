@@ -11,8 +11,10 @@ const state = {
 const deleteDose = vi.fn(async () => state.deleteResult);
 const updateDose = vi.fn(async () => state.updateResult);
 
-vi.mock("$lib/server/db", () => ({ db: {} }));
-vi.mock("$lib/server/db/schema", () => ({ doseLogs: {}, medications: {} }));
+// This module imports `db` but must never reach it. unusedDb THROWS on any
+// property access, so an accidental query fails loudly instead of silently
+// returning [] — do not "upgrade" this to createFakeDb().
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unusedDb);
 vi.mock("$lib/server/doses", () => ({
   deleteDose: (...args: unknown[]) => deleteDose(...(args as [])),
   updateDose: (...args: unknown[]) => updateDose(...(args as [])),

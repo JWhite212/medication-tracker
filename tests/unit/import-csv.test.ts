@@ -6,7 +6,10 @@ import { describe, it, expect, vi } from "vitest";
 // escapeCsvCell, and export-csv.ts imports $lib/server/db, which
 // evaluates neon() at module load. Stub it so this file still runs
 // without a DATABASE_URL.
-vi.mock("$lib/server/db", () => ({ db: {} }));
+// This module imports `db` but must never reach it. unusedDb THROWS on any
+// property access, so an accidental query fails loudly instead of silently
+// returning [] — do not "upgrade" this to createFakeDb().
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unusedDb);
 
 import {
   parseCsv,

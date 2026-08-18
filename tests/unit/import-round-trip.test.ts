@@ -7,7 +7,10 @@ import { describe, it, expect, vi } from "vitest";
 //
 // export-csv.ts imports $lib/server/db (neon() runs at module load), so
 // it needs the standard stub. serialize.ts is type-only and pure.
-vi.mock("$lib/server/db", () => ({ db: {} }));
+// This module imports `db` but must never reach it. unusedDb THROWS on any
+// property access, so an accidental query fails loudly instead of silently
+// returning [] — do not "upgrade" this to createFakeDb().
+vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unusedDb);
 
 import * as s from "../../src/lib/server/api/serialize";
 import { formatUserTime } from "../../src/lib/utils/time";

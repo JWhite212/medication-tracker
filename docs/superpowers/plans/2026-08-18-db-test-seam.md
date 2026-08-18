@@ -21,23 +21,31 @@
 - The helper never evaluates predicates, never filters rows by them, and never orders results. If a task seems to need that, stop — it is stage 2 work.
 - TypeScript strict: no `any` in the helper's exported surface. `unknown` plus narrowing.
 
-## Progress
+## Progress — COMPLETE
 
-**Tasks 1–6 are DONE** on `refactor/db-test-seam` (branched from `origin/main` `f806dba`). Suite: **841 tests / 67 files**, green; ESLint clean; `svelte-check` 0 errors; `git diff origin/main..HEAD -- src/` empty; zero `expect(...)` lines deleted.
+All 16 tasks done on `refactor/db-test-seam` (branched from `origin/main` `f806dba`).
 
-Two things were learned in flight and are already in the helper:
+**807 → 846 tests / 67 files.** `git diff origin/main..HEAD -- src/` empty; ESLint 0 errors; `svelte-check` 0 errors; `npm run build` succeeds; coverage 48.67/52.91/40.98/57.83 against thresholds 30/25/25.5/30 (up from ~31/37/25.9/39 — tests now bind to the real schema, so more real code executes).
 
-1. **`orderBy` / `innerJoin` / `groupBy` / `onConflict*` / `returning` must be variadic.** Zero-arg signatures type-check fine in isolation and then fail in every migrated test, because real callers pass columns and join conditions. Caught by `svelte-check`, not by vitest.
-2. **`seedReturning(table, rows)` was added** (Task 5's surface, one extra method). `UPDATE ... RETURNING` yields the row's AFTER image while a preceding SELECT saw the BEFORE image, and `updatePreferences` diffs one against the other. Without a separate after-image the fake collapses them and `preferences.test.ts`'s four audit-scoping assertions — the ones PR #113 added — stop meaning anything.
+**Assertions went UP, 1598 → 1663.** That is the check that matters: the diff deletes 97 `expect(` lines, and every one has a same-hunk replacement (`inserts` → `inserts()` and similar).
 
-**Task 7 is 2/3 done** — `preferences.test.ts` and `auth-reauth.test.ts` are migrated and mutation-verified. `api/wipe.test.ts` remains, and two more findings landed in the helper:
+Duplication eliminated: **0** `vi.mock(db/schema)` blocks (was 14), **0** bare `db: {}` stubs (was 9), **1** copy of `chunksContain` (was 2).
 
-3. **`returning()` is op-aware.** `INSERT ... RETURNING` reads the standing seed (the row _as materialised_, which is what lets `getOrCreatePreferences`'s re-read find what it just created); `UPDATE ... RETURNING` reads `seedReturning` (the _after_-image). Collapsing them made the insert hand back the update's after-image, so the before/after diff compared a row against itself and all four audit-scoping assertions went vacuous while staying green. Exactly the #110 failure mode, caught only because the mutation check was run.
-4. **The "row absent" path is modelled with `seedQueue([[]])` in front of a standing seed** — first read misses, insert materialises, re-read hits.
+**Two files keep a bespoke fake, both deliberate and commented in place:**
 
-**`api/wipe.test.ts` needs one thing the fake does not provide.** Its hand-rolled transaction rolls back _two_ things on throw: the db `ops` array **and** a separately-mocked `auditCalls` array (`logAudit` is mocked at module level, so its calls are not db traffic and `committed` cannot see them). Do **not** extend the fake to know about arbitrary mocked modules — that is unbounded scope. Instead keep a three-line local snapshot of `auditCalls` in that file's `dbTx.transaction` wrapper, take `ops` from `fakeDb.committed`, and note in a comment why the file keeps a partial wrapper.
+- `reminders.test.ts` — asserts on `whereArgsByCall[1]`; table dispatch would delete that ordering assertion while leaving the suite green.
+- `auth-totp.test.ts` — its update _simulates the production WHERE clause_ (compare-and-set on the TOTP counter), which is the entire mechanism behind its replay-rejection test. The seam captures predicates without evaluating them, so migrating it would make that test pass unconditionally.
 
-**Tasks 8–16 remain** and are otherwise unchanged.
+**Findings that changed the design mid-flight:**
+
+1. Chain methods must be **variadic** (`orderBy`/`innerJoin`/`groupBy`/`onConflict*`/`returning`). Caught by `svelte-check`, invisible to vitest.
+2. **`returning()` is op-aware.** `INSERT ... RETURNING` reads the standing seed (the row as materialised); `UPDATE ... RETURNING` reads `seedReturning` (the after-image). Collapsing them made `getOrCreatePreferences`'s insert hand back the update's after-image, so the diff compared a row against itself and all four of #113's audit-scoping assertions went vacuous **while staying green**. Caught only by running the mutation check.
+3. **`RecordedCall.conflict`** captures the `onConflictDoUpdate` config — for `claimReminderSlot` that upsert IS the dedupe mechanism.
+4. **The nine trivial stubs are stricter than the fake**, so they take a throwing `unusedDb` rather than `createFakeDb()`.
+5. **`api/wipe.test.ts` keeps a local `auditCalls` snapshot** — `logAudit` is mocked at module level, so its calls are not db traffic and `committed` cannot see them.
+6. Pre-existing coverage gap found, not caused here: removing `logDose`'s `logAudit` call breaks no test, in the migrated file **or** in origin/main's original.
+
+**Mutation checks run and observed failing** (the discipline that made this safe): naive `JSON.stringify` → 6; no transaction rollback → 2; `sync.ts` empty schedules → 1; `sync.ts` no `gt` cursor → 1; whole-row preferences diff → **4** (#113's); no `usedAt` stamp → 1; epoch bump removed → 1; audit insert removed → 3; status-blind inventory restore → 2; schedule delete removed → 2; replace-mode delete ungated → 1; credential check bypassed → 1; `invalidateSession` removed → 1; TOTP check bypassed → 2; replay detection disabled → 3; 2FA gate bypassed → 1; interval guard bypassed → 1; terminal status never derived → 6; **`user_id` filter dropped → 1 each in sync and interactions**.
 
 ---
 

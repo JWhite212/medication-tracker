@@ -40,10 +40,19 @@ export function predicateIncludes(predicate: unknown, needle: string): boolean {
 
 export function createFakeDb() {
   const seeded = new Map<string, Row[]>();
+
+  /** Two views of the same traffic, because the existing tests need both.
+      `attempted` is append-only — how far execution got before a throw, which
+      is what `doses-inventory.test.ts` asserts on. `committed` is reverted
+      when a transaction callback throws — what a database would show
+      afterwards, which is what `createMedicationWithSchedules.test.ts`
+      asserts on. */
   const attempted: RecordedCall[] = [];
+  const committed: RecordedCall[] = [];
 
   function record(call: RecordedCall) {
     attempted.push(call);
+    committed.push(call);
   }
 
   /** Every step of a Drizzle chain is both chainable and awaitable:
@@ -130,6 +139,18 @@ export function createFakeDb() {
   return {
     db: client,
 
+    dbTx: {
+      async transaction<T>(cb: (tx: typeof client) => Promise<T>): Promise<T> {
+        const mark = committed.length;
+        try {
+          return await cb(client);
+        } catch (err) {
+          committed.length = mark; // all-or-nothing, as Postgres would
+          throw err;
+        }
+      },
+    },
+
     seed(table: Table, rows: Row[]) {
       seeded.set(nameOf(table), rows);
     },
@@ -138,9 +159,14 @@ export function createFakeDb() {
       return attempted;
     },
 
+    get committed(): readonly RecordedCall[] {
+      return committed;
+    },
+
     reset() {
       seeded.clear();
       attempted.length = 0;
+      committed.length = 0;
     },
   };
 }

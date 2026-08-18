@@ -199,3 +199,60 @@ describe("createFakeDb — transactions", () => {
     expect(rows).toEqual([{ id: "m1" }]);
   });
 });
+
+describe("createFakeDb — seedQueue", () => {
+  const f = createFakeDb();
+  beforeEach(() => f.reset());
+
+  it("serves successive selects from the queue in order", async () => {
+    f.seedQueue(medications, [[{ id: "m1" }], [{ id: "m2" }]]);
+    expect(await f.db.select().from(medications)).toEqual([{ id: "m1" }]);
+    expect(await f.db.select().from(medications)).toEqual([{ id: "m2" }]);
+  });
+
+  it("falls back to an empty array once the queue is drained", async () => {
+    f.seedQueue(medications, [[{ id: "m1" }]]);
+    await f.db.select().from(medications);
+    expect(await f.db.select().from(medications)).toEqual([]);
+  });
+
+  it("a queue takes precedence over a standing seed for the same table", async () => {
+    f.seed(medications, [{ id: "standing" }]);
+    f.seedQueue(medications, [[{ id: "queued" }]]);
+    expect(await f.db.select().from(medications)).toEqual([{ id: "queued" }]);
+    expect(await f.db.select().from(medications)).toEqual([{ id: "standing" }]);
+  });
+});
+
+describe("createFakeDb — failNext", () => {
+  const f = createFakeDb();
+  beforeEach(() => f.reset());
+
+  it("rejects the next matching write and then stops", async () => {
+    f.failNext("update", { table: medications, error: new Error("simulated update failure") });
+    await expect(f.db.update(medications).set({ name: "x" }).where(undefined)).rejects.toThrow(
+      "simulated update failure",
+    );
+    await expect(
+      f.db.update(medications).set({ name: "y" }).where(undefined),
+    ).resolves.not.toThrow();
+  });
+
+  it("records the failed call in attempted — the write was tried", async () => {
+    f.failNext("insert", { table: medications, error: new Error("boom") });
+    await expect(f.db.insert(medications).values({ id: "m1" })).rejects.toThrow("boom");
+    expect(f.attempted).toHaveLength(1);
+  });
+
+  it("leaves other tables alone", async () => {
+    f.failNext("insert", { table: medications, error: new Error("boom") });
+    await expect(f.db.insert(doseLogs).values({ id: "d1" })).resolves.not.toThrow();
+  });
+});
+
+describe("unusedDb", () => {
+  it("throws by name when a supposedly-unused db is touched", async () => {
+    const { unusedDb } = await import("./fake-db");
+    expect(() => unusedDb.db.select()).toThrow(/select/);
+  });
+});

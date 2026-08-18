@@ -17,64 +17,20 @@ vi.mock("drizzle-orm", async (importOriginal) => {
   };
 });
 
-// Table-aware db mock, same pattern as tests/unit/inventory-events.test.ts:
-// a WeakMap keyed by the (mocked) table reference resolves the table
-// name, and `.from(tableRef)` hands back whatever rows are seeded for
-// that table. `.where()` is a chainable no-op (it ignores the actual
-// condition — filtering correctness is Postgres's job, not this
-// unit's); `.limit()` is likewise a no-op slice.
-type Row = Record<string, unknown>;
+// The database comes from the shared seam, which dispatches on real table
+// identity — so this file mocks no schema and binds to the real tables.
+vi.mock("$lib/server/db", async () => (await import("../helpers/fake-db")).dbMock);
 
-const tableNames = new WeakMap<object, string>();
-const medicationsTable = {};
-const doseLogsTable = {};
-const inventoryEventsTable = {};
-const auditLogsTable = {};
-const userPreferencesTable = {};
-const usersTable = {};
-const syncTombstonesTable = {};
-tableNames.set(medicationsTable, "medications");
-tableNames.set(doseLogsTable, "dose_logs");
-tableNames.set(inventoryEventsTable, "inventory_events");
-tableNames.set(auditLogsTable, "audit_logs");
-tableNames.set(userPreferencesTable, "user_preferences");
-tableNames.set(usersTable, "users");
-tableNames.set(syncTombstonesTable, "sync_tombstones");
-
-vi.mock("$lib/server/db/schema", () => ({
-  medications: medicationsTable,
-  doseLogs: doseLogsTable,
-  inventoryEvents: inventoryEventsTable,
-  auditLogs: auditLogsTable,
-  userPreferences: userPreferencesTable,
-  users: usersTable,
-  syncTombstones: syncTombstonesTable,
-}));
-
-let seeded: Record<string, Row[]> = {};
-
-function awaitableRows(rows: Row[]) {
-  const promise = Promise.resolve(rows) as Promise<Row[]> & {
-    limit: (n: number) => Promise<Row[]>;
-  };
-  promise.limit = (n: number) => Promise.resolve(rows.slice(0, n));
-  return promise;
-}
-
-function buildDb() {
-  return {
-    select: () => ({
-      from: (tableRef: object) => {
-        const name = tableNames.get(tableRef) ?? "unknown";
-        return {
-          where: (_cond: unknown) => awaitableRows(seeded[name] ?? []),
-        };
-      },
-    }),
-  };
-}
-
-vi.mock("$lib/server/db", () => ({ db: buildDb() }));
+import { fakeDb, type Row } from "../helpers/fake-db";
+import {
+  medications,
+  doseLogs,
+  inventoryEvents,
+  auditLogs,
+  userPreferences,
+  users,
+  syncTombstones,
+} from "$lib/server/db/schema";
 
 // Schedules are synced as children of medications — getSchedulesForUser
 // returns a Map<medicationId, schedule[]> that sync.ts merges in.
@@ -229,15 +185,14 @@ beforeEach(() => {
       ["med-2", [scheduleRow3]],
     ]),
   );
-  seeded = {
-    users: [userRow],
-    medications: [medRow1, medRow2],
-    dose_logs: [doseLogRow],
-    inventory_events: [inventoryEventRow],
-    audit_logs: [auditLogRow],
-    user_preferences: [preferencesRow],
-    sync_tombstones: [tombstoneRow],
-  };
+  fakeDb.reset();
+  fakeDb.seed(users, [userRow]);
+  fakeDb.seed(medications, [medRow1, medRow2]);
+  fakeDb.seed(doseLogs, [doseLogRow]);
+  fakeDb.seed(inventoryEvents, [inventoryEventRow]);
+  fakeDb.seed(auditLogs, [auditLogRow]);
+  fakeDb.seed(userPreferences, [preferencesRow]);
+  fakeDb.seed(syncTombstones, [tombstoneRow]);
 });
 
 describe("buildSyncResponse", () => {

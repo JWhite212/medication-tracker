@@ -54,6 +54,14 @@ export function createFakeDb() {
       same table to differ. Drained before the standing seed is consulted. */
   const queued = new Map<string, Row[][]>();
 
+  /** What `.returning()` hands back, when it must differ from what a plain
+      read returns. `UPDATE ... RETURNING` yields the row's AFTER image while
+      a preceding SELECT saw the BEFORE image, and `updatePreferences` diffs
+      one against the other — collapsing them would erase the distinction its
+      audit tests exist to check. Unset falls back to the standing seed, which
+      models an insert materialising the row. */
+  const returningRows = new Map<string, Row[]>();
+
   /** At most one pending failure per operation, matched on table when one was
       given, consumed on first match. */
   const pendingFailures = new Map<RecordedCall["op"], { table?: string; error: Error }>();
@@ -151,7 +159,8 @@ export function createFakeDb() {
       /** A real write materialises the row, so a later read sees it. Model
           that by returning whatever the table is seeded with — without it,
           `preferences.test.ts`'s before-image comes back undefined. */
-      returning: (..._args: unknown[]) => resolve(seeded.get(table) ?? []),
+      returning: (..._args: unknown[]) =>
+        resolve(returningRows.get(table) ?? seeded.get(table) ?? []),
       then: (onFulfilled: (v: undefined) => unknown, onRejected?: (e: unknown) => unknown) =>
         resolve(undefined).then(onFulfilled, onRejected),
     };
@@ -188,6 +197,11 @@ export function createFakeDb() {
       queued.set(nameOf(table), [...batches]);
     },
 
+    /** Make `.returning()` yield an after-image distinct from what reads see. */
+    seedReturning(table: Table, rows: Row[]) {
+      returningRows.set(nameOf(table), rows);
+    },
+
     failNext(op: RecordedCall["op"], opts: { table?: Table; error: Error }) {
       pendingFailures.set(op, {
         table: opts.table === undefined ? undefined : nameOf(opts.table),
@@ -206,6 +220,7 @@ export function createFakeDb() {
     reset() {
       seeded.clear();
       queued.clear();
+      returningRows.clear();
       pendingFailures.clear();
       attempted.length = 0;
       committed.length = 0;

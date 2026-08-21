@@ -48,17 +48,18 @@ status so retries pick up only the truly-failed channel.
 
 ```mermaid
 sequenceDiagram
-    participant Cron as Vercel Cron
+    participant Scheduler as Vercel Cron / GitHub Actions
     participant Dispatch as reminders/dispatch
     participant DB as Postgres
     participant Email as Resend
     participant Push as web-push
 
-    Cron->>Dispatch: POST /api/cron/reminders
+    Note over Scheduler,Dispatch: Two independent schedulers hit this endpoint:<br/>Vercel Cron (daily backstop) and the reminder-tick<br/>GitHub Actions workflow (every 30 min). Both carry<br/>the same CRON_SECRET bearer.
+    Scheduler->>Dispatch: POST /api/cron/reminders
     Dispatch->>DB: SELECT overdue rows (split-prefs filter)
     loop per (user, medication, window)
-        Dispatch->>DB: INSERT reminder_event (status=claimed)
-        Note over Dispatch,DB: ON CONFLICT DO NOTHING<br/>dedupe key: (user, med, kind, slot)
+        Dispatch->>DB: INSERT reminder_event<br/>ON CONFLICT (dedupe_key) DO UPDATE ... WHERE retryable
+        Note over Dispatch,DB: claimReminderSlot: a fresh key inserts as status=pending;<br/>an existing key is only reclaimed if it is failed, or a<br/>stale pending past the retry cooldown. Otherwise no row<br/>is returned and the attempt is skipped.
         alt claim succeeded
             par Email channel
                 Dispatch->>Email: send if user opted in + verified
@@ -67,7 +68,7 @@ sequenceDiagram
                 Dispatch->>Push: send if user opted in + subscribed
                 Push-->>Dispatch: ok / err
             end
-            Dispatch->>DB: UPDATE row with per-channel status<br/>(sent / failed / not_configured)
+            Dispatch->>DB: UPDATE row: status derived from channel<br/>results (sent / failed), plus per-channel<br/>status (sent / failed / not_configured)
         end
     end
 ```
@@ -167,8 +168,10 @@ erDiagram
         text dedupe_key UK
         text email_status
         text push_status
-        text status "claimed | sent | failed"
-        timestamptz claimed_at
+        text status "pending | sent | failed"
+        int attempt_count
+        timestamptz sent_at
+        timestamptz last_attempt_at
     }
     user_preferences {
         text user_id PK
@@ -191,10 +194,12 @@ Notes worth keeping in mind:
   Every change to `inventory_count` (dose taken, dose deleted, refill,
   manual adjustment) writes a corresponding event in the same
   transaction.
-- `reminder_events.dedupe_key` is `(user_id, medication_id,
-reminder_kind, slot)` and carries a unique constraint — the
-  pre-claim insert is the cheapest possible "did we already process
-  this?" check.
+- `reminder_events.dedupe_key` carries a unique constraint, but
+  claiming it is `ON CONFLICT DO UPDATE ... WHERE <retryable>`, not a
+  plain insert-or-skip — see the sequence diagram above and
+  `docs/database.md` for the exact key format per reminder type, and
+  [ADR 0005](adr/0005-reminder-deduplication.md) for why the overdue
+  key's ordinal is bounded rather than unbounded.
 
 ## Where to look in the code
 

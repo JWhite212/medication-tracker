@@ -111,26 +111,26 @@ runbook in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 Honest about what's complete vs. what's planned:
 
-| Feature                          | Status                                                                                                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Email/password auth              | Complete                                                                                                                              |
-| OAuth (Google, GitHub)           | Complete; account-takeover guard in place                                                                                             |
-| 2FA (TOTP)                       | Complete; secrets encrypted at rest with AES-256-GCM                                                                                  |
-| Dose logging + edit + skip       | Complete; ownership-checked, status-aware                                                                                             |
-| Adherence analytics              | Complete; cap-at-100 + overuse split                                                                                                  |
-| Email reminders                  | Complete; typed `EmailResult`, per-channel status, retry-after-cooldown via `reminder_events`                                         |
-| Web Push reminders               | Complete; per-channel opt-in, claim/complete dispatch                                                                                 |
-| Notification preferences         | Complete; split into 4 channel-specific toggles (overdue email/push, low-inventory email/push)                                        |
-| PDF / CSV export                 | Complete; formula-injection escape, en-GB time format, audit log CSV                                                                  |
-| Inventory event history          | Complete; refill workflow, per-event timeline on `/medications/[id]`                                                                  |
-| Drug interaction notice          | Experimental, behind `INTERACTIONS_ENABLED` flag                                                                                      |
-| Medical disclaimer               | Surfaced on landing, register, medication form, analytics, exports                                                                    |
-| Re-auth gate (sensitive actions) | Complete for change-password, enable/disable 2FA, delete account, wipe dose history, wipe archived medications, revoke other sessions |
-| Medication scheduling            | Interval, fixed-time, and PRN; multi-row schedules with optional day-of-week filters                                                  |
-| Atomic medication creation       | Complete; `createMedicationWithSchedules` runs medication + schedules + audit in one transaction                                      |
-| Privacy & data controls          | Complete; `/settings/privacy` with stored/not-stored copy, scoped wipes, session revocation, audit-log CSV                            |
-| Demo account + seed              | Complete; `npm run seed:demo` (4c)                                                                                                    |
-| End-to-end tests                 | Complete; Playwright journeys for auth, medication lifecycle, dose logging, analytics, history filters, exports, axe                  |
+| Feature                          | Status                                                                                                                                                         |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Email/password auth              | Complete                                                                                                                                                       |
+| OAuth (Google, GitHub)           | Complete; account-takeover guard in place                                                                                                                      |
+| 2FA (TOTP)                       | Complete; secrets encrypted at rest with AES-256-GCM                                                                                                           |
+| Dose logging + edit + skip       | Complete; ownership-checked, status-aware                                                                                                                      |
+| Adherence analytics              | Complete; cap-at-100 + overuse split                                                                                                                           |
+| Email reminders                  | Complete; typed `EmailResult`, per-channel status, retry-after-cooldown via `reminder_events`                                                                  |
+| Web Push reminders               | Complete; per-channel opt-in, claim/complete dispatch                                                                                                          |
+| Notification preferences         | Complete; account-wide toggles (overdue email/push, low-inventory email/push) with per-medication overrides and a bounded, repeat-until-acted reminder cadence |
+| PDF / CSV export                 | Complete; formula-injection escape, en-GB time format, audit log CSV                                                                                           |
+| Inventory event history          | Complete; refill workflow, per-event timeline on `/medications/[id]`                                                                                           |
+| Drug interaction notice          | Experimental, behind `INTERACTIONS_ENABLED` flag                                                                                                               |
+| Medical disclaimer               | Surfaced on landing, register, medication form, analytics, exports                                                                                             |
+| Re-auth gate (sensitive actions) | Complete for change-password, enable/disable 2FA, delete account, wipe dose history, wipe archived medications, revoke other sessions                          |
+| Medication scheduling            | Interval, fixed-time, and PRN; multi-row schedules with optional day-of-week filters                                                                           |
+| Atomic medication creation       | Complete; `createMedicationWithSchedules` runs medication + schedules + audit in one transaction                                                               |
+| Privacy & data controls          | Complete; `/settings/privacy` with stored/not-stored copy, scoped wipes, session revocation, audit-log CSV                                                     |
+| Demo account + seed              | Complete; `npm run seed:demo` (4c)                                                                                                                             |
+| End-to-end tests                 | Complete; Playwright journeys for auth, medication lifecycle, dose logging, analytics, history filters, exports, axe                                           |
 
 ## Technical highlights
 

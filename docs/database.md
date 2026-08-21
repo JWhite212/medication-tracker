@@ -51,6 +51,31 @@ of Phase 4d — see `medication_schedules` for the canonical schedule
 shape. They remain populated for one rollout cycle and will be
 dropped in a follow-up migration.
 
+Eight columns hold per-medication notification overrides, layered on
+top of the account-wide toggles on `user_preferences`:
+
+- `notifications_enabled` — not null, default `true`. A real boolean,
+  not a tri-state: this is the per-medication kill switch, and
+  `false` beats every other column below.
+- `notify_overdue_email`, `notify_overdue_push`,
+  `notify_low_inventory_email`, `notify_low_inventory_push` —
+  nullable booleans, no default. `NULL` means "inherit the matching
+  account-wide `user_preferences` toggle"; a non-null value overrides
+  it for this medication only. See `resolveChannels` in
+  `src/lib/server/notifications/resolve.ts`, the sole owner of
+  resolving a medication's effective channels.
+- `notify_offset_minutes` — not null, default `0`. Minutes after the
+  computed overdue slot before the first reminder is allowed to fire.
+- `notify_repeat_every_minutes` — nullable, no default. `NULL` means
+  "do not repeat" — one reminder per slot, today's behaviour for
+  every medication that hasn't configured this. A set value is the
+  re-notification interval in minutes.
+- `notify_max_repeats` — not null, default `3`. Upper bound on how
+  many times a slot re-notifies after the first reminder. See
+  `computeNagIndex` in `src/lib/server/reminders/domain.ts`, which
+  derives the bounded re-notification ordinal from elapsed time
+  rather than counting sends in a table.
+
 ### `medication_schedules` (Phase 4d)
 
 Owns the schedule rules for a medication, with one row per rule.
@@ -89,8 +114,12 @@ create/update/delete on user, medication, and dose_log entities.
 ### `user_preferences`
 
 One row per user (`user_id` PK). Settings such as accent colour,
-date/time format, UI density, reminder cadence, export format. All
-have non-null defaults so a new user works without a settings touch.
+date/time format, UI density, reduced motion, per-channel reminder
+toggles (overdue and low-inventory, each split email/push), dose log
+page size, heatmap period, and export format. All have non-null
+defaults so a new user works without a settings touch. These are the
+account-wide reminder defaults; `medications` carries the
+per-medication overrides described above.
 
 ### `rate_limits`
 
@@ -110,8 +139,28 @@ are SHA-256-hashed before storage.
 ### `reminder_events` (Phase 1)
 
 Idempotency record for reminder dispatch. Unique constraint on
-`dedupe_key` ensures the same reminder can't fire twice. Dedupe key
-format: `${userId}:${medicationId}:${reminderType}:${nextDueAt.toISOString()}`.
+`dedupe_key`, but claiming is not a plain insert-or-skip: it's an
+atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE <retryable>`
+(`claimReminderSlot` in `src/lib/server/reminders/dispatch.ts`), so a
+row that already exists but is `failed`, or `pending` past the retry
+cooldown, can still be claimed — a crashed worker's lease is
+recoverable rather than stuck.
+
+Dedupe key format is type-specific:
+
+- Overdue (`buildOverdueDedupeKey`):
+  `<userId>:<medicationId>:overdue:<scheduleKind>:<scheduleId>:<slotISO>[:n<index>]`.
+  The optional `:n<index>` suffix is the bounded re-notification
+  ordinal (see ADR 0005) — omitted entirely at index 0, so a
+  non-repeating medication's key is unchanged. **A slot can therefore
+  mint up to `notify_max_repeats + 1` rows, not exactly one.**
+- Low inventory (`buildLowInventoryDedupeKey`):
+  `<userId>:<medicationId>:low_inventory:<inventoryCount>`.
+
+`sent_at` is stamped when the row is first inserted (i.e. first
+claimed), not when a send completes; `last_attempt_at` advances on
+every retry. `purgeExpiredReminderEvents` (in `reminders/retention.ts`)
+deletes rows with `sent_at` older than 90 days on every cron tick.
 
 ### `reauth_tokens` (Phase 1)
 

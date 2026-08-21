@@ -13,6 +13,7 @@ import { formatTimeSince } from "$lib/utils/time";
 import { lowInventoryTag, overdueTag } from "$lib/utils/push-payload";
 import {
   computeOverdueSlot,
+  computeNagIndex,
   buildOverdueDedupeKey,
   buildLowInventoryDedupeKey,
 } from "./reminders/domain";
@@ -53,6 +54,9 @@ export async function checkOverdueMedications() {
       medNotifyOverduePush: medications.notifyOverduePush,
       medNotifyLowInventoryEmail: medications.notifyLowInventoryEmail,
       medNotifyLowInventoryPush: medications.notifyLowInventoryPush,
+      medNotifyOffsetMinutes: medications.notifyOffsetMinutes,
+      medNotifyRepeatEveryMinutes: medications.notifyRepeatEveryMinutes,
+      medNotifyMaxRepeats: medications.notifyMaxRepeats,
     })
     .from(medicationSchedules)
     .innerJoin(medications, eq(medicationSchedules.medicationId, medications.id))
@@ -119,6 +123,19 @@ export async function checkOverdueMedications() {
     const slot = computeOverdueSlot(row, now);
     if (!slot) continue;
 
+    const nagIndex = computeNagIndex(
+      slot,
+      {
+        offsetMinutes: row.medNotifyOffsetMinutes,
+        repeatEveryMinutes: row.medNotifyRepeatEveryMinutes,
+        maxRepeats: row.medNotifyMaxRepeats,
+      },
+      now,
+    );
+    // null means the offset has not elapsed yet — the slot is due but the
+    // user asked to be told later.
+    if (nagIndex === null) continue;
+
     const channels = resolveChannels(
       {
         notificationsEnabled: row.medNotificationsEnabled,
@@ -141,6 +158,7 @@ export async function checkOverdueMedications() {
       row.scheduleKind,
       row.scheduleId,
       slot,
+      nagIndex,
     );
 
     const emailConfigured =

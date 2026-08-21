@@ -226,6 +226,59 @@ describe("analytics load: date range params", () => {
     expect(d.to).toBe("");
     expect(dailyCountsCalls[0].filter?.to).toBeUndefined();
   });
+
+  // The ceiling has to be read per request. Built as a `.max(new Date(...))`
+  // it is fixed when the schema is constructed — once, at module import — so
+  // a warm serverless instance carries a "tomorrow" that ages and starts
+  // rejecting dates that are genuinely in range. Moving the clock forward
+  // without re-importing the module is what distinguishes the two.
+  it("moves its future ceiling with the clock rather than freezing it at import", async () => {
+    vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
+
+    const d = await runLoad("?from=2026-09-01&to=2026-09-30");
+
+    expect(d.from).toBe("2026-09-01");
+    expect(d.to).toBe("2026-09-30");
+    expect(dailyCountsCalls[0].filter?.to).toEqual(new Date("2026-09-30T00:00:00Z"));
+  });
+
+  it("still rejects a date beyond the ceiling once the clock has moved", async () => {
+    vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
+
+    const d = await runLoad("?from=2026-09-01&to=2027-06-01");
+
+    expect(d.to).toBe("");
+  });
+
+  // Applied, an inverted range matches no doses AND mirrors backwards into an
+  // equally inverted previous window, so every panel reads zero and every
+  // trend flat — a page that looks like "you took nothing" rather than like
+  // bad input.
+  it("declines to apply a range whose end precedes its start", async () => {
+    const d = await runLoad("?from=2026-08-20&to=2026-08-01");
+
+    expect(dailyCountsCalls[0].filter?.from).toBeUndefined();
+    expect(dailyCountsCalls[0].filter?.to).toBeUndefined();
+    // Echoed, so the date inputs keep what was typed — the same treatment a
+    // lone valid `from` gets.
+    expect(d.from).toBe("2026-08-20");
+    expect(d.to).toBe("2026-08-01");
+  });
+
+  it("falls back to the period window when the range is inverted", async () => {
+    await runLoad("?from=2026-08-20&to=2026-08-01&period=30");
+
+    const prev = dailyCountsCalls[1].filter;
+    expect(prev?.from).toEqual(new Date(NOW.getTime() - 60 * DAY_MS));
+    expect(prev?.to).toEqual(new Date(NOW.getTime() - 30 * DAY_MS));
+  });
+
+  it("still applies a range whose start and end are the same day", async () => {
+    const d = await runLoad("?from=2026-08-10&to=2026-08-10");
+
+    expect(dailyCountsCalls[0].filter?.from).toEqual(new Date("2026-08-10T00:00:00Z"));
+    expect(d.to).toBe("2026-08-10");
+  });
 });
 
 describe("analytics load: previous-period window", () => {
@@ -310,6 +363,37 @@ describe("analytics load: scheduledHours", () => {
     const d = await runLoad("?med=med-a");
     expect(d.scheduledHours).toEqual([7]);
   });
+
+  // Unlike the expected-doses denominator, which clamps on `archivedAt`
+  // because it is answering a question about the past, this highlight says
+  // "here is what your schedule looks like" — a question about now. So it
+  // reads the current flag, and an archived medication's dose times stop
+  // being highlighted the moment it is archived.
+  it("drops the hours of an archived medication", async () => {
+    data.medicationOptions = [
+      { id: "med-a", name: "A", colour: "#111111", isArchived: false },
+      { id: "med-b", name: "B", colour: "#222222", isArchived: true },
+    ];
+    data.schedulesByMed = new Map([
+      ["med-a", [{ medicationId: "med-a", scheduleKind: "fixed_time", timeOfDay: "07:00" }]],
+      ["med-b", [{ medicationId: "med-b", scheduleKind: "fixed_time", timeOfDay: "19:00" }]],
+    ]);
+    const d = await runLoad();
+    expect(d.scheduledHours).toEqual([7]);
+  });
+
+  it("keeps an hour that an active medication shares with an archived one", async () => {
+    data.medicationOptions = [
+      { id: "med-a", name: "A", colour: "#111111", isArchived: false },
+      { id: "med-b", name: "B", colour: "#222222", isArchived: true },
+    ];
+    data.schedulesByMed = new Map([
+      ["med-a", [{ medicationId: "med-a", scheduleKind: "fixed_time", timeOfDay: "19:00" }]],
+      ["med-b", [{ medicationId: "med-b", scheduleKind: "fixed_time", timeOfDay: "19:00" }]],
+    ]);
+    const d = await runLoad();
+    expect(d.scheduledHours).toEqual([19]);
+  });
 });
 
 describe("analytics load: refill input to insights", () => {
@@ -390,13 +474,27 @@ describe("analytics load: per-medication trends", () => {
     ]);
   });
 
-  it("compares a medication absent from the previous window against zero", async () => {
+  // Was: compared against a fabricated 0, so every medication you had just
+  // started rendered "up 100%" — an improvement over a period in which it
+  // did not exist.
+  it("makes no comparison at all for a medication absent from the previous window", async () => {
     data.medStats = [
       { medicationId: "med-b", medicationName: "B", adherence: 81, expectedTotal: 30 },
     ];
     const d = await runLoad();
+    expect(d.trends.perMedication).toEqual([]);
+  });
+
+  it("still reports a genuine drop to zero, which is not the same as no data", async () => {
+    data.medStats = [
+      { medicationId: "med-a", medicationName: "A", adherence: 0, expectedTotal: 30 },
+    ];
+    data.prevMedStats = [
+      { medicationId: "med-a", medicationName: "A", adherence: 80, expectedTotal: 30 },
+    ];
+    const d = await runLoad();
     expect(d.trends.perMedication).toEqual([
-      { medicationId: "med-b", trend: { direction: "up", percent: 100 } },
+      { medicationId: "med-a", trend: { direction: "down", percent: 100 } },
     ]);
   });
 });

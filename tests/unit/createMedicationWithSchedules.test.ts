@@ -39,6 +39,9 @@ const baseInput = {
   notifyOverduePush: null,
   notifyLowInventoryEmail: null,
   notifyLowInventoryPush: null,
+  notifyOffsetMinutes: 0,
+  notifyRepeatEveryMinutes: null,
+  notifyMaxRepeats: 3,
 };
 
 beforeEach(() => {

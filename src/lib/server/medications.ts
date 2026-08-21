@@ -172,6 +172,9 @@ export async function createMedicationWithSchedules(
         notifyOverduePush: input.notifyOverduePush ?? null,
         notifyLowInventoryEmail: input.notifyLowInventoryEmail ?? null,
         notifyLowInventoryPush: input.notifyLowInventoryPush ?? null,
+        notifyOffsetMinutes: input.notifyOffsetMinutes ?? 0,
+        notifyRepeatEveryMinutes: input.notifyRepeatEveryMinutes ?? null,
+        notifyMaxRepeats: input.notifyMaxRepeats ?? 3,
       })
       .returning();
 
@@ -231,6 +234,9 @@ export async function updateMedicationWithSchedules(
         notifyOverduePush: input.notifyOverduePush ?? null,
         notifyLowInventoryEmail: input.notifyLowInventoryEmail ?? null,
         notifyLowInventoryPush: input.notifyLowInventoryPush ?? null,
+        notifyOffsetMinutes: input.notifyOffsetMinutes ?? 0,
+        notifyRepeatEveryMinutes: input.notifyRepeatEveryMinutes ?? null,
+        notifyMaxRepeats: input.notifyMaxRepeats ?? 3,
         updatedAt: new Date(),
       })
       .where(and(eq(medications.id, id), eq(medications.userId, userId)))

@@ -92,3 +92,64 @@ describe("medicationSchema — notification fields", () => {
     expect(reparsed.data.notifyLowInventoryPush).toBeNull();
   });
 });
+
+describe("medicationSchema — timing fields", () => {
+  it("defaults to no offset, no repeat, three max repeats", () => {
+    const parsed = medicationSchema.parse({ ...BASE });
+    expect(parsed.notifyOffsetMinutes).toBe(0);
+    expect(parsed.notifyRepeatEveryMinutes).toBeNull();
+    expect(parsed.notifyMaxRepeats).toBe(3);
+  });
+
+  it("treats a blank repeat interval as null, NOT as zero", () => {
+    // z.coerce.number() turns "" into 0, which is the trap that already
+    // mis-stores inventoryAlertThreshold. Zero here would mean an
+    // interval of zero minutes, not "no repeat".
+    const parsed = medicationSchema.parse({ ...BASE, notifyRepeatEveryMinutes: "" });
+    expect(parsed.notifyRepeatEveryMinutes).toBeNull();
+  });
+
+  it("accepts a valid repeat interval", () => {
+    const parsed = medicationSchema.parse({ ...BASE, notifyRepeatEveryMinutes: "30" });
+    expect(parsed.notifyRepeatEveryMinutes).toBe(30);
+  });
+
+  it("rejects a sub-minute repeat interval", () => {
+    // #110 blocker (4): no lower bound meant a fractional interval
+    // allocated ~390k Dates per row.
+    expect(medicationSchema.safeParse({ ...BASE, notifyRepeatEveryMinutes: "0" }).success).toBe(
+      false,
+    );
+    expect(medicationSchema.safeParse({ ...BASE, notifyRepeatEveryMinutes: "0.001" }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects an interval beyond a day and an offset beyond twelve hours", () => {
+    expect(medicationSchema.safeParse({ ...BASE, notifyRepeatEveryMinutes: "1441" }).success).toBe(
+      false,
+    );
+    expect(medicationSchema.safeParse({ ...BASE, notifyOffsetMinutes: "721" }).success).toBe(false);
+  });
+
+  it("rejects a negative offset", () => {
+    // The sweep only sees slots that have already elapsed, so a negative
+    // offset could never fire early — it would be a setting that does
+    // not mean what it says.
+    expect(medicationSchema.safeParse({ ...BASE, notifyOffsetMinutes: "-15" }).success).toBe(false);
+  });
+
+  it("bounds maxRepeats", () => {
+    expect(medicationSchema.safeParse({ ...BASE, notifyMaxRepeats: "11" }).success).toBe(false);
+    expect(medicationSchema.parse({ ...BASE, notifyMaxRepeats: "0" }).notifyMaxRepeats).toBe(0);
+  });
+
+  it("rejects a non-numeric repeat interval instead of coercing to NaN", () => {
+    // Number("abc") is NaN, and z.number() rejects NaN — but that's an
+    // easy thing to get wrong when hand-rolling a transform+pipe, so pin
+    // it with a test rather than assuming the pipe catches it.
+    expect(medicationSchema.safeParse({ ...BASE, notifyRepeatEveryMinutes: "abc" }).success).toBe(
+      false,
+    );
+  });
+});

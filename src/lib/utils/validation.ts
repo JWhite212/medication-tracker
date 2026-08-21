@@ -41,6 +41,28 @@ const triStateField = z
     return v;
   });
 
+export const MIN_REPEAT_MINUTES = 1;
+export const MAX_REPEAT_MINUTES = 1440;
+export const MAX_OFFSET_MINUTES = 720;
+export const MAX_NAG_REPEATS = 10;
+
+/**
+ * Minutes, where an empty string means "not set" rather than zero.
+ *
+ * `z.coerce.number()` coerces "" to 0, which is the trap that already
+ * mis-stores inventoryAlertThreshold. For a repeat interval the two are
+ * emphatically different: null is "do not repeat" and 0 is an interval
+ * of zero minutes.
+ */
+const optionalMinutesField = z
+  .union([z.string(), z.number(), z.undefined()])
+  .transform((v) => {
+    if (v === undefined) return null;
+    const s = typeof v === "number" ? String(v) : v.trim();
+    return s === "" ? null : Number(s);
+  })
+  .pipe(z.union([z.null(), z.number().int().min(MIN_REPEAT_MINUTES).max(MAX_REPEAT_MINUTES)]));
+
 export const medicationSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   dosageAmount: z.string().regex(/^\d+(\.\d+)?$/, "Must be a number"),
@@ -88,6 +110,9 @@ export const medicationSchema = z.object({
   notifyOverduePush: triStateField,
   notifyLowInventoryEmail: triStateField,
   notifyLowInventoryPush: triStateField,
+  notifyOffsetMinutes: z.coerce.number().int().min(0).max(MAX_OFFSET_MINUTES).default(0),
+  notifyRepeatEveryMinutes: optionalMinutesField,
+  notifyMaxRepeats: z.coerce.number().int().min(0).max(MAX_NAG_REPEATS).default(3),
 });
 
 const sideEffectsField = z

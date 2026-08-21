@@ -3,7 +3,6 @@ import {
   formatTimeSince,
   formatTime,
   startOfDay,
-  calculateDaysUntilRefill,
   formatDueIn,
   computeTimingStatus,
 } from "$lib/utils/time";
@@ -64,70 +63,6 @@ describe("startOfDay", () => {
   it("returns midnight in given timezone", () => {
     const result = startOfDay(new Date("2026-04-15T14:30:00Z"), "UTC");
     expect(result.toISOString()).toBe("2026-04-15T00:00:00.000Z");
-  });
-});
-
-describe("calculateDaysUntilRefill", () => {
-  it("calculates days from inventory and average consumption", () => {
-    expect(calculateDaysUntilRefill(60, 2)).toBe(30);
-  });
-
-  it("floors partial days", () => {
-    expect(calculateDaysUntilRefill(10, 3)).toBe(3);
-  });
-
-  it("returns null when inventory is null", () => {
-    expect(calculateDaysUntilRefill(null, 2)).toBeNull();
-  });
-
-  it("returns null when consumption is zero", () => {
-    expect(calculateDaysUntilRefill(30, 0)).toBeNull();
-  });
-
-  it("returns null when consumption is negative", () => {
-    expect(calculateDaysUntilRefill(30, -1)).toBeNull();
-  });
-
-  it("returns 0 when inventory is less than daily consumption", () => {
-    expect(calculateDaysUntilRefill(1, 5)).toBe(0);
-  });
-
-  it("uses schedule for scheduled meds even with no dose history", () => {
-    expect(calculateDaysUntilRefill(60, 0, "scheduled", 24)).toBe(60);
-  });
-
-  it("accepts numeric-string interval (Drizzle numeric column)", () => {
-    expect(calculateDaysUntilRefill(60, 0, "scheduled", "24")).toBe(60);
-  });
-
-  it("scheduled rate takes precedence over historical avg", () => {
-    expect(calculateDaysUntilRefill(60, 2, "scheduled", 24)).toBe(60);
-  });
-
-  it("falls back to historical avg for as_needed meds", () => {
-    expect(calculateDaysUntilRefill(60, 2, "as_needed", null)).toBe(30);
-  });
-
-  it("returns null for as_needed med with no history", () => {
-    expect(calculateDaysUntilRefill(60, 0, "as_needed", null)).toBeNull();
-  });
-
-  it("falls back to historical avg when scheduled but interval is missing", () => {
-    expect(calculateDaysUntilRefill(60, 2, "scheduled", null)).toBe(30);
-  });
-
-  it("supports sub-daily schedules (8h interval = 3/day)", () => {
-    expect(calculateDaysUntilRefill(30, 0, "scheduled", 8)).toBe(10);
-  });
-
-  it("ignores a zero schedule interval and uses the historical average", () => {
-    // 0.5 doses/day → floor(20 / 0.5) = 40
-    expect(calculateDaysUntilRefill(20, 0.5, "scheduled", "0")).toBe(40);
-  });
-
-  it("honours a schedule interval above the door cap", () => {
-    // 168h → 1/7 doses/day → floor(20 / (1/7)) = 140
-    expect(calculateDaysUntilRefill(20, 0.5, "scheduled", "168")).toBe(140);
   });
 });
 

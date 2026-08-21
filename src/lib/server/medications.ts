@@ -129,32 +129,6 @@ export async function getMedicationById(userId: string, id: string) {
   return med ?? null;
 }
 
-export async function createMedication(userId: string, input: MedicationInput) {
-  const id = createId();
-  const [med] = await db
-    .insert(medications)
-    .values({
-      id,
-      userId,
-      name: input.name,
-      dosageAmount: input.dosageAmount,
-      dosageUnit: input.dosageUnit,
-      form: input.form,
-      category: input.category,
-      colour: input.colour,
-      colourSecondary: input.colourSecondary || null,
-      pattern: input.pattern ?? "solid",
-      scheduleType: input.scheduleType ?? "scheduled",
-      notes: input.notes ?? null,
-      scheduleIntervalHours: input.scheduleIntervalHours ?? null,
-      inventoryCount: input.inventoryCount ?? null,
-      inventoryAlertThreshold: input.inventoryAlertThreshold ?? null,
-    })
-    .returning();
-  await logAudit(userId, "medication", id, "create");
-  return med;
-}
-
 /**
  * Create a medication and its initial schedule rows in a single
  * transaction. Replaces the previous "create then replace
@@ -208,41 +182,13 @@ export async function createMedicationWithSchedules(
   });
 }
 
-export async function updateMedication(userId: string, id: string, input: MedicationInput) {
-  const before = await getMedicationById(userId, id);
-  if (!before) return null;
-  const [updated] = await db
-    .update(medications)
-    .set({
-      name: input.name,
-      dosageAmount: input.dosageAmount,
-      dosageUnit: input.dosageUnit,
-      form: input.form,
-      category: input.category,
-      colour: input.colour,
-      colourSecondary: input.colourSecondary || null,
-      pattern: input.pattern ?? "solid",
-      scheduleType: input.scheduleType ?? "scheduled",
-      notes: input.notes ?? null,
-      scheduleIntervalHours: input.scheduleIntervalHours ?? null,
-      inventoryCount: input.inventoryCount ?? null,
-      inventoryAlertThreshold: input.inventoryAlertThreshold ?? null,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(medications.id, id), eq(medications.userId, userId)))
-    .returning();
-  const changes = computeChanges(before, updated);
-  if (changes) await logAudit(userId, "medication", id, "update", changes);
-  return updated;
-}
-
 /**
  * Update a medication and replace its schedule rows in a single
  * transaction. Mirrors createMedicationWithSchedules for the edit
- * flow: previously updateMedication and replaceSchedulesForMedication
- * ran in two separate transactions, so a failure between them could
- * leave the medication row updated against stale schedules (or fresh
- * schedules under an unchanged medication on partial rollback).
+ * flow: the earlier pair of non-transactional helpers (both since
+ * deleted) ran in two separate transactions, so a failure between them
+ * could leave the medication row updated against stale schedules (or
+ * fresh schedules under an unchanged medication on partial rollback).
  *
  * Returns null when the medication is not owned by the user; throws
  * MedicationOwnershipError if the FK guard inside the transaction

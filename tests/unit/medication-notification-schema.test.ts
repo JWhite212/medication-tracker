@@ -72,19 +72,15 @@ describe("medicationSchema — notification fields", () => {
     // client that reads a medication and writes it back has its whole
     // payload rejected, not just the offending field.
     const serialized = serializeMedication(BASE_MEDICATION_ROW);
-    // medicationSchema requires `category` to be one of a fixed enum,
+    // medicationSchema requires `category` to be one of a fixed enum and
     // `colourSecondary` / `notes` to be `undefined` rather than an
-    // explicit `null`, and `notifyRepeatEveryMinutes` to be `undefined`
-    // rather than an explicit `null` (`optionalMinutesField` accepts
-    // string/number/undefined but not null, unlike the tri-state fields'
-    // `z.null()` arm) — pre-existing gaps in the door unrelated to the
+    // explicit `null` — pre-existing gaps in the door unrelated to the
     // notification fields this test targets, so they're overridden here
     // rather than fixed as part of this task.
     const requiredFormFields = {
       category: "otc",
       colourSecondary: undefined,
       notes: undefined,
-      notifyRepeatEveryMinutes: undefined,
     };
     const reparsed = medicationSchema.safeParse({ ...serialized, ...requiredFormFields });
     expect(reparsed.success).toBe(true);
@@ -94,6 +90,16 @@ describe("medicationSchema — notification fields", () => {
     expect(reparsed.data.notifyOverduePush).toBeNull();
     expect(reparsed.data.notifyLowInventoryEmail).toBe(false);
     expect(reparsed.data.notifyLowInventoryPush).toBeNull();
+    // BASE_MEDICATION_ROW's notifyRepeatEveryMinutes is null (the column
+    // default, "do not repeat") — the realistic majority case, and the
+    // one that exposed the gap this round trip exists to catch.
+    // notifyOffsetMinutes/notifyMaxRepeats round-trip through their own
+    // z.coerce.number() arm regardless, so this pins the field that
+    // actually needed the fix.
+    expect(BASE_MEDICATION_ROW.notifyRepeatEveryMinutes).toBeNull();
+    expect(reparsed.data.notifyOffsetMinutes).toBe(0);
+    expect(reparsed.data.notifyRepeatEveryMinutes).toBeNull();
+    expect(reparsed.data.notifyMaxRepeats).toBe(3);
   });
 });
 

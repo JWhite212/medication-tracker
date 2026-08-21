@@ -27,18 +27,20 @@ import type { MedicationSchedule } from "$lib/server/schedules";
 const VALID_PERIODS = new Set(["7", "30", "90", "365"]);
 
 // Bounds-check the optional from/to query params. Reject dates earlier than
-// 2020-01-01 or later than now+1day; on garbage input we fall through to
+// 2020-01-01 or later than tomorrow; on garbage input we fall through to
 // `undefined` and the caller uses its default period window.
 //
-// NB the upper bound is evaluated once, when this module is first imported,
-// so a long-lived instance carries a ceiling that ages. That is inherited
-// behaviour, deliberately preserved by the extraction rather than fixed
-// alongside it.
+// The ceiling is a `refine` closure rather than `.max(new Date(...))` on
+// purpose: `.max` takes its bound when the schema is constructed, which is
+// once, at module import. A warm instance would carry a "tomorrow" that
+// ages, and start rejecting dates that are genuinely in range. The closure
+// is evaluated per parse instead.
 const MIN_DATE = new Date("2020-01-01T00:00:00Z");
+const MAX_FUTURE_MS = 86400000;
 const dateParamSchema = z.coerce
   .date()
   .min(MIN_DATE)
-  .max(new Date(Date.now() + 86400000))
+  .refine((d) => d.getTime() <= Date.now() + MAX_FUTURE_MS)
   .optional()
   .catch(undefined);
 
@@ -69,8 +71,16 @@ export function resolveAnalyticsQuery(
   const toDate = dateParamSchema.parse(rawTo);
   const fromParam = fromDate ? (rawFrom ?? null) : null;
   const toParam = toDate ? (rawTo ?? null) : null;
+  // An inverted range is treated as unusable input, not silently honoured.
+  // Applied, it matches no doses AND mirrors backwards into an equally
+  // inverted previous window, so the page renders all-zero with every trend
+  // flat — indistinguishable from "you took nothing". The raw strings are
+  // still echoed so the date inputs keep what was typed, exactly as a lone
+  // `from` is echoed without being applied.
   const customRange: DateRange | undefined =
-    fromDate && toDate ? { from: fromDate, to: toDate } : undefined;
+    fromDate && toDate && fromDate.getTime() <= toDate.getTime()
+      ? { from: fromDate, to: toDate }
+      : undefined;
 
   const periodParam = searchParams.get("period");
   const period =
@@ -144,8 +154,15 @@ export function composeAnalyticsPageData(input: AnalyticsCompositionInputs) {
     : refillForecast;
 
   // Hours with at least one fixed_time schedule across the selected meds.
+  //
+  // Archived medications are excluded on the CURRENT `isArchived` flag, not
+  // via `archivedAt`. This highlight answers "what does my schedule look
+  // like", which is a question about now — unlike the expected-doses
+  // denominator, which is historical and so clamps on the date instead.
+  const archivedIds = new Set(medicationOptions.filter((m) => m.isArchived).map((m) => m.id));
   const scheduledHours = new Set<number>();
   for (const [medId, schedules] of schedulesByMed) {
+    if (archivedIds.has(medId)) continue;
     if (medicationIds && !medicationIds.includes(medId)) continue;
     for (const s of schedules) {
       if (s.scheduleKind === "fixed_time" && s.timeOfDay) {
@@ -195,12 +212,20 @@ export function composeAnalyticsPageData(input: AnalyticsCompositionInputs) {
   const trends = {
     doses: calculateTrend(totalDoses, prevTotalDoses),
     adherence: calculateTrend(avgAdherence, prevAvgAdherence),
-    perMedication: medStats.map((stat) => {
+    // A medication with no previous-window stat gets no entry at all, rather
+    // than being compared against a fabricated 0 — which read as "improved
+    // 100%" on every medication you had just started. AdherenceChart looks
+    // its trend up by id and renders nothing when there isn't one, so an
+    // absent entry is "no comparison available", which is the truth.
+    perMedication: medStats.flatMap((stat) => {
       const prev = prevMedStats.find((p) => p.medicationId === stat.medicationId);
-      return {
-        medicationId: stat.medicationId,
-        trend: calculateTrend(stat.adherence, prev?.adherence ?? 0),
-      };
+      if (!prev) return [];
+      return [
+        {
+          medicationId: stat.medicationId,
+          trend: calculateTrend(stat.adherence, prev.adherence),
+        },
+      ];
     }),
   };
 

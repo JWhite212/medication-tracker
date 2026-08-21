@@ -1349,3 +1349,81 @@ Do not include any Claude/AI attribution.
 **Type consistency.** `pgDb` is `{ client, db, reset, seedUser, seedMedication, seedDose }` from Task 2 onward and is referenced with those names in Tasks 3–7. `dbMock` is `{ db, dbTx }` throughout. `claimReminderSlot` returns `{ id, attemptCount } | null` in both Task 4's interface block and its assertions. `checkRateLimit` returns `{ allowed, retryAfterMs }` and the tests only read `allowed`, reading `count` from the table directly — which is correct, because `count` is not in the return type.
 
 **One deliberate deviation from the skill's template.** Steps 1–2 of Tasks 3–7 do not write a failing test first. That is not an oversight: these tests characterise existing, working code, so a red phase is unavailable and mutation replaces it. The reasoning is stated in full in the verification-cycle preamble, which the executor is told to read before Task 3.
+
+---
+
+## Progress — COMPLETE
+
+All eight tasks executed 2026-08-21.
+
+**Task 1 go/no-go: all three passed.** Migrations apply cleanly in journal
+order, so the files still agree with `schema.ts` — Risk 2 did not
+materialise. `AT TIME ZONE 'Europe/London'` resolves, so Risk 1 did not
+either and Task 7 stayed in scope. `numeric` comes back as a string, as
+CLAUDE.md says.
+
+**Cost.** One PGlite file is 1.3s, of which 1.19s is boot plus migrations.
+Suite went 67 files / 848 tests / 6.36s → **73 files / 874 tests / 9.35s**,
+against a 20s budget. Snapshot/restore was not needed.
+
+**Gates.** `git diff origin/main..HEAD -- src/` is empty. `svelte-check` 0
+errors (25 pre-existing warnings). ESLint 0 errors, 8 warnings — the same 8
+that were there before. Prettier clean. Coverage passes and rose on all four
+metrics: 48.67 → 49 statements, 52.91 → 53.34 branches, 40.98 → 41.66
+functions, 57.83 → 58.24 lines.
+
+### The mutation ledger
+
+Every mutation below was applied to production code, observed failing, and
+reverted with `git checkout --`. This is the evidence that replaces Stage 1's
+assertion count, which does not transfer to new files.
+
+| Task | Production file         | Mutation                                    | Observed                                        |
+| ---- | ----------------------- | ------------------------------------------- | ----------------------------------------------- |
+| 3    | `auth/rate-limit.ts`    | `< NOW()` → `> NOW()` in both `CASE` arms   | 3 of 4 fail                                     |
+| 3    | `auth/rate-limit.ts`    | `count <= maxAttempts` → `<`                | 2 of 4 fail                                     |
+| 4    | `reminders/dispatch.ts` | `setWhere` deleted                          | 3 of 5 — all refusals; both controls still pass |
+| 4    | `reminders/dispatch.ts` | `attemptCount < MAX` → `<=`                 | 1 of 5 — isolates the ceiling clause            |
+| 5    | `auth/totp.ts`          | counter comparison dropped from the `WHERE` | 3 of 5 — replay, stale step, concurrency        |
+| 6    | `log/+page.server.ts`   | filter replaced with `is not null`          | 1 of 5                                          |
+| 6    | `log/+page.server.ts`   | `escapeLikePattern` dropped                 | 2 of 5                                          |
+| 7    | `analytics.ts`          | daily `groupBy` loses `AT TIME ZONE`        | 3 of 5                                          |
+| 7    | `analytics.ts`          | hourly loses `AT TIME ZONE`                 | 1 of 5 — returns UTC hour 8, not local 9        |
+| 7    | `analytics.ts`          | day-of-week loses `AT TIME ZONE`            | 1 of 5 — returns Monday, not Tuesday            |
+
+No production bug was found. Every test characterised behaviour that is
+already correct, so Decision 5 was never triggered and the branch stays
+strictly test-only.
+
+### Two findings from running the gate
+
+**The `coalesce` mutation does not work, and this was verified rather than
+reasoned about.** Deleting `coalesce(…, '[]'::jsonb)` leaves all five
+log-search tests passing, because `jsonb_array_length(null)` is `null` and a
+`null` in a `WHERE` is discarded exactly as `false` is. An executor following
+the spec's original instruction would have seen a green run and wrongly
+concluded their test was vacuous. The mutation that reproduces the defect is
+the naive `is not null` form.
+
+**The LIKE-escaping tests were vacuous on first write, and the gate caught
+them.** Dropping `escapeLikePattern` left all five passing. A row that merely
+_contains_ the search term proves nothing: unescaped, `%100%%` still requires
+the literal `100`, so it matched the same row either way. The fixtures now
+carry decoys that the wildcard reaches and the literal does not — `took 1000
+mg` for `%`, `dosexmissed twice` for `_`. This is the same failure class as
+Stage 1's `toHaveLength(0)`-on-a-function, caught this time by design rather
+than by luck.
+
+### Corrections to this plan, found while executing it
+
+- `auth-totp.test.ts` had **10** tests, not 11. Four moved; six remain.
+- `nextInvalidCode` had to be **kept** — the plan said to drop it, but a test
+  that stays (`verifyTOTPCode rejects an invalid 6-digit code`) still uses it.
+- The hourly analytics export is `getHourlyDistribution`, not
+  `getTimeOfDayDistribution`.
+- Final file count is **73**, not the 72 the plan predicted.
+- Fixtures use an explicit type annotation rather than `satisfies`, because
+  spreading a `Partial<>` into a literal can widen required properties to
+  `| undefined` and `satisfies` then rejects it.
+- `getDailyDoseCounts` returns `date` as a `Date` at runtime despite its
+  `sql<string>` type, so the test normalises through an `isoDay` helper.

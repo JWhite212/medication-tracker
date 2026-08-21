@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Per-medication notification overrides — `notifications_enabled` kill switch plus per-channel overdue/low-inventory overrides on each medication, `NULL` meaning "inherit the account-wide `user_preferences` toggle" (`src/lib/server/notifications/resolve.ts`).
+- Bounded repeat-until-acted reminder cadence — an overdue medication can be configured to re-notify every `notifyRepeatEveryMinutes` minutes, up to `notifyMaxRepeats` times, after an optional `notifyOffsetMinutes` delay past the first reminder. The re-notification ordinal is derived from elapsed time and capped, not counted in a table, so it stays bounded by design (see [ADR 0005](docs/adr/0005-reminder-deduplication.md)).
+- `reminder_events` retention purge — rows older than 90 days are deleted on every cron tick (`purgeExpiredReminderEvents`), now that a slot can mint more than one row.
+
 ### Changed
 
 - Audit branches (`audit/*`) are landing repository hygiene, accessibility follow-ups, and developer-experience improvements.

@@ -20,7 +20,23 @@ export type PushPayload = {
   body: string;
   url: string;
   tag: string;
+  /**
+   * Re-alert for a notification that replaced an earlier one with the
+   * same tag. Additive and optional: the wire format is frozen against
+   * renames, and a service worker predating this field simply ignores
+   * it, so the replacement lands silently instead of breaking.
+   */
+  renotify?: boolean;
 };
+
+/**
+ * `NotificationOptions` in the DOM lib we compile against has no
+ * `renotify`, but the field is real: it is specified on the service
+ * worker's showNotification(), which TypeScript types separately. The
+ * intersection is the minimum needed to express it without reaching for
+ * a cast at the assignment.
+ */
+export type PushNotificationOptions = NotificationOptions & { renotify?: boolean };
 
 /**
  * Tag carried by the user-initiated test notification.
@@ -84,18 +100,22 @@ export function safeNotificationUrl(raw: unknown): string {
  */
 export function toNotification(raw: unknown): {
   title: string;
-  options: NotificationOptions;
+  options: PushNotificationOptions;
 } {
   const data: Record<string, unknown> =
     typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
 
-  const options: NotificationOptions = {
+  const options: PushNotificationOptions = {
     body: typeof data.body === "string" ? data.body : DEFAULT_BODY,
     icon: ICON,
     badge: ICON,
     data: { url: safeNotificationUrl(data.url) },
   };
   if (typeof data.tag === "string" && data.tag !== "") options.tag = data.tag;
+  // renotify is only meaningful alongside a tag, and some browsers throw
+  // a TypeError if it is set without one — which would lose the entire
+  // notification, not just the re-alert.
+  if (options.tag && data.renotify === true) options.renotify = true;
 
   return {
     title: typeof data.title === "string" ? data.title : DEFAULT_TITLE,

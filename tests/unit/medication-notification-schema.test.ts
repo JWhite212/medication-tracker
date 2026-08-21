@@ -162,4 +162,32 @@ describe("medicationSchema — timing fields", () => {
       false,
     );
   });
+
+  // The tests above pin every reject-side edge (1441, -15, 721, 11) but
+  // left most accept-side edges unpinned — a bound that quietly narrowed
+  // by one step (e.g. min(2) instead of min(1)) would pass a suite full
+  // of mid-range values without ever going red.
+  it("accepts a repeat interval at both bounds", () => {
+    expect(
+      medicationSchema.parse({ ...BASE, notifyRepeatEveryMinutes: "1" }).notifyRepeatEveryMinutes,
+    ).toBe(1);
+    expect(
+      medicationSchema.parse({ ...BASE, notifyRepeatEveryMinutes: "1440" })
+        .notifyRepeatEveryMinutes,
+    ).toBe(1440);
+  });
+
+  it("accepts an offset at both bounds", () => {
+    expect(medicationSchema.parse({ ...BASE, notifyOffsetMinutes: "0" }).notifyOffsetMinutes).toBe(
+      0,
+    );
+    expect(
+      medicationSchema.parse({ ...BASE, notifyOffsetMinutes: "720" }).notifyOffsetMinutes,
+    ).toBe(720);
+  });
+
+  it("accepts maxRepeats at both bounds", () => {
+    expect(medicationSchema.parse({ ...BASE, notifyMaxRepeats: "0" }).notifyMaxRepeats).toBe(0);
+    expect(medicationSchema.parse({ ...BASE, notifyMaxRepeats: "10" }).notifyMaxRepeats).toBe(10);
+  });
 });

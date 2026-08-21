@@ -85,4 +85,32 @@ export async function seedDose(overrides: Partial<typeof schema.doseLogs.$inferI
   return row;
 }
 
-export const pgDb = { client, db: database, reset, seedUser, seedMedication, seedDose };
+let scheduleSeq = 0;
+
+/** Seed after the medication it belongs to — real Postgres enforces the
+    cascade foreign key that `fake-db` ignored. */
+export async function seedSchedule(
+  overrides: Partial<typeof schema.medicationSchedules.$inferInsert> = {},
+) {
+  scheduleSeq += 1;
+  const row: typeof schema.medicationSchedules.$inferInsert = {
+    id: `s${scheduleSeq}`,
+    userId: "u1",
+    medicationId: "m1",
+    scheduleKind: "fixed_time",
+    timeOfDay: "08:00",
+    ...overrides,
+  };
+  await database.insert(schema.medicationSchedules).values(row);
+  return row;
+}
+
+export const pgDb = {
+  client,
+  db: database,
+  reset,
+  seedUser,
+  seedMedication,
+  seedDose,
+  seedSchedule,
+};

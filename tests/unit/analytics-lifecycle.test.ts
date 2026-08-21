@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { clampEffectiveDays, isActiveOn } from "$lib/server/analytics/lifecycle";
+import { clampEffectiveDays, isActiveOn, lifecycleEnd } from "$lib/server/analytics/lifecycle";
 
 const APR_15 = new Date("2026-04-15T00:00:00.000Z");
 const APR_25 = new Date("2026-04-25T00:00:00.000Z");
@@ -82,5 +82,44 @@ describe("regression — the user-facing scenarios from the plan", () => {
     const fiveDaysAgo = new Date(today.getTime() - 5 * 86_400_000);
     // Med was active for the first 25 days of the 30-day window.
     expect(clampEffectiveDays(thirtyDaysAgo, today, thirtyDaysAgo, fiveDaysAgo)).toBe(25);
+  });
+});
+
+// Two columns can close a medication's window, written by different things:
+// `endedAt` arrives only via import or the API, while archiving is the sole
+// "I stopped taking this" signal the app itself writes — and it sets
+// `archivedAt` alone. Reading either one on its own gets a real user wrong.
+describe("lifecycleEnd", () => {
+  it("is null while the medication is still running", () => {
+    expect(lifecycleEnd({ endedAt: null, archivedAt: null })).toBeNull();
+  });
+
+  it("uses endedAt when that is the only bound", () => {
+    expect(lifecycleEnd({ endedAt: MAY_01, archivedAt: null })).toBe(MAY_01);
+  });
+
+  it("uses archivedAt when that is the only bound", () => {
+    // The case that mattered in practice: no UI writes endedAt, so for a
+    // web-app user this is the ONLY signal that a medication stopped.
+    expect(lifecycleEnd({ endedAt: null, archivedAt: APR_25 })).toBe(APR_25);
+  });
+
+  it("takes the earlier bound when a medication was ended before archiving", () => {
+    expect(lifecycleEnd({ endedAt: APR_25, archivedAt: MAY_01 })).toBe(APR_25);
+  });
+
+  it("takes the earlier bound when a medication was archived before ending", () => {
+    expect(lifecycleEnd({ endedAt: MAY_15, archivedAt: MAY_01 })).toBe(MAY_01);
+  });
+
+  it("closes the adherence window at the archive date", () => {
+    const life = { endedAt: null, archivedAt: MAY_01 };
+    // Archived on 1 May, asked about 15 April - 15 May: 16 of those 30
+    // days were expected of you. Not all 30 (which would score archiving
+    // as two weeks of missed doses) and not none (which would erase the
+    // fortnight you were actually taking it).
+    expect(clampEffectiveDays(APR_15, MAY_15, APR_15, lifecycleEnd(life))).toBe(16);
+    expect(isActiveOn(APR_25, APR_15, lifecycleEnd(life))).toBe(true);
+    expect(isActiveOn(MAY_15, APR_15, lifecycleEnd(life))).toBe(false);
   });
 });

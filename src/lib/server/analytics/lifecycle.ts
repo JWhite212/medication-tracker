@@ -34,6 +34,27 @@ export function clampEffectiveDays(
 }
 
 /**
+ * The instant a medication stopped being expected.
+ *
+ * Two columns can close the window and they are written by different
+ * things: `endedAt` only ever arrives through import or the API — no UI
+ * writes it — while archiving is the one "I stopped taking this" signal
+ * the app itself produces, and it sets `archivedAt` and nothing else.
+ * Consulting either alone gets a real user wrong, so the effective end is
+ * whichever comes first. Null means still running.
+ *
+ * Callers pass the result to `clampEffectiveDays` / `isActiveOn`, which is
+ * why this is a separate function rather than another parameter on them:
+ * those two own clamping against a window, this owns deciding where the
+ * window closes.
+ */
+export function lifecycleEnd(life: { endedAt: Date | null; archivedAt: Date | null }): Date | null {
+  const { endedAt, archivedAt } = life;
+  if (endedAt && archivedAt) return endedAt.getTime() < archivedAt.getTime() ? endedAt : archivedAt;
+  return endedAt ?? archivedAt;
+}
+
+/**
  * Is `date` inside `[startedAt, endedAt]`? `endedAt` null means open
  * on the right (med still active). Used by daily adherence to decide
  * whether a med contributes expected doses on a given day.

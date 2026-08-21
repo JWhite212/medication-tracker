@@ -167,6 +167,11 @@ export async function createMedicationWithSchedules(
         scheduleIntervalHours: input.scheduleIntervalHours ?? null,
         inventoryCount: input.inventoryCount ?? null,
         inventoryAlertThreshold: input.inventoryAlertThreshold ?? null,
+        notificationsEnabled: input.notificationsEnabled ?? true,
+        notifyOverdueEmail: input.notifyOverdueEmail ?? null,
+        notifyOverduePush: input.notifyOverduePush ?? null,
+        notifyLowInventoryEmail: input.notifyLowInventoryEmail ?? null,
+        notifyLowInventoryPush: input.notifyLowInventoryPush ?? null,
       })
       .returning();
 
@@ -221,6 +226,11 @@ export async function updateMedicationWithSchedules(
         scheduleIntervalHours: input.scheduleIntervalHours ?? null,
         inventoryCount: input.inventoryCount ?? null,
         inventoryAlertThreshold: input.inventoryAlertThreshold ?? null,
+        notificationsEnabled: input.notificationsEnabled ?? true,
+        notifyOverdueEmail: input.notifyOverdueEmail ?? null,
+        notifyOverduePush: input.notifyOverduePush ?? null,
+        notifyLowInventoryEmail: input.notifyLowInventoryEmail ?? null,
+        notifyLowInventoryPush: input.notifyLowInventoryPush ?? null,
         updatedAt: new Date(),
       })
       .where(and(eq(medications.id, id), eq(medications.userId, userId)))

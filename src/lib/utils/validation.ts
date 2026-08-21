@@ -63,6 +63,35 @@ const optionalMinutesField = z
   })
   .pipe(z.union([z.null(), z.number().int().min(MIN_REPEAT_MINUTES).max(MAX_REPEAT_MINUTES)]));
 
+/**
+ * A non-negative integer count, where `null`, `undefined`, and an empty
+ * string all mean "not tracked" rather than zero.
+ *
+ * Same trap `optionalMinutesField` above exists to avoid, on a field
+ * where it's worse: `z.coerce.number()` runs `Number(null)` / `Number("")`,
+ * both `0`, so "I don't track inventory for this medication" silently
+ * became "0 doses left, alert threshold 0" — and the low-inventory
+ * sweep's predicate (`inventoryCount <= inventoryAlertThreshold`) treats
+ * `0 <= 0` as true, so an untracked medication started firing low-stock
+ * alerts it should never fire. `""` is reachable from the web form (a
+ * cleared number input submits it), not just from an API client sending
+ * `null`.
+ *
+ * `.optional()` at the end (not just `.union([..., z.undefined()])` at
+ * the start) matters: without it, this key would become *required* in
+ * `MedicationInput` — a caller omitting the field entirely would fail
+ * type-checking, not just validation.
+ */
+const optionalCountField = z
+  .union([z.string(), z.number(), z.null(), z.undefined()])
+  .transform((v) => {
+    if (v === undefined || v === null) return null;
+    const s = typeof v === "number" ? String(v) : v.trim();
+    return s === "" ? null : Number(s);
+  })
+  .pipe(z.union([z.null(), z.number().int().min(0)]))
+  .optional();
+
 export const medicationSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   dosageAmount: z.string().regex(/^\d+(\.\d+)?$/, "Must be a number"),
@@ -81,24 +110,44 @@ export const medicationSchema = z.object({
   ]),
   category: z.enum(["prescription", "otc", "supplement"]),
   colour: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex colour"),
+  // `null` must parse alongside `""` and omission: serializeMedication
+  // emits `null` for an unset colour, and a client that reads a
+  // medication and writes it straight back must not have its whole
+  // upsert rejected over a field it never touched. The trailing
+  // `.optional()` keeps this key optional in `MedicationInput` — without
+  // it, adding `.transform()` would make the key *required*, breaking
+  // every caller that omits it (as most do today).
   colourSecondary: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable()
     .optional()
-    .or(z.literal("")),
+    .or(z.literal(""))
+    .transform((v) => (v ? v : null))
+    .optional(),
   pattern: z
     .enum(["solid", "split", "gradient", "stripes", "h-stripes", "dots", "checkerboard", "radial"])
     .default("solid"),
   scheduleType: z.enum(["scheduled", "as_needed"]).default("scheduled"),
-  notes: z.string().max(1000).optional(),
+  // Same "accept null, stay optional" reasoning as colourSecondary above.
+  notes: z
+    .string()
+    .max(1000)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null)
+    .optional(),
+  // Same "accept null, stay optional" reasoning as colourSecondary above.
   scheduleIntervalHours: z
     .string()
     .regex(/^\d+(\.\d+)?$/)
+    .nullable()
     .optional()
     .or(z.literal(""))
-    .transform((v) => (v === "" ? undefined : v)),
-  inventoryCount: z.coerce.number().int().min(0).optional(),
-  inventoryAlertThreshold: z.coerce.number().int().min(0).optional(),
+    .transform((v) => (v ? v : null))
+    .optional(),
+  inventoryCount: optionalCountField,
+  inventoryAlertThreshold: optionalCountField,
   // The kill switch defaults to ON: a medication the user never
   // configured should behave exactly as it did before this feature.
   // Also accepts a real boolean (see `triStateField` above) so this

@@ -103,6 +103,44 @@ describe("medicationSchema — notification fields", () => {
   });
 });
 
+describe("medicationSchema — round-trips an unset medication", () => {
+  it("accepts its own serialized output when colourSecondary, notes, scheduleIntervalHours, inventoryCount, and inventoryAlertThreshold are all unset", () => {
+    // BASE_MEDICATION_ROW already carries colourSecondary/notes as null,
+    // but scheduleIntervalHours/inventoryCount/inventoryAlertThreshold are
+    // non-null there — the "PRN medication with no inventory tracking"
+    // case isn't covered by spreading the fixture as-is, so construct it
+    // explicitly. `category` is overridden the same way the notification
+    // round-trip test above does, for the same pre-existing, unrelated
+    // reason (BASE_MEDICATION_ROW's "pain relief" isn't in the enum).
+    const unsetRow = {
+      ...BASE_MEDICATION_ROW,
+      category: "otc",
+      scheduleIntervalHours: null,
+      inventoryCount: null,
+      inventoryAlertThreshold: null,
+    };
+    const serialized = serializeMedication(unsetRow);
+    expect(serialized.colourSecondary).toBeNull();
+    expect(serialized.notes).toBeNull();
+    expect(serialized.scheduleIntervalHours).toBeNull();
+    expect(serialized.inventoryCount).toBeNull();
+    expect(serialized.inventoryAlertThreshold).toBeNull();
+
+    const reparsed = medicationSchema.safeParse(serialized);
+    expect(reparsed.success).toBe(true);
+    if (!reparsed.success) return;
+    expect(reparsed.data.colourSecondary).toBeNull();
+    expect(reparsed.data.notes).toBeNull();
+    expect(reparsed.data.scheduleIntervalHours).toBeNull();
+    // The defect this test exists to catch: null must stay null, never
+    // silently become 0.
+    expect(reparsed.data.inventoryCount).toBeNull();
+    expect(reparsed.data.inventoryCount).not.toBe(0);
+    expect(reparsed.data.inventoryAlertThreshold).toBeNull();
+    expect(reparsed.data.inventoryAlertThreshold).not.toBe(0);
+  });
+});
+
 describe("medicationSchema — timing fields", () => {
   it("defaults to no offset, no repeat, three max repeats", () => {
     const parsed = medicationSchema.parse({ ...BASE });

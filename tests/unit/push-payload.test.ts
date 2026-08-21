@@ -158,3 +158,34 @@ describe("toNotification", () => {
     },
   );
 });
+
+describe("toNotification — renotify", () => {
+  it("passes renotify through when a tag is present", () => {
+    const { options } = toNotification({
+      title: "t",
+      body: "b",
+      url: "/dashboard",
+      tag: "overdue-m1",
+      renotify: true,
+    });
+    expect(options.renotify).toBe(true);
+  });
+
+  it("omits renotify when the payload does not ask for it", () => {
+    const { options } = toNotification({ title: "t", body: "b", url: "/d", tag: "overdue-m1" });
+    expect(options.renotify).toBeUndefined();
+  });
+
+  it("never sets renotify without a tag", () => {
+    // renotify requires a tag; setting one without the other throws a
+    // TypeError in some browsers and would kill the whole notification.
+    const { options } = toNotification({ title: "t", body: "b", url: "/d", renotify: true });
+    expect(options.tag).toBeUndefined();
+    expect(options.renotify).toBeUndefined();
+  });
+
+  it("ignores a non-boolean renotify from the wire", () => {
+    const { options } = toNotification({ title: "t", body: "b", tag: "x", renotify: "yes" });
+    expect(options.renotify).toBeUndefined();
+  });
+});

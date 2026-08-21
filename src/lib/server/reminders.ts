@@ -201,6 +201,10 @@ export async function checkOverdueMedications() {
               : "Not yet logged",
             url: "/dashboard",
             tag: overdueTag(row.medicationId),
+            // Same tag as the previous nag, so the tray holds one entry
+            // per medication rather than N. That means each nag REPLACES
+            // the last, which is why the re-alert has to be explicit.
+            renotify: nagIndex > 0,
           });
         }
       },

@@ -338,3 +338,42 @@ describe("computeOverdueSlot — look-back across the cron tick", () => {
     expect(slot!.toISOString()).toBe("2026-05-31T20:00:00.000Z");
   });
 });
+
+describe("overdue dedupe key — pinned contract (pre-nag-ordinal)", () => {
+  const slot = new Date("2026-05-01T08:00:00.000Z");
+
+  it("has exactly six colon-separated segments and no nag suffix", () => {
+    const key = buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", slot);
+    expect(key).toBe("u1:m1:overdue:fixed_time:s1:2026-05-01T08:00:00.000Z");
+  });
+
+  it("one slot yields exactly one key, so a slot reminds once", () => {
+    const a = buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", slot);
+    const b = buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", slot);
+    expect(a).toBe(b);
+  });
+
+  it("a fixed-time slot stays fixed as `now` advances", () => {
+    // This is the #110 invariant. isOutstanding returned the most recent
+    // ELAPSED occurrence, which advanced by one interval every interval;
+    // the slot is part of the dedupe key, so the key churned without
+    // bound and claimReminderSlot never suppressed the repeat.
+    const row = fixedTimeRow({ timeOfDay: "08:00", lastEventAt: null });
+    const early = computeOverdueSlot(row, new Date("2026-05-01T09:00:00.000Z"));
+    const late = computeOverdueSlot(row, new Date("2026-05-01T14:00:00.000Z"));
+    expect(early).not.toBeNull();
+    expect(late).not.toBeNull();
+    expect(late!.toISOString()).toBe(early!.toISOString());
+  });
+
+  it("an interval slot is a fixed instant derived from the last event", () => {
+    const row = intervalRow({
+      intervalHours: "6",
+      lastEventAt: new Date("2026-05-01T00:00:00.000Z"),
+    });
+    const early = computeOverdueSlot(row, new Date("2026-05-01T07:00:00.000Z"));
+    const late = computeOverdueSlot(row, new Date("2026-05-01T20:00:00.000Z"));
+    expect(early!.toISOString()).toBe("2026-05-01T06:00:00.000Z");
+    expect(late!.toISOString()).toBe("2026-05-01T06:00:00.000Z");
+  });
+});

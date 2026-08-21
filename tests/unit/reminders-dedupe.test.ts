@@ -4,7 +4,10 @@ import {
   isScheduleOverdue,
   buildOverdueDedupeKey,
   buildLowInventoryDedupeKey,
+  computeNagIndex,
+  NO_REPEAT,
   type OverdueRow,
+  type NagPolicy,
 } from "$lib/server/reminders/domain";
 
 const now = new Date("2026-05-01T15:00:00.000Z");
@@ -387,5 +390,112 @@ describe("overdue dedupe key — pinned contract (pre-nag-ordinal)", () => {
     const late = computeOverdueSlot(row, new Date("2026-05-01T20:00:00.000Z"));
     expect(early!.toISOString()).toBe("2026-05-01T06:00:00.000Z");
     expect(late!.toISOString()).toBe("2026-05-01T06:00:00.000Z");
+  });
+});
+
+const SLOT = new Date("2026-05-01T08:00:00.000Z");
+const at = (iso: string) => new Date(iso);
+const policy = (over: Partial<NagPolicy> = {}): NagPolicy => ({
+  offsetMinutes: 0,
+  repeatEveryMinutes: null,
+  maxRepeats: 3,
+  ...over,
+});
+
+describe("computeNagIndex", () => {
+  it("is 0 when no repeat is configured, however late", () => {
+    expect(computeNagIndex(SLOT, NO_REPEAT, at("2026-05-01T08:00:00.000Z"))).toBe(0);
+    expect(computeNagIndex(SLOT, NO_REPEAT, at("2026-05-01T23:00:00.000Z"))).toBe(0);
+  });
+
+  it("returns null before the offset has elapsed", () => {
+    const p = policy({ offsetMinutes: 30 });
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T08:29:00.000Z"))).toBeNull();
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T08:30:00.000Z"))).toBe(0);
+  });
+
+  it("advances one index per repeat interval", () => {
+    const p = policy({ repeatEveryMinutes: 30 });
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T08:00:00.000Z"))).toBe(0);
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T08:29:59.000Z"))).toBe(0);
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T08:30:00.000Z"))).toBe(1);
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T09:00:00.000Z"))).toBe(2);
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T09:30:00.000Z"))).toBe(3);
+  });
+
+  it("CLAMPS at maxRepeats instead of returning null", () => {
+    // The whole point. A hard cutoff would LOSE reminders that fire
+    // today: a 22:00 slot sits through the overnight scheduler blackout,
+    // so by the 06:00 tick eight hours have elapsed. Cutting off would
+    // send nothing at all for a dose that was never taken.
+    const p = policy({ repeatEveryMinutes: 30, maxRepeats: 3 });
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T10:00:00.000Z"))).toBe(3);
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T16:00:00.000Z"))).toBe(3);
+    expect(computeNagIndex(SLOT, p, at("2026-05-02T04:00:00.000Z"))).toBe(3);
+  });
+
+  it("a gap in ticks skips windows rather than firing a burst", () => {
+    // Two consecutive ticks 8 hours apart yield ONE index, not eight.
+    const p = policy({ repeatEveryMinutes: 30, maxRepeats: 10 });
+    const first = computeNagIndex(SLOT, p, at("2026-05-01T08:00:00.000Z"));
+    const afterGap = computeNagIndex(SLOT, p, at("2026-05-01T16:00:00.000Z"));
+    expect(first).toBe(0);
+    expect(afterGap).toBe(10);
+    expect(typeof afterGap).toBe("number");
+  });
+
+  it("maxRepeats 0 means exactly one reminder", () => {
+    const p = policy({ repeatEveryMinutes: 30, maxRepeats: 0 });
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T08:00:00.000Z"))).toBe(0);
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T20:00:00.000Z"))).toBe(0);
+  });
+
+  it("treats a sub-minute interval as no repeat rather than exploding", () => {
+    // #110 blocker (4): a 0.36s interval allocated ~390k Dates per row.
+    // The schema floors this at 1, so reaching here means bad data — it
+    // must degrade to one reminder, never to an unbounded key space.
+    const p = policy({ repeatEveryMinutes: 0, maxRepeats: 3 });
+    expect(computeNagIndex(SLOT, p, at("2026-05-01T20:00:00.000Z"))).toBe(0);
+    const negative = policy({ repeatEveryMinutes: -5, maxRepeats: 3 });
+    expect(computeNagIndex(SLOT, negative, at("2026-05-01T20:00:00.000Z"))).toBe(0);
+  });
+
+  it("the key space for one slot is finite", () => {
+    // The single property separating this feature from the #110 outage.
+    const p = policy({ repeatEveryMinutes: 1, maxRepeats: 3 });
+    const keys = new Set<string>();
+    for (let m = 0; m < 5000; m++) {
+      const idx = computeNagIndex(SLOT, p, new Date(SLOT.getTime() + m * 60_000));
+      keys.add(buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", SLOT, idx ?? 0));
+    }
+    expect(keys.size).toBe(4);
+  });
+});
+
+describe("buildOverdueDedupeKey — nag ordinal", () => {
+  it("omits the suffix entirely at index 0, matching the pre-feature key", () => {
+    expect(buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", SLOT, 0)).toBe(
+      "u1:m1:overdue:fixed_time:s1:2026-05-01T08:00:00.000Z",
+    );
+  });
+
+  it("defaults to index 0 when the argument is omitted", () => {
+    expect(buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", SLOT)).toBe(
+      buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", SLOT, 0),
+    );
+  });
+
+  it("appends the ordinal from index 1", () => {
+    expect(buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", SLOT, 2)).toBe(
+      "u1:m1:overdue:fixed_time:s1:2026-05-01T08:00:00.000Z:n2",
+    );
+  });
+
+  it("different ordinals are different keys, same ordinal is the same key", () => {
+    const a = buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", SLOT, 1);
+    const b = buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", SLOT, 1);
+    const c = buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", SLOT, 2);
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
   });
 });

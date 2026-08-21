@@ -17,6 +17,7 @@ import {
   buildLowInventoryDedupeKey,
 } from "./reminders/domain";
 import { withReminderClaim } from "./reminders/dispatch";
+import { resolveChannels } from "./notifications/resolve";
 
 export {
   computeOverdueSlot,
@@ -45,6 +46,13 @@ export async function checkOverdueMedications() {
       userTimezone: users.timezone,
       userOverdueEmailReminders: userPreferences.overdueEmailReminders,
       userOverduePushReminders: userPreferences.overduePushReminders,
+      userLowInventoryEmailAlerts: userPreferences.lowInventoryEmailAlerts,
+      userLowInventoryPushAlerts: userPreferences.lowInventoryPushAlerts,
+      medNotificationsEnabled: medications.notificationsEnabled,
+      medNotifyOverdueEmail: medications.notifyOverdueEmail,
+      medNotifyOverduePush: medications.notifyOverduePush,
+      medNotifyLowInventoryEmail: medications.notifyLowInventoryEmail,
+      medNotifyLowInventoryPush: medications.notifyLowInventoryPush,
     })
     .from(medicationSchedules)
     .innerJoin(medications, eq(medicationSchedules.medicationId, medications.id))
@@ -54,9 +62,14 @@ export async function checkOverdueMedications() {
       and(
         eq(medications.isArchived, false),
         ne(medicationSchedules.scheduleKind, "prn"),
+        eq(medications.notificationsEnabled, true),
+        // coalesce, not a bare column test. `m.notify_overdue_email = true`
+        // is false for every medication that has never been configured,
+        // which is almost all of them — the same shape of mistake as
+        // putting a child predicate in the WHERE of a LEFT JOIN.
         or(
-          eq(userPreferences.overdueEmailReminders, true),
-          eq(userPreferences.overduePushReminders, true),
+          sql`coalesce(${medications.notifyOverdueEmail}, ${userPreferences.overdueEmailReminders})`,
+          sql`coalesce(${medications.notifyOverduePush}, ${userPreferences.overduePushReminders})`,
         ),
       ),
     );
@@ -106,6 +119,22 @@ export async function checkOverdueMedications() {
     const slot = computeOverdueSlot(row, now);
     if (!slot) continue;
 
+    const channels = resolveChannels(
+      {
+        notificationsEnabled: row.medNotificationsEnabled,
+        notifyOverdueEmail: row.medNotifyOverdueEmail,
+        notifyOverduePush: row.medNotifyOverduePush,
+        notifyLowInventoryEmail: row.medNotifyLowInventoryEmail,
+        notifyLowInventoryPush: row.medNotifyLowInventoryPush,
+      },
+      {
+        overdueEmailReminders: row.userOverdueEmailReminders,
+        overduePushReminders: row.userOverduePushReminders,
+        lowInventoryEmailAlerts: row.userLowInventoryEmailAlerts,
+        lowInventoryPushAlerts: row.userLowInventoryPushAlerts,
+      },
+    );
+
     const dedupeKey = buildOverdueDedupeKey(
       row.userId,
       row.medicationId,
@@ -115,7 +144,7 @@ export async function checkOverdueMedications() {
     );
 
     const emailConfigured =
-      row.userOverdueEmailReminders && emailGloballyConfigured && row.userEmailVerified;
+      channels.overdueEmail && emailGloballyConfigured && row.userEmailVerified;
     // "logged", not "taken": the anchor now counts skips, so a reminder can
     // follow a skip and asserting the dose was taken would be false.
     const sinceLabel = row.lastEventAt ? formatTimeSince(new Date(row.lastEventAt)) : "never";
@@ -132,7 +161,7 @@ export async function checkOverdueMedications() {
         reminderType: "overdue",
         dedupeKey,
       },
-      { email: emailConfigured, push: row.userOverduePushReminders },
+      { email: emailConfigured, push: channels.overduePush },
       async (out) => {
         // Email first so a transient failure inside the push channel
         // (e.g. the subscription lookup hitting a DB blip) doesn't
@@ -143,7 +172,7 @@ export async function checkOverdueMedications() {
         // Push is configured when the user has opted in AND has an
         // active subscription on at least one device.
         let pushConfigured = false;
-        if (row.userOverduePushReminders) {
+        if (channels.overduePush) {
           pushConfigured = await hasPushSubscriptions(row.userId);
         }
         if (pushConfigured) {

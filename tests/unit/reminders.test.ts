@@ -218,6 +218,13 @@ function pushDefaultOverdueRow(): void {
     userTimezone: "UTC",
     userOverdueEmailReminders: true,
     userOverduePushReminders: true,
+    userLowInventoryEmailAlerts: true,
+    userLowInventoryPushAlerts: false,
+    medNotificationsEnabled: true,
+    medNotifyOverdueEmail: null,
+    medNotifyOverduePush: null,
+    medNotifyLowInventoryEmail: null,
+    medNotifyLowInventoryPush: null,
   });
   lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 }
@@ -372,6 +379,13 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userTimezone: "UTC",
       userOverdueEmailReminders: true,
       userOverduePushReminders: true,
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+      medNotificationsEnabled: true,
+      medNotifyOverdueEmail: null,
+      medNotifyOverduePush: null,
+      medNotifyLowInventoryEmail: null,
+      medNotifyLowInventoryPush: null,
     });
     lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 
@@ -444,6 +458,13 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userTimezone: "UTC",
       userOverdueEmailReminders: false,
       userOverduePushReminders: true,
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+      medNotificationsEnabled: true,
+      medNotifyOverdueEmail: null,
+      medNotifyOverduePush: null,
+      medNotifyLowInventoryEmail: null,
+      medNotifyLowInventoryPush: null,
     });
     lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 
@@ -478,6 +499,13 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userTimezone: "UTC",
       userOverdueEmailReminders: false,
       userOverduePushReminders: true,
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+      medNotificationsEnabled: true,
+      medNotifyOverdueEmail: null,
+      medNotifyOverduePush: null,
+      medNotifyLowInventoryEmail: null,
+      medNotifyLowInventoryPush: null,
     });
     lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
     nextPushSubsThrows = new Error("transient db error");
@@ -507,6 +535,13 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userTimezone: "UTC",
       userOverdueEmailReminders: true,
       userOverduePushReminders: false,
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+      medNotificationsEnabled: true,
+      medNotifyOverdueEmail: null,
+      medNotifyOverduePush: null,
+      medNotifyLowInventoryEmail: null,
+      medNotifyLowInventoryPush: null,
     });
     lastEventRows.push({ medicationId: "med-A", lastEventAt: eightHoursAgo });
 

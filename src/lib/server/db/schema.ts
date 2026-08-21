@@ -100,6 +100,15 @@ export const medications = pgTable(
     notifyOverduePush: boolean("notify_overdue_push"),
     notifyLowInventoryEmail: boolean("notify_low_inventory_email"),
     notifyLowInventoryPush: boolean("notify_low_inventory_push"),
+    // Re-notification policy. Defaults reproduce today's behaviour
+    // exactly: no offset, no repeat, so a slot mints one reminder.
+    //
+    // notifyRepeatEveryMinutes NULL means "do not repeat". The column
+    // accepts any interval; the web picker deliberately offers only what
+    // the 30-minute scheduler tick can honour.
+    notifyOffsetMinutes: integer("notify_offset_minutes").notNull().default(0),
+    notifyRepeatEveryMinutes: integer("notify_repeat_every_minutes"),
+    notifyMaxRepeats: integer("notify_max_repeats").notNull().default(3),
     sortOrder: integer("sort_order").notNull().default(0),
     isArchived: boolean("is_archived").notNull().default(false),
     archivedAt: timestamp("archived_at", { withTimezone: true }),

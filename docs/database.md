@@ -141,10 +141,13 @@ are SHA-256-hashed before storage.
 Idempotency record for reminder dispatch. Unique constraint on
 `dedupe_key`, but claiming is not a plain insert-or-skip: it's an
 atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE <retryable>`
-(`claimReminderSlot` in `src/lib/server/reminders/dispatch.ts`), so a
-row that already exists but is `failed`, or `pending` past the retry
-cooldown, can still be claimed — a crashed worker's lease is
-recoverable rather than stuck.
+(`claimReminderSlot` in `src/lib/server/reminders/dispatch.ts`). A row
+that already exists is reclaimable only when its status is `failed`
+or `pending`, its `attempt_count < MAX_ATTEMPTS`, **and** its
+`last_attempt_at` is older than the retry cooldown — the cooldown
+applies to both statuses identically, distinguished only by why:
+`failed` is an explicit retry-after-cooldown, a stale `pending` is
+lease recovery for a worker that crashed mid-dispatch.
 
 Dedupe key format is type-specific:
 

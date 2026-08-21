@@ -59,7 +59,7 @@ sequenceDiagram
     Dispatch->>DB: SELECT overdue rows (split-prefs filter)
     loop per (user, medication, window)
         Dispatch->>DB: INSERT reminder_event<br/>ON CONFLICT (dedupe_key) DO UPDATE ... WHERE retryable
-        Note over Dispatch,DB: claimReminderSlot: a fresh key inserts as status=pending;<br/>an existing key is only reclaimed if it is failed, or a<br/>stale pending past the retry cooldown. Otherwise no row<br/>is returned and the attempt is skipped.
+        Note over Dispatch,DB: claimReminderSlot: a fresh key inserts as status=pending;<br/>an existing key is reclaimed only if (failed OR pending) AND<br/>attempts remain AND the retry cooldown has elapsed — the cooldown<br/>gates both statuses equally. Otherwise no row is returned and the<br/>attempt is skipped.
         alt claim succeeded
             par Email channel
                 Dispatch->>Email: send if user opted in + verified

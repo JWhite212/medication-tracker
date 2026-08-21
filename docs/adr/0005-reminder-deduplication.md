@@ -32,9 +32,14 @@ unique `dedupe_key`. The key format is specific to the reminder type:
 Claiming is an atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE
 <retryable>` (`claimReminderSlot` in
 `src/lib/server/reminders/dispatch.ts`), not a plain insert-or-skip:
-a row that already exists but is `failed`, or `pending` past the
-retry cooldown, is still claimable, so a crashed worker's lease is
-recoverable instead of stuck forever.
+a row that already exists is reclaimable only when its status is
+`failed` or `pending` **and** `attempt_count < MAX_ATTEMPTS` **and**
+`last_attempt_at` is older than the retry cooldown — the cooldown
+gates both statuses equally, it is not skipped for `failed`. The two
+statuses differ only in why the row is retryable: `failed` is an
+explicit retry-after-cooldown, while a stale `pending` is lease
+recovery for a worker that crashed mid-dispatch, which would
+otherwise stay claimed forever.
 
 ## Bounded re-notification ordinal
 

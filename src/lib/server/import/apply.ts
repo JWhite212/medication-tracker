@@ -102,6 +102,11 @@ export async function applyImport(userId: string, plan: ImportPlan): Promise<Imp
         archivedAt: source.isArchived ? (source.archivedAt ?? now) : null,
         startedAt,
         endedAt: source.endedAt,
+        notificationsEnabled: source.notificationsEnabled ?? true,
+        notifyOverdueEmail: source.notifyOverdueEmail ?? null,
+        notifyOverduePush: source.notifyOverduePush ?? null,
+        notifyLowInventoryEmail: source.notifyLowInventoryEmail ?? null,
+        notifyLowInventoryPush: source.notifyLowInventoryPush ?? null,
       });
 
       source.schedules.forEach((schedule, index) => {

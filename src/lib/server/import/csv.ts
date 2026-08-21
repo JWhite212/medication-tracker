@@ -423,6 +423,14 @@ export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult 
     archivedAt: null,
     startedAt: med.earliest,
     endedAt: null,
+    // A dose CSV carries no notification settings either — same as the
+    // schedule stub above, this is the "never configured" default, not
+    // a claim the source medication was actually muted.
+    notificationsEnabled: true,
+    notifyOverdueEmail: null,
+    notifyOverduePush: null,
+    notifyLowInventoryEmail: null,
+    notifyLowInventoryPush: null,
     schedules: [
       {
         scheduleKind: "prn",

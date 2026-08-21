@@ -21,11 +21,25 @@ export const loginSchema = z.object({
  * value. The form renders a three-option select, and a select always
  * submits, so absence only happens for an API caller that omitted it —
  * which also means inherit.
+ *
+ * This is also the `/api/v1` upsert door, and it must accept its own
+ * window: `serializeMedication` emits `true` / `false` / `null` for these
+ * fields (see `serialize.ts`), not the form's strings. Zod's `.default()`
+ * only substitutes for `undefined`, never for `null` — so without the
+ * `z.boolean()` / `z.null()` arms below, a client that reads a medication
+ * and writes it straight back has its whole upsert rejected over a field
+ * it never touched. `null` and omission both mean "inherit", same as the
+ * form's `"inherit"` string.
  */
 const triStateField = z
-  .enum(["inherit", "on", "off"])
+  .union([z.enum(["inherit", "on", "off"]), z.boolean(), z.null()])
   .default("inherit")
-  .transform((v) => (v === "inherit" ? null : v === "on"));
+  .transform((v) => {
+    if (v === "inherit" || v === null) return null;
+    if (v === "on") return true;
+    if (v === "off") return false;
+    return v;
+  });
 
 export const medicationSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
@@ -65,9 +79,11 @@ export const medicationSchema = z.object({
   inventoryAlertThreshold: z.coerce.number().int().min(0).optional(),
   // The kill switch defaults to ON: a medication the user never
   // configured should behave exactly as it did before this feature.
+  // Also accepts a real boolean (see `triStateField` above) so this
+  // door round-trips `serializeMedication`'s output for /api/v1 clients.
   notificationsEnabled: z
-    .union([z.literal("on"), z.literal("off"), z.undefined()])
-    .transform((v) => v !== "off"),
+    .union([z.literal("on"), z.literal("off"), z.boolean(), z.undefined()])
+    .transform((v) => v !== "off" && v !== false),
   notifyOverdueEmail: triStateField,
   notifyOverduePush: triStateField,
   notifyLowInventoryEmail: triStateField,
@@ -417,6 +433,14 @@ const importMedicationSchema = z.object({
   archivedAt: nullableImportDate,
   startedAt: nullableImportDate,
   endedAt: nullableImportDate,
+  // An older backup predates this feature and simply won't have these
+  // keys — `optional()` with no `.default()` lets that parse, and
+  // apply.ts supplies the "inherit" / "enabled" defaults at insert time.
+  notificationsEnabled: z.boolean().optional(),
+  notifyOverdueEmail: z.boolean().nullable().optional(),
+  notifyOverduePush: z.boolean().nullable().optional(),
+  notifyLowInventoryEmail: z.boolean().nullable().optional(),
+  notifyLowInventoryPush: z.boolean().nullable().optional(),
   schedules: z.array(importScheduleSchema).max(IMPORT_MAX_SCHEDULES_PER_MED).optional().default([]),
 });
 

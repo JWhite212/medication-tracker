@@ -9,33 +9,11 @@ import {
   serializeTombstone,
   toSessionUser,
 } from "../../../src/lib/server/api/serialize";
+import { BASE_MEDICATION_ROW } from "../fixtures/medication-row";
 
 describe("serializers", () => {
   it("converts dates to ISO and keeps numeric strings (medication)", () => {
-    const d = serializeMedication({
-      id: "m1",
-      userId: "u1",
-      name: "Paracetamol",
-      dosageAmount: "500",
-      dosageUnit: "mg",
-      form: "tablet",
-      category: "pain relief",
-      colour: "#ff0000",
-      colourSecondary: null,
-      pattern: "solid",
-      notes: null,
-      scheduleType: "scheduled",
-      scheduleIntervalHours: "8",
-      inventoryCount: 30,
-      inventoryAlertThreshold: 5,
-      sortOrder: 0,
-      isArchived: false,
-      archivedAt: null,
-      startedAt: new Date("2026-01-01T00:00:00Z"),
-      endedAt: null,
-      createdAt: new Date("2026-01-01T00:00:00Z"),
-      updatedAt: new Date("2026-01-01T00:00:00Z"),
-    });
+    const d = serializeMedication({ ...BASE_MEDICATION_ROW });
     expect(d.dosageAmount).toBe("500");
     expect(d.scheduleIntervalHours).toBe("8");
     expect(d.updatedAt).toBe("2026-01-01T00:00:00.000Z");
@@ -43,6 +21,17 @@ describe("serializers", () => {
     expect(d.archivedAt).toBeNull();
     expect(d.endedAt).toBeNull();
     expect(d.colourSecondary).toBeNull();
+  });
+
+  it("serializes per-medication notification settings", () => {
+    const out = serializeMedication(BASE_MEDICATION_ROW);
+    expect(out).toMatchObject({
+      notificationsEnabled: false,
+      notifyOverdueEmail: true,
+      notifyOverduePush: null,
+      notifyLowInventoryEmail: false,
+      notifyLowInventoryPush: null,
+    });
   });
 
   it("serializes dose log dates and passes sideEffects through", () => {

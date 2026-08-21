@@ -46,6 +46,15 @@ const medicationRow = {
   endedAt: null,
   createdAt: new Date("2026-01-15T00:00:00Z"),
   updatedAt: new Date("2026-06-01T00:00:00Z"),
+  // Non-default values on purpose, and no null: the "never configured"
+  // defaults are notificationsEnabled=true and every notify* field
+  // null, so a pipeline bug that silently fell back to those defaults
+  // would otherwise go unnoticed for any field left at its default.
+  notificationsEnabled: false,
+  notifyOverdueEmail: true,
+  notifyOverduePush: false,
+  notifyLowInventoryEmail: false,
+  notifyLowInventoryPush: true,
 };
 
 const scheduleRow = {
@@ -177,6 +186,11 @@ describe("JSON backup round trip", () => {
       inventoryCount: 42,
       inventoryAlertThreshold: 7,
       isArchived: false,
+      notificationsEnabled: false,
+      notifyOverdueEmail: true,
+      notifyOverduePush: false,
+      notifyLowInventoryEmail: false,
+      notifyLowInventoryPush: true,
     });
     expect(med.startedAt?.toISOString()).toBe("2026-01-15T00:00:00.000Z");
   });

@@ -98,6 +98,11 @@ function med(overrides: Partial<ImportMedication> = {}): ImportMedication {
     archivedAt: null,
     startedAt: new Date("2026-01-01T00:00:00Z"),
     endedAt: null,
+    notificationsEnabled: true,
+    notifyOverdueEmail: null,
+    notifyOverduePush: null,
+    notifyLowInventoryEmail: null,
+    notifyLowInventoryPush: null,
     schedules: [
       {
         scheduleKind: "fixed_time",

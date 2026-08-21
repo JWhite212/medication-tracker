@@ -256,6 +256,17 @@ overrides date fields to ISO strings:
   sortOrder: number; isArchived: boolean;
   archivedAt: string | null; startedAt: string; endedAt: string | null;
   createdAt: string; updatedAt: string;
+  // Per-medication notification settings. The four `notify*` fields are
+  // tri-state: `null` means "inherit the account-wide preference"
+  // (`user_preferences.overdueEmailReminders` etc.), `true`/`false` is an
+  // explicit per-medication override. `notificationsEnabled` is a plain
+  // boolean kill switch with no inherit state — `false` mutes every
+  // reminder for this medication regardless of the four overrides below.
+  notificationsEnabled: boolean;
+  notifyOverdueEmail: boolean | null;
+  notifyOverduePush: boolean | null;
+  notifyLowInventoryEmail: boolean | null;
+  notifyLowInventoryPush: boolean | null;
   schedules: SerializedSchedule[];    // attached by buildSyncResponse, not part of the row itself
 }
 ```
@@ -418,7 +429,20 @@ then delegates to an existing web-app domain function (no reimplemented business
 | `wipe_dose_history`                | none (payload ignored)                                                                                                                                                                                                                                                                                                                                                                                                                               | `wipeDoseHistory`                                                                                                                                               | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
 | `wipe_archived_medications`        | none (payload ignored)                                                                                                                                                                                                                                                                                                                                                                                                                               | `wipeArchivedMedications`                                                                                                                                       | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
 
-`MedicationInput` (`medicationSchema`): `{ name: string (1-200); dosageAmount: string (/^\d+(\.\d+)?$/); dosageUnit: string (1-20); form: "tablet"|"capsule"|"liquid"|"softgel"|"patch"|"injection"|"inhaler"|"drops"|"cream"|"other"; category: "prescription"|"otc"|"supplement"; colour: string (hex); colourSecondary?: string (hex); pattern?: "solid"|"split"|"gradient"|"stripes"|"h-stripes"|"dots"|"checkerboard"|"radial" (default "solid"); scheduleType?: "scheduled"|"as_needed" (default "scheduled"); notes?: string (≤1000); scheduleIntervalHours?: string; inventoryCount?: number (≥0, coerced); inventoryAlertThreshold?: number (≥0, coerced) }`.
+`MedicationInput` (`medicationSchema`): `{ name: string (1-200); dosageAmount: string (/^\d+(\.\d+)?$/); dosageUnit: string (1-20); form: "tablet"|"capsule"|"liquid"|"softgel"|"patch"|"injection"|"inhaler"|"drops"|"cream"|"other"; category: "prescription"|"otc"|"supplement"; colour: string (hex); colourSecondary?: string (hex); pattern?: "solid"|"split"|"gradient"|"stripes"|"h-stripes"|"dots"|"checkerboard"|"radial" (default "solid"); scheduleType?: "scheduled"|"as_needed" (default "scheduled"); notes?: string (≤1000); scheduleIntervalHours?: string; inventoryCount?: number (≥0, coerced); inventoryAlertThreshold?: number (≥0, coerced); notificationsEnabled?: "on"|"off"|boolean (absent/anything-but-"off"/false ⇒ enabled); notifyOverdueEmail?, notifyOverduePush?, notifyLowInventoryEmail?, notifyLowInventoryPush?: "inherit"|"on"|"off"|boolean|null (default "inherit") }`.
+
+**`upsert_medication_with_schedules` accepts either representation of the five notification
+fields**, and this is intentional, not incidental: `SerializedMedication` (§3) emits
+`notificationsEnabled` as a plain `boolean` and the four `notify*` fields as `boolean | null`,
+while the web form submits the tri-state fields as the strings `"inherit"`/`"on"`/`"off"` and
+the kill switch as `"on"`/`"off"`/absent. `medicationSchema` accepts both shapes for every one
+of these five fields, normalizing to `boolean` (kill switch) or `boolean | null` (the four
+overrides) either way. This is what lets a client read a medication from `/sync` or
+`/export/full` and write it straight back through `upsert_medication_with_schedules` without
+re-encoding it into form strings first — **`null` and omission both mean "inherit the
+account-wide setting"**, exactly as they do on the read side. Sending a stale/partial
+`MedicationInput` that simply omits these five fields also means "inherit" / "enabled", the
+same as a pre-this-feature client would get.
 
 `ScheduleInput` (`scheduleRowSchema`, discriminated union on `scheduleKind`):
 
@@ -463,6 +487,15 @@ envelope. This is distinct from the web app's `/api/export` CSV/PDF dose export.
 
   Note: no `tombstones`, `epoch`, `fullResync`, or `cursor` fields — those are sync-protocol
   plumbing, not meaningful in a standalone backup file.
+
+  Each medication's five notification fields (`notificationsEnabled`, `notifyOverdueEmail`,
+  `notifyOverduePush`, `notifyLowInventoryEmail`, `notifyLowInventoryPush` — see §3) are
+  included. The web app's own JSON-backup import (`POST /import`, not part of this `/api/v1`
+  surface, but the same `version: 1` envelope) reads them back — `importMedicationSchema`
+  accepts the plain-boolean/`null` shape this export emits, and treats a missing field the
+  same as `null`/`true` (an older, pre-this-feature backup still imports cleanly). A backup
+  taken from this endpoint therefore round-trips per-medication notification settings rather
+  than silently resetting every medication to "inherit" / "enabled" on restore.
 
 ## 6. Error shapes
 

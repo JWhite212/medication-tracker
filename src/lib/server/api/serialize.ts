@@ -52,6 +52,11 @@ export function serializeMedication(m: {
   endedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  notificationsEnabled: boolean;
+  notifyOverdueEmail: boolean | null;
+  notifyOverduePush: boolean | null;
+  notifyLowInventoryEmail: boolean | null;
+  notifyLowInventoryPush: boolean | null;
 }) {
   return {
     ...m,

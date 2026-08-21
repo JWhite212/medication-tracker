@@ -298,6 +298,34 @@ Elsewhere: a "notifications off" badge on `MedicationCard.svelte` (badge slot at
 `:62-76`), and a read-only per-medication summary on `settings/notifications` so the
 global page stops implying it is the whole story.
 
+**Correction (implementation):** the settings use plain named form fields, not a
+hidden JSON input. The reasoning above about `Object.fromEntries` keeping only the
+last value for a repeated field name doesn't apply here: `schedules` needs JSON
+because one medication has _many_ schedule rows sharing one field name, whereas these
+five settings are uniquely named scalars on a form that edits exactly one medication —
+nothing repeats, so nothing collapses. The JSON idiom would only earn its keep if
+these moved to a page editing several medications at once.
+
+**Correction (implementation):** the kill switch needs a hidden companion input.
+`notificationsEnabled` is a real boolean whose absence must mean _enabled_ — an
+`/api/v1` client that omits the field must not silently mute the medication. But an
+unchecked HTML checkbox submits nothing at all, so with absence meaning enabled the
+control could never be switched off from the web form. The form works around this by
+rendering `<input type="hidden" name="notificationsEnabled" value="off">` immediately
+**before** the checkbox, relying on the same last-value-wins behaviour cited above:
+checked, the checkbox's `"on"` overwrites the hidden field's `"off"`; unchecked,
+nothing overwrites it and `"off"` stands. The DOM order is load-bearing.
+
+**Correction (implementation):** the `/api/v1` write door accepts the read window's
+shape, not just the form's. `serializeMedication` emits `true | false | null` for the
+four override columns and `null` for an unconfigured `notifyRepeatEveryMinutes`, while
+the form submits `"inherit" | "on" | "off"` and minute strings. Zod's `.default()`
+only substitutes for `undefined`, never for `null`, so the write schemas were widened
+to accept both representations, with `null` and omission meaning "inherit" and "do not
+repeat" respectively. Without this, a client that read a medication and wrote it
+straight back — the most ordinary sync operation there is — would have its entire
+upsert rejected.
+
 ## API, sync, export, import
 
 - `upsertMedicationPayload` gains the fields, which carries them to `/api/v1` for free.

@@ -12,6 +12,21 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+/**
+ * A per-medication override that can also say "inherit the account
+ * default".
+ *
+ * A checkbox cannot express this: `checkboxField` maps a missing field to
+ * `false`, so "never configured" and "explicitly muted" would be the same
+ * value. The form renders a three-option select, and a select always
+ * submits, so absence only happens for an API caller that omitted it —
+ * which also means inherit.
+ */
+const triStateField = z
+  .enum(["inherit", "on", "off"])
+  .default("inherit")
+  .transform((v) => (v === "inherit" ? null : v === "on"));
+
 export const medicationSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   dosageAmount: z.string().regex(/^\d+(\.\d+)?$/, "Must be a number"),
@@ -48,6 +63,15 @@ export const medicationSchema = z.object({
     .transform((v) => (v === "" ? undefined : v)),
   inventoryCount: z.coerce.number().int().min(0).optional(),
   inventoryAlertThreshold: z.coerce.number().int().min(0).optional(),
+  // The kill switch defaults to ON: a medication the user never
+  // configured should behave exactly as it did before this feature.
+  notificationsEnabled: z
+    .union([z.literal("on"), z.literal("off"), z.undefined()])
+    .transform((v) => v !== "off"),
+  notifyOverdueEmail: triStateField,
+  notifyOverduePush: triStateField,
+  notifyLowInventoryEmail: triStateField,
+  notifyLowInventoryPush: triStateField,
 });
 
 const sideEffectsField = z

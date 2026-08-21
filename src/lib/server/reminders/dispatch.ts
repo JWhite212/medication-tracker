@@ -27,6 +27,43 @@ import type { PushResult } from "../push";
 export const MAX_ATTEMPTS = 3;
 export const RETRY_DELAY_MS = 30 * 60 * 1000;
 
+/**
+ * How long a single medication's dispatch may take before it is
+ * abandoned.
+ *
+ * The reminder loop awaits `withReminderClaim` once per medication, in
+ * sequence. An unbounded send therefore parks every REMAINING
+ * medication in that tick, not just its own — and the whole tick shares
+ * one serverless function budget, so a single hung provider can take
+ * out the run. Four seconds sits well above a healthy Resend or
+ * web-push call (both comfortably sub-second) while leaving room for
+ * the surrounding database work inside the default budget.
+ */
+export const SEND_TIMEOUT_MS = 4_000;
+
+/**
+ * Reject after `ms` if `work` has not settled.
+ *
+ * This bounds the CALLER's wait, not the request itself: `Promise.race`
+ * cannot cancel `work`, so a hung fetch keeps running in the background
+ * until the function exits. That is the accepted limit of this guard —
+ * it frees the loop, which is the problem, but it does not free the
+ * socket. True cancellation would mean threading an `AbortSignal`
+ * through `sendReminderEmail`/`sendPush` into `resend` and `web-push`.
+ *
+ * The abandoned promise must still have a rejection handler attached,
+ * or a provider that eventually fails surfaces as an unhandled
+ * rejection long after the reminder was written off.
+ */
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const expiry = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`dispatch timed out after ${ms}ms`)), ms);
+  });
+  work.catch(() => {});
+  return Promise.race([work, expiry]).finally(() => clearTimeout(timer));
+}
+
 export type ReminderType = "overdue" | "low_inventory";
 
 export type Claim = { id: string; attemptCount: number };
@@ -203,7 +240,11 @@ export async function withReminderClaim(
   let dispatchError: string | null = null;
 
   try {
-    await send(out);
+    // A timeout lands in the same catch as a thrown provider error, and
+    // wants identical handling: whichever channels had not resolved yet
+    // are recorded failed, so the row stays retryable, while any that
+    // already succeeded keep their result.
+    await withTimeout(send(out), SEND_TIMEOUT_MS);
   } catch (err) {
     dispatchError = err instanceof Error ? err.message : "non-Error thrown during dispatch";
     // These `reason` values are load-bearing: summariseError only

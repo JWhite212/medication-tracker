@@ -70,3 +70,26 @@ export function deriveInitialDaysOfWeek(schedules: MedicationSchedule[]): number
   const fixed = schedules.find((s) => s.scheduleKind === "fixed_time" && s.daysOfWeek);
   return (fixed?.daysOfWeek ?? []) as number[];
 }
+
+export type NotificationChoice = "inherit" | "on" | "off";
+
+const NOTIFICATION_CHOICES = new Set<NotificationChoice>(["inherit", "on", "off"]);
+
+/**
+ * Which option a tri-state notification select should open on.
+ *
+ * Precedence mirrors deriveInitialMode: a resubmitted form value wins, so
+ * a validation failure elsewhere on the form does not silently discard
+ * the user's notification choice, then the saved column, then inherit.
+ */
+export function deriveNotificationValue(
+  formValue: string | undefined,
+  saved: boolean | null | undefined,
+): NotificationChoice {
+  if (formValue !== undefined && NOTIFICATION_CHOICES.has(formValue as NotificationChoice)) {
+    return formValue as NotificationChoice;
+  }
+  if (saved === true) return "on";
+  if (saved === false) return "off";
+  return "inherit";
+}

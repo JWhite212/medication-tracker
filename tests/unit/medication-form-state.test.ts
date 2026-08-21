@@ -3,6 +3,7 @@ import {
   deriveInitialMode,
   deriveInitialFixedTimes,
   deriveInitialDaysOfWeek,
+  deriveNotificationValue,
   isScheduleMode,
 } from "../../src/lib/medications/medication-form-state";
 import type { MedicationSchedule } from "../../src/lib/server/schedules";
@@ -148,5 +149,31 @@ describe("deriveInitialDaysOfWeek", () => {
   it("returns an empty array when no schedule carries day filters", () => {
     expect(deriveInitialDaysOfWeek([])).toEqual([]);
     expect(deriveInitialDaysOfWeek([fixedTimeSchedule("08:00", null)])).toEqual([]);
+  });
+});
+
+describe("deriveNotificationValue", () => {
+  it("prefers a resubmitted form value so a failed save loses nothing", () => {
+    // The fixed-times bug: state that does not round-trip through
+    // formValues is silently discarded on a validation failure.
+    expect(deriveNotificationValue("off", true)).toBe("off");
+    expect(deriveNotificationValue("inherit", true)).toBe("inherit");
+  });
+
+  it("falls back to the saved value when there is no form value", () => {
+    expect(deriveNotificationValue(undefined, true)).toBe("on");
+    expect(deriveNotificationValue(undefined, false)).toBe("off");
+  });
+
+  it("maps a saved null to inherit", () => {
+    expect(deriveNotificationValue(undefined, null)).toBe("inherit");
+  });
+
+  it("maps a saved undefined to inherit for brand-new medications", () => {
+    expect(deriveNotificationValue(undefined, undefined)).toBe("inherit");
+  });
+
+  it("ignores an unrecognised form value rather than emitting it", () => {
+    expect(deriveNotificationValue("banana", false)).toBe("off");
   });
 });

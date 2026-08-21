@@ -10,10 +10,12 @@
   import MedicationStylePicker from "./medication-form/MedicationStylePicker.svelte";
   import MedicationScheduleSection from "./medication-form/MedicationScheduleSection.svelte";
   import MedicationInventoryFields from "./medication-form/MedicationInventoryFields.svelte";
+  import MedicationNotificationFields from "./medication-form/MedicationNotificationFields.svelte";
   import {
     deriveInitialMode,
     deriveInitialFixedTimes,
     deriveInitialDaysOfWeek,
+    deriveNotificationValue,
     type ScheduleMode,
   } from "$lib/medications/medication-form-state";
   import type { FormErrors } from "$lib/medications/medication-form-errors";
@@ -171,6 +173,29 @@
   <input type="hidden" name="schedules" value={schedulesJson} />
   <input type="hidden" name="scheduleType" value={legacyScheduleType} />
   <input type="hidden" name="scheduleIntervalHours" value={legacyIntervalHours} />
+
+  <MedicationNotificationFields
+    notificationsEnabled={formValues["notificationsEnabled"] !== undefined
+      ? formValues["notificationsEnabled"] === "on"
+      : (medication?.notificationsEnabled ?? true)}
+    overdueEmail={deriveNotificationValue(
+      formValues["notifyOverdueEmail"],
+      medication?.notifyOverdueEmail,
+    )}
+    overduePush={deriveNotificationValue(
+      formValues["notifyOverduePush"],
+      medication?.notifyOverduePush,
+    )}
+    lowInventoryEmail={deriveNotificationValue(
+      formValues["notifyLowInventoryEmail"],
+      medication?.notifyLowInventoryEmail,
+    )}
+    lowInventoryPush={deriveNotificationValue(
+      formValues["notifyLowInventoryPush"],
+      medication?.notifyLowInventoryPush,
+    )}
+    {errors}
+  />
 
   <MedicationInventoryFields
     inventoryCount={formValues["inventoryCount"] ?? medication?.inventoryCount?.toString() ?? ""}

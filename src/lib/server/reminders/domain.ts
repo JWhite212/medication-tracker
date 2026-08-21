@@ -96,14 +96,76 @@ export function isScheduleOverdue(row: OverdueRow, now: Date): boolean {
   return computeOverdueSlot(row, now) !== null;
 }
 
+/**
+ * A medication's re-notification policy.
+ *
+ * `repeatEveryMinutes === null` means one reminder per slot, which is
+ * what every medication did before this existed.
+ */
+export type NagPolicy = {
+  offsetMinutes: number;
+  repeatEveryMinutes: number | null;
+  maxRepeats: number;
+};
+
+export const NO_REPEAT: NagPolicy = {
+  offsetMinutes: 0,
+  repeatEveryMinutes: null,
+  maxRepeats: 0,
+};
+
+/**
+ * Which reminder in a slot's series is due now, or null if none is yet.
+ *
+ * This is the machine #110 broke, built deliberately. There, the SLOT
+ * advanced every interval, so the dedupe key churned without bound and
+ * claimReminderSlot could never suppress a repeat: "one reminder per
+ * interval, forever". Three properties prevent that here.
+ *
+ *   1. The slot is fixed. computeOverdueSlot is untouched; only this
+ *      ordinal moves.
+ *   2. The ordinal is BOUNDED by maxRepeats, so one slot owns at most
+ *      maxRepeats + 1 keys.
+ *   3. It is derived from elapsed time, not counted in a table — O(1),
+ *      no loop, and a missed tick skips windows instead of firing a
+ *      burst.
+ *
+ * It CLAMPS rather than cutting off. Returning null past the cap would
+ * lose reminders that fire today: a 22:00 slot sits through the
+ * overnight scheduler blackout, and by the 06:00 tick the raw index is
+ * far past the cap. Saturating means the final reminder is claimed once,
+ * sent once, and suppressed thereafter.
+ */
+export function computeNagIndex(slot: Date, policy: NagPolicy, now: Date): number | null {
+  const firstNagAt = slot.getTime() + policy.offsetMinutes * 60_000;
+  if (now.getTime() < firstNagAt) return null;
+
+  // A non-positive or non-finite interval must degrade to a single
+  // reminder. The schema floors it at 1, so arriving here means bad or
+  // legacy data, and an unbounded key space is the one outcome that is
+  // not survivable.
+  const every = policy.repeatEveryMinutes;
+  if (every === null || !Number.isFinite(every) || every < 1) return 0;
+
+  const elapsed = now.getTime() - firstNagAt;
+  const raw = Math.floor(elapsed / (every * 60_000));
+  const cap = Number.isFinite(policy.maxRepeats) ? Math.max(0, policy.maxRepeats) : 0;
+  return Math.min(raw, cap);
+}
+
 export function buildOverdueDedupeKey(
   userId: string,
   medicationId: string,
   scheduleKind: string,
   scheduleId: string,
   nextDueAt: Date,
+  nagIndex = 0,
 ): string {
-  return `${userId}:${medicationId}:overdue:${scheduleKind}:${scheduleId}:${nextDueAt.toISOString()}`;
+  const base = `${userId}:${medicationId}:overdue:${scheduleKind}:${scheduleId}:${nextDueAt.toISOString()}`;
+  // Index 0 produces the pre-feature key byte-for-byte, so every
+  // medication that does not repeat keeps its existing key and every
+  // in-flight reminder_events row stays addressable across the deploy.
+  return nagIndex > 0 ? `${base}:n${nagIndex}` : base;
 }
 
 export function buildLowInventoryDedupeKey(

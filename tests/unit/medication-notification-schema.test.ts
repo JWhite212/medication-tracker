@@ -72,15 +72,13 @@ describe("medicationSchema — notification fields", () => {
     // client that reads a medication and writes it back has its whole
     // payload rejected, not just the offending field.
     const serialized = serializeMedication(BASE_MEDICATION_ROW);
-    // medicationSchema requires `category` to be one of a fixed enum and
-    // `colourSecondary` / `notes` to be `undefined` rather than an
-    // explicit `null` — pre-existing gaps in the door unrelated to the
-    // notification fields this test targets, so they're overridden here
-    // rather than fixed as part of this task.
+    // medicationSchema requires `category` to be one of a fixed enum —
+    // BASE_MEDICATION_ROW's "pain relief" isn't a member, a pre-existing
+    // gap in the door unrelated to the notification fields this test
+    // targets, so it's overridden here rather than fixed as part of this
+    // task.
     const requiredFormFields = {
       category: "otc",
-      colourSecondary: undefined,
-      notes: undefined,
     };
     const reparsed = medicationSchema.safeParse({ ...serialized, ...requiredFormFields });
     expect(reparsed.success).toBe(true);

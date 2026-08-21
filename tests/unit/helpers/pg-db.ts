@@ -35,4 +35,54 @@ export async function reset(): Promise<void> {
     spec as an accepted fidelity loss. */
 export const dbMock = { db: database, dbTx: database };
 
-export const pgDb = { client, db: database, reset };
+/** Fixtures. Defaults satisfy every NOT NULL column so a caller overrides
+    only what the test is actually about. Insert order matters: medications
+    reference users, dose_logs reference both, and unlike fake-db the real
+    database enforces it. */
+
+export async function seedUser(overrides: Partial<typeof schema.users.$inferInsert> = {}) {
+  const row: typeof schema.users.$inferInsert = {
+    id: "u1",
+    email: "u1@example.com",
+    name: "Test User",
+    ...overrides,
+  };
+  await database.insert(schema.users).values(row).onConflictDoNothing();
+  return row;
+}
+
+export async function seedMedication(
+  overrides: Partial<typeof schema.medications.$inferInsert> = {},
+) {
+  const row: typeof schema.medications.$inferInsert = {
+    id: "m1",
+    userId: "u1",
+    name: "Test Med",
+    // numeric NOT NULL — Drizzle takes a string here and returns one.
+    dosageAmount: "1",
+    dosageUnit: "mg",
+    form: "tablet",
+    category: "other",
+    colour: "#ffffff",
+    ...overrides,
+  };
+  await database.insert(schema.medications).values(row).onConflictDoNothing();
+  return row;
+}
+
+let doseSeq = 0;
+
+export async function seedDose(overrides: Partial<typeof schema.doseLogs.$inferInsert> = {}) {
+  doseSeq += 1;
+  const row: typeof schema.doseLogs.$inferInsert = {
+    id: `d${doseSeq}`,
+    userId: "u1",
+    medicationId: "m1",
+    takenAt: new Date("2026-08-01T08:00:00Z"),
+    ...overrides,
+  };
+  await database.insert(schema.doseLogs).values(row);
+  return row;
+}
+
+export const pgDb = { client, db: database, reset, seedUser, seedMedication, seedDose };

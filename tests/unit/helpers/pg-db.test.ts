@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { sql } from "drizzle-orm";
+import { users, doseLogs } from "../../../src/lib/server/db/schema";
 import { pgDb } from "./pg-db";
 
 describe("pg-db harness", () => {
@@ -35,5 +36,36 @@ describe("pg-db harness", () => {
   it("returns numeric columns as strings, as the Neon driver does", async () => {
     const rows = await pgDb.db.execute(sql`select (1.5)::numeric as n`);
     expect(typeof (rows.rows[0] as { n: unknown }).n).toBe("string");
+  });
+});
+
+describe("pg-db fixtures", () => {
+  beforeEach(async () => {
+    await pgDb.reset();
+  });
+
+  it("seeds a user, medication and dose that satisfy the foreign keys", async () => {
+    await pgDb.seedUser();
+    await pgDb.seedMedication();
+    await pgDb.seedDose();
+
+    const rows = await pgDb.db.select().from(doseLogs);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].userId).toBe("u1");
+    expect(rows[0].medicationId).toBe("m1");
+  });
+
+  it("rejects a dose whose medication does not exist", async () => {
+    await pgDb.seedUser();
+    // No medication seeded — the FK must reject this. The old fake
+    // accepted anything, which is exactly the fidelity this buys.
+    await expect(pgDb.seedDose({ medicationId: "nope" })).rejects.toThrow();
+  });
+
+  it("reset() empties every table between tests", async () => {
+    await pgDb.seedUser();
+    await pgDb.reset();
+    const rows = await pgDb.db.select().from(users);
+    expect(rows).toHaveLength(0);
   });
 });

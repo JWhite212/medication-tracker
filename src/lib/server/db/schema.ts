@@ -86,6 +86,20 @@ export const medications = pgTable(
     scheduleIntervalHours: numeric("schedule_interval_hours"),
     inventoryCount: integer("inventory_count"),
     inventoryAlertThreshold: integer("inventory_alert_threshold"),
+    // Per-medication notification overrides.
+    //
+    // NULL means "inherit the account-wide setting on user_preferences".
+    // A plain boolean cannot express "unset": every new medication would
+    // need configuring up front, and flipping the global toggle would
+    // silently stop affecting medications created before the change.
+    //
+    // notificationsEnabled is a real boolean, not a tri-state — it is the
+    // per-medication kill switch and false beats every other column.
+    notificationsEnabled: boolean("notifications_enabled").notNull().default(true),
+    notifyOverdueEmail: boolean("notify_overdue_email"),
+    notifyOverduePush: boolean("notify_overdue_push"),
+    notifyLowInventoryEmail: boolean("notify_low_inventory_email"),
+    notifyLowInventoryPush: boolean("notify_low_inventory_push"),
     sortOrder: integer("sort_order").notNull().default(0),
     isArchived: boolean("is_archived").notNull().default(false),
     archivedAt: timestamp("archived_at", { withTimezone: true }),

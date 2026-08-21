@@ -3,6 +3,7 @@ import { env } from "$env/dynamic/private";
 import { timingSafeEqual } from "crypto";
 import { lt } from "drizzle-orm";
 import { checkOverdueMedications, checkLowInventoryMedications } from "$lib/server/reminders";
+import { purgeExpiredReminderEvents } from "$lib/server/reminders/retention";
 import { db } from "$lib/server/db";
 import { passwordResetTokens, rateLimits } from "$lib/server/db/schema";
 import type { RequestHandler } from "./$types";
@@ -27,6 +28,9 @@ export const GET: RequestHandler = async ({ request }) => {
 
   // Clean up expired rate limit entries
   await db.delete(rateLimits).where(lt(rateLimits.resetAt, new Date()));
+
+  // Purge reminder_events past the retention window (see retention.ts).
+  await purgeExpiredReminderEvents(new Date());
 
   return json({ ok: true });
 };

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { medicationSchema } from "$lib/utils/validation";
+import { serializeMedication } from "$lib/server/api/serialize";
+import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
 
 const BASE = {
   name: "Test",
@@ -62,5 +64,31 @@ describe("medicationSchema — notification fields", () => {
     expect(
       medicationSchema.parse({ ...BASE, notificationsEnabled: "off" }).notificationsEnabled,
     ).toBe(false);
+  });
+
+  it("accepts its own serialized output — /api/v1 clients round-trip", () => {
+    // serializeMedication emits booleans and null; medicationSchema is the
+    // upsert door. If the door rejects what the window emits, every Mac
+    // client that reads a medication and writes it back has its whole
+    // payload rejected, not just the offending field.
+    const serialized = serializeMedication(BASE_MEDICATION_ROW);
+    // medicationSchema requires `category` to be one of a fixed enum and
+    // `colourSecondary` / `notes` to be `undefined` rather than an
+    // explicit `null` — pre-existing gaps in the door unrelated to the
+    // notification fields this test targets, so they're overridden here
+    // rather than fixed as part of this task.
+    const requiredFormFields = {
+      category: "otc",
+      colourSecondary: undefined,
+      notes: undefined,
+    };
+    const reparsed = medicationSchema.safeParse({ ...serialized, ...requiredFormFields });
+    expect(reparsed.success).toBe(true);
+    if (!reparsed.success) return;
+    expect(reparsed.data.notificationsEnabled).toBe(false);
+    expect(reparsed.data.notifyOverdueEmail).toBe(true);
+    expect(reparsed.data.notifyOverduePush).toBeNull();
+    expect(reparsed.data.notifyLowInventoryEmail).toBe(false);
+    expect(reparsed.data.notifyLowInventoryPush).toBeNull();
   });
 });

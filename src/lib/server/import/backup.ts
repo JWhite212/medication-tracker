@@ -90,6 +90,16 @@ export function parseBackup(rawText: string): ParseResult {
     archivedAt: med.archivedAt,
     startedAt: med.startedAt,
     endedAt: med.endedAt,
+    // importMedicationSchema leaves these `undefined` for an older
+    // backup that predates the feature — collapse that to the same
+    // "inherit" / "enabled" default apply.ts would otherwise supply,
+    // so ImportMedication never has to represent "unknown" separately
+    // from "inherit".
+    notificationsEnabled: med.notificationsEnabled ?? true,
+    notifyOverdueEmail: med.notifyOverdueEmail ?? null,
+    notifyOverduePush: med.notifyOverduePush ?? null,
+    notifyLowInventoryEmail: med.notifyLowInventoryEmail ?? null,
+    notifyLowInventoryPush: med.notifyLowInventoryPush ?? null,
     // `scheduleKind` and its payload are validated independently, so a
     // hand-edited file can carry a fixed_time row with no timeOfDay (or
     // an interval row with no intervalHours). Rather than writing a row

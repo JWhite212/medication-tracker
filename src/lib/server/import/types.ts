@@ -75,6 +75,17 @@ export type ImportMedication = {
   startedAt: Date | null;
   endedAt: Date | null;
   schedules: ImportSchedule[];
+  // Required (not optional) so every producer of an ImportMedication —
+  // backup.ts's real values, csv.ts's stubs — is forced by the compiler
+  // to state what it means, rather than silently omitting the field and
+  // losing it on import. `null` on the four tri-state fields means
+  // "inherit the account-wide setting"; the kill switch has no inherit
+  // state, so a format that can't carry it (dose CSV) states `true`.
+  notificationsEnabled: boolean;
+  notifyOverdueEmail: boolean | null;
+  notifyOverduePush: boolean | null;
+  notifyLowInventoryEmail: boolean | null;
+  notifyLowInventoryPush: boolean | null;
 };
 
 export type ImportDose = {

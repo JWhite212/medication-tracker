@@ -15,7 +15,8 @@ vi.mock("$lib/server/push", () => ({
 import { pgDb } from "../helpers/pg-db";
 import { reminderEvents } from "../../../src/lib/server/db/schema";
 
-const { checkOverdueMedications } = await import("../../../src/lib/server/reminders");
+const { checkOverdueMedications, checkLowInventoryMedications } =
+  await import("../../../src/lib/server/reminders");
 
 async function claimedKeys(): Promise<string[]> {
   const rows = await pgDb.db.select().from(reminderEvents);
@@ -88,5 +89,46 @@ describe("overdue sweep — per-medication gate", () => {
     const keys = await claimedKeys();
     expect(keys).toHaveLength(1);
     expect(keys[0]).toContain("m2");
+  });
+});
+
+describe("low-inventory sweep — per-medication gate", () => {
+  const LOW = { inventoryCount: 2, inventoryAlertThreshold: 5 };
+
+  it("still alerts a medication with no overrides set", async () => {
+    await pgDb.seedMedication({ id: "m1", ...LOW });
+    await checkLowInventoryMedications();
+
+    // Un-vacuous: prove the claimed row is actually the low-inventory
+    // alert and not some other reminder type slipping through.
+    const keys = await claimedKeys();
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toContain(":low_inventory:");
+  });
+
+  it("skips a medication whose kill switch is off", async () => {
+    await pgDb.seedMedication({ id: "m1", ...LOW, notificationsEnabled: false });
+    await checkLowInventoryMedications();
+    expect(await claimedKeys()).toHaveLength(0);
+  });
+
+  it("mutes inventory alerts without touching overdue reminders", async () => {
+    // The whole point of per-TYPE control: this medication should still
+    // remind about missed doses.
+    await pgDb.seedMedication({
+      id: "m1",
+      ...LOW,
+      notifyLowInventoryEmail: false,
+      notifyLowInventoryPush: false,
+    });
+    await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "00:01" });
+
+    await checkLowInventoryMedications();
+    expect(await claimedKeys()).toHaveLength(0);
+
+    await checkOverdueMedications();
+    const keys = await claimedKeys();
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toContain(":overdue:");
   });
 });

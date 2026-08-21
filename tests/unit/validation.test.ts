@@ -73,6 +73,119 @@ describe("medicationSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  const BASE_MED = {
+    name: "Ibuprofen",
+    dosageAmount: "200",
+    dosageUnit: "mg",
+    form: "tablet",
+    category: "otc",
+    colour: "#6366f1",
+  };
+
+  // serializeMedication spreads the medication row verbatim, so an unset
+  // colourSecondary / notes / scheduleIntervalHours / inventoryCount /
+  // inventoryAlertThreshold arrives here as an explicit `null`, not
+  // omission — a client that reads a medication and writes it straight
+  // back must not have its whole upsert rejected over a field it never
+  // touched. See medication-notification-schema.test.ts for the full
+  // round-trip through serializeMedication.
+  describe("null handling on optional fields", () => {
+    it("accepts an explicit null for colourSecondary", () => {
+      const result = medicationSchema.safeParse({ ...BASE_MED, colourSecondary: null });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.colourSecondary).toBeNull();
+    });
+
+    it("accepts an explicit null for notes", () => {
+      const result = medicationSchema.safeParse({ ...BASE_MED, notes: null });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.notes).toBeNull();
+    });
+
+    it("accepts an explicit null for scheduleIntervalHours", () => {
+      const result = medicationSchema.safeParse({ ...BASE_MED, scheduleIntervalHours: null });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.scheduleIntervalHours).toBeNull();
+    });
+
+    it("accepts an explicit null for inventoryCount and does NOT coerce it to 0", () => {
+      // z.coerce.number() runs Number(null), which is 0 — the trap that
+      // silently turns "not tracked" into "0 doses left".
+      const result = medicationSchema.safeParse({ ...BASE_MED, inventoryCount: null });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.inventoryCount).toBeNull();
+        expect(result.data.inventoryCount).not.toBe(0);
+      }
+    });
+
+    it("accepts an explicit null for inventoryAlertThreshold and does NOT coerce it to 0", () => {
+      const result = medicationSchema.safeParse({ ...BASE_MED, inventoryAlertThreshold: null });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.inventoryAlertThreshold).toBeNull();
+        expect(result.data.inventoryAlertThreshold).not.toBe(0);
+      }
+    });
+
+    it('treats "" for inventoryCount as not-set, NOT zero', () => {
+      // Reachable from the web UI today: a cleared number input submits
+      // "". z.coerce.number() would turn that into 0.
+      const result = medicationSchema.safeParse({ ...BASE_MED, inventoryCount: "" });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.inventoryCount).toBeNull();
+        expect(result.data.inventoryCount).not.toBe(0);
+      }
+    });
+
+    it('treats "" for inventoryAlertThreshold as not-set, NOT zero', () => {
+      const result = medicationSchema.safeParse({ ...BASE_MED, inventoryAlertThreshold: "" });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.inventoryAlertThreshold).toBeNull();
+        expect(result.data.inventoryAlertThreshold).not.toBe(0);
+      }
+    });
+
+    it("still parses valid values for all five fields unchanged", () => {
+      const result = medicationSchema.safeParse({
+        ...BASE_MED,
+        colourSecondary: "#22d3ee",
+        notes: "Take with food",
+        scheduleIntervalHours: "8",
+        inventoryCount: "30",
+        inventoryAlertThreshold: "5",
+      });
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.colourSecondary).toBe("#22d3ee");
+      expect(result.data.notes).toBe("Take with food");
+      expect(result.data.scheduleIntervalHours).toBe("8");
+      expect(result.data.inventoryCount).toBe(30);
+      expect(result.data.inventoryAlertThreshold).toBe(5);
+    });
+
+    it("still rejects an invalid colourSecondary hex", () => {
+      expect(medicationSchema.safeParse({ ...BASE_MED, colourSecondary: "blue" }).success).toBe(
+        false,
+      );
+    });
+
+    it("still rejects a negative inventoryCount and inventoryAlertThreshold", () => {
+      expect(medicationSchema.safeParse({ ...BASE_MED, inventoryCount: "-1" }).success).toBe(false);
+      expect(
+        medicationSchema.safeParse({ ...BASE_MED, inventoryAlertThreshold: "-1" }).success,
+      ).toBe(false);
+    });
+
+    it("still rejects a non-numeric inventoryCount instead of coercing to NaN", () => {
+      expect(medicationSchema.safeParse({ ...BASE_MED, inventoryCount: "abc" }).success).toBe(
+        false,
+      );
+    });
+  });
 });
 
 describe("doseLogSchema", () => {

@@ -231,6 +231,56 @@ describe("parseBackup — rejections", () => {
     if (result.ok) return;
     expect(result.reason).toContain("medications[0].dosageUnit");
   });
+
+  it("REJECTS a notifyMaxRepeats outside the door's bound", () => {
+    // Without a bound here, computeNagIndex's clamp stops binding: a huge
+    // cap plus a short repeat interval mints a fresh dedupe key on every
+    // cron tick, forever — the exact #110 symptom, reached through the
+    // import door instead of the algorithm.
+    const raw = backup();
+    (raw.medications as Json[])[0].notifyMaxRepeats = 1_000_000_000;
+    (raw.medications as Json[])[0].notifyRepeatEveryMinutes = 1;
+    const result = parseBackup(JSON.stringify(raw));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/notifyMaxRepeats/);
+  });
+
+  it("REJECTS a negative notifyOffsetMinutes", () => {
+    const raw = backup();
+    (raw.medications as Json[])[0].notifyOffsetMinutes = -5;
+    const result = parseBackup(JSON.stringify(raw));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/notifyOffsetMinutes/);
+  });
+
+  it("REJECTS a notifyOffsetMinutes far beyond the door cap", () => {
+    const raw = backup();
+    (raw.medications as Json[])[0].notifyOffsetMinutes = 999_999;
+    const result = parseBackup(JSON.stringify(raw));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/notifyOffsetMinutes/);
+  });
+});
+
+describe("parseBackup — older backups predating this feature", () => {
+  it("still parses when notification override keys are absent entirely", () => {
+    // backup()'s medication fixture never sets notificationsEnabled,
+    // notifyOverdueEmail/Push, notifyLowInventoryEmail/Push,
+    // notifyOffsetMinutes, notifyRepeatEveryMinutes or notifyMaxRepeats —
+    // this is exactly what an export taken before the feature shipped
+    // looks like, and it must still import.
+    const raw = backup();
+    const med = (raw.medications as Json[])[0];
+    expect(med.notifyMaxRepeats).toBeUndefined();
+    expect(med.notifyOffsetMinutes).toBeUndefined();
+    expect(med.notifyRepeatEveryMinutes).toBeUndefined();
+
+    const result = parseBackup(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe("parseBackup — tolerance", () => {

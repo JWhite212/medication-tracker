@@ -470,9 +470,15 @@ const importMedicationSchema = z.object({
   // `.default()`, so an older backup without these keys still parses,
   // and apply.ts supplies the column defaults (0 / null / 3) at insert
   // time.
-  notifyOffsetMinutes: z.number().int().optional(),
-  notifyRepeatEveryMinutes: z.number().int().nullable().optional(),
-  notifyMaxRepeats: z.number().int().optional(),
+  notifyOffsetMinutes: z.number().int().min(0).max(MAX_OFFSET_MINUTES).optional(),
+  notifyRepeatEveryMinutes: z
+    .number()
+    .int()
+    .min(MIN_REPEAT_MINUTES)
+    .max(MAX_REPEAT_MINUTES)
+    .nullable()
+    .optional(),
+  notifyMaxRepeats: z.number().int().min(0).max(MAX_NAG_REPEATS).optional(),
   schedules: z.array(importScheduleSchema).max(IMPORT_MAX_SCHEDULES_PER_MED).optional().default([]),
 });
 

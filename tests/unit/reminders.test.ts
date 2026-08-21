@@ -112,6 +112,16 @@ const emailResults: Array<
   { ok: true; id?: string } | { ok: false; reason: string; message: string }
 > = [];
 const sentEmails: Array<{ to: string; medicationName: string; sinceLabel: string }> = [];
+// The two senders record separately. They used to share `sentEmails`,
+// which only `sendReminderEmail` ever wrote to — so every
+// `expect(sentEmails).toHaveLength(0)` in the low-inventory suite below
+// was true no matter what the code did, and could not fail.
+const sentLowInventoryEmails: Array<{
+  to: string;
+  medicationName: string;
+  count: number;
+  threshold: number;
+}> = [];
 // Tests opt into throwing behaviour by setting this to an Error.
 let nextLowInventoryEmailThrows: Error | null = null;
 
@@ -120,7 +130,16 @@ vi.mock("$lib/server/email", () => ({
     sentEmails.push({ to, medicationName, sinceLabel });
     return emailResults.shift() ?? { ok: true, id: "msg-r" };
   },
-  sendLowInventoryEmail: async () => {
+  sendLowInventoryEmail: async (
+    to: string,
+    medicationName: string,
+    count: number,
+    threshold: number,
+  ) => {
+    // Record BEFORE the throw check: a send that was attempted and then
+    // exploded still happened, and the throw test asserts on the
+    // resulting status rather than on this array.
+    sentLowInventoryEmails.push({ to, medicationName, count, threshold });
     if (nextLowInventoryEmailThrows) {
       const err = nextLowInventoryEmailThrows;
       nextLowInventoryEmailThrows = null;
@@ -168,6 +187,7 @@ beforeEach(() => {
   scheduleRows.length = 0;
   lastEventRows.length = 0;
   sentEmails.length = 0;
+  sentLowInventoryEmails.length = 0;
   sentPushes.length = 0;
   emailResults.length = 0;
   pushResults.length = 0;
@@ -527,7 +547,7 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
 
     await checkLowInventoryMedications();
 
-    expect(sentEmails).toHaveLength(0);
+    expect(sentLowInventoryEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(1);
     expect(sentPushes[0].tag).toBe("low-inventory-med-LI");
     expect(updateCaptures[0].emailStatus).toBe("not_configured");
@@ -543,7 +563,18 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
 
     await checkLowInventoryMedications();
 
-    expect(sentEmails).toHaveLength(0); // mock tracks reminder emails only
+    // The email is the only channel here, so it must actually have gone
+    // out — and to the right person, about the right medication, with
+    // the count and threshold the alert is based on.
+    expect(sentLowInventoryEmails).toHaveLength(1);
+    expect(sentLowInventoryEmails[0]).toMatchObject({
+      to: "user@example.com",
+      medicationName: "Vitamin D",
+      count: 3,
+      threshold: 7,
+    });
+    // ...via the low-inventory sender, not the overdue-reminder one.
+    expect(sentEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(0);
     expect(updateCaptures[0].emailStatus).toBe("sent");
     expect(updateCaptures[0].pushStatus).toBe("not_configured");
@@ -561,7 +592,7 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
 
     // No claim, no dispatch, no completeReminder. The next cron tick
     // after the user subscribes will record + send.
-    expect(sentEmails).toHaveLength(0);
+    expect(sentLowInventoryEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(0);
     expect(updateCaptures).toHaveLength(0);
   });
@@ -607,7 +638,7 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
 
     expect(claimCallCount).toBe(0);
     expect(updateCaptures).toHaveLength(0);
-    expect(sentEmails).toHaveLength(0);
+    expect(sentLowInventoryEmails).toHaveLength(0);
     expect(sentPushes).toHaveLength(0);
   });
 

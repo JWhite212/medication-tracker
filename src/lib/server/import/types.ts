@@ -86,6 +86,13 @@ export type ImportMedication = {
   notifyOverduePush: boolean | null;
   notifyLowInventoryEmail: boolean | null;
   notifyLowInventoryPush: boolean | null;
+  // Same "required, not optional" reasoning as the five fields above:
+  // forces backup.ts's real values and csv.ts's stub to both state a
+  // value rather than silently omitting one. `notifyRepeatEveryMinutes`
+  // null means "do not repeat", matching the column.
+  notifyOffsetMinutes: number;
+  notifyRepeatEveryMinutes: number | null;
+  notifyMaxRepeats: number;
 };
 
 export type ImportDose = {

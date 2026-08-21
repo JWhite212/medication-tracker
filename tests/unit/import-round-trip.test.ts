@@ -55,6 +55,12 @@ const medicationRow = {
   notifyOverduePush: false,
   notifyLowInventoryEmail: false,
   notifyLowInventoryPush: true,
+  // Same reasoning, extended to the Phase 2 timing fields: the column
+  // defaults are 0 / null / 3, so a pipeline bug that silently fell back
+  // to those would go unnoticed if the fixture used them.
+  notifyOffsetMinutes: 45,
+  notifyRepeatEveryMinutes: 20,
+  notifyMaxRepeats: 5,
 };
 
 const scheduleRow = {
@@ -191,6 +197,9 @@ describe("JSON backup round trip", () => {
       notifyOverduePush: false,
       notifyLowInventoryEmail: false,
       notifyLowInventoryPush: true,
+      notifyOffsetMinutes: 45,
+      notifyRepeatEveryMinutes: 20,
+      notifyMaxRepeats: 5,
     });
     expect(med.startedAt?.toISOString()).toBe("2026-01-15T00:00:00.000Z");
   });

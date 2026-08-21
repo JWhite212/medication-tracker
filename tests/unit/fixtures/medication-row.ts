@@ -31,4 +31,7 @@ export const BASE_MEDICATION_ROW = {
   notifyOverduePush: null,
   notifyLowInventoryEmail: false,
   notifyLowInventoryPush: null,
+  notifyOffsetMinutes: 0,
+  notifyRepeatEveryMinutes: null,
+  notifyMaxRepeats: 3,
 };

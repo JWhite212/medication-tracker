@@ -34,6 +34,20 @@ describe("serializers", () => {
     });
   });
 
+  it("serializes re-notification timing", () => {
+    const out = serializeMedication({
+      ...BASE_MEDICATION_ROW,
+      notifyOffsetMinutes: 30,
+      notifyRepeatEveryMinutes: 60,
+      notifyMaxRepeats: 2,
+    });
+    expect(out).toMatchObject({
+      notifyOffsetMinutes: 30,
+      notifyRepeatEveryMinutes: 60,
+      notifyMaxRepeats: 2,
+    });
+  });
+
   it("serializes dose log dates and passes sideEffects through", () => {
     const sideEffects = [{ name: "nausea", severity: "mild" as const }];
     const d = serializeDoseLog({

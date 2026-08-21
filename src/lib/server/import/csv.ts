@@ -431,6 +431,12 @@ export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult 
     notifyOverduePush: null,
     notifyLowInventoryEmail: null,
     notifyLowInventoryPush: null,
+    // A dose CSV carries no timing configuration either — the column
+    // defaults, not a claim the source medication was actually timed
+    // this way.
+    notifyOffsetMinutes: 0,
+    notifyRepeatEveryMinutes: null,
+    notifyMaxRepeats: 3,
     schedules: [
       {
         scheduleKind: "prn",

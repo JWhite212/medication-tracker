@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **No production code changes.** `git diff origin/main..HEAD -- src/` must be empty at the end. The only exception is a bug found under Decision 5, which stops that target and is reported, not fixed here.
+- **No production code changes.** `git diff --exit-code origin/main -- src/` must be empty at the end. The only exception is a bug found under Decision 5, which stops that target and is reported, not fixed here.
 - **Use `origin/main`, never local `main`,** for every diff and comparison. Local `main` goes stale in this repo.
 - **`@electric-sql/pglite` is a devDependency only.** It must never appear in `dependencies`.
 - **CI requires no changes.** PGlite needs no service container and no `DATABASE_URL`.
@@ -42,6 +42,13 @@ The failure signal comes from mutation instead. For every test:
 **If step 4 does not fail, the test is vacuous.** Fix the test until it fails. Do not proceed, and do not commit a test you could not make fail. Stage 1 shipped three assertions that passed vacuously (`expect(updates).toHaveLength(0)` where `updates` was a function — `toHaveLength` checked its arity), and the assertion-count gate was structurally blind to them. Mutation is the only gate that catches this class.
 
 Record each mutation result in the ledger in Task 8.
+
+**Piped commands mask exit status.** `npx vitest run | tail` returns `tail`'s
+status, not vitest's, so a failing suite can read as success to anything
+checking `$?`. Where a command's exit code gates a decision, prefix the shell
+with `set -o pipefail` or run it unpiped. Reading the pass/fail counts in the
+output is fine for the mutation steps — it is the automated gates in Task 8
+that must not be fooled.
 
 **Decision 5 (from the spec) — when a test contradicts production:** stop work on that target only, continue with the others, and report the finding with the reproducing test. Do not fix `src/`. Do not rewrite the test to assert the wrong behaviour.
 
@@ -102,12 +109,22 @@ Expect a full worktree-local `node_modules` to be created. This takes several mi
 
 - [ ] **Step 2: Verify it landed in devDependencies, not dependencies**
 
+Parse the JSON rather than grepping it — a `grep` for the package name matches
+either dependency section, so a package wrongly placed in `dependencies` would
+sail through.
+
 ```bash
-grep -A2 '"devDependencies"' package.json | head -5
-grep -c '"@electric-sql/pglite"' package.json
+node -e '
+const pkg = require("./package.json");
+const name = "@electric-sql/pglite";
+if (!pkg.devDependencies?.[name] || pkg.dependencies?.[name]) {
+  throw new Error(name + " must appear only in devDependencies");
+}
+console.log("ok:", pkg.devDependencies[name]);
+'
 ```
 
-Expected: exactly `1` match, and it must sit inside `devDependencies`. If npm put it in `dependencies`, move it.
+Expected: `ok: ^0.5.x`. A throw means npm put it in the wrong section — move it.
 
 - [ ] **Step 3: Write the helper**
 
@@ -216,6 +233,7 @@ Interpret the result:
 - [ ] **Step 6: Measure the cost of one PGlite file**
 
 ```bash
+set -o pipefail
 npx vitest run tests/unit/helpers/pg-db.test.ts 2>&1 | tail -5
 ```
 
@@ -524,7 +542,7 @@ git checkout -- src/lib/server/auth/rate-limit.ts
 npx vitest run tests/unit/pg/rate-limit.test.ts
 ```
 
-Expected: 4 passed, and `git diff origin/main..HEAD -- src/` is empty.
+Expected: 4 passed, and `git diff --exit-code origin/main -- src/` is empty.
 
 - [ ] **Step 9: Commit**
 
@@ -879,7 +897,7 @@ vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unused
 ```
 
 3. Delete the whole `describe("verifyAndConsumeTOTPCode", ...)` block — all four of its tests now live in the PGlite file.
-4. Remove `verifyAndConsumeTOTPCode` and `currentTOTPStep` from the destructured import if nothing else references them, and drop the now-unused `nextInvalidCode` helper and any now-unused imports (`beforeEach` may become unused).
+4. Remove `verifyAndConsumeTOTPCode` and `currentTOTPStep` from the destructured import. **Keep `currentCode` and `nextInvalidCode`** — both are still used by `verifyTOTPCode rejects an invalid 6-digit code`, which stays. Grep before deleting any helper rather than assuming: `grep -n "nextInvalidCode\|currentCode" tests/unit/auth-totp.test.ts`. Drop `beforeEach` from the vitest import once the `dbState` resets are gone.
 
 - [ ] **Step 7: Run the sibling file — expect 7 passing, 0 failing**
 
@@ -887,7 +905,7 @@ vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unused
 npx vitest run tests/unit/auth-totp.test.ts
 ```
 
-Expected: 7 tests pass (`generateTOTPSecret`, three `verifyTOTPCode`, `getTOTPUri`, `generateQRDataUrl` — count them; the four db-backed ones are gone). If it errors with "Unexpected db.…", a remaining test does reach the database and must move to the PGlite file rather than be given a working fake.
+Expected: **6** tests pass — `generateTOTPSecret`, three `verifyTOTPCode`, `getTOTPUri`, `generateQRDataUrl`. The file had 10; the four db-backed ones are gone. If it errors with "Unexpected db.…", a remaining test does reach the database and must move to the PGlite file rather than be given a working fake.
 
 - [ ] **Step 8: Update CLAUDE.md**
 
@@ -997,27 +1015,36 @@ describe("side-effects filter", () => {
 });
 
 describe("notes search escaping", () => {
+  // The decoy rows are the whole point. A row merely CONTAINING the search
+  // term proves nothing: unescaped, `%100%%` still requires the literal
+  // "100", so it matches "felt 100% better" either way. What separates
+  // escaped from unescaped is a row the wildcard would reach and the
+  // literal would not — "took 1000 mg" for `%`, "dosexmissed" for `_`.
   beforeEach(async () => {
     await pgDb.seedDose({ id: "pct", notes: "felt 100% better" });
-    await pgDb.seedDose({ id: "plain", notes: "felt better" });
+    await pgDb.seedDose({ id: "thousand", notes: "took 1000 mg" });
     await pgDb.seedDose({ id: "under", notes: "dose_missed once" });
+    await pgDb.seedDose({ id: "anychar", notes: "dosexmissed twice" });
+    await pgDb.seedDose({ id: "plain", notes: "felt better" });
   });
 
   it("treats % in a search term as a literal, not a wildcard", async () => {
     const { doses } = await loadWith("q=100%25"); // %25 is an encoded '%'
+    // Unescaped this is `%100%%`, which also sweeps up "took 1000 mg".
     expect(doses.map((d) => d.id)).toEqual(["pct"]);
   });
 
   it("treats _ in a search term as a literal, not a single-char wildcard", async () => {
     const { doses } = await loadWith("q=dose_missed");
+    // Unescaped the `_` matches any single character, pulling in
+    // "dosexmissed twice".
     expect(doses.map((d) => d.id)).toEqual(["under"]);
   });
 
   it("still matches an ordinary substring, case-insensitively", async () => {
     const { doses } = await loadWith("q=FELT");
-    // Only pct ("felt 100% better") and plain ("felt better") contain it;
-    // under ("dose_missed once") does not. This is the positive control —
-    // without it, escaping that matched nothing at all would pass.
+    // The positive control: escaping that matched nothing at all would
+    // otherwise satisfy both tests above.
     expect(doses.map((d) => d.id).sort()).toEqual(["pct", "plain"]);
   });
 });
@@ -1104,7 +1131,7 @@ out anyway — the naive form is the mutation that reproduces the bug."
 **Interfaces:**
 
 - Consumes: `dbMock`, `pgDb` from Tasks 1–2.
-- Under test: `getDailyDoseCounts(userId, days, timezone, filter?)`, `getTimeOfDayDistribution(...)`, `getDayOfWeekDistribution(...)`.
+- Under test: `getDailyDoseCounts(userId, days, timezone, filter?)`, `getHourlyDistribution(...)`, `getDayOfWeekDistribution(...)`.
 
 - [ ] **Step 1: Write the test file**
 
@@ -1118,8 +1145,20 @@ vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock)
 
 import { pgDb } from "../helpers/pg-db";
 
-const { getDailyDoseCounts, getTimeOfDayDistribution, getDayOfWeekDistribution } =
+const { getDailyDoseCounts, getHourlyDistribution, getDayOfWeekDistribution } =
   await import("../../../src/lib/server/analytics");
+
+/** `date(...)` comes back from the driver as a Date, while the query types it
+    as a string. Normalise to a YYYY-MM-DD local-date string either way, so
+    the assertions below say what they mean. */
+function isoDay(value: unknown): string {
+  if (value instanceof Date) {
+    // The value is a bare Postgres `date`; read it in UTC so no second
+    // timezone conversion is applied on top of the one under test.
+    return value.toISOString().slice(0, 10);
+  }
+  return String(value).slice(0, 10);
+}
 
 beforeAll(() => {
   // Date only — faking all timers stalls PGlite. Mid-June, so British
@@ -1146,7 +1185,7 @@ describe("daily grouping across a BST offset", () => {
     const rows = await getDailyDoseCounts("u1", 30, "Europe/London");
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].date).toContain("2026-06-02");
+    expect(isoDay(rows[0].date)).toBe("2026-06-02");
     expect(rows[0].count).toBe(1);
   });
 
@@ -1155,7 +1194,9 @@ describe("daily grouping across a BST offset", () => {
 
     const rows = await getDailyDoseCounts("u1", 30, "UTC");
 
-    expect(rows[0].date).toContain("2026-06-01");
+    // Same row, same query, different timezone — the only thing that can
+    // move it is the AT TIME ZONE conversion.
+    expect(isoDay(rows[0].date)).toBe("2026-06-01");
   });
 
   it("keeps two doses either side of local midnight on separate days", async () => {
@@ -1166,6 +1207,7 @@ describe("daily grouping across a BST offset", () => {
 
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.count)).toEqual([1, 1]);
+    expect(rows.map((r) => isoDay(r.date)).sort()).toEqual(["2026-06-01", "2026-06-02"]);
   });
 });
 
@@ -1173,7 +1215,7 @@ describe("hour and day-of-week extraction", () => {
   it("reports the LOCAL hour, not the UTC hour", async () => {
     await pgDb.seedDose({ takenAt: new Date("2026-06-10T08:15:00Z") }); // 09:15 BST
 
-    const rows = await getTimeOfDayDistribution("u1", 30, "Europe/London");
+    const rows = await getHourlyDistribution("u1", 30, "Europe/London");
 
     expect(rows).toHaveLength(1);
     expect(rows[0].hour).toBe(9);
@@ -1266,10 +1308,12 @@ Immediately after the existing `fake-db.ts` paragraph, add:
   TOTP compare-and-set), or SQL semantics a fixture cannot model
   (`jsonb_array_length` on `[]`, `ilike` escaping, `AT TIME ZONE` grouping).
   Everything else stays on the fake, which is an order of magnitude faster.
-  PGlite files live in `tests/unit/pg/`, must carry the
-  `// @vitest-environment node` docblock (the suite default is jsdom, which
-  sends PGlite down a browser path), and must use
-  `vi.useFakeTimers({ toFake: ["Date"] })` if they need a frozen clock —
+  PGlite files that exercise PRODUCTION code live in `tests/unit/pg/`; the
+  helper's own test stays beside the helper as
+  `tests/unit/helpers/pg-db.test.ts`, matching `fake-db.test.ts`. Wherever
+  they live they must carry the `// @vitest-environment node` docblock (the
+  suite default is jsdom, which sends PGlite down a browser path), and must
+  use `vi.useFakeTimers({ toFake: ["Date"] })` if they need a frozen clock —
   faking all timers stalls PGlite's WASM layer. Real Postgres enforces the
   cascade foreign keys that `fake-db` ignored, so fixtures seed user →
   medication → row via `pgDb.seedUser/seedMedication/seedDose`.
@@ -1278,7 +1322,7 @@ Immediately after the existing `fake-db.ts` paragraph, add:
 - [ ] **Step 2: Confirm zero production change**
 
 ```bash
-git diff origin/main..HEAD --stat -- src/
+git diff --exit-code origin/main -- src/
 ```
 
 Expected: **no output**. If anything appears, a mutation was not reverted — revert it now. This is a hard gate.
@@ -1286,10 +1330,11 @@ Expected: **no output**. If anything appears, a mutation was not reverted — re
 - [ ] **Step 3: Run the full suite and check the budget**
 
 ```bash
+set -o pipefail
 npx vitest run 2>&1 | tail -8
 ```
 
-Expected: 72 files (67 + 5 new; 6 if Task 7 was skipped), all passing. Duration must be **≤20s** against the 6.36s baseline. If it exceeds, apply Decision 2's snapshot/restore fallback inside `pg-db.ts` before opening the PR.
+Expected: **73** files, all passing — 67 existing, plus the harness test and the five PGlite files. If Task 7 was skipped it is 72. Duration must be **≤20s** against the 6.36s baseline. If it exceeds, apply Decision 2's snapshot/restore fallback inside `pg-db.ts` before opening the PR.
 
 - [ ] **Step 4: Typecheck, lint, format**
 
@@ -1304,7 +1349,7 @@ Expected: 0 errors from each. `svelte-check` catches signature mismatches that V
 - [ ] **Step 5: Confirm coverage thresholds still pass**
 
 ```bash
-npm run test:coverage 2>&1 | tail -15
+npm run test:coverage > /dev/null 2>&1; echo "exit: $?"
 ```
 
 Expected: all four metrics at or above 30 / 25 / 25.5 / 30. Coverage should rise, since these tests execute real query paths that were previously mocked out.
@@ -1333,7 +1378,7 @@ The body must lead with what the tests buy, not with the tooling:
 - `claimReminderSlot`'s gate was captured but never evaluated; the three clauses are now exercised separately, with a positive control.
 - The TOTP bespoke fake is deleted, retiring a documented Stage 1 exception.
 - Two named shipped-bug classes (`jsonb_array_length` on `[]`, `ilike` escaping) are covered.
-- **No production code changed** — state the empty `git diff origin/main..HEAD -- src/` as a gate.
+- **No production code changed** — state the empty `git diff --exit-code origin/main -- src/` as a gate.
 - Include the mutation ledger from Step 6. State plainly that assertion counts prove nothing here because the files are new, and that mutation is the gate that replaces them.
 
 Do not include any Claude/AI attribution.
@@ -1366,7 +1411,7 @@ CLAUDE.md says.
 Suite went 67 files / 848 tests / 6.36s → **73 files / 874 tests / 9.35s**,
 against a 20s budget. Snapshot/restore was not needed.
 
-**Gates.** `git diff origin/main..HEAD -- src/` is empty. `svelte-check` 0
+**Gates.** `git diff --exit-code origin/main -- src/` is empty. `svelte-check` 0
 errors (25 pre-existing warnings). ESLint 0 errors, 8 warnings — the same 8
 that were there before. Prettier clean. Coverage passes and rose on all four
 metrics: 48.67 → 49 statements, 52.91 → 53.34 branches, 40.98 → 41.66

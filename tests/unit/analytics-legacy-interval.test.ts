@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "./helpers/fake-db";
-import { doseLogs } from "$lib/server/db/schema";
+import { medications } from "$lib/server/db/schema";
 
 // getPerMedicationStats falls back to a medication's legacy
 // scheduleIntervalHours column only when it has no medication_schedules
@@ -17,18 +17,20 @@ const row = {
   scheduleType: "scheduled",
   startedAt: new Date("2026-01-01T00:00:00Z"),
   endedAt: null,
+  archivedAt: null,
   status: "taken",
   events: 1,
   quantity: 1,
 };
 
-// Minimal stand-in for the `db.select(...).from(...).innerJoin(...)
+// Minimal stand-in for the `db.select(...).from(...).leftJoin(...)
 // .where(...).groupBy(...)` chain getPerMedicationStats builds — mirrors
 // the chainable-stub pattern in tests/unit/doses-inventory.test.ts.
 // `.groupBy()` is the terminal call and is awaited directly, so it can
 // resolve a plain Promise rather than needing a `.then()` on the chain.
 // The database comes from the shared seam, which dispatches on real table
-// identity. getPerMedicationStats runs one aggregate over dose_logs.
+// identity, so the seed goes on `medications` — the aggregate is driven
+// FROM there and joins dose_logs in, not the other way round.
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
 // No medication_schedules rows for this medication, so
@@ -41,7 +43,7 @@ const { getPerMedicationStats } = await import("../../src/lib/server/analytics")
 
 beforeEach(() => {
   fakeDb.reset();
-  fakeDb.seed(doseLogs, [row]);
+  fakeDb.seed(medications, [row]);
 });
 
 describe("getPerMedicationStats legacy interval fallback", () => {

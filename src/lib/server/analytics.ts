@@ -5,8 +5,28 @@ import { startOfDay } from "$lib/utils/time";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import type { DoseLogStatus } from "$lib/server/db/schema";
-import { clampEffectiveDays, isActiveOn } from "$lib/server/analytics/lifecycle";
+import { clampEffectiveDays, isActiveOn, lifecycleEnd } from "$lib/server/analytics/lifecycle";
 import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
+
+/**
+ * Expected doses per day for one medication — the single owner of that
+ * quantity. Schedule rows win; failing those, the deprecated legacy column
+ * applies **only** to a medication actually marked `scheduled`.
+ *
+ * That gate is load-bearing. Without it a PRN medication carrying a stale
+ * legacy interval is handed a fabricated denominator, and it is why the
+ * per-medication stats and the daily adherence series used to disagree:
+ * one gated on scheduleType, the other read the column unconditionally.
+ */
+export function expectedPerDayFor(
+  schedules: MedicationSchedule[] | undefined,
+  scheduleType: string,
+  legacyIntervalHours: number | string | null,
+): number {
+  if (schedules && schedules.length > 0) return expectedPerDayForSchedules(schedules);
+  if (scheduleType !== "scheduled") return 0;
+  return intervalDosesPerDay(legacyIntervalHours);
+}
 
 /**
  * Sum expected doses per day across a medication's schedule rows.
@@ -63,6 +83,36 @@ export function resolveMedicationFilter(
   return valid.length > 0 ? valid : undefined;
 }
 
+/**
+ * The dose-log-side predicates that define "in this window", as a list.
+ *
+ * Returned unjoined so a LEFT JOIN can place them in its ON clause. Put
+ * them in a WHERE instead and the null-extended rows are discarded, which
+ * silently demotes the join back to an inner one — the exact shape that
+ * hid every medication with no doses in the window.
+ */
+function doseLogScope(
+  userId: string,
+  days: number,
+  timezone: string,
+  filter?: AnalyticsFilter,
+  status: DoseLogStatus | "any" = "taken",
+) {
+  const conditions = [eq(doseLogs.userId, userId)];
+  if (status !== "any") conditions.push(eq(doseLogs.status, status));
+  if (filter?.medicationIds && filter.medicationIds.length > 0) {
+    conditions.push(inArray(doseLogs.medicationId, filter.medicationIds));
+  }
+  if (filter?.from && filter?.to) {
+    conditions.push(gte(doseLogs.takenAt, filter.from), lte(doseLogs.takenAt, filter.to));
+  } else {
+    conditions.push(
+      gte(doseLogs.takenAt, startOfDay(new Date(Date.now() - days * 86400000), timezone)),
+    );
+  }
+  return conditions;
+}
+
 function buildDateFilters(
   userId: string,
   days: number,
@@ -70,24 +120,7 @@ function buildDateFilters(
   filter?: AnalyticsFilter,
   status: DoseLogStatus | "any" = "taken",
 ) {
-  const baseUser = eq(doseLogs.userId, userId);
-  const statusFilter = status === "any" ? undefined : eq(doseLogs.status, status);
-  const medFilter =
-    filter?.medicationIds && filter.medicationIds.length > 0
-      ? inArray(doseLogs.medicationId, filter.medicationIds)
-      : undefined;
-  const extras = [...(statusFilter ? [statusFilter] : []), ...(medFilter ? [medFilter] : [])];
-
-  if (filter?.from && filter?.to) {
-    return and(
-      baseUser,
-      ...extras,
-      gte(doseLogs.takenAt, filter.from),
-      lte(doseLogs.takenAt, filter.to),
-    );
-  }
-  const since = startOfDay(new Date(Date.now() - days * 86400000), timezone);
-  return and(baseUser, ...extras, gte(doseLogs.takenAt, since));
+  return and(...doseLogScope(userId, days, timezone, filter, status));
 }
 
 export function calculateTrend(
@@ -158,39 +191,55 @@ export async function getPerMedicationStats(
   filter?: AnalyticsFilter,
   options?: { includeAsNeeded?: boolean },
 ) {
-  const whereClauseAll = buildDateFilters(userId, days, timezone, filter, "any");
-
   const rangeFrom = filter?.from ?? new Date(Date.now() - days * 86400000);
   const rangeTo = filter?.to ?? new Date();
+
+  const medFilter =
+    filter?.medicationIds && filter.medicationIds.length > 0
+      ? [inArray(medications.id, filter.medicationIds)]
+      : [];
 
   const [rows, schedulesByMed] = await Promise.all([
     db
       .select({
-        medicationId: doseLogs.medicationId,
+        medicationId: medications.id,
         medicationName: medications.name,
         colour: medications.colour,
         scheduleIntervalHours: medications.scheduleIntervalHours,
         scheduleType: medications.scheduleType,
         startedAt: medications.startedAt,
         endedAt: medications.endedAt,
+        archivedAt: medications.archivedAt,
         status: doseLogs.status,
-        events: sql<number>`count(*)::int`,
+        // count(*) would report 1 for a medication with no doses at all —
+        // an unmatched LEFT JOIN row is still a row. Counting the child key
+        // is belt-and-braces rather than load-bearing: the status dispatch
+        // below already leaves a null-status row at zero, so no test can
+        // fail on this line alone (breaking BOTH does fail three). Kept
+        // because it makes the row honest independently of that dispatch.
+        events: sql<number>`count(${doseLogs.id})::int`,
         quantity: sql<number>`coalesce(sum(${doseLogs.quantity}), 0)::int`,
       })
-      .from(doseLogs)
-      .innerJoin(
-        medications,
-        and(eq(doseLogs.medicationId, medications.id), eq(medications.userId, userId)),
+      // Driven FROM medications, so a medication you have stopped taking
+      // still reaches the denominator instead of vanishing from it.
+      .from(medications)
+      .leftJoin(
+        doseLogs,
+        and(
+          eq(doseLogs.medicationId, medications.id),
+          ...doseLogScope(userId, days, timezone, filter, "any"),
+        ),
       )
-      .where(whereClauseAll)
+      .where(and(eq(medications.userId, userId), ...medFilter))
       .groupBy(
-        doseLogs.medicationId,
+        medications.id,
         medications.name,
         medications.colour,
         medications.scheduleIntervalHours,
         medications.scheduleType,
         medications.startedAt,
         medications.endedAt,
+        medications.archivedAt,
         doseLogs.status,
       ),
     getSchedulesForUser(userId),
@@ -204,6 +253,7 @@ export async function getPerMedicationStats(
     scheduleType: string;
     startedAt: Date;
     endedAt: Date | null;
+    archivedAt: Date | null;
     takenEvents: number;
     takenQuantity: number;
     skippedEvents: number;
@@ -218,10 +268,14 @@ export async function getPerMedicationStats(
       scheduleType: row.scheduleType,
       startedAt: row.startedAt,
       endedAt: row.endedAt,
+      archivedAt: row.archivedAt,
       takenEvents: 0,
       takenQuantity: 0,
       skippedEvents: 0,
     };
+    // A medication with no doses in the window arrives as a single
+    // null-status row, which matches neither branch and leaves the bucket
+    // at zero — present in the results, credited with nothing.
     if (row.status === "taken") {
       b.takenEvents += row.events;
       b.takenQuantity += row.quantity;
@@ -246,14 +300,11 @@ export async function getPerMedicationStats(
     })
     .map((b) => {
       const sched = schedulesByMed.get(b.medicationId) ?? [];
-      const expectedPerDay =
-        sched.length > 0
-          ? expectedPerDayForSchedules(sched)
-          : intervalDosesPerDay(b.scheduleIntervalHours);
-      // Clamp the analytics window against this medication's lifecycle
-      // so a med added yesterday isn't penalised for the days before it
-      // existed.
-      const effectiveDays = clampEffectiveDays(rangeFrom, rangeTo, b.startedAt, b.endedAt);
+      const expectedPerDay = expectedPerDayFor(sched, b.scheduleType, b.scheduleIntervalHours);
+      // Clamp the analytics window against this medication's lifecycle so
+      // a med added yesterday isn't penalised for the days before it
+      // existed, nor an archived one for the days after you stopped.
+      const effectiveDays = clampEffectiveDays(rangeFrom, rangeTo, b.startedAt, lifecycleEnd(b));
       const expectedTotal = Math.round(expectedPerDay * effectiveDays);
       return {
         medicationId: b.medicationId,
@@ -322,18 +373,12 @@ export type DailyAdherencePoint = {
 // Computed expected doses/day from the deprecated medications.scheduleType
 // + medications.scheduleIntervalHours columns. Used as fallback when a
 // medication has no rows in the medication_schedules table yet.
-function expectedPerDayFromLegacy(
-  scheduleType: string,
-  scheduleIntervalHours: number | string | null,
-): number {
-  if (scheduleType !== "scheduled") return 0;
-  return intervalDosesPerDay(scheduleIntervalHours);
-}
-
-// Daily adherence approximation. Expected-per-day is derived from the
-// current set of schedules, not a per-day historical reconstruction —
-// medications added or archived mid-period are not retro-applied. Good
-// enough for a sparkline trend; do not treat as authoritative.
+// Daily adherence. Expected-per-day is derived from the current set of
+// schedules rather than a per-day historical reconstruction, so changing a
+// dose schedule still re-rates the whole period. A medication's lifecycle
+// IS respected per day, though: `isActiveOn` clamps against when it was
+// started and when it was stopped, so adding or archiving mid-period no
+// longer rewrites the days on either side.
 export async function getDailyAdherenceSeries(
   userId: string,
   days: number,
@@ -350,15 +395,21 @@ export async function getDailyAdherenceSeries(
         scheduleIntervalHours: medications.scheduleIntervalHours,
         startedAt: medications.startedAt,
         endedAt: medications.endedAt,
+        archivedAt: medications.archivedAt,
       })
       .from(medications)
       // Scope expected-per-day to the same medications as the dose
       // counts, otherwise a filtered view would divide selected doses
       // by everyone's expected total.
+      //
+      // Archived medications are deliberately NOT filtered out here. The
+      // flag carries no date, so excluding on it erased what had been
+      // expected of you on every past day too — archiving a medication
+      // retroactively improved your history. `archivedAt` closes the
+      // window at the right instant instead.
       .where(
         and(
           eq(medications.userId, userId),
-          eq(medications.isArchived, false),
           ...(filter?.medicationIds && filter.medicationIds.length > 0
             ? [inArray(medications.id, filter.medicationIds)]
             : []),
@@ -368,14 +419,15 @@ export async function getDailyAdherenceSeries(
 
   // Per-medication expected-per-day so we can include only meds that
   // were active on a given day.
-  const expectedByMed = activeMeds.map((med) => {
-    const schedules = schedulesByMed.get(med.id);
-    const perDay =
-      schedules && schedules.length > 0
-        ? expectedPerDayForSchedules(schedules)
-        : expectedPerDayFromLegacy(med.scheduleType, med.scheduleIntervalHours);
-    return { startedAt: med.startedAt, endedAt: med.endedAt, perDay };
-  });
+  const expectedByMed = activeMeds.map((med) => ({
+    startedAt: med.startedAt,
+    endsAt: lifecycleEnd(med),
+    perDay: expectedPerDayFor(
+      schedulesByMed.get(med.id),
+      med.scheduleType,
+      med.scheduleIntervalHours,
+    ),
+  }));
 
   const fromDate =
     filter?.from && filter?.to
@@ -404,7 +456,7 @@ export async function getDailyAdherenceSeries(
     const doseCount = countByDate.get(dateKey) ?? 0;
     // Sum expected only across meds active on this specific day.
     const expectedPerDay = expectedByMed.reduce(
-      (acc, m) => acc + (isActiveOn(day, m.startedAt, m.endedAt) ? m.perDay : 0),
+      (acc, m) => acc + (isActiveOn(day, m.startedAt, m.endsAt) ? m.perDay : 0),
       0,
     );
     const adherence =

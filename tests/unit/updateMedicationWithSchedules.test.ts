@@ -20,6 +20,15 @@ function ops(): Op[] {
   return fakeDb.committed.map((c) => ({ kind: c.op, table: c.table, values: c.payload }) as Op);
 }
 
+// The `.set(...)` argument of the medications update — the update-path
+// equivalent of createMedicationWithSchedules.test.ts's `inserts()[0].values`.
+function updatedMedicationValues(): Record<string, unknown> {
+  const update = ops().find(
+    (o): o is Extract<Op, { kind: "update" }> => o.kind === "update" && o.table === "medications",
+  );
+  return update?.values as Record<string, unknown>;
+}
+
 const beforeRow = {
   id: "med1",
   userId: "u1",
@@ -130,5 +139,37 @@ describe("updateMedicationWithSchedules", () => {
       "delete:medication_schedules",
       "insert:audit_logs",
     ]);
+  });
+});
+
+describe("updateMedicationWithSchedules — notification settings", () => {
+  it("persists the overrides on the updated row", async () => {
+    await updateMedicationWithSchedules(
+      "u1",
+      "med1",
+      { ...baseInput, notificationsEnabled: false, notifyOverdueEmail: true },
+      [],
+    );
+
+    const values = updatedMedicationValues();
+    expect(values.notificationsEnabled).toBe(false);
+    expect(values.notifyOverdueEmail).toBe(true);
+  });
+
+  it("keeps null distinct from false on the way to the database", async () => {
+    // A `?? false` or `|| null` in the enumeration would collapse the
+    // tri-state at the last possible moment, after every other layer
+    // took care to preserve it. Muting a medication a user has been
+    // taking for months goes through this branch, not the create path.
+    await updateMedicationWithSchedules(
+      "u1",
+      "med1",
+      { ...baseInput, notifyOverduePush: null, notifyLowInventoryEmail: false },
+      [],
+    );
+
+    const values = updatedMedicationValues();
+    expect(values.notifyOverduePush).toBeNull();
+    expect(values.notifyLowInventoryEmail).toBe(false);
   });
 });

@@ -25,18 +25,67 @@ describe("pg-db harness", () => {
     );
   });
 
-  it("applies the per-medication notification columns", async () => {
-    const res = await pgDb.client.query<{ column_name: string }>(
-      `select column_name from information_schema.columns
-       where table_name = 'medications' and column_name like 'notif%'`,
+  it("applies the per-medication notification columns with the right shape", async () => {
+    const res = await pgDb.client.query<{
+      column_name: string;
+      is_nullable: string;
+      column_default: string | null;
+      data_type: string;
+    }>(
+      `select column_name, is_nullable, column_default, data_type
+       from information_schema.columns
+       where table_name = 'medications' and column_name like 'notif%'
+       order by column_name`,
     );
-    const names = res.rows.map((r) => r.column_name).sort();
-    expect(names).toEqual([
-      "notifications_enabled",
-      "notify_low_inventory_email",
-      "notify_low_inventory_push",
-      "notify_overdue_email",
-      "notify_overdue_push",
+    expect(res.rows).toEqual([
+      {
+        column_name: "notifications_enabled",
+        is_nullable: "NO",
+        column_default: "true",
+        data_type: "boolean",
+      },
+      {
+        column_name: "notify_low_inventory_email",
+        is_nullable: "YES",
+        column_default: null,
+        data_type: "boolean",
+      },
+      {
+        column_name: "notify_low_inventory_push",
+        is_nullable: "YES",
+        column_default: null,
+        data_type: "boolean",
+      },
+      {
+        column_name: "notify_max_repeats",
+        is_nullable: "NO",
+        column_default: "3",
+        data_type: "integer",
+      },
+      {
+        column_name: "notify_offset_minutes",
+        is_nullable: "NO",
+        column_default: "0",
+        data_type: "integer",
+      },
+      {
+        column_name: "notify_overdue_email",
+        is_nullable: "YES",
+        column_default: null,
+        data_type: "boolean",
+      },
+      {
+        column_name: "notify_overdue_push",
+        is_nullable: "YES",
+        column_default: null,
+        data_type: "boolean",
+      },
+      {
+        column_name: "notify_repeat_every_minutes",
+        is_nullable: "YES",
+        column_default: null,
+        data_type: "integer",
+      },
     ]);
   });
 

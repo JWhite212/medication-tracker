@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fakeDb, predicateIncludes } from "./helpers/fake-db";
 import { reminderEvents } from "$lib/server/db/schema";
 
@@ -35,6 +35,7 @@ const {
   withReminderClaim,
   MAX_ATTEMPTS,
   RETRY_DELAY_MS,
+  SEND_TIMEOUT_MS,
 } = await import("../../src/lib/server/reminders/dispatch");
 
 beforeEach(() => {
@@ -254,5 +255,80 @@ describe("withReminderClaim", () => {
     expect(String(updateCalls()[0].payload.lastError)).toContain(
       "non-Error thrown during dispatch",
     );
+  });
+});
+
+// The reminder loop awaits withReminderClaim once per medication, in
+// sequence (reminders.ts:101). Without a bound on the send, one hung
+// provider parks every remaining medication in the tick until the
+// serverless function is killed — so the timeout is what keeps the loop
+// moving, not a nicety.
+describe("withReminderClaim — send timeout", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const claimInput = {
+    userId: "u1",
+    medicationId: "m1",
+    reminderType: "overdue" as const,
+    dedupeKey: "k1",
+  };
+
+  it("gives up on a send that never settles, and leaves the row retryable", async () => {
+    const pending = withReminderClaim(
+      claimInput,
+      { email: true, push: true },
+      // A provider that hangs: never resolves, never rejects.
+      () => new Promise<void>(() => {}),
+    );
+
+    await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS);
+    await pending;
+
+    expect(updateCalls()).toHaveLength(1);
+    expect(updateCalls()[0].payload.emailStatus).toBe("failed");
+    expect(updateCalls()[0].payload.pushStatus).toBe("failed");
+    // Nothing was delivered, so the row must stay retryable.
+    expect(updateCalls()[0].payload.status).toBe("failed");
+    expect(String(updateCalls()[0].payload.lastError)).toContain("timed out");
+  });
+
+  it("keeps a channel that already succeeded before the hang, and does not retry", async () => {
+    const pending = withReminderClaim(claimInput, { email: true, push: true }, async (out) => {
+      out.email = { ok: true, id: "msg" };
+      // ...and then the push channel hangs.
+      await new Promise<void>(() => {});
+    });
+
+    await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS);
+    await pending;
+
+    expect(updateCalls()[0].payload.emailStatus).toBe("sent");
+    expect(updateCalls()[0].payload.pushStatus).toBe("failed");
+    // deriveOverallStatus resolves to `sent` when any configured channel
+    // succeeded. That matters here: the slot is NOT retried, so the email
+    // that already went out is never sent a second time.
+    expect(updateCalls()[0].payload.status).toBe("sent");
+    expect(String(updateCalls()[0].payload.lastError)).toContain("timed out");
+  });
+
+  it("leaves a send that finishes in time completely alone", async () => {
+    const pending = withReminderClaim(claimInput, { email: true, push: true }, async (out) => {
+      out.email = { ok: true, id: "msg" };
+      out.push = { ok: true, deliveredCount: 1, attemptedCount: 1, prunedCount: 0 };
+    });
+
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+
+    // The positive control. A timeout of zero would satisfy both tests
+    // above while breaking every real send.
+    expect(updateCalls()[0].payload.status).toBe("sent");
+    expect(updateCalls()[0].payload.lastError).toBeNull();
   });
 });

@@ -85,6 +85,20 @@ export async function seedDose(overrides: Partial<typeof schema.doseLogs.$inferI
   return row;
 }
 
+/** Seed after the user. The overdue sweep INNER JOINs user_preferences,
+    so a reminder test without this row returns zero rows and passes
+    vacuously — the fixture exists to make that failure impossible. */
+export async function seedPreferences(
+  overrides: Partial<typeof schema.userPreferences.$inferInsert> = {},
+) {
+  const row: typeof schema.userPreferences.$inferInsert = {
+    userId: "u1",
+    ...overrides,
+  };
+  await database.insert(schema.userPreferences).values(row).onConflictDoNothing();
+  return row;
+}
+
 let scheduleSeq = 0;
 
 /** Seed after the medication it belongs to — real Postgres enforces the
@@ -112,5 +126,6 @@ export const pgDb = {
   seedUser,
   seedMedication,
   seedDose,
+  seedPreferences,
   seedSchedule,
 };

@@ -25,6 +25,21 @@ describe("pg-db harness", () => {
     );
   });
 
+  it("applies the per-medication notification columns", async () => {
+    const res = await pgDb.client.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_name = 'medications' and column_name like 'notif%'`,
+    );
+    const names = res.rows.map((r) => r.column_name).sort();
+    expect(names).toEqual([
+      "notifications_enabled",
+      "notify_low_inventory_email",
+      "notify_low_inventory_push",
+      "notify_overdue_email",
+      "notify_overdue_push",
+    ]);
+  });
+
   it("resolves a named IANA timezone (gates the analytics work)", async () => {
     const rows = await pgDb.db.execute(
       sql`select (timestamptz '2026-06-01 23:30:00+00' AT TIME ZONE 'Europe/London')::text as local`,

@@ -37,6 +37,9 @@ function med(overrides: Partial<ImportMedication> = {}): ImportMedication {
     notifyOverduePush: null,
     notifyLowInventoryEmail: null,
     notifyLowInventoryPush: null,
+    notifyOffsetMinutes: 0,
+    notifyRepeatEveryMinutes: null,
+    notifyMaxRepeats: 3,
     schedules: [
       {
         scheduleKind: "fixed_time",

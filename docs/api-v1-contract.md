@@ -267,6 +267,14 @@ overrides date fields to ISO strings:
   notifyOverduePush: boolean | null;
   notifyLowInventoryEmail: boolean | null;
   notifyLowInventoryPush: boolean | null;
+  // Re-notification timing. `notifyOffsetMinutes` delays the first
+  // reminder past the scheduled/overdue instant (0-720, default 0).
+  // `notifyRepeatEveryMinutes` is null for "do not repeat", otherwise an
+  // interval in minutes (1-1440) the overdue sweep re-nags at, up to
+  // `notifyMaxRepeats` times (0-10, default 3).
+  notifyOffsetMinutes: number;
+  notifyRepeatEveryMinutes: number | null;
+  notifyMaxRepeats: number;
   schedules: SerializedSchedule[];    // attached by buildSyncResponse, not part of the row itself
 }
 ```
@@ -429,7 +437,16 @@ then delegates to an existing web-app domain function (no reimplemented business
 | `wipe_dose_history`                | none (payload ignored)                                                                                                                                                                                                                                                                                                                                                                                                                               | `wipeDoseHistory`                                                                                                                                               | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
 | `wipe_archived_medications`        | none (payload ignored)                                                                                                                                                                                                                                                                                                                                                                                                                               | `wipeArchivedMedications`                                                                                                                                       | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
 
-`MedicationInput` (`medicationSchema`): `{ name: string (1-200); dosageAmount: string (/^\d+(\.\d+)?$/); dosageUnit: string (1-20); form: "tablet"|"capsule"|"liquid"|"softgel"|"patch"|"injection"|"inhaler"|"drops"|"cream"|"other"; category: "prescription"|"otc"|"supplement"; colour: string (hex); colourSecondary?: string (hex); pattern?: "solid"|"split"|"gradient"|"stripes"|"h-stripes"|"dots"|"checkerboard"|"radial" (default "solid"); scheduleType?: "scheduled"|"as_needed" (default "scheduled"); notes?: string (≤1000); scheduleIntervalHours?: string; inventoryCount?: number (≥0, coerced); inventoryAlertThreshold?: number (≥0, coerced); notificationsEnabled?: "on"|"off"|boolean (absent/anything-but-"off"/false ⇒ enabled); notifyOverdueEmail?, notifyOverduePush?, notifyLowInventoryEmail?, notifyLowInventoryPush?: "inherit"|"on"|"off"|boolean|null (default "inherit") }`.
+`MedicationInput` (`medicationSchema`): `{ name: string (1-200); dosageAmount: string (/^\d+(\.\d+)?$/); dosageUnit: string (1-20); form: "tablet"|"capsule"|"liquid"|"softgel"|"patch"|"injection"|"inhaler"|"drops"|"cream"|"other"; category: "prescription"|"otc"|"supplement"; colour: string (hex); colourSecondary?: string (hex); pattern?: "solid"|"split"|"gradient"|"stripes"|"h-stripes"|"dots"|"checkerboard"|"radial" (default "solid"); scheduleType?: "scheduled"|"as_needed" (default "scheduled"); notes?: string (≤1000); scheduleIntervalHours?: string; inventoryCount?: number (≥0, coerced); inventoryAlertThreshold?: number (≥0, coerced); notificationsEnabled?: "on"|"off"|boolean (absent/anything-but-"off"/false ⇒ enabled); notifyOverdueEmail?, notifyOverduePush?, notifyLowInventoryEmail?, notifyLowInventoryPush?: "inherit"|"on"|"off"|boolean|null (default "inherit"); notifyOffsetMinutes?: number|string (coerced, 0-720, default 0); notifyRepeatEveryMinutes?: number|string (coerced, 1-1440; omit/empty string ⇒ null/"do not repeat" — **not** nullable, see note below); notifyMaxRepeats?: number|string (coerced, 0-10, default 3) }`.
+
+**`notifyRepeatEveryMinutes` does not accept an explicit `null`, unlike the four tri-state
+notification fields above.** `SerializedMedication` (§3) emits `notifyRepeatEveryMinutes: null`
+for "do not repeat", but `medicationSchema`'s timing fields only widen `notificationsEnabled`
+and the four `notify*` overrides to also accept their own serialized shape — the three timing
+fields were not given the same treatment. A client that reads a medication with no repeat
+configured and writes it straight back through `upsert_medication_with_schedules` **must omit
+`notifyRepeatEveryMinutes` rather than send `null`**, or the whole command fails validation.
+Sending it as a numeric string or number works as documented.
 
 **`upsert_medication_with_schedules` accepts either representation of the five notification
 fields**, and this is intentional, not incidental: `SerializedMedication` (§3) emits
@@ -489,13 +506,18 @@ envelope. This is distinct from the web app's `/api/export` CSV/PDF dose export.
   plumbing, not meaningful in a standalone backup file.
 
   Each medication's five notification fields (`notificationsEnabled`, `notifyOverdueEmail`,
-  `notifyOverduePush`, `notifyLowInventoryEmail`, `notifyLowInventoryPush` — see §3) are
-  included. The web app's own JSON-backup import (`POST /import`, not part of this `/api/v1`
-  surface, but the same `version: 1` envelope) reads them back — `importMedicationSchema`
-  accepts the plain-boolean/`null` shape this export emits, and treats a missing field the
-  same as `null`/`true` (an older, pre-this-feature backup still imports cleanly). A backup
-  taken from this endpoint therefore round-trips per-medication notification settings rather
-  than silently resetting every medication to "inherit" / "enabled" on restore.
+  `notifyOverduePush`, `notifyLowInventoryEmail`, `notifyLowInventoryPush` — see §3) and three
+  re-notification timing fields (`notifyOffsetMinutes`, `notifyRepeatEveryMinutes`,
+  `notifyMaxRepeats` — see §3) are included. The web app's own JSON-backup import
+  (`POST /import`, not part of this `/api/v1` surface, but the same `version: 1` envelope) reads
+  them all back — `importMedicationSchema` accepts the plain-boolean/`null` shape the
+  notification fields are exported as and the plain-number/`null` shape the timing fields are
+  exported as, and treats a missing field the same as the column default (`null`/`true` for
+  notifications; `0`/`null`/`3` for timing). A backup taken from this endpoint therefore
+  round-trips both sets of per-medication settings rather than silently resetting every
+  medication to "inherit"/"enabled"/defaults on restore. (This import-schema round trip is
+  distinct from the `upsert_medication_with_schedules` gap noted in §4 — `importMedicationSchema`
+  does accept `notifyRepeatEveryMinutes: null`.)
 
 ## 6. Error shapes
 

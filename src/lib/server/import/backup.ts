@@ -100,6 +100,10 @@ export function parseBackup(rawText: string): ParseResult {
     notifyOverduePush: med.notifyOverduePush ?? null,
     notifyLowInventoryEmail: med.notifyLowInventoryEmail ?? null,
     notifyLowInventoryPush: med.notifyLowInventoryPush ?? null,
+    // Same collapse as above, matching apply.ts's column defaults.
+    notifyOffsetMinutes: med.notifyOffsetMinutes ?? 0,
+    notifyRepeatEveryMinutes: med.notifyRepeatEveryMinutes ?? null,
+    notifyMaxRepeats: med.notifyMaxRepeats ?? 3,
     // `scheduleKind` and its payload are validated independently, so a
     // hand-edited file can carry a fixed_time row with no timeOfDay (or
     // an interval row with no intervalHours). Rather than writing a row

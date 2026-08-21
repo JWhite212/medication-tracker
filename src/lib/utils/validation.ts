@@ -466,6 +466,13 @@ const importMedicationSchema = z.object({
   notifyOverduePush: z.boolean().nullable().optional(),
   notifyLowInventoryEmail: z.boolean().nullable().optional(),
   notifyLowInventoryPush: z.boolean().nullable().optional(),
+  // Same "predates the feature" reasoning as the five fields above — no
+  // `.default()`, so an older backup without these keys still parses,
+  // and apply.ts supplies the column defaults (0 / null / 3) at insert
+  // time.
+  notifyOffsetMinutes: z.number().int().optional(),
+  notifyRepeatEveryMinutes: z.number().int().nullable().optional(),
+  notifyMaxRepeats: z.number().int().optional(),
   schedules: z.array(importScheduleSchema).max(IMPORT_MAX_SCHEDULES_PER_MED).optional().default([]),
 });
 

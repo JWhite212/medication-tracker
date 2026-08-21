@@ -194,6 +194,13 @@
       formValues["notifyLowInventoryPush"],
       medication?.notifyLowInventoryPush,
     )}
+    offsetMinutes={formValues["notifyOffsetMinutes"] ??
+      medication?.notifyOffsetMinutes?.toString() ??
+      "0"}
+    repeatEveryMinutes={formValues["notifyRepeatEveryMinutes"] ??
+      medication?.notifyRepeatEveryMinutes?.toString() ??
+      ""}
+    maxRepeats={formValues["notifyMaxRepeats"] ?? medication?.notifyMaxRepeats?.toString() ?? "3"}
     {errors}
   />
 

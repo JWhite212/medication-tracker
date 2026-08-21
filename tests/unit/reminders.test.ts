@@ -568,8 +568,15 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
       inventoryAlertThreshold: 7,
       userEmail: "user@example.com",
       userEmailVerified: true,
+      userOverdueEmailReminders: true,
+      userOverduePushReminders: true,
       userLowInventoryEmailAlerts: true,
       userLowInventoryPushAlerts: false,
+      medNotificationsEnabled: true,
+      medNotifyOverdueEmail: null,
+      medNotifyOverduePush: null,
+      medNotifyLowInventoryEmail: null,
+      medNotifyLowInventoryPush: null,
       ...overrides,
     });
   }

@@ -200,8 +200,15 @@ export async function checkLowInventoryMedications() {
       inventoryAlertThreshold: medications.inventoryAlertThreshold,
       userEmail: users.email,
       userEmailVerified: users.emailVerified,
+      userOverdueEmailReminders: userPreferences.overdueEmailReminders,
+      userOverduePushReminders: userPreferences.overduePushReminders,
       userLowInventoryEmailAlerts: userPreferences.lowInventoryEmailAlerts,
       userLowInventoryPushAlerts: userPreferences.lowInventoryPushAlerts,
+      medNotificationsEnabled: medications.notificationsEnabled,
+      medNotifyOverdueEmail: medications.notifyOverdueEmail,
+      medNotifyOverduePush: medications.notifyOverduePush,
+      medNotifyLowInventoryEmail: medications.notifyLowInventoryEmail,
+      medNotifyLowInventoryPush: medications.notifyLowInventoryPush,
     })
     .from(medications)
     .innerJoin(users, eq(medications.userId, users.id))
@@ -211,9 +218,12 @@ export async function checkLowInventoryMedications() {
         eq(medications.isArchived, false),
         isNotNull(medications.inventoryCount),
         isNotNull(medications.inventoryAlertThreshold),
+        eq(medications.notificationsEnabled, true),
+        // coalesce, not a bare column test — see the identical note on
+        // the overdue sweep's WHERE above.
         or(
-          eq(userPreferences.lowInventoryEmailAlerts, true),
-          eq(userPreferences.lowInventoryPushAlerts, true),
+          sql`coalesce(${medications.notifyLowInventoryEmail}, ${userPreferences.lowInventoryEmailAlerts})`,
+          sql`coalesce(${medications.notifyLowInventoryPush}, ${userPreferences.lowInventoryPushAlerts})`,
         ),
         sql`${medications.inventoryCount} <= ${medications.inventoryAlertThreshold}`,
       ),
@@ -222,9 +232,25 @@ export async function checkLowInventoryMedications() {
   const emailGloballyConfigured = isEmailConfigured();
 
   for (const med of lowMeds) {
+    const channels = resolveChannels(
+      {
+        notificationsEnabled: med.medNotificationsEnabled,
+        notifyOverdueEmail: med.medNotifyOverdueEmail,
+        notifyOverduePush: med.medNotifyOverduePush,
+        notifyLowInventoryEmail: med.medNotifyLowInventoryEmail,
+        notifyLowInventoryPush: med.medNotifyLowInventoryPush,
+      },
+      {
+        overdueEmailReminders: med.userOverdueEmailReminders,
+        overduePushReminders: med.userOverduePushReminders,
+        lowInventoryEmailAlerts: med.userLowInventoryEmailAlerts,
+        lowInventoryPushAlerts: med.userLowInventoryPushAlerts,
+      },
+    );
+
     const emailWillFire =
-      med.userLowInventoryEmailAlerts && emailGloballyConfigured && med.userEmailVerified;
-    const pushOptIn = med.userLowInventoryPushAlerts;
+      channels.lowInventoryEmail && emailGloballyConfigured && med.userEmailVerified;
+    const pushOptIn = channels.lowInventoryPush;
 
     // Determine whether push CAN actually fire (opt-in AND active
     // subscription) BEFORE the pre-claim gate. Treating opt-in alone

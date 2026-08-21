@@ -154,20 +154,20 @@ vi.mock("$lib/server/email", () => ({
 const pushResults: Array<
   { ok: true; deliveredCount: number } | { ok: false; reason: string; message: string }
 > = [];
-const sentPushes: Array<{ userId: string; tag: string }> = [];
+const sentPushes: Array<{ userId: string; tag: string; renotify?: boolean }> = [];
 let pushSubscribersByUser: Record<string, boolean> = {};
 // Tests opt into throwing behaviour by setting these to an Error.
 let nextPushSubsThrows: Error | null = null;
 let nextSendPushThrows: Error | null = null;
 
 vi.mock("$lib/server/push", () => ({
-  sendPushNotification: async (userId: string, payload: { tag: string }) => {
+  sendPushNotification: async (userId: string, payload: { tag: string; renotify?: boolean }) => {
     if (nextSendPushThrows) {
       const err = nextSendPushThrows;
       nextSendPushThrows = null;
       throw err;
     }
-    sentPushes.push({ userId, tag: payload.tag });
+    sentPushes.push({ userId, tag: payload.tag, renotify: payload.renotify });
     return pushResults.shift() ?? { ok: true, deliveredCount: 1 };
   },
   hasPushSubscriptions: async (userId: string) => {
@@ -238,6 +238,8 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
     expect(sentEmails[0].to).toBe("user@example.com");
     expect(sentPushes).toHaveLength(1);
     expect(sentPushes[0].tag).toBe("overdue-med-A");
+    // A fresh slot's first send is nagIndex 0 — no prior claim to repeat.
+    expect(sentPushes[0].renotify).toBe(false);
     expect(updateCaptures[0].status).toBe("sent");
   });
 

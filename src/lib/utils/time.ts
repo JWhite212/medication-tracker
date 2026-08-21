@@ -1,5 +1,3 @@
-import { parseIntervalHours } from "$lib/utils/schedule-rate";
-
 export function formatTimeSince(date: Date): string {
   const now = Date.now();
   const diffMs = now - date.getTime();
@@ -68,31 +66,6 @@ export function parseDateTimeLocal(datetimeLocal: string, timezone: string): Dat
   );
   const offsetMs = tzTime.getTime() - asUtc.getTime();
   return new Date(asUtc.getTime() - offsetMs);
-}
-
-/**
- * Calculate the number of days until a medication refill is needed.
- * Returns null if inventory is not tracked or no consumption signal is available.
- *
- * For scheduled medications the schedule itself is the primary signal — a 24h
- * interval means 1 dose/day regardless of dose history, so a freshly added
- * medication with 60 doses and a 24h interval reports 60 days. PRN/as-needed
- * medications fall back to the 30-day historical average.
- */
-export function calculateDaysUntilRefill(
-  inventoryCount: number | null,
-  avgDailyConsumption: number,
-  scheduleType?: string | null,
-  scheduleIntervalHours?: number | string | null,
-): number | null {
-  if (inventoryCount === null) return null;
-
-  const hours = parseIntervalHours(scheduleIntervalHours);
-  const scheduledDaily = scheduleType === "scheduled" && hours !== null ? 24 / hours : 0;
-
-  const dailyRate = scheduledDaily > 0 ? scheduledDaily : avgDailyConsumption;
-  if (dailyRate <= 0) return null;
-  return Math.floor(inventoryCount / dailyRate);
 }
 
 /**

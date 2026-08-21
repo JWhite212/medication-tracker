@@ -60,6 +60,19 @@
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
+        {#if medication.notificationsEnabled === false}
+          <!-- Explicit === false, not !medication.notificationsEnabled: a row
+               that reaches this component without the field (an older cached
+               payload, or a narrowed projection added later) would be
+               undefined, and the falsy form would render "Muted" on every
+               medication. This fails safe instead. -->
+          <span
+            class="bg-glass text-text-secondary rounded-full px-2 py-1 text-xs font-medium"
+            title="Notifications are off for this medication"
+          >
+            Muted
+          </span>
+        {/if}
         {#if medication.refillSeverity && medication.refillSeverity !== "ok"}
           <span
             class="rounded-full px-2 py-1 text-xs font-medium {refillChipClass(

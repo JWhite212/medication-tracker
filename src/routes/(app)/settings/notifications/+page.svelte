@@ -276,6 +276,22 @@
     </form>
   </GlassCard>
 
+  {#if data.mutedMedications.length > 0}
+    <GlassCard>
+      <h2 class="mb-2 text-lg font-semibold">Muted medications</h2>
+      <p class="text-text-secondary mb-3 text-sm">
+        These medications ignore the settings above. Change them on the medication itself.
+      </p>
+      <ul class="space-y-1 text-sm">
+        {#each data.mutedMedications as med (med.id)}
+          <li>
+            <a class="hover:text-accent underline" href="/medications/{med.id}">{med.name}</a>
+          </li>
+        {/each}
+      </ul>
+    </GlassCard>
+  {/if}
+
   {#if pushSupported}
     <GlassCard>
       <div class="flex items-center justify-between">

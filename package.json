@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
+    "@electric-sql/pglite": "^0.5.5",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.59.1",
     "@sveltejs/adapter-vercel": "^6.3.3",

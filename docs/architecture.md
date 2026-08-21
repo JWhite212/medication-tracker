@@ -36,6 +36,10 @@ flowchart LR
   Vercel Cron in `vercel.json` as a guaranteed daily backstop, and the
   `reminder-tick` GitHub Actions schedule every 30 minutes for timely
   delivery, because the Hobby plan caps Vercel crons at one run a day.
+  The GitHub Actions schedule only runs 06:00–22:59 UTC
+  (`.github/workflows/reminder-tick.yml`), so the Vercel cron is the
+  sole backstop through the overnight gap — the reason a nag's ordinal
+  clamps at `notifyMaxRepeats` rather than being cut off outright.
   Both paths authenticate with the same `CRON_SECRET` bearer token, and
   the dispatcher dedupes on a per-slot key so overlapping runs are
   safe.

@@ -437,29 +437,22 @@ then delegates to an existing web-app domain function (no reimplemented business
 | `wipe_dose_history`                | none (payload ignored)                                                                                                                                                                                                                                                                                                                                                                                                                               | `wipeDoseHistory`                                                                                                                                               | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
 | `wipe_archived_medications`        | none (payload ignored)                                                                                                                                                                                                                                                                                                                                                                                                                               | `wipeArchivedMedications`                                                                                                                                       | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
 
-`MedicationInput` (`medicationSchema`): `{ name: string (1-200); dosageAmount: string (/^\d+(\.\d+)?$/); dosageUnit: string (1-20); form: "tablet"|"capsule"|"liquid"|"softgel"|"patch"|"injection"|"inhaler"|"drops"|"cream"|"other"; category: "prescription"|"otc"|"supplement"; colour: string (hex); colourSecondary?: string (hex); pattern?: "solid"|"split"|"gradient"|"stripes"|"h-stripes"|"dots"|"checkerboard"|"radial" (default "solid"); scheduleType?: "scheduled"|"as_needed" (default "scheduled"); notes?: string (≤1000); scheduleIntervalHours?: string; inventoryCount?: number (≥0, coerced); inventoryAlertThreshold?: number (≥0, coerced); notificationsEnabled?: "on"|"off"|boolean (absent/anything-but-"off"/false ⇒ enabled); notifyOverdueEmail?, notifyOverduePush?, notifyLowInventoryEmail?, notifyLowInventoryPush?: "inherit"|"on"|"off"|boolean|null (default "inherit"); notifyOffsetMinutes?: number|string (coerced, 0-720, default 0); notifyRepeatEveryMinutes?: number|string (coerced, 1-1440; omit/empty string ⇒ null/"do not repeat" — **not** nullable, see note below); notifyMaxRepeats?: number|string (coerced, 0-10, default 3) }`.
-
-**`notifyRepeatEveryMinutes` does not accept an explicit `null`, unlike the four tri-state
-notification fields above.** `SerializedMedication` (§3) emits `notifyRepeatEveryMinutes: null`
-for "do not repeat", but `medicationSchema`'s timing fields only widen `notificationsEnabled`
-and the four `notify*` overrides to also accept their own serialized shape — the three timing
-fields were not given the same treatment. A client that reads a medication with no repeat
-configured and writes it straight back through `upsert_medication_with_schedules` **must omit
-`notifyRepeatEveryMinutes` rather than send `null`**, or the whole command fails validation.
-Sending it as a numeric string or number works as documented.
+`MedicationInput` (`medicationSchema`): `{ name: string (1-200); dosageAmount: string (/^\d+(\.\d+)?$/); dosageUnit: string (1-20); form: "tablet"|"capsule"|"liquid"|"softgel"|"patch"|"injection"|"inhaler"|"drops"|"cream"|"other"; category: "prescription"|"otc"|"supplement"; colour: string (hex); colourSecondary?: string (hex); pattern?: "solid"|"split"|"gradient"|"stripes"|"h-stripes"|"dots"|"checkerboard"|"radial" (default "solid"); scheduleType?: "scheduled"|"as_needed" (default "scheduled"); notes?: string (≤1000); scheduleIntervalHours?: string; inventoryCount?: number (≥0, coerced); inventoryAlertThreshold?: number (≥0, coerced); notificationsEnabled?: "on"|"off"|boolean (absent/anything-but-"off"/false ⇒ enabled); notifyOverdueEmail?, notifyOverduePush?, notifyLowInventoryEmail?, notifyLowInventoryPush?: "inherit"|"on"|"off"|boolean|null (default "inherit"); notifyOffsetMinutes?: number|string (coerced, 0-720, default 0); notifyRepeatEveryMinutes?: number|string|null (coerced, 1-1440; omit/empty string/null ⇒ null/"do not repeat"); notifyMaxRepeats?: number|string (coerced, 0-10, default 3) }`.
 
 **`upsert_medication_with_schedules` accepts either representation of the five notification
-fields**, and this is intentional, not incidental: `SerializedMedication` (§3) emits
-`notificationsEnabled` as a plain `boolean` and the four `notify*` fields as `boolean | null`,
-while the web form submits the tri-state fields as the strings `"inherit"`/`"on"`/`"off"` and
-the kill switch as `"on"`/`"off"`/absent. `medicationSchema` accepts both shapes for every one
-of these five fields, normalizing to `boolean` (kill switch) or `boolean | null` (the four
-overrides) either way. This is what lets a client read a medication from `/sync` or
-`/export/full` and write it straight back through `upsert_medication_with_schedules` without
-re-encoding it into form strings first — **`null` and omission both mean "inherit the
-account-wide setting"**, exactly as they do on the read side. Sending a stale/partial
-`MedicationInput` that simply omits these five fields also means "inherit" / "enabled", the
-same as a pre-this-feature client would get.
+fields, and of `notifyRepeatEveryMinutes`**, and this is intentional, not incidental:
+`SerializedMedication` (§3) emits `notificationsEnabled` as a plain `boolean`, the four `notify*`
+fields as `boolean | null`, and `notifyRepeatEveryMinutes` as `number | null`, while the web form
+submits the tri-state fields as the strings `"inherit"`/`"on"`/`"off"`, the kill switch as
+`"on"`/`"off"`/absent, and the repeat interval as a numeric string or an empty string. `medicationSchema`
+accepts both shapes for every one of these six fields, normalizing to `boolean` (kill switch),
+`boolean | null` (the four overrides), or `number | null` (the repeat interval) either way. This
+is what lets a client read a medication from `/sync` or `/export/full` and write it straight
+back through `upsert_medication_with_schedules` without re-encoding it into form strings first —
+**`null` and omission both mean "inherit the account-wide setting" for the four overrides, and
+"do not repeat" for `notifyRepeatEveryMinutes`**, exactly as they do on the read side. Sending a
+stale/partial `MedicationInput` that simply omits these fields also means "inherit"/"enabled"/"do
+not repeat", the same as a pre-this-feature client would get.
 
 `ScheduleInput` (`scheduleRowSchema`, discriminated union on `scheduleKind`):
 
@@ -515,9 +508,7 @@ envelope. This is distinct from the web app's `/api/export` CSV/PDF dose export.
   exported as, and treats a missing field the same as the column default (`null`/`true` for
   notifications; `0`/`null`/`3` for timing). A backup taken from this endpoint therefore
   round-trips both sets of per-medication settings rather than silently resetting every
-  medication to "inherit"/"enabled"/defaults on restore. (This import-schema round trip is
-  distinct from the `upsert_medication_with_schedules` gap noted in §4 — `importMedicationSchema`
-  does accept `notifyRepeatEveryMinutes: null`.)
+  medication to "inherit"/"enabled"/defaults on restore.
 
 ## 6. Error shapes
 

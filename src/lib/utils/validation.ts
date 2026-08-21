@@ -55,9 +55,9 @@ export const MAX_NAG_REPEATS = 10;
  * of zero minutes.
  */
 const optionalMinutesField = z
-  .union([z.string(), z.number(), z.undefined()])
+  .union([z.string(), z.number(), z.null(), z.undefined()])
   .transform((v) => {
-    if (v === undefined) return null;
+    if (v === undefined || v === null) return null;
     const s = typeof v === "number" ? String(v) : v.trim();
     return s === "" ? null : Number(s);
   })

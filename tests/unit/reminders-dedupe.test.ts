@@ -347,10 +347,22 @@ describe("overdue dedupe key — pinned contract (pre-nag-ordinal)", () => {
     expect(key).toBe("u1:m1:overdue:fixed_time:s1:2026-05-01T08:00:00.000Z");
   });
 
-  it("one slot yields exactly one key, so a slot reminds once", () => {
-    const a = buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", slot);
-    const b = buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", slot);
-    expect(a).toBe(b);
+  it("one slot yields exactly one key however far `now` advances", () => {
+    // The #110 invariant, exercised directly against the key rather than
+    // against two hand-picked instants: sweep `now` across the rest of
+    // the slot's local day and confirm every resulting key collapses to
+    // the same one. A key that churned with `now` would produce distinct
+    // Set members here instead of one.
+    const row = fixedTimeRow({ timeOfDay: "08:00", lastEventAt: null });
+    const keys = new Set<string>();
+    for (let minutesAfterSlot = 0; minutesAfterSlot <= 14 * 60; minutesAfterSlot += 30) {
+      const now = new Date(slot.getTime() + minutesAfterSlot * 60_000);
+      const overdueSlot = computeOverdueSlot(row, now);
+      if (overdueSlot === null) continue;
+      keys.add(buildOverdueDedupeKey("u1", "m1", "fixed_time", "s1", overdueSlot));
+    }
+    expect(keys.size).toBe(1);
+    expect([...keys]).toEqual(["u1:m1:overdue:fixed_time:s1:2026-05-01T08:00:00.000Z"]);
   });
 
   it("a fixed-time slot stays fixed as `now` advances", () => {

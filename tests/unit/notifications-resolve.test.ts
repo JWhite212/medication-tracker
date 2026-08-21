@@ -59,6 +59,18 @@ describe("resolveChannels", () => {
     expect(resolveChannels(med, ALL_GLOBAL_OFF).overduePush).toBe(true);
   });
 
+  it("an explicit false low-inventory email override beats a true global", () => {
+    // Mirrors the overdueEmail `||` bug case. `false || true` is true,
+    // which would silently re-enable an email the user explicitly muted.
+    const med = { ...NO_OVERRIDES, notifyLowInventoryEmail: false };
+    expect(resolveChannels(med, ALL_GLOBAL_ON).lowInventoryEmail).toBe(false);
+  });
+
+  it("an explicit false low-inventory push override beats a true global", () => {
+    const med = { ...NO_OVERRIDES, notifyLowInventoryPush: false };
+    expect(resolveChannels(med, ALL_GLOBAL_ON).lowInventoryPush).toBe(false);
+  });
+
   it("overrides are independent — one does not leak into another", () => {
     const med = { ...NO_OVERRIDES, notifyOverdueEmail: false };
     const out = resolveChannels(med, ALL_GLOBAL_ON);

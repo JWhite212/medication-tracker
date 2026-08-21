@@ -35,6 +35,7 @@ Server-first SvelteKit app (Svelte 5 runes). Pages load via `+page.server.ts`, m
 - Inventory auto-decrements on dose log, auto-restores on delete
 - Refill forecasting lives in `src/lib/server/inventory.ts` — single source of truth for daily-rate selection (schedules first, legacy columns next, 30-day history for PRN). Both `dashboard/+page.server.ts` and `medications/+page.server.ts` consume it. The same module owns severity classification (`critical ≤3d`, `warning ≤7d`, `watch ≤14d`).
 - Analytics insights are deterministic — `buildInsights` in `src/lib/server/analytics.ts` is a pure function over already-computed stats. Add new rules by writing a small predicate that returns `Insight | null`; never inject prescriptive medical wording.
+- **`src/lib/server/analytics/page-data.ts` owns the analytics page's composition.** `resolveAnalyticsQuery` turns the query string into the current and previous windows; `composeAnalyticsPageData` builds the payload from already-fetched results. `analytics/+page.server.ts` is I/O only — resolve, fetch, compose — so new derived values belong in the module, not back in the `load`. It sits beside `analytics/lifecycle.ts` rather than in `analytics.ts`, which is already 720 lines of queries plus pure helpers.
 
 ## Reusable Components
 

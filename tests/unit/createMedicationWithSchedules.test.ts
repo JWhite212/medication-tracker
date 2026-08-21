@@ -33,6 +33,12 @@ const baseInput = {
   // until we drop it (post P3 cycle); leave it undefined to mirror a
   // PRN form submit.
   scheduleIntervalHours: undefined,
+  // Required on MedicationInput because the Zod fields carry defaults.
+  notificationsEnabled: true,
+  notifyOverdueEmail: null,
+  notifyOverduePush: null,
+  notifyLowInventoryEmail: null,
+  notifyLowInventoryPush: null,
 };
 
 beforeEach(() => {
@@ -94,5 +100,34 @@ describe("createMedicationWithSchedules", () => {
 
     const tables = inserts().map((i) => i.table);
     expect(tables).toEqual(["medications", "audit_logs"]);
+  });
+});
+
+describe("createMedicationWithSchedules — notification settings", () => {
+  it("persists the overrides on the inserted row", async () => {
+    await createMedicationWithSchedules(
+      "u1",
+      { ...baseInput, notificationsEnabled: false, notifyOverdueEmail: true },
+      [],
+    );
+
+    const med = inserts()[0].values as Record<string, unknown>;
+    expect(med.notificationsEnabled).toBe(false);
+    expect(med.notifyOverdueEmail).toBe(true);
+  });
+
+  it("keeps null distinct from false on the way to the database", async () => {
+    // A `?? false` or `|| null` in the enumeration would collapse the
+    // tri-state at the last possible moment, after every other layer
+    // took care to preserve it.
+    await createMedicationWithSchedules(
+      "u1",
+      { ...baseInput, notifyOverduePush: null, notifyLowInventoryEmail: false },
+      [],
+    );
+
+    const med = inserts()[0].values as Record<string, unknown>;
+    expect(med.notifyOverduePush).toBeNull();
+    expect(med.notifyLowInventoryEmail).toBe(false);
   });
 });

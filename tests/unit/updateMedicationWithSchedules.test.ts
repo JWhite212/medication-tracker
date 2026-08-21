@@ -46,6 +46,12 @@ const baseInput = {
   pattern: "solid" as const,
   scheduleType: "scheduled" as const,
   scheduleIntervalHours: undefined,
+  // Required on MedicationInput because the Zod fields carry defaults.
+  notificationsEnabled: true,
+  notifyOverdueEmail: null,
+  notifyOverduePush: null,
+  notifyLowInventoryEmail: null,
+  notifyLowInventoryPush: null,
 };
 
 beforeEach(() => {

@@ -1,5 +1,5 @@
 import { fail } from "@sveltejs/kit";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { sha256 } from "@oslojs/crypto/sha2";
 import { encodeHexLowerCase } from "@oslojs/encoding";
@@ -14,7 +14,7 @@ import {
 import { isEmailConfigured, sendVerificationEmail } from "$lib/server/email";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { db } from "$lib/server/db";
-import { users, emailVerificationTokens } from "$lib/server/db/schema";
+import { users, emailVerificationTokens, medications } from "$lib/server/db/schema";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -29,12 +29,30 @@ export const load: PageServerLoad = async ({ locals }) => {
     .where(eq(users.id, locals.user!.id))
     .limit(1);
 
+  // The account-wide toggles above imply they are the whole story about
+  // notifications, and they aren't: a muted medication ignores them
+  // entirely. Surface which medications opted out so a user who muted one
+  // months ago can find the answer here instead of opening every
+  // medication in turn.
+  const mutedMedications = await db
+    .select({ id: medications.id, name: medications.name })
+    .from(medications)
+    .where(
+      and(
+        eq(medications.userId, locals.user!.id),
+        eq(medications.isArchived, false),
+        eq(medications.notificationsEnabled, false),
+      ),
+    )
+    .orderBy(medications.name);
+
   return {
     preferences: prefs,
     vapidPublicKey: getVapidPublicKey(),
     emailVerified: user?.emailVerified ?? false,
     emailConfigured: isEmailConfigured(),
     pushHealth: await getPushHealth(locals.user!.id),
+    mutedMedications,
   };
 };
 

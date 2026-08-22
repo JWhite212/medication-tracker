@@ -20,7 +20,15 @@ import type { RequestHandler } from "./$types";
 //
 // 60 is the Hobby maximum. If a build ever rejects this value, the error
 // names the cap for the current plan — lower it to that, don't delete it.
-export const config = { maxDuration: 60 };
+const MAX_DURATION_SECONDS = 60;
+export const config = { maxDuration: MAX_DURATION_SECONDS };
+
+// Headroom left unspent so the response can be serialised and returned
+// inside the limit. Without it the heartbeat could spend the last of the
+// budget and have the platform record a tick that successfully sent
+// every reminder as a failed request — a false alarm that sends whoever
+// is debugging it looking in entirely the wrong place.
+const RESPONSE_RESERVE_MS = 1500;
 
 function safeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -28,6 +36,7 @@ function safeCompare(a: string, b: string): boolean {
 }
 
 export const GET: RequestHandler = async ({ request }) => {
+  const startedAt = Date.now();
   const cronSecret = env.CRON_SECRET;
   if (!cronSecret) error(500, "CRON_SECRET not configured");
   const authHeader = request.headers.get("authorization") ?? "";
@@ -51,7 +60,8 @@ export const GET: RequestHandler = async ({ request }) => {
   // strongest health signal the system produces: it proves the database
   // is reachable and writable and that the reminder sweeps completed,
   // which no unauthenticated liveness probe can establish.
-  const heartbeat = await pingHeartbeat();
+  const budgetMs = MAX_DURATION_SECONDS * 1000 - (Date.now() - startedAt) - RESPONSE_RESERVE_MS;
+  const heartbeat = await pingHeartbeat({ budgetMs });
 
   return json({ ok: true, heartbeat: heartbeat.status });
 };

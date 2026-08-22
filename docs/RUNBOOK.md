@@ -195,7 +195,16 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
   https://medication-tracker.jamiewhite.site/api/cron/reminders
 # → {"ok":true,"heartbeat":"sent"}      configured and reaching the provider
 # → {"ok":true,"heartbeat":"disabled"}  HEARTBEAT_URL not set
+# → {"ok":true,"heartbeat":"failed"}    set, but the provider did not answer
+# → {"ok":true,"heartbeat":"skipped"}   tick ran too close to maxDuration
 ```
+
+`skipped` is the interesting one. It means the tick finished its work
+but had under 250ms of function budget left, so the ping was not
+attempted rather than risk overrunning `maxDuration` and having a tick
+that sent every reminder recorded as a failed request. The switch still
+alerts, which is correct — a tick that close to its ceiling is unhealthy.
+Treat it as a signal to look at why the tick is taking ~60s.
 
 A ping failure never fails the tick. Sending medication reminders is the
 job; monitoring is not allowed to interfere with it.

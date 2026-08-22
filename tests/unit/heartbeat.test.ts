@@ -5,7 +5,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const envState: Record<string, string | undefined> = {};
 vi.mock("$env/dynamic/private", () => ({ env: envState }));
 
-const { pingHeartbeat, HEARTBEAT_TIMEOUT_MS } = await import("$lib/server/heartbeat");
+const { pingHeartbeat, HEARTBEAT_TIMEOUT_MS, MIN_PING_BUDGET_MS } =
+  await import("$lib/server/heartbeat");
 
 const VALID = "https://hc-ping.com/0e5f9c2a-0000-4000-8000-000000000000";
 
@@ -34,7 +35,7 @@ describe("when HEARTBEAT_URL is not configured", () => {
     if (value !== undefined) envState.HEARTBEAT_URL = value;
     const fetchImpl = vi.fn();
 
-    const result = await pingHeartbeat(fetchImpl as unknown as typeof fetch);
+    const result = await pingHeartbeat({ fetchImpl: fetchImpl as unknown as typeof fetch });
 
     expect(result).toEqual({ status: "disabled" });
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -49,7 +50,7 @@ describe("when HEARTBEAT_URL is unusable", () => {
     envState.HEARTBEAT_URL = value;
     const fetchImpl = vi.fn();
 
-    const result = await pingHeartbeat(fetchImpl as unknown as typeof fetch);
+    const result = await pingHeartbeat({ fetchImpl: fetchImpl as unknown as typeof fetch });
 
     expect(result.status).toBe("invalid-url");
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -61,7 +62,7 @@ describe("when HEARTBEAT_URL is unusable", () => {
     envState.HEARTBEAT_URL = "http://hc-ping.com/abc";
     const fetchImpl = vi.fn();
 
-    const result = await pingHeartbeat(fetchImpl as unknown as typeof fetch);
+    const result = await pingHeartbeat({ fetchImpl: fetchImpl as unknown as typeof fetch });
 
     expect(result).toEqual({ status: "invalid-url", reason: "not-https" });
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -75,13 +76,13 @@ describe("when the ping succeeds", () => {
 
   it("reports sent", async () => {
     const fetchImpl = vi.fn(async () => okResponse());
-    const result = await pingHeartbeat(fetchImpl as unknown as typeof fetch);
+    const result = await pingHeartbeat({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(result).toEqual({ status: "sent" });
   });
 
   it("issues a GET to the configured URL", async () => {
     const fetchImpl = vi.fn(async () => okResponse());
-    await pingHeartbeat(fetchImpl as unknown as typeof fetch);
+    await pingHeartbeat({ fetchImpl: fetchImpl as unknown as typeof fetch });
 
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [URL, RequestInit];
     expect(url.toString()).toBe(VALID);
@@ -94,7 +95,7 @@ describe("when the ping succeeds", () => {
     // behind it. Asserting the signal exists is what stops someone
     // "simplifying" the timeout away.
     const fetchImpl = vi.fn(async () => okResponse());
-    await pingHeartbeat(fetchImpl as unknown as typeof fetch);
+    await pingHeartbeat({ fetchImpl: fetchImpl as unknown as typeof fetch });
 
     const [, init] = fetchImpl.mock.calls[0] as unknown as [URL, RequestInit];
     expect(init.signal).toBeInstanceOf(AbortSignal);
@@ -114,7 +115,7 @@ describe("when the ping fails", () => {
   // genuine reminder outage caused entirely by the monitoring.
   it("swallows a non-2xx response", async () => {
     const fetchImpl = vi.fn(async () => new Response("nope", { status: 500 }));
-    const result = await pingHeartbeat(fetchImpl as unknown as typeof fetch);
+    const result = await pingHeartbeat({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(result).toEqual({ status: "failed", reason: "http-500" });
   });
 
@@ -122,7 +123,7 @@ describe("when the ping fails", () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError("network down");
     });
-    const result = await pingHeartbeat(fetchImpl as unknown as typeof fetch);
+    const result = await pingHeartbeat({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(result).toEqual({ status: "failed", reason: "TypeError" });
   });
 
@@ -130,7 +131,7 @@ describe("when the ping fails", () => {
     const fetchImpl = vi.fn(async () => {
       throw new DOMException("The operation was aborted.", "TimeoutError");
     });
-    const result = await pingHeartbeat(fetchImpl as unknown as typeof fetch);
+    const result = await pingHeartbeat({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(result).toEqual({ status: "failed", reason: "TimeoutError" });
   });
 
@@ -138,7 +139,73 @@ describe("when the ping fails", () => {
     ["a thrown string", () => Promise.reject("boom")],
     ["a rejected null", () => Promise.reject(null)],
   ])("never rejects, even on %s", async (_label, impl) => {
-    const result = await pingHeartbeat(impl as unknown as typeof fetch);
+    const result = await pingHeartbeat({ fetchImpl: impl as unknown as typeof fetch });
     expect(result.status).toBe("failed");
+  });
+});
+
+describe("when the caller is sharing a function budget", () => {
+  beforeEach(() => {
+    envState.HEARTBEAT_URL = VALID;
+  });
+
+  /** Rejects with the abort reason instead of resolving, so the request's own bound ends it. */
+  function fetchThatOnlyEndsOnAbort() {
+    return vi.fn(
+      (_url: unknown, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+  }
+
+  it.each([
+    ["below the floor", MIN_PING_BUDGET_MS - 1],
+    ["zero", 0],
+    ["already overspent", -5000],
+  ])("skips without sending when the budget is %s", async (_label, budgetMs) => {
+    // Skipping still produces no ping and therefore still alerts, which
+    // is correct — a tick this close to its ceiling is unhealthy. What
+    // it avoids is *also* overrunning maxDuration and recording a tick
+    // that sent every reminder as a failed request.
+    const fetchImpl = vi.fn();
+
+    const result = await pingHeartbeat({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      budgetMs,
+    });
+
+    expect(result).toEqual({ status: "skipped", reason: "insufficient-budget" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("sends normally when the budget is ample", async () => {
+    const fetchImpl = vi.fn(async () => okResponse());
+
+    const result = await pingHeartbeat({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      budgetMs: 30_000,
+    });
+
+    expect(result).toEqual({ status: "sent" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("bounds the request by the budget when that is tighter than the timeout", async () => {
+    // Real elapsed time rather than fake timers: AbortSignal.timeout is
+    // driven by the runtime's own timer, and faking all timers is what
+    // stalls it. A budget of 300ms must end the request in roughly that,
+    // not in HEARTBEAT_TIMEOUT_MS — otherwise the guard is decorative.
+    const fetchImpl = fetchThatOnlyEndsOnAbort();
+    const startedAt = Date.now();
+
+    const result = await pingHeartbeat({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      budgetMs: 300,
+    });
+
+    const elapsed = Date.now() - startedAt;
+    expect(result.status).toBe("failed");
+    expect(elapsed).toBeLessThan(HEARTBEAT_TIMEOUT_MS);
   });
 });

@@ -18,7 +18,7 @@
     name="description"
     content="Sign in to MedTracker to log doses, view live medication timers, and track your adherence."
   />
-  <link rel="canonical" href="https://medication-tracker-jw.vercel.app/auth/login" />
+  <link rel="canonical" href="https://medication-tracker.jamiewhite.site/auth/login" />
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">

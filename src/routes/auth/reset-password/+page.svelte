@@ -11,7 +11,7 @@
     name="description"
     content="Reset your MedTracker password. Enter your email to receive a secure password reset link."
   />
-  <link rel="canonical" href="https://medication-tracker-jw.vercel.app/auth/reset-password" />
+  <link rel="canonical" href="https://medication-tracker.jamiewhite.site/auth/reset-password" />
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center px-4">

@@ -12,4 +12,4 @@ Disallow: /api/
 Disallow: /auth/callback
 Disallow: /auth/reset-password/confirm
 
-Sitemap: https://medication-tracker-jw.vercel.app/sitemap.xml
+Sitemap: https://medication-tracker.jamiewhite.site/sitemap.xml

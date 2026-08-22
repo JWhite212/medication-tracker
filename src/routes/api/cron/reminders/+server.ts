@@ -3,6 +3,7 @@ import { env } from "$env/dynamic/private";
 import { timingSafeEqual } from "crypto";
 import { lt } from "drizzle-orm";
 import { checkOverdueMedications, checkLowInventoryMedications } from "$lib/server/reminders";
+import { pingHeartbeat } from "$lib/server/heartbeat";
 import { purgeExpiredReminderEvents } from "$lib/server/reminders/retention";
 import { db } from "$lib/server/db";
 import { passwordResetTokens, rateLimits } from "$lib/server/db/schema";
@@ -45,5 +46,12 @@ export const GET: RequestHandler = async ({ request }) => {
   // Purge reminder_events past the retention window (see retention.ts).
   await purgeExpiredReminderEvents(new Date());
 
-  return json({ ok: true });
+  // Last, and only on the success path. Everything above either awaited
+  // cleanly or threw out of this handler, so reaching this line is the
+  // strongest health signal the system produces: it proves the database
+  // is reachable and writable and that the reminder sweeps completed,
+  // which no unauthenticated liveness probe can establish.
+  const heartbeat = await pingHeartbeat();
+
+  return json({ ok: true, heartbeat: heartbeat.status });
 };

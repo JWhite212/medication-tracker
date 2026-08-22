@@ -73,7 +73,15 @@ jobs:
             # page or an HTML fallback at this path would pass a naive
             # status-code check. Require the contract the endpoint
             # actually promises.
-            if [ "${status}" = "200" ] && printf '%s' "${body}" | grep -q '"ok":true'; then
+            #
+            # Parsed with jq rather than grepped for '"ok":true'. A text
+            # match is fragile in both directions — it would accept any
+            # body that happens to contain the string, and it would
+            # reject valid JSON that merely serialised with different
+            # spacing. The second is the dangerous one: a false alarm
+            # gets a monitor muted, and a muted monitor is worse than
+            # none. jq -e also fails on a body that is not JSON at all.
+            if [ "${status}" = "200" ] && printf '%s' "${body}" | jq -e '.ok == true' >/dev/null 2>&1; then
               echo "Attempt ${i}: healthy (HTTP ${status})"
               echo "${body}"
               exit 0

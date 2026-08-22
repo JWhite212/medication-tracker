@@ -4,6 +4,10 @@ End-to-end runbook for deploying MedTracker to Vercel + Neon. Pairs
 with [`.env.example`](../.env.example), [`vercel.json`](../vercel.json),
 [`svelte.config.js`](../svelte.config.js), and [`docs/case-study.md`](./case-study.md).
 
+For what to do when a _running_ deployment breaks — triage order,
+rollback (and when rollback is unsafe), and known failure modes — see
+[`docs/RUNBOOK.md`](./RUNBOOK.md).
+
 ## 1. Prerequisites
 
 - **Node.js 22.x** (matches `adapter-vercel` runtime in `svelte.config.js`)

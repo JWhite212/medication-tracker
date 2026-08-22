@@ -1,0 +1,91 @@
+name: Uptime
+
+# External liveness check for production. GitHub Actions is not a
+# dedicated monitoring product, but it is genuinely external to Vercel,
+# it is free, and it needs no third-party account — which makes it the
+# right first monitor for this project rather than a placeholder for one.
+#
+# Scope is deliberately narrow: this answers "is the app serving?" and
+# nothing else. It hits /api/health, which is an unauthenticated liveness
+# probe that makes no database calls. That is the point — polling it
+# around the clock cannot hold the Neon compute awake, so it does not
+# undo the overnight scale-to-zero that reminder-tick.yml is careful to
+# preserve.
+#
+# The consequence is that a green run here does NOT mean the database is
+# reachable. Depth is covered by the reminder tick's heartbeat instead:
+# that path does real database work and pings a dead-man switch only on
+# success. The two together are what give coverage — see docs/RUNBOOK.md.
+#
+# Failure notification is GitHub's own: a failed scheduled workflow
+# emails the repository owner. No extra wiring needed.
+#
+# Same two scheduler caveats as reminder-tick.yml: GitHub's cron is
+# best-effort and can run late, and scheduled workflows are disabled in
+# repositories with no activity for 60 days. A dead-man switch is what
+# catches this workflow itself going quiet.
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 15 minutes, around the clock. Safe to run overnight precisely
+    # because the probe never touches Postgres.
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe health endpoint
+        env:
+          # Pinned in-file to match reminder-tick.yml. No secret travels
+          # with this request, so the reasoning is weaker here, but a
+          # monitor that can be silently re-pointed at a different origin
+          # is a monitor that can be made to report green for free.
+          BASE_URL: https://medication-tracker.jamiewhite.site
+        run: |
+          set -euo pipefail
+
+          url="${BASE_URL}/api/health"
+
+          # Three spaced attempts before declaring an outage. A single
+          # failed probe is far more often a network blip or a cold
+          # start than a down site, and a monitor that cries wolf gets
+          # muted — which is a worse end state than not having one.
+          attempts=3
+          delay=20
+
+          for i in $(seq 1 "${attempts}"); do
+            status=$(curl -sS -o /tmp/health.json -w '%{http_code}' \
+              --max-time 20 --retry 2 --retry-delay 5 --retry-connrefused \
+              "${url}") || status="000"
+
+            body=$(cat /tmp/health.json 2>/dev/null || echo '')
+
+            # HTTP 200 alone is not enough: a deploy that serves an error
+            # page or an HTML fallback at this path would pass a naive
+            # status-code check. Require the contract the endpoint
+            # actually promises.
+            if [ "${status}" = "200" ] && printf '%s' "${body}" | grep -q '"ok":true'; then
+              echo "Attempt ${i}: healthy (HTTP ${status})"
+              echo "${body}"
+              exit 0
+            fi
+
+            echo "::warning::Attempt ${i}/${attempts} unhealthy — HTTP ${status}"
+            printf '%s\n' "${body}"
+
+            if [ "${i}" -lt "${attempts}" ]; then
+              sleep "${delay}"
+            fi
+          done
+
+          echo "::error::${url} failed ${attempts} consecutive probes"
+          exit 1

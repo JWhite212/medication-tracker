@@ -41,7 +41,8 @@ Run these in order. Each is cheap and eliminates a whole class of cause.
 # 1. Is it up at all, and is the edge or the function failing?
 curl -sS -D - -o /dev/null https://medication-tracker.jamiewhite.site/
 
-# 2. Does the app's own health check pass? (hits the DB)
+# 2. Is the app serving? NOTE: this makes no database calls, so a
+#    200 here does not clear Neon. Step 4 is what proves the database.
 curl -fsS https://medication-tracker.jamiewhite.site/api/health
 
 # 3. Is the cron endpoint still authenticating?
@@ -146,21 +147,71 @@ process that will not be followed.
 
 ## 6. Detection
 
-The single highest-value reliability improvement available on Hobby, and
-the one that would have caught the four-month outage.
+Two layers, because neither one alone is sufficient. Together they are
+the substitute for the Log Drains and alerting Vercel gates behind Pro.
 
-- **Uptime check on `/api/health`** — any free external monitor (Better
-  Stack, UptimeRobot, Healthchecks.io). It exercises the database, so it
-  catches more than a static ping. It is already `Cache-Control:
-no-store`, so a monitor cannot be fooled by a cached 200.
-- **Heartbeat on the cron** — the failure mode here is _absence_, which
-  an uptime check cannot see. Point a Healthchecks.io-style dead-man
-  switch at the end of the reminder tick: if it stops checking in, you
-  get told. This is the direct substitute for the Log Drains and
-  alerting that Vercel gates behind Pro.
-- **Spend Management** — Vercel dashboard → Usage → set a spend cap and
-  an alert threshold. On Hobby the practical risk is not a bill but
-  hitting the free ceiling and having the project paused with no notice.
+### Layer 1 — liveness (`.github/workflows/uptime.yml`)
+
+Probes `/api/health` every 15 minutes and fails the workflow after three
+consecutive bad probes, which emails the repository owner.
+
+**`/api/health` makes no database calls.** It is a pure liveness probe by
+design, and that is a feature, not an oversight: polling it around the
+clock cannot hold the Neon compute awake, so it does not undo the
+overnight scale-to-zero that `reminder-tick.yml` preserves.
+
+The consequence has to be stated plainly, because it is the thing most
+likely to give false comfort: **a green uptime run does not mean the
+database is up.** It means the app is serving. Depth is layer 2's job.
+
+The probe asserts on `"ok":true` in the body rather than the status code
+alone — a deploy serving an error page at that path would satisfy a
+naive 200 check.
+
+### Layer 2 — the heartbeat (`src/lib/server/heartbeat.ts`)
+
+The reminder tick pings `HEARTBEAT_URL` as its last action, only on the
+success path. Reaching that line proves the database is reachable and
+writable and that both reminder sweeps completed — the strongest health
+signal the system produces.
+
+This is a **dead-man switch**: the receiving service alerts when a ping
+_fails to arrive_. That inversion is the entire point. A cron that stops
+running raises no error to alert on, and an uptime check cannot see it
+either, since it can only observe requests that happen. That is exactly
+how CRON_SECRET being unset went unnoticed for four months.
+
+To set it up: create a check on any dead-man-switch provider
+(Healthchecks.io, Better Stack, Cronitor, Uptime Kuma), set its period to
+roughly 1 hour with a grace period, and put the ping URL in the Vercel
+**Production** environment as `HEARTBEAT_URL`. Leave it unset in Preview
+and Development — a preview deployment pinging production's switch would
+hold it green and mask a real outage.
+
+Verify with a manual run; the response body reports the outcome:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://medication-tracker.jamiewhite.site/api/cron/reminders
+# → {"ok":true,"heartbeat":"sent"}      configured and reaching the provider
+# → {"ok":true,"heartbeat":"disabled"}  HEARTBEAT_URL not set
+```
+
+A ping failure never fails the tick. Sending medication reminders is the
+job; monitoring is not allowed to interfere with it.
+
+### What still has no coverage
+
+Both layers depend on GitHub's scheduler, which disables scheduled
+workflows in repositories dormant for 60 days. The heartbeat is what
+catches the uptime workflow going quiet; nothing catches the heartbeat
+provider itself failing. That residual gap is accepted.
+
+### Spend Management
+
+Vercel dashboard → Usage → set a spend cap and an alert threshold. On
+Hobby the practical risk is not a bill but hitting the free ceiling and
+having the project paused with no notice.
 
 ## 7. After an incident
 

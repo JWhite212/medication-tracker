@@ -18,7 +18,7 @@
     name="description"
     content="Create a free MedTracker account to start tracking medications, logging doses, and monitoring adherence."
   />
-  <link rel="canonical" href="https://medication-tracker-jw.vercel.app/auth/register" />
+  <link rel="canonical" href="https://medication-tracker.jamiewhite.site/auth/register" />
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center gap-12 px-4 py-8">

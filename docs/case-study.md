@@ -5,7 +5,7 @@ around fast dose logging, accurate adherence analytics, and honest
 medical safety. This document is the version I'd send a recruiter
 who asked "tell me about a project you're proud of".
 
-- **Live demo**: https://medication-tracker-jw.vercel.app
+- **Live demo**: https://medication-tracker.jamiewhite.site
 - **Repository**: https://github.com/JWhite212/medication-tracker
 - **Stack**: SvelteKit 2 / Svelte 5 (runes), TypeScript, Drizzle ORM,
   Postgres (Neon), Tailwind v4, Lucia v3, Argon2id, Web Push, Resend

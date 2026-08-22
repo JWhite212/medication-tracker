@@ -16,8 +16,8 @@
     property="og:description"
     content="Log doses with a single tap, see live timers, track adherence streaks. Beautiful, fast, and secure."
   />
-  <meta property="og:url" content="https://medication-tracker-jw.vercel.app" />
-  <link rel="canonical" href="https://medication-tracker-jw.vercel.app" />
+  <meta property="og:url" content="https://medication-tracker.jamiewhite.site" />
+  <link rel="canonical" href="https://medication-tracker.jamiewhite.site" />
 </svelte:head>
 
 <div class="flex min-h-screen flex-col">

@@ -31,6 +31,19 @@ import { env } from "$env/dynamic/private";
 export const HEARTBEAT_TIMEOUT_MS = 2000;
 
 /**
+ * Below this there is not enough time left for a round trip to be worth
+ * attempting, so the ping is skipped rather than started and abandoned.
+ *
+ * Skipping still results in no ping, and therefore still alerts — which
+ * is correct. A tick running that close to its ceiling is genuinely
+ * unhealthy and should be surfaced. The point of skipping is only to
+ * avoid *also* overrunning maxDuration, which would turn a tick that
+ * successfully sent every reminder into a logged 500 and send whoever
+ * is debugging it looking in the wrong place.
+ */
+export const MIN_PING_BUDGET_MS = 250;
+
+/**
  * The abort raised by AbortSignal.timeout is a DOMException, which is
  * not an `instanceof Error` on every runtime this code sees. Reading
  * `name` structurally keeps the most likely real failure — a timeout —
@@ -49,8 +62,22 @@ function errorName(err: unknown): string {
 export type HeartbeatResult =
   | { status: "disabled" }
   | { status: "sent" }
+  | { status: "skipped"; reason: string }
   | { status: "invalid-url"; reason: string }
   | { status: "failed"; reason: string };
+
+export type PingHeartbeatOptions = {
+  fetchImpl?: typeof fetch;
+  /**
+   * Milliseconds of function budget the caller can still spare. The
+   * request is bounded by whichever is smaller, this or
+   * HEARTBEAT_TIMEOUT_MS.
+   *
+   * Omit it and the ping is bounded only by its own timeout, which is
+   * the right default for any caller that is not sharing a deadline.
+   */
+  budgetMs?: number;
+};
 
 /**
  * Pings the configured heartbeat URL. Never throws, and never rejects.
@@ -60,9 +87,8 @@ export type HeartbeatResult =
  * to branch on it — there is nothing useful a cron handler could do
  * about a monitoring failure that would not itself need monitoring.
  */
-export async function pingHeartbeat(
-  fetchImpl: typeof fetch = globalThis.fetch,
-): Promise<HeartbeatResult> {
+export async function pingHeartbeat(options: PingHeartbeatOptions = {}): Promise<HeartbeatResult> {
+  const { fetchImpl = globalThis.fetch, budgetMs } = options;
   const raw = env.HEARTBEAT_URL?.trim();
 
   // Absence is the normal case in dev, in preview and before the monitor
@@ -88,10 +114,25 @@ export async function pingHeartbeat(
     return { status: "invalid-url", reason: "not-https" };
   }
 
+  // The caller shares one serverless budget with everything that ran
+  // before it. Starting a 2s request with less than that left would let
+  // monitoring push a tick that already sent every reminder past
+  // maxDuration, and the platform would record that success as a failed
+  // request.
+  if (budgetMs !== undefined && budgetMs < MIN_PING_BUDGET_MS) {
+    console.warn(
+      `[heartbeat] skipped — only ${Math.max(0, Math.round(budgetMs))}ms of budget left`,
+    );
+    return { status: "skipped", reason: "insufficient-budget" };
+  }
+
+  const timeoutMs =
+    budgetMs === undefined ? HEARTBEAT_TIMEOUT_MS : Math.min(HEARTBEAT_TIMEOUT_MS, budgetMs);
+
   try {
     const response = await fetchImpl(url, {
       method: "GET",
-      signal: AbortSignal.timeout(HEARTBEAT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
       // The URL is itself the credential on every provider that offers
       // this, so keep it out of Referer if the endpoint ever redirects.
       referrerPolicy: "no-referrer",

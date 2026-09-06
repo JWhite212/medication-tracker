@@ -79,12 +79,18 @@
   }
 }
 
+/* padding-inline/bottom only. The `padding` shorthand here also reset
+   padding-top, and because this rule is unlayered it beat Tailwind's
+   `pt-18` on <main> — so compact mode on mobile pushed the top of every
+   page under the fixed MobileHeader. */
 [data-density="compact"] main {
-  padding: 0.75rem;
+  padding-inline: 0.75rem;
+  padding-bottom: 0.75rem;
 }
 @media (min-width: 768px) {
   [data-density="compact"] main {
-    padding: 1rem;
+    padding-inline: 1rem;
+    padding-bottom: 1rem;
   }
 }
 [data-density="compact"] .space-y-6 > * + * {

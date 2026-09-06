@@ -11,7 +11,8 @@
     name="description"
     content="Track your medications, log doses with a single tap, see live timers, and monitor adherence — all in one beautiful, secure app."
   />
-  <meta name="theme-color" content="#6366f1" />
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0f" />
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#0a0a0f" />
   <meta property="og:site_name" content="MedTracker" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://medication-tracker.jamiewhite.site/og-image.svg" />

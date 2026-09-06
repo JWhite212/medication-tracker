@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_INTERVAL_HOURS } from "$lib/utils/schedule-rate";
+import { appearanceImportShape, appearancePayloadShape } from "$lib/appearance/schema";
 
 export const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -222,20 +223,14 @@ export const passwordChangeSchema = z
   });
 
 // HTML form checkboxes only submit when checked, so each field
-// accepts an optional "on" string and transforms to a boolean. Shared
-// across appearance and notification schemas.
+// accepts an optional "on" string and transforms to a boolean. Used by
+// the notification schema; the appearance doors take a required
+// "on" | "off" pair instead, because a per-field action cannot tell an
+// absent checkbox apart from a mistyped field name.
 const checkboxField = z
   .string()
   .optional()
   .transform((v) => v === "on");
-
-export const appearanceSchema = z.object({
-  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex colour"),
-  dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]),
-  timeFormat: z.enum(["12h", "24h"]),
-  uiDensity: z.enum(["comfortable", "compact"]),
-  reducedMotion: checkboxField,
-});
 
 export const notificationSchema = z.object({
   overdueEmailReminders: checkboxField,
@@ -354,20 +349,21 @@ export const archivePayload = z.object({ medicationId: z.string() });
 export const reorderPayload = z.object({ medId1: z.string(), medId2: z.string() });
 
 export const updatePreferencesPayload = z.object({
-  accentColor: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .optional(),
-  dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
-  timeFormat: z.enum(["12h", "24h"]).optional(),
-  uiDensity: z.enum(["comfortable", "compact"]).optional(),
-  reducedMotion: z.boolean().optional(),
+  // The five appearance options come from the registry-derived shape, so
+  // adding one there cannot leave this door behind. The compiler enforces
+  // the coverage (see the `satisfies` clauses in appearance/schema.ts);
+  // tests/unit/preference-door-conformance.test.ts covers the seven keys
+  // the registry does not own.
+  ...appearancePayloadShape,
   overdueEmailReminders: z.boolean().optional(),
   overduePushReminders: z.boolean().optional(),
   lowInventoryEmailAlerts: z.boolean().optional(),
   lowInventoryPushAlerts: z.boolean().optional(),
   doseLogPageSize: z.number().int().min(5).max(100).optional(),
-  heatmapPeriod: z.number().int().optional(),
+  // Bounded to match the import door. It was unbounded here, and the
+  // value reaches Heatmap.svelte's per-day render loop unclamped -- an
+  // account owner's own API token could ask for ten million DOM nodes.
+  heatmapPeriod: z.number().int().min(1).max(3650).optional(),
   exportFormat: z.enum(["pdf", "csv"]).optional(),
 });
 
@@ -567,14 +563,7 @@ const importProfileSchema = z.object({
 });
 
 const importPreferencesSchema = z.object({
-  accentColor: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .optional(),
-  dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
-  timeFormat: z.enum(["12h", "24h"]).optional(),
-  uiDensity: z.enum(["comfortable", "compact"]).optional(),
-  reducedMotion: z.boolean().optional(),
+  ...appearanceImportShape,
   overdueEmailReminders: z.boolean().optional(),
   overduePushReminders: z.boolean().optional(),
   lowInventoryEmailAlerts: z.boolean().optional(),

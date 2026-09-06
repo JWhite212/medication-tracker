@@ -2,7 +2,13 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { contrastRatio, compositeOver, readableForeground } from "$lib/utils/contrast";
+import {
+  contrastRatio,
+  compositeOver,
+  readableForeground,
+  readableInk,
+  INK_BACKDROP,
+} from "$lib/utils/contrast";
 
 /**
  * Parses the real @theme block rather than duplicating the palette, so this
@@ -147,7 +153,29 @@ describe("every accent preset a user can pick carries a legible foreground", () 
         4.5,
       );
     });
+
+    // The layout derives --color-accent-ink from the same stored hex, so the
+    // ink has to hold for every swatch too, not just for the @theme fallback.
+    it(`${preset} derives an ink legible on every surface`, () => {
+      const ink = readableInk(preset);
+      for (const [name, bg] of Object.entries(surfaces())) {
+        const ratio = contrastRatio(ink, bg);
+        expect(
+          ratio,
+          `${preset} -> ${ink} on ${name} is ${ratio.toFixed(2)}:1`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    });
   }
+
+  it("solves the ink against the lightest surface the app renders", () => {
+    // INK_BACKDROP is a constant in utils/, which cannot read this
+    // stylesheet. If a surface token moves, this is what says so.
+    const lightest = Object.values(surfaces()).reduce((a, b) =>
+      contrastRatio(b, "#ffffff") < contrastRatio(a, "#ffffff") ? b : a,
+    );
+    expect(INK_BACKDROP).toBe(lightest);
+  });
 });
 
 describe("solid fills carry a legible foreground", () => {

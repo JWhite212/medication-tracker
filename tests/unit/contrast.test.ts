@@ -4,6 +4,8 @@ import {
   contrastRatio,
   compositeOver,
   readableForeground,
+  readableInk,
+  INK_BACKDROP,
   READABLE_DARK,
   READABLE_LIGHT,
 } from "$lib/utils/contrast";
@@ -52,6 +54,56 @@ describe("compositeOver", () => {
 
   it("returns white at full alpha", () => {
     expect(compositeOver(1, "#12121a")).toBe("#ffffff");
+  });
+
+  it("composites a tinted overlay when one is given", () => {
+    // bg-danger/20 over the modal panel's glass.
+    expect(compositeOver(0.2, "#25252c", "#ef4444")).toBe("#4d2b31");
+    // The default overlay is still white.
+    expect(compositeOver(0.2, "#25252c", "#ffffff")).toBe(compositeOver(0.2, "#25252c"));
+  });
+});
+
+/**
+ * Behaviour of the derivation only. Whether it holds for the ten swatches a
+ * user can actually pick is asserted in theme-tokens.test.ts, which parses
+ * both the preset list and the surfaces out of the source rather than
+ * restating them here.
+ */
+describe("readableInk", () => {
+  it("leaves a colour that is already legible alone", () => {
+    // Amber needs no lightening: it is 5.84:1 on the lightest surface.
+    expect(readableInk("#f59e0b")).toBe("#f59e0b");
+  });
+
+  it("lightens a dark accent rather than returning a fixed hue", () => {
+    const ink = readableInk("#4f46e5");
+    expect(ink).not.toBe("#4f46e5");
+    expect(ink).not.toBe(READABLE_LIGHT);
+    expect(contrastRatio("#4f46e5", INK_BACKDROP)).toBeLessThan(4.5);
+    expect(contrastRatio(ink, INK_BACKDROP)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("stops at the first candidate that clears the target", () => {
+    // One step less lightening must fail, or the ink is lighter than needed.
+    const ink = readableInk("#4f46e5");
+    const steps = [...Array(101).keys()].map((s) => compositeOver(s / 100, "#4f46e5"));
+    const index = steps.indexOf(ink);
+    expect(index).toBeGreaterThan(0);
+    expect(contrastRatio(steps[index - 1], INK_BACKDROP)).toBeLessThan(4.5);
+  });
+
+  it("falls back to white ink for an invalid hex instead of NaN", () => {
+    expect(readableInk("not-a-colour")).toBe(READABLE_LIGHT);
+  });
+
+  it("solves against the lightest surface, where light text is worst off", () => {
+    // The darkest surface is the easy end: solving there would ship an ink
+    // that fails on glass. #8f92f5 is 7.15:1 on #0a0a0f but 4.54:1 here.
+    expect(INK_BACKDROP).toBe(compositeOver(0.14, "#12121a"));
+    expect(contrastRatio("#8f92f5", "#0a0a0f")).toBeGreaterThan(
+      contrastRatio("#8f92f5", INK_BACKDROP),
+    );
   });
 });
 

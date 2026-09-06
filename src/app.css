@@ -15,8 +15,11 @@
   --color-text-muted: #9a9aac;
   /* accent = fills. accent-ink = the same accent, legible as text. These
      cannot be one token: #4f46e5 scores 1.99:1 as text, and #8f92f5 scores
-     2.76:1 with white on it. The layout sets --color-accent inline from the
-     user's stored hex; --color-accent-ink is derived. */
+     2.76:1 with white on it.
+     All three accent values here are the LOGGED-OUT fallback only. The (app)
+     layout sets --color-accent, --color-accent-fg and --color-accent-ink
+     inline from the user's stored hex (readableForeground / readableInk in
+     utils/contrast.ts), and an inline style beats every rule below. */
   --color-accent: #4f46e5;
   /* accent-hover is a FILL ONLY, and only on the logged-out routes: every
      authenticated accent button uses `hover:opacity-90`, because in there

@@ -41,15 +41,66 @@ export function contrastRatio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** Flatten a white-alpha overlay onto an opaque base, as the browser would. */
-export function compositeOver(alpha: number, base: string): string {
-  const blend = (v: number) => Math.round(255 * alpha + v * (1 - alpha));
+/**
+ * Flatten an alpha overlay onto an opaque base, as the browser would.
+ * `overlay` defaults to white because most of the palette's translucency is
+ * white-alpha (glass, hairlines), but the tinted `bg-danger/20`-style chips
+ * composite a colour, so it is a parameter rather than a constant.
+ */
+export function compositeOver(
+  alpha: number,
+  base: string,
+  overlay: string = READABLE_LIGHT,
+): string {
+  const top = toRgb(overlay);
   return (
     "#" +
     toRgb(base)
-      .map((v) => blend(v).toString(16).padStart(2, "0"))
+      .map((v, i) =>
+        Math.round(top[i] * alpha + v * (1 - alpha))
+          .toString(16)
+          .padStart(2, "0"),
+      )
       .join("")
   );
+}
+
+/**
+ * The LIGHTEST of the six opaque surfaces a foreground is rendered on
+ * (`--color-glass-hover` flattened onto `--color-surface-raised`).
+ *
+ * Light-on-dark contrast is worst against the lightest backdrop, so an ink
+ * that clears the threshold here clears it on all six. Solving against the
+ * darkest surface would be the easy end of the range and would ship an ink
+ * that fails on glass.
+ */
+export const INK_BACKDROP = "#33333a";
+
+/**
+ * Lighten `colour` toward white until it is legible as text on `backdrop`.
+ *
+ * This is what `--color-accent-ink` is: the user's chosen accent is a fill
+ * colour, and most accents are far too dark to read as text on a dark page
+ * (#4f46e5 is 1.99:1). The (app) layout sets the result inline alongside
+ * --color-accent, so the 133 text/border/ring sites tint with the accent
+ * instead of being frozen at one hue.
+ *
+ * Lightening is monotonic against a dark backdrop, so the first candidate
+ * that clears `target` is also the most saturated one that does — the ink
+ * stays as close to the user's colour as legibility allows.
+ */
+export function readableInk(colour: string, backdrop: string = INK_BACKDROP, target = 4.5): string {
+  if (!HEX_RE.test(colour)) {
+    if (import.meta.env.DEV) {
+      console.warn(`[contrast] Invalid hex colour: "${colour}". Falling back to white ink.`);
+    }
+    return READABLE_LIGHT;
+  }
+  for (let step = 0; step <= 100; step++) {
+    const candidate = compositeOver(step / 100, colour);
+    if (contrastRatio(candidate, backdrop) >= target) return candidate;
+  }
+  return READABLE_LIGHT;
 }
 
 /**

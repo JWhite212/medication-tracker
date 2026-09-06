@@ -88,14 +88,14 @@
         type="date"
         value={data.from}
         onchange={(e) => setDateRange("from", e.currentTarget.value)}
-        class="border-glass-border bg-surface-raised text-text-primary rounded-lg border px-3 py-1.5 text-sm"
+        class="border-border-strong bg-surface-raised text-text-primary rounded-lg border px-3 py-1.5 text-sm"
       />
       <span class="text-text-muted text-xs">to</span>
       <input
         type="date"
         value={data.to}
         onchange={(e) => setDateRange("to", e.currentTarget.value)}
-        class="border-glass-border bg-surface-raised text-text-primary rounded-lg border px-3 py-1.5 text-sm"
+        class="border-border-strong bg-surface-raised text-text-primary rounded-lg border px-3 py-1.5 text-sm"
       />
     </div>
   </div>

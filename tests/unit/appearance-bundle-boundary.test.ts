@@ -39,6 +39,14 @@ function scriptSources(file: string): string[] {
  * files reach zod today through type-only chains via
  * $lib/server/schedules.ts, and the built client bundle contains no zod
  * at all. A walk that followed those edges would fail on correct code.
+ *
+ * Known blind spot: this only walks static `ts.isImportDeclaration` /
+ * `ts.isExportDeclaration` nodes, so a `.svelte` file reaching zod through
+ * `await import("zod")` (a dynamic `import()` call expression) would not
+ * be caught. Not live today — the repo's only dynamic imports are in
+ * `$lib/server/` for `web-push`/`resend`/`pdfkit`/`qrcode`, none reachable
+ * from a client entrypoint — but a future reader should know this walker
+ * does not see that path, rather than assume a green run rules it out.
  */
 function runtimeImports(file: string): string[] {
   const specs: string[] = [];

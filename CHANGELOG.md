@@ -16,9 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Audit branches (`audit/*`) are landing repository hygiene, accessibility follow-ups, and developer-experience improvements.
+- Appearance settings save as you change them. Each control posts its own field to its own form action rather than one bulk save, debounced so a settled control produces one request, single-flighted per field so two rapid changes land in order, and rate-limited per user. Without JavaScript each control keeps its own Save button; the accent swatches become real radios, which means the accent can be changed without JavaScript at all for the first time.
+- The `/api/v1` `update_preferences` door bounds `heatmapPeriod` to 1–3650, matching the import door. It was unbounded, and the value reaches the activity heatmap's per-day render loop unclamped.
 
 ### Fixed
 
+- Preference changes can no longer lose an audit row. `updatePreferences` read its before-image in a separate query, so two overlapping saves for the same field both diffed against the same stored value and the second change went unlogged — leaving the audit log claiming a value the column did not hold. The before-image now comes from a locking read inside the write itself.
 - Dark palette raised to WCAG AA. `--color-text-secondary` (3.63:1 → 7.21:1) and `--color-text-muted` (2.64:1 → 4.53:1) now clear 4.5:1 on all six surfaces including the glass composites; a new `--color-danger-ink` (`#f98686`, 5.24:1) carries the 26 files that use danger as text, while the `#ef4444` fill is unchanged; a new `--color-border-strong` gives form inputs a 3:1 boundary (WCAG 1.4.11), which the 1.33:1 decorative hairline never provided.
 - The accent splits into two tokens. `--color-accent` (`#4f46e5`) is the fill, and white on it now measures 6.29:1 rather than 4.47:1; `--color-accent-ink` is the text and border variant, derived per user from the stored accent so it tints with it (`#4f46e5` → `#9792f0`, 4.59:1) rather than being frozen at one hue. No single value satisfies both roles — the fill scores 1.99:1 as text. The stored default moves to `#4f46e5` with a backfill, because the layout writes it inline and an inline style beats the stylesheet.
 - Tinted chips (`bg-danger/20 text-danger-ink` and the like) are measured against the backdrop they actually composite onto rather than the nearest opaque surface, which raised `--color-info` to `#a5a8f8` (4.71:1 on a hovered card) and `--color-danger-ink` to `#f98686` (5.00:1 in the same place).

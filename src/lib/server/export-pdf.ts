@@ -1,14 +1,20 @@
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications, type DoseLogStatus } from "$lib/server/db/schema";
-import { formatUserDate, formatUserTime, type DateFormat, type TimeFormat } from "$lib/utils/time";
+import { formatUserTime, type TimeFormat } from "$lib/utils/time";
 import { getDoseStatusBreakdown } from "$lib/server/analytics";
 
 const MEDICAL_DISCLAIMER =
   "MedTracker is a personal tracking tool. It does not provide medical advice, dosage recommendations, diagnosis, or emergency guidance. Always follow advice from a qualified healthcare professional.";
 
-function formatDateInTz(date: Date, timezone: string, dateFormat: DateFormat): string {
-  return formatUserDate(date, timezone, dateFormat, { weekday: true, year: true });
+function formatDateInTz(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 /**
@@ -58,10 +64,9 @@ export function formatDoseLogLine(
   dose: DoseLogLine,
   timezone: string,
   timeFormat: TimeFormat,
-  dateFormat: DateFormat = "DD/MM/YYYY",
 ): string {
   const at = new Date(dose.takenAt);
-  const date = formatDateInTz(at, timezone, dateFormat);
+  const date = formatDateInTz(at, timezone);
   const time = formatUserTime(at, timezone, timeFormat);
   // Quantity is only meaningful for a dose that was actually taken.
   // "x2" against a missed dose asserts two doses were consumed when none
@@ -78,7 +83,6 @@ export async function generateReport(
   to: Date,
   userName: string = "",
   timeFormat: TimeFormat = "12h",
-  dateFormat: DateFormat = "DD/MM/YYYY",
 ): Promise<Buffer> {
   const { default: PDFDocument } = await import("pdfkit");
 
@@ -137,12 +141,9 @@ export async function generateReport(
     if (userName) {
       doc.fontSize(11).text(userName, { align: "center" });
     }
-    doc
-      .fontSize(11)
-      .text(
-        `${formatDateInTz(from, timezone, dateFormat)} — ${formatDateInTz(to, timezone, dateFormat)}`,
-        { align: "center" },
-      );
+    doc.fontSize(11).text(`${formatDateInTz(from, timezone)} — ${formatDateInTz(to, timezone)}`, {
+      align: "center",
+    });
     doc.fontSize(9).fillColor("#666666").text(`Timezone: ${timezone}`, {
       align: "center",
     });
@@ -187,7 +188,7 @@ export async function generateReport(
       doc.fontSize(10).text("No doses recorded in this range.");
     } else {
       for (const dose of doses) {
-        doc.fontSize(10).text(formatDoseLogLine(dose, timezone, timeFormat, dateFormat));
+        doc.fontSize(10).text(formatDoseLogLine(dose, timezone, timeFormat));
         if (dose.sideEffects?.length) {
           doc
             .fontSize(8)
@@ -217,7 +218,7 @@ export async function generateReport(
       .fontSize(8)
       .fillColor("#666666")
       .text(
-        `Generated ${formatDateInTz(new Date(), timezone, dateFormat)} ${formatUserTime(new Date(), timezone, timeFormat)}`,
+        `Generated ${formatDateInTz(new Date(), timezone)} ${formatUserTime(new Date(), timezone, timeFormat)}`,
         { align: "center" },
       );
     doc.moveDown(0.5);

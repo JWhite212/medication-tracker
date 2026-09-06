@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatTimeSince,
   formatTime,
-  formatUserDate,
   startOfDay,
   formatDueIn,
   computeTimingStatus,

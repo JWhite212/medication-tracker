@@ -5,7 +5,6 @@
   import EmptyState from "$components/EmptyState.svelte";
   import { onDestroy } from "svelte";
   import type { DoseLogWithMedication } from "$lib/types";
-  import { formatUserDate, type DateFormat } from "$lib/utils/time";
   import emptyDoseHistory from "$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.webp";
 
   let { data } = $props();
@@ -77,10 +76,6 @@
     ),
   );
 
-  // A grouping *key*, not a label: it is compared against todayKey and
-  // yesterdayKey and used as a Map key, so it stays hardcoded en-CA
-  // (YYYY-MM-DD) and must never follow preferences.dateFormat — reordering
-  // it would silently break the Today/Yesterday match and the grouping.
   function formatDateKey(date: Date, tz: string): string {
     return new Intl.DateTimeFormat("en-CA", {
       timeZone: tz,
@@ -90,23 +85,17 @@
     }).format(date);
   }
 
-  function formatDateLabel(
-    dateKey: string,
-    todayKey: string,
-    yesterdayKey: string,
-    dateFormat: DateFormat,
-  ): string {
+  function formatDateLabel(dateKey: string, todayKey: string, yesterdayKey: string): string {
     if (dateKey === todayKey) return "Today";
     if (dateKey === yesterdayKey) return "Yesterday";
 
-    // The key is already a civil date in the user's timezone, so it is
-    // rebuilt and formatted as UTC. Building it with `new Date(y, m-1, d)`
-    // and formatting in data.timezone instead would re-apply an offset the
-    // key has already had, rolling the heading to the wrong day for any
-    // user whose browser zone differs from their profile zone.
     const [y, m, d] = dateKey.split("-").map(Number);
-    const date = new Date(Date.UTC(y, m - 1, d));
-    return formatUserDate(date, "UTC", dateFormat, { weekday: true, year: false });
+    const date = new Date(y, m - 1, d);
+    return new Intl.DateTimeFormat("en-GB", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    }).format(date);
   }
 
   const groupedDoses = $derived.by(() => {
@@ -126,16 +115,7 @@
       }
     }
     for (const [dateKey, doses] of map) {
-      groups.push({
-        dateKey,
-        label: formatDateLabel(
-          dateKey,
-          todayKey,
-          yesterdayKey,
-          data.preferences.dateFormat as DateFormat,
-        ),
-        doses,
-      });
+      groups.push({ dateKey, label: formatDateLabel(dateKey, todayKey, yesterdayKey), doses });
     }
     return groups;
   });

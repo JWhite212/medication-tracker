@@ -57,7 +57,7 @@
             showSecondary = true;
             selectedColourSecondary = PRESET_COLOURS[2];
           }}
-          class="border-glass-border text-text-muted hover:border-border-strong hover:text-text-secondary flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed text-lg transition-colors"
+          class="border-border-strong text-text-muted hover:text-text-secondary flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed text-lg transition-colors"
           aria-label="Add secondary colour">+</button
         >
       {/if}
@@ -104,7 +104,7 @@
             onclick={() => (selectedPattern = pat.id)}
             class="h-11 w-11 rounded-lg border-2 transition-transform hover:scale-105 {selectedPattern ===
             pat.id
-              ? 'scale-105 border-white'
+              ? 'border-text-primary scale-105'
               : 'border-transparent'}"
             style="background: {getMedicationBackground(
               selectedColour,

@@ -37,7 +37,7 @@
     aria-required={required ? "true" : undefined}
     class="bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none {error
       ? 'border-danger-ink'
-      : 'border-glass-border'}"
+      : 'border-border-strong'}"
     {...rest}
   />
   {#if error}<p id={`${name}-error`} class="text-danger-ink mt-1 text-sm" role="alert">

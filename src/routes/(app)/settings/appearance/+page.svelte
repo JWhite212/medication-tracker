@@ -54,7 +54,7 @@
               type="button"
               class="h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 {selectedColour ===
               colour
-                ? 'scale-110 border-white'
+                ? 'border-text-primary scale-110'
                 : 'border-transparent'}"
               style="background-color: {colour}"
               onclick={() => (selectedColour = colour)}

@@ -190,6 +190,22 @@ describe("analytics load: period resolution", () => {
     expect(medStatsCalls[0].days).toBe(365);
     expect(hourlyCalls[0].days).toBe(365);
   });
+
+  it("clamps a stored heatmapPeriod that predates the API's 1-3650 bound", async () => {
+    // heatmapPeriod has no form door of its own -- the only way a row
+    // gets an out-of-range value today is the /api/v1 door, but a row
+    // written before that door was bounded is still sitting there.
+    const tooLarge = await runLoad("", 999_999);
+    expect(tooLarge.period).toBe(3650);
+
+    const tooSmall = await runLoad("", 0);
+    expect(tooSmall.period).toBe(1);
+  });
+
+  it("does not clamp a valid period param even when the stored preference is out of range", async () => {
+    const d = await runLoad("?period=7", 999_999);
+    expect(d.period).toBe(7);
+  });
 });
 
 describe("analytics load: date range params", () => {

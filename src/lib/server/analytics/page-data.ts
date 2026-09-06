@@ -26,6 +26,21 @@ import type { MedicationSchedule } from "$lib/server/schedules";
 
 const VALID_PERIODS = new Set(["7", "30", "90", "365"]);
 
+// Mirrors the bound `heatmapPeriod` gets at its two write doors
+// (src/lib/utils/validation.ts). A row written through the door BEFORE it
+// was bounded can still hold anything outside 1-3650, and heatmapPeriod
+// has no form door of its own to catch it on the way back in -- the only
+// way to fix a bad stored value is another /api/v1 call. Clamped here, at
+// the one place every page load reads it, so a stale out-of-range value
+// can't reach `new Date(now - period * 2 * 86400000)` or the per-day
+// render loop. Only the preference fallback needs this: the `?period=`
+// query param path is already restricted to VALID_PERIODS above.
+const MIN_HEATMAP_PERIOD = 1;
+const MAX_HEATMAP_PERIOD = 3650;
+function clampHeatmapPeriod(period: number): number {
+  return Math.min(Math.max(period, MIN_HEATMAP_PERIOD), MAX_HEATMAP_PERIOD);
+}
+
 // Bounds-check the optional from/to query params. Reject dates earlier than
 // 2020-01-01 or later than tomorrow; on garbage input we fall through to
 // `undefined` and the caller uses its default period window.
@@ -84,7 +99,9 @@ export function resolveAnalyticsQuery(
 
   const periodParam = searchParams.get("period");
   const period =
-    periodParam && VALID_PERIODS.has(periodParam) ? Number(periodParam) : defaultPeriod;
+    periodParam && VALID_PERIODS.has(periodParam)
+      ? Number(periodParam)
+      : clampHeatmapPeriod(defaultPeriod);
 
   const now = Date.now();
   const previousRange: DateRange = customRange

@@ -79,6 +79,12 @@ export async function updatePreferences(
     .where(eq(userPreferences.userId, userId))
     .returning({
       after: getTableColumns(userPreferences),
+      // `_.selectedFields` is drizzle's private namespace (the leading
+      // underscore is the only marker) -- it carries no compatibility
+      // promise across version bumps, and there is no public API for a
+      // CTE's field list to reach for instead. If a `drizzle-orm` update
+      // breaks this, expect a type error here first and a runtime
+      // `undefined` after that.
       before: previous._.selectedFields,
     });
 

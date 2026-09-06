@@ -9,6 +9,7 @@ import {
   readableInk,
   INK_BACKDROP,
 } from "$lib/utils/contrast";
+import { entryFor } from "$lib/appearance/registry";
 
 /**
  * Parses the real @theme block rather than duplicating the palette, so this
@@ -56,22 +57,18 @@ function whiteAlpha(value: string): number {
 }
 
 /**
- * The accent swatches offered on /settings/appearance, read from the page
- * itself. These are not @theme tokens — they are the values written to
+ * The accent swatches offered on /settings/appearance. These are not
+ * @theme tokens — they are the values written to
  * `user_preferences.accent_color` and then set inline as --color-accent,
- * where they beat every stylesheet rule. Raising the @theme accent without
- * raising these left every real user on the failing pair.
+ * where they beat every stylesheet rule. Raising the @theme accent
+ * without raising these left every real user on the failing pair.
+ *
+ * Read from the registry rather than scraped out of the page: the
+ * registry is the single description of the option and the page renders
+ * from it.
  */
 function readAccentPresets(): string[] {
-  const path = fileURLToPath(
-    new URL("../../src/routes/(app)/settings/appearance/+page.svelte", import.meta.url),
-  );
-  const src = readFileSync(path, "utf8");
-  const block = src.match(/const presetColours = \[([\s\S]*?)\]/);
-  if (!block) throw new Error("Could not find presetColours in the appearance page");
-  const hexes = block[1].match(/#[0-9a-f]{6}/gi) ?? [];
-  if (hexes.length === 0) throw new Error("presetColours parsed to an empty list");
-  return hexes;
+  return [...entryFor("accentColor").presets];
 }
 
 const T = readThemeTokens();

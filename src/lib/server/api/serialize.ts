@@ -6,6 +6,7 @@
 // parses them to Decimal itself; JSON columns (sideEffects, daysOfWeek,
 // changes) pass through as-is.
 import type { DoseLogStatus, InventoryEventType, ScheduleKind } from "$lib/server/db/schema";
+import type { UserPreferences } from "$lib/types";
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
@@ -138,22 +139,7 @@ export function serializeAuditLog(a: {
   return { ...a, createdAt: iso(a.createdAt) };
 }
 
-export function serializePreferences(p: {
-  userId: string;
-  accentColor: string;
-  dateFormat: string;
-  timeFormat: string;
-  uiDensity: string;
-  reducedMotion: boolean;
-  overdueEmailReminders: boolean;
-  overduePushReminders: boolean;
-  lowInventoryEmailAlerts: boolean;
-  lowInventoryPushAlerts: boolean;
-  doseLogPageSize: number;
-  heatmapPeriod: number;
-  exportFormat: string;
-  updatedAt: Date;
-}) {
+export function serializePreferences(p: UserPreferences) {
   return { ...p, updatedAt: iso(p.updatedAt) };
 }
 

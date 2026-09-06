@@ -91,7 +91,10 @@ function surfaces(): Record<string, string> {
 
 /**
  * Pairs knowingly shipping below threshold. Every entry needs a reason and an
- * owner. An empty list is the goal; an entry is a decision, not a shrug.
+ * owner. An empty list is the goal; an entry is a decision, not a shrug — a
+ * preset that is merely one step off its ramp gets moved, not excused, which
+ * is why #6366f1 (4.47) and #8b5cf6 (4.46) are not listed here.
+ * For an accent preset, `token` is the hex and `surface` is "accent preset".
  */
 const ALLOWED_BELOW_THRESHOLD: { token: string; surface: string; why: string }[] = [];
 

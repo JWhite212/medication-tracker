@@ -128,22 +128,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - SvelteKit (Svelte 5 runes) app skeleton with Drizzle ORM on Neon Postgres.
-- Lucia v3 session-based authentication with email/password and Google OAuth.
-- Core medication tracker surfaces: medications CRUD, dose logging, history, dashboard, analytics.
-- PWA installability and Web Push notifications (VAPID).
-- WCAG 2.2 AA accessibility pass on core flows.
-- CSV and PDF export of dose history.
-- Smart reminders via Vercel Cron.
-- Password reset flow with secure-token verification.
-- 2FA (TOTP) enrolment and verification.
-- Onboarding welcome flow, My Day timeline, side-effect logging, dose-edit modal.
-- CSP headers, breached-password check via HIBP, baseline rate limiting.
-- Brand assets (vector SVGs), inline SVG nav icons, dark-mode-first Tailwind v4 theme.
-- Initial CLAUDE.md guidance file for AI-assisted development.
-
-[Unreleased]: https://github.com/JWhite212/medication-tracker/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/JWhite212/medication-tracker/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/JWhite212/medication-tracker/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/JWhite212/medication-tracker/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/JWhite212/medication-tracker/compare/v0.0.1...v0.1.0
-[0.0.1]: https://github.com/JWhite212/medication-tracker/releases/tag/v0.0.1

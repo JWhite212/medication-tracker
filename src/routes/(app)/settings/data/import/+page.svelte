@@ -377,7 +377,7 @@
           disabled={!canCommit}
           class="rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 {mode ===
           'replace'
-            ? 'bg-danger text-white'
+            ? 'bg-danger text-danger-fg'
             : 'bg-accent text-accent-fg'}"
         >
           {mode === "replace" ? "Replace all data" : "Import"}

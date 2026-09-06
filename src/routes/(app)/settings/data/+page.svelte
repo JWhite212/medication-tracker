@@ -137,7 +137,7 @@
       <button
         type="submit"
         disabled={deleteConfirmText !== "DELETE" || !deletePassword}
-        class="bg-danger w-full rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        class="bg-danger text-danger-fg w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
         Delete Permanently
       </button>

@@ -113,7 +113,7 @@
       <button
         type="submit"
         disabled={loading}
-        class="bg-accent hover:bg-accent-hover w-full rounded-lg py-2.5 font-medium text-white transition-colors disabled:opacity-50"
+        class="bg-accent hover:bg-accent-hover text-accent-fg w-full rounded-lg py-2.5 font-medium transition-colors disabled:opacity-50"
       >
         {loading ? "Creating account..." : "Create account"}
       </button>

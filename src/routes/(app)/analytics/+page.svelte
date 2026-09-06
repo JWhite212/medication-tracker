@@ -75,7 +75,7 @@
         <button
           class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {data.period ===
           p.value
-            ? 'bg-accent text-white'
+            ? 'bg-accent text-accent-fg'
             : 'text-text-secondary hover:text-text-primary'}"
           onclick={() => setPeriod(p.value)}
         >

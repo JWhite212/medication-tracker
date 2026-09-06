@@ -34,7 +34,7 @@
       >
       <a
         href="/auth/register"
-        class="bg-accent hover:bg-accent-hover rounded-lg px-4 py-2 text-sm font-medium text-white"
+        class="bg-accent hover:bg-accent-hover text-accent-fg rounded-lg px-4 py-2 text-sm font-medium"
         >Get Started</a
       >
     </div>
@@ -61,7 +61,7 @@
         <div class="mt-8 flex flex-wrap gap-4">
           <a
             href="/auth/register"
-            class="bg-accent hover:bg-accent-hover hover:shadow-accent/25 rounded-xl px-8 py-3 text-lg font-medium text-white transition-all hover:shadow-lg"
+            class="bg-accent hover:bg-accent-hover hover:shadow-accent/25 text-accent-fg rounded-xl px-8 py-3 text-lg font-medium transition-all hover:shadow-lg"
           >
             Start Tracking
           </a>

@@ -57,7 +57,7 @@
             showSecondary = true;
             selectedColourSecondary = PRESET_COLOURS[2];
           }}
-          class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed border-white/30 text-lg text-white/40 transition-colors hover:border-white/50 hover:text-white/60"
+          class="border-glass-border text-text-muted hover:border-border-strong hover:text-text-secondary flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed text-lg transition-colors"
           aria-label="Add secondary colour">+</button
         >
       {/if}

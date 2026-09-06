@@ -38,11 +38,24 @@
   const timers = new Map<AppearanceKey, ReturnType<typeof setTimeout>>();
   const inFlight = new Set<AppearanceKey>();
   const queued = new Set<AppearanceKey>();
-  const formEls = new Map<AppearanceKey, HTMLFormElement>();
+  // Populated declaratively via bind:this on each <form> (below), so a
+  // form is registered the moment it mounts -- not only after its first
+  // change event. A submit that never goes through queueSave (implicit
+  // submission, or a Save-button click in the window between use:enhance
+  // attaching and `hydrated` flipping) still finds its form here.
+  const formEls: Partial<Record<AppearanceKey, HTMLFormElement>> = {};
   let acked: Record<string, unknown> = { ...data.preferences };
 
   let status = $state<Record<string, "saving" | "saved" | "error" | undefined>>({});
   let announcement = $state("");
+  // Alternates on every successful save so the announcement string is
+  // never identical twice in a row. Svelte's $state equality check means
+  // re-assigning the SAME string does not re-fire the source -- so a
+  // repeated save of the same key (toggle reduce-motion off, then back
+  // on) would leave the polite region silently unchanged on the second
+  // save. The status text next to each control is aria-hidden, so there
+  // is no fallback channel; this is the only thing a screen reader hears.
+  let announceParity = false;
   // Set once, after hydration -- there is no onMount in this codebase, so
   // an effect is the idiom (log/+page.svelte:16 has the same disable for
   // the same reason: this can't be a $derived because it doesn't derive
@@ -85,9 +98,7 @@
     return "description" in entry ? entry.description : undefined;
   }
 
-  function queueSave(key: AppearanceKey, event: Event) {
-    const control = event.currentTarget as HTMLSelectElement | HTMLInputElement;
-    if (control.form) formEls.set(key, control.form);
+  function queueSave(key: AppearanceKey) {
     clearTimeout(timers.get(key));
     timers.set(
       key,
@@ -107,8 +118,22 @@
     submitField(key);
   }
 
+  /**
+   * Flushes the accent save when focus actually leaves the swatch group --
+   * guarded on `relatedTarget`, because focusout also fires between two
+   * radios in the SAME group (the old one blurs before the new one
+   * focuses). An unguarded focusout would flush on every arrow step and
+   * defeat the debounce entirely.
+   */
+  function handleAccentGroupFocusOut(event: FocusEvent) {
+    const group = event.currentTarget as HTMLFieldSetElement;
+    if (!group.contains(event.relatedTarget as Node)) {
+      flushSave("accentColor");
+    }
+  }
+
   function submitField(key: AppearanceKey) {
-    const form = formEls.get(key);
+    const form = formEls[key];
     if (!form) return;
     // Arrowing away and back lands on the value already stored: no POST,
     // so a keyboard user cannot burn a rate-limit token standing still.
@@ -138,17 +163,23 @@
 
       return async ({ result, update }) => {
         inFlight.delete(key);
+        let rateLimited = false;
 
         if (result.type === "success") {
           acked[key] = attempted;
           status[key] = "saved";
-          announcement = `${labelOf(key)} saved`;
+          announceParity = !announceParity;
+          // Trailing zero-width space forces a distinct string on every
+          // save (see the announceParity declaration above) without
+          // changing what a screen reader actually reads aloud.
+          announcement = `${labelOf(key)} saved${announceParity ? "​" : ""}`;
         } else {
           // `data` is unchanged on a failure, so the re-seed effect above
           // does NOT run: this assignment is the only thing that puts the
           // control back. Skip it if the user already chose something newer.
           if (!queued.has(key)) values[key] = previous as never;
           status[key] = "error";
+          rateLimited = result.type === "failure" && result.status === 429;
           showToast(
             result.type === "failure" && typeof result.data?.saveError === "string"
               ? result.data.saveError
@@ -157,12 +188,38 @@
           );
         }
 
-        // reset:false is not optional: hydration strips the checked/value
-        // ATTRIBUTES while keeping the properties, so form.reset() blanks
-        // the control that was just saved.
-        await update({ reset: false });
-
-        if (queued.delete(key)) submitField(key);
+        try {
+          // reset:false is not optional: hydration strips the checked/value
+          // ATTRIBUTES while keeping the properties, so form.reset() blanks
+          // the control that was just saved.
+          await update({ reset: false });
+        } finally {
+          // `finally` (not a bare await) so a queued change is still
+          // replayed -- or, on a 429, still cleared -- even if update()
+          // itself rejects (a transient load failure on the (app) layout).
+          // Without this, `key` stays in `queued` for the rest of the
+          // session: permanently skipped by the re-seed guard and by the
+          // failure-revert above.
+          const hadQueued = queued.delete(key);
+          if (hadQueued) {
+            if (rateLimited) {
+              // The server just asked us to slow down; replaying the
+              // instant update() resolves would produce a second
+              // rejected POST -- and a second error toast -- for the one
+              // user intent that queued behind this save. Re-arm the
+              // normal debounce timer instead of retrying immediately.
+              timers.set(
+                key,
+                setTimeout(() => {
+                  timers.delete(key);
+                  submitField(key);
+                }, SAVE_DEBOUNCE_MS),
+              );
+            } else {
+              submitField(key);
+            }
+          }
+        }
       };
     };
   }
@@ -194,8 +251,13 @@
 
   <GlassCard>
     <div class="space-y-6">
-      <form method="POST" action={actionFor("accentColor")} use:enhance={save("accentColor")}>
-        <fieldset class="m-0 border-0 p-0">
+      <form
+        method="POST"
+        action={actionFor("accentColor")}
+        use:enhance={save("accentColor")}
+        bind:this={formEls.accentColor}
+      >
+        <fieldset class="m-0 border-0 p-0" onfocusout={handleAccentGroupFocusOut}>
           <legend class="mb-2 block text-sm font-medium">{entryFor("accentColor").label}</legend>
           <div class="flex flex-wrap gap-2">
             {#each presetColours as colour (colour)}
@@ -205,14 +267,16 @@
                   name="accentColor"
                   value={colour}
                   bind:group={values.accentColor}
-                  onchange={(event) => queueSave("accentColor", event)}
+                  onchange={() => queueSave("accentColor")}
                   class="peer sr-only"
                 />
                 <span
                   class="border-text-primary peer-focus-visible:ring-accent-ink block h-8 w-8 rounded-full border-2 border-transparent transition-transform peer-checked:scale-110 peer-checked:border-2 peer-focus-visible:ring-2 hover:scale-110"
                   style="background-color: {colour}"
                 ></span>
-                <span class="sr-only">{colour}</span>
+                <span class="sr-only"
+                  >{entryFor("accentColor").optionLabelTemplate.replace("{value}", colour)}</span
+                >
               </label>
             {/each}
           </div>
@@ -232,7 +296,12 @@
 
       {#each APPEARANCE_ENTRIES.filter((e) => e.control === "select") as entry (entry.key)}
         {@const desc = descriptionOf(entry)}
-        <form method="POST" action={actionFor(entry.key)} use:enhance={save(entry.key)}>
+        <form
+          method="POST"
+          action={actionFor(entry.key)}
+          use:enhance={save(entry.key)}
+          bind:this={formEls[entry.key]}
+        >
           <label for={entry.key} class="mb-1 block text-sm font-medium">
             {entry.label}
             {#if desc}
@@ -243,7 +312,7 @@
             id={entry.key}
             name={entry.key}
             bind:value={values[entry.key]}
-            onchange={(event) => queueSave(entry.key, event)}
+            onchange={() => queueSave(entry.key)}
             onblur={() => flushSave(entry.key)}
             class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           >
@@ -265,7 +334,12 @@
         </form>
       {/each}
 
-      <form method="POST" action={actionFor("reducedMotion")} use:enhance={save("reducedMotion")}>
+      <form
+        method="POST"
+        action={actionFor("reducedMotion")}
+        use:enhance={save("reducedMotion")}
+        bind:this={formEls.reducedMotion}
+      >
         <div class="flex items-center gap-3">
           <!-- The hidden "off" precedes the checkbox so the key is ALWAYS
                present: an unchecked box submits nothing, and a required
@@ -280,12 +354,13 @@
             name="reducedMotion"
             value="on"
             bind:checked={values.reducedMotion}
-            onchange={(event) => queueSave("reducedMotion", event)}
+            onchange={() => queueSave("reducedMotion")}
+            onblur={() => flushSave("reducedMotion")}
             class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
           />
           <label for="reducedMotion" class="text-sm font-medium">
             {entryFor("reducedMotion").label}
-            <Tooltip text={entryFor("reducedMotion").description!} />
+            <Tooltip text={entryFor("reducedMotion").description} />
           </label>
         </div>
         {#if !hydrated}

@@ -2,6 +2,7 @@
   import Sidebar from "$components/Sidebar.svelte";
   import MobileHeader from "$components/MobileHeader.svelte";
   import type { SessionUser } from "$lib/types";
+  import { readableForeground } from "$lib/utils/contrast";
 
   let { data, children } = $props();
   let sidebarOpen = $state(false);
@@ -11,23 +12,8 @@
   // to true), so registering a second script at the same scope from this
   // layout made the two evict each other on every load.
 
-  function accentFg(hex: string): string {
-    const lin = (c: number) => {
-      const s = c / 255;
-      return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-    };
-    const r = lin(parseInt(hex.slice(1, 3), 16));
-    const g = lin(parseInt(hex.slice(3, 5), 16));
-    const b = lin(parseInt(hex.slice(5, 7), 16));
-    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    // WCAG contrast ratio: pick whichever (white or dark) has higher contrast
-    const crWhite = 1.05 / (L + 0.05);
-    const crDark = (L + 0.05) / (0.005 + 0.05);
-    return crWhite >= crDark ? "#ffffff" : "#111111";
-  }
-
   const accentColor = $derived(data.preferences.accentColor);
-  const accentFgColor = $derived(accentFg(accentColor));
+  const accentFgColor = $derived(readableForeground(accentColor).color);
 </script>
 
 <svelte:head>

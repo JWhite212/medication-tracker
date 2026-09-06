@@ -53,13 +53,14 @@
 
 Computed with the same WCAG relative-luminance formula this PR extracts into `contrast.ts`, against all six real surfaces — `#0a0a0f`, `#12121a`, `#1a1a25`, and the three white-alpha glass composites `#1e1e22`, `#25252c`, `#33333a`. `min` is the worst of the six.
 
-| Token                      | Current   | min now         | New       | min after           |
-| -------------------------- | --------- | --------------- | --------- | ------------------- |
-| `--color-text-secondary`   | `#8888a0` | 3.63            | `#c3c3d4` | **7.21**            |
-| `--color-text-muted`       | `#71718a` | 2.64            | `#9a9aac` | **4.53**            |
-| `--color-danger` (as text) | `#ef4444` | 3.33            | `#f37474` | **4.51**            |
-| `--color-accent` (as fill) | `#6366f1` | white-on = 4.47 | `#4f46e5` | white-on = **6.29** |
-| `--color-accent-ink` (new) | —         | —               | `#8f92f5` | **4.54**            |
+| Token                      | Current   | min now              | New       | min after           |
+| -------------------------- | --------- | -------------------- | --------- | ------------------- |
+| `--color-text-secondary`   | `#8888a0` | 3.63                 | `#c3c3d4` | **7.21**            |
+| `--color-text-muted`       | `#71718a` | 2.64                 | `#9a9aac` | **4.53**            |
+| `--color-danger-ink` (new) | —         | (`#ef4444` was 3.33) | `#f37474` | **4.51**            |
+| `--color-danger` (as fill) | `#ef4444` | black-on 5.02        | unchanged | black-on **5.02**   |
+| `--color-accent` (as fill) | `#6366f1` | white-on = 4.47      | `#4f46e5` | white-on = **6.29** |
+| `--color-accent-ink` (new) | —         | —                    | `#8f92f5` | **4.54**            |
 
 The accent row is the empirical proof of the spec's Decision 4: `#4f46e5` scores **1.99:1 used as text**, and `#8f92f5` scores **2.76:1 with white on it**. No single value satisfies both roles — the split is forced, not stylistic.
 
@@ -404,7 +405,11 @@ describe("text tokens meet 4.5:1 on every surface they render on", () => {
     "--color-text-secondary",
     "--color-text-muted",
     "--color-accent-ink",
-    "--color-danger",
+    "--color-danger-ink",
+    // success and warning are asserted here too: they are used as text in 14
+    // and 15 files respectively, and both already pass, so this pins that.
+    "--color-success",
+    "--color-warning",
   ];
 
   for (const token of TEXT_TOKENS) {
@@ -472,9 +477,9 @@ Expected: FAIL. Read the output and confirm you see, at minimum:
 
 - `--color-text-secondary on glass-hover` — 3.63:1
 - `--color-text-muted on glass-hover` — 2.64:1 (and four more `--color-text-muted` failures)
-- `--color-danger on glass-hover` — 3.33:1
+- `--color-danger-ink is not defined` (the token this replaces, `--color-danger`, is 3.33:1 on glass-hover)
 - `--color-accent-fg on --color-accent` — 4.47:1
-- Several `is not defined` failures for `--color-accent-ink`, `--color-border-strong`, `--color-danger-fg`, `--color-success-fg`, `--color-warning-fg`, `--color-heatmap-0..4`
+- Several `is not defined` failures for `--color-accent-ink`, `--color-border-strong`, `--color-danger-ink`, `--color-danger-fg`, `--color-success-fg`, `--color-warning-fg`, `--color-heatmap-0..4`
 
 If you do **not** see `glass-hover` failures, the composite maths or the parse is wrong — fix that before proceeding, because a test that passes here proves nothing.
 
@@ -500,7 +505,7 @@ git commit -m "test(theme): assert token contrast pairs (currently failing)" --n
 **Interfaces:**
 
 - Consumes: the assertions from Task 2.
-- Produces: the tokens `--color-accent-ink`, `--color-border-strong`, `--color-danger-fg`, `--color-success-fg`, `--color-warning-fg`, `--color-info`, `--color-scrim`, `--color-heatmap-0` … `--color-heatmap-4`. Tasks 4-8 consume these by name.
+- Produces: the tokens `--color-accent-ink`, `--color-danger-ink`, `--color-border-strong`, `--color-danger-fg`, `--color-success-fg`, `--color-warning-fg`, `--color-info`, `--color-scrim`, `--color-heatmap-0` … `--color-heatmap-4`. Tasks 4-8 consume these by name.
 
 - [ ] **Step 1: Replace the `@theme` block**
 
@@ -528,12 +533,18 @@ In `src/app.css`, replace lines 3-24 entirely with:
   --color-accent-hover: #6366f1;
   --color-accent-fg: #ffffff;
   --color-accent-ink: #8f92f5;
+  /* success and warning need no ink variant: both already clear 4.5:1 as
+     text on all six surfaces (4.94 and 5.84) and 4.5:1 as fills with a
+     near-black foreground (7.44 and 8.79). danger does not — #ef4444 is
+     3.33:1 as text — so it splits like the accent rather than shifting the
+     fill to salmon across 16 files to fix the other 26. */
   --color-success: #10b981;
   --color-success-fg: #111111;
   --color-warning: #f59e0b;
   --color-warning-fg: #111111;
-  --color-danger: #f37474;
+  --color-danger: #ef4444;
   --color-danger-fg: #111111;
+  --color-danger-ink: #f37474;
   /* Neutral/informational. Previously `accent` did this job, which collides
      with warning/danger the moment a user picks an amber accent. */
   --color-info: #8f92f5;
@@ -560,7 +571,7 @@ Note `--radius-xs: 0.25rem` is new — it names the tier that 30-odd sites curre
 Run: `npx vitest run tests/unit/theme-tokens.test.ts`
 Expected: PASS, all pairs green.
 
-If `--color-danger` now fails a _fill_ assertion, note `#f37474` with `--color-danger-fg: #111111` measures 5.02:1 — it passes. If you see a failure, re-read the ratio in the message rather than adjusting the threshold.
+The danger fill stays `#ef4444`; with `--color-danger-fg: #111111` it measures 5.02:1 and passes. The 3.33:1 text problem is solved by the separate `--color-danger-ink`, not by moving the fill. If an assertion fails, re-read the ratio in the message rather than adjusting the threshold.
 
 - [ ] **Step 3: Add `color-scheme` to the base layer**
 
@@ -618,10 +629,11 @@ Two mechanical migrations onto tokens Task 3 added. Both must land, and the seco
 Run:
 
 ```bash
-grep -rn "text-accent\b\|border-accent\b\|ring-accent\b\|focus:border-accent\|focus:ring-accent" src --include="*.svelte" | tee /tmp/accent-sites.txt | wc -l
+grep -rnE "(text|border|ring)-(accent|danger)(?!-)" src --include="*.svelte" \
+  | tee /tmp/ink-sites.txt | wc -l
 ```
 
-Expected: roughly 90 lines across ~40 files. Keep the file; Step 4 diffs against it.
+Expected: roughly 130 lines — ~90 accent across ~40 files, plus ~40 danger across 26 files. Keep the file; Step 4 diffs against it. (If your `grep` lacks `-P`-style lookahead, drop the `(?!-)` here — this step only lists candidates, and the perl in Step 2 is where precision matters.)
 
 - [ ] **Step 2: Apply the rule**
 
@@ -635,30 +647,40 @@ The rule is mechanical:
 | `focus:border-accent`                                | `focus:border-accent-ink` | same                           |
 | `bg-accent`, `bg-accent/10`, `hover:bg-accent-hover` | **unchanged**             | fill role                      |
 | `text-accent-fg`                                     | **unchanged**             | already the paired foreground  |
+| `text-danger`, `border-danger`                       | `…-danger-ink`            | 3.33:1 as text — see Task 3    |
+| `bg-danger`, `bg-danger/10`                          | **unchanged**             | fill role, stays `#ef4444`     |
+| `text-success`, `text-warning`                       | **unchanged**             | both already clear 4.5:1       |
 
-Do not use a blind `sed`: `text-accent-fg` contains `text-accent` as a prefix and must not be rewritten. Use a word-boundary-anchored replacement:
+**A word boundary is not enough here, and this is the trap.** `\b` matches between `accent` and the `-` of `text-accent-fg`, so `\btext-accent\b` rewrites it to `text-accent-ink-fg`. `text-accent-fg` already exists in the codebase (`EmptyState.svelte:33,41` among others), so a `\b`-only pattern corrupts real files. Use perl with a negative lookahead so a following hyphen blocks the match:
 
 ```bash
-grep -rl "text-accent\b\|border-accent\b\|ring-accent\b" src --include="*.svelte" \
-  | xargs sed -i '' -E 's/\b(text|border|ring)-accent\b/\1-accent-ink/g'
+grep -rlE "(text|border|ring)-(accent|danger)" src --include="*.svelte" \
+  | xargs perl -pi -e 's/\b(text|border|ring)-(accent|danger)(?!-)\b/$1-$2-ink/g'
 ```
 
-On Linux drop the `''` after `-i`.
+The `(?!-)` is what protects `text-accent-fg`, `bg-accent-hover` and (once Task 5 lands) `text-danger-fg`. `bg-` is absent from the alternation, so every fill is untouched.
 
 - [ ] **Step 3: Verify nothing over-matched**
 
 Run:
 
 ```bash
-grep -rn "accent-fg-ink\|accent-ink-fg\|accent-hover-ink\|bg-accent-ink" src --include="*.svelte" || echo "clean"
+grep -rn "accent-fg-ink\|accent-ink-fg\|accent-hover-ink\|bg-accent-ink\|danger-fg-ink\|danger-ink-fg\|bg-danger-ink\|-ink-ink" src --include="*.svelte" || echo "clean"
 ```
 
-Expected: `clean`. Any hit is an over-match — revert that line by hand.
+Expected: `clean`. Any hit means the lookahead did not apply — check you ran `perl`, not `sed`, then `git checkout -- src` and redo Step 2.
 
 - [ ] **Step 4: Confirm the fill sites survived**
 
-Run: `grep -rc "bg-accent\b" src --include="*.svelte" | grep -v ":0" | wc -l`
-Expected: a non-zero count, unchanged from before the edit. `bg-accent` must not have been touched.
+Run:
+
+```bash
+for c in bg-accent bg-danger bg-success bg-warning text-success text-warning; do
+  printf "%-14s %s\n" "$c" "$(grep -rc "$c\b" src --include='*.svelte' | grep -v ':0' | wc -l | tr -d ' ')"
+done
+```
+
+Expected: every count non-zero and unchanged from before the edit. Fills and the two already-passing status text colours must not have been touched.
 
 - [ ] **Step 5: List the control boundaries**
 
@@ -744,7 +766,7 @@ The five auth pages and the landing page sit outside the `(app)` group, so `--co
 `src/routes/(app)/settings/data/+page.svelte:140` — `bg-danger … text-white` becomes `bg-danger … text-danger-fg`.
 `src/routes/(app)/settings/data/import/+page.svelte:380` — `'bg-danger text-white'` becomes `'bg-danger text-danger-fg'`.
 
-With Task 3's `--color-danger: #f37474` and `--color-danger-fg: #111111` this moves from 3.76:1 to 5.02:1.
+The fill stays `#ef4444`; pairing it with `--color-danger-fg: #111111` moves these from 3.76:1 to 5.02:1.
 
 - [ ] **Step 3: Fix the style picker's dashed button**
 
@@ -1052,11 +1074,11 @@ git commit -m "fix(toast): mount once in the app layout so /log and settings toa
 
 ### Task 9: Dashboard empty state uses the shared component
 
-`dashboard/+page.svelte:110-115` hand-rolls a card duplicating `GlassCard`'s exact class string, for what is an empty state that `EmptyState.svelte` exists to render.
+`dashboard/+page.svelte` hand-rolls (around line 110 before Task 8, ~108 after) a card duplicating `GlassCard`'s exact class string, for what is an empty state that `EmptyState.svelte` exists to render.
 
 **Files:**
 
-- Modify: `src/routes/(app)/dashboard/+page.svelte:110-115`
+- Modify: `src/routes/(app)/dashboard/+page.svelte` — the `{#if data.doses.length === 0 && overdueMeds.length === 0}` branch. **Do not trust a line number here:** Task 8 deletes two lines from this file (the `Toast` import and its mount), so every line below shifts up by two. Match on the code, not the offset.
 
 **Interfaces:**
 
@@ -1073,7 +1095,7 @@ import EmptyState from "$components/EmptyState.svelte";
 
 - [ ] **Step 2: Replace the hand-rolled card**
 
-Replace lines 110-115 — the `{#if data.doses.length === 0 && overdueMeds.length === 0}` branch and its `<div class="border-glass-border bg-glass rounded-xl border p-8 text-center backdrop-blur-xl">` wrapper — with:
+Replace the `{#if data.doses.length === 0 && overdueMeds.length === 0}` branch and its `<div class="border-glass-border bg-glass rounded-xl border p-8 text-center backdrop-blur-xl">` wrapper — with:
 
 ```svelte
       {#if data.doses.length === 0 && overdueMeds.length === 0}
@@ -1380,7 +1402,7 @@ Note the CI job is gated on `vars.RUN_E2E == 'true'` — check whether that is s
 Add to the `### Fixed` list under `## [Unreleased]` in `CHANGELOG.md`:
 
 ```markdown
-- Dark palette raised to WCAG AA. `--color-text-secondary` (3.63:1 → 7.21:1) and `--color-text-muted` (2.64:1 → 4.53:1) now clear 4.5:1 on all six surfaces including the glass composites; `--color-danger` moves to `#f37474`; a new `--color-border-strong` gives form inputs a 3:1 boundary (WCAG 1.4.11), which the 1.33:1 decorative hairline never provided.
+- Dark palette raised to WCAG AA. `--color-text-secondary` (3.63:1 → 7.21:1) and `--color-text-muted` (2.64:1 → 4.53:1) now clear 4.5:1 on all six surfaces including the glass composites; a new `--color-danger-ink` (`#f37474`, 4.51:1) carries the 26 files that use danger as text, while the `#ef4444` fill is unchanged; a new `--color-border-strong` gives form inputs a 3:1 boundary (WCAG 1.4.11), which the 1.33:1 decorative hairline never provided.
 - The accent splits into two tokens. `--color-accent` (`#4f46e5`) is the fill, and white on it now measures 6.29:1 rather than 4.47:1; `--color-accent-ink` (`#8f92f5`) is the text and border variant at 4.54:1. No single value satisfies both roles — the fill scores 1.99:1 as text.
 - Toast notifications render outside the dashboard. `<Toast />` is mounted once in the app layout; it was previously mounted only on `/dashboard`, so dose deletion on `/log` and the push toggles in settings produced no visible confirmation at all.
 - Compact display density no longer pushes page content under the fixed mobile header — the rule used the `padding` shorthand, which reset `padding-top`.
@@ -1411,7 +1433,7 @@ git commit -m "test(a11y): surface axe's undetermined contrast and scan the sett
 - **Every token Task 3 adds has at least one consumer.** Tailwind v4 tree-shakes unreferenced `@theme` variables, and `theme-tokens.test.ts` parses `app.css` directly — so an unused token passes its test while never reaching the browser. Check each:
 
   ```bash
-  for t in accent-ink border-strong scrim info heatmap-0 heatmap-4 danger-fg success-fg warning-fg radius-xs; do
+  for t in accent-ink danger-ink border-strong scrim info heatmap-0 heatmap-4 danger-fg success-fg warning-fg radius-xs; do
     printf "%-14s %s\n" "$t" "$(grep -rc "\-$t\|$t" src --include='*.svelte' --include='*.html' | grep -v ':0' | wc -l)"
   done
   ```

@@ -89,6 +89,13 @@ describe("text tokens meet 4.5:1 on every surface they render on", () => {
     // and 15 files respectively, and both already pass, so this pins that.
     "--color-success",
     "--color-warning",
+    // info is rendered as text on the medications list chip.
+    "--color-info",
+    // --color-accent-hover is deliberately NOT here. It is a fill-only token
+    // (see app.css) and would need to be near #4f46e5's lightness to work as
+    // text, which is the opposite of what white-on-fill needs. It is asserted
+    // in the fill table below instead — it used to be asserted nowhere, which
+    // is how it regressed to 2.81:1 while being rendered as text at 3 sites.
   ];
 
   for (const token of TEXT_TOKENS) {
@@ -127,6 +134,7 @@ describe("every accent preset a user can pick carries a legible foreground", () 
 describe("solid fills carry a legible foreground", () => {
   const PAIRS: [fill: string, fg: string][] = [
     ["--color-accent", "--color-accent-fg"],
+    ["--color-accent-hover", "--color-accent-fg"],
     ["--color-danger", "--color-danger-fg"],
     ["--color-success", "--color-success-fg"],
     ["--color-warning", "--color-warning-fg"],

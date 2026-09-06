@@ -18,7 +18,13 @@
      2.76:1 with white on it. The layout sets --color-accent inline from the
      user's stored hex; --color-accent-ink is derived. */
   --color-accent: #4f46e5;
-  --color-accent-hover: #6366f1;
+  /* accent-hover is a FILL ONLY, and only on the logged-out routes: every
+     authenticated accent button uses `hover:opacity-90`, because in there
+     --color-accent and --color-accent-fg are inline from the user's stored
+     hex and a fixed hover colour cannot pair with both a light and a dark
+     accent-fg. It darkens rather than lightens because nothing lighter than
+     #4f46e5 keeps white above 4.5:1 — #6366f1 was 4.47. */
+  --color-accent-hover: #4338ca;
   --color-accent-fg: #ffffff;
   --color-accent-ink: #8f92f5;
   /* success and warning need no ink variant: both already clear 4.5:1 as

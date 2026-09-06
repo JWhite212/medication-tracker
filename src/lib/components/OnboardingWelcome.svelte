@@ -58,7 +58,7 @@
         </button>
         <button
           type="button"
-          class="text-accent-ink hover:text-accent-hover text-sm font-medium transition-colors"
+          class="text-accent-ink hover:text-text-primary text-sm font-medium transition-colors"
           onclick={() => (step = 2)}
         >
           Next

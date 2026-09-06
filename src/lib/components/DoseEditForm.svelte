@@ -99,7 +99,7 @@
     <button
       type="submit"
       disabled={loading}
-      class="bg-accent text-accent-fg hover:bg-accent-hover flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
+      class="bg-accent text-accent-fg flex-1 rounded-lg py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
     >
       {loading ? "Saving..." : "Save Changes"}
     </button>

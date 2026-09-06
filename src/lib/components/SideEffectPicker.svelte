@@ -66,7 +66,7 @@
         type="button"
         onclick={() => toggle(name)}
         class="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors {isSelected(name)
-          ? 'border-accent-ink bg-accent/15 text-accent-hover'
+          ? 'border-accent-ink bg-accent/15 text-accent-ink'
           : 'border-glass-border bg-glass text-text-secondary hover:bg-glass-hover'}"
       >
         {name}
@@ -78,7 +78,7 @@
       <button
         type="button"
         onclick={() => toggle(effect.name)}
-        class="border-accent-ink bg-accent/15 text-accent-hover rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+        class="border-accent-ink bg-accent/15 text-accent-ink rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
       >
         {effect.name}
       </button>

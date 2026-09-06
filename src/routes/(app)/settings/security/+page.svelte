@@ -3,7 +3,6 @@
   import { goto } from "$app/navigation";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import Input from "$lib/components/ui/Input.svelte";
-  import { formatUserDate, type DateFormat } from "$lib/utils/time";
 
   let { data, form } = $props();
 
@@ -176,11 +175,7 @@
               {/if}
             </div>
             <p class="text-text-muted text-xs">
-              Expires {formatUserDate(
-                new Date(session.expiresAt),
-                data.user.timezone,
-                data.preferences.dateFormat as DateFormat,
-              )}
+              Expires {new Date(session.expiresAt).toLocaleDateString()}
             </p>
           </div>
 

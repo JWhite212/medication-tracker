@@ -45,8 +45,6 @@ export const load: PageServerLoad = async ({ locals }) => {
     getRefillForecast(userId),
   ]);
 
-  // Sparkline day keys, joined against `date(... AT TIME ZONE ...)` above —
-  // a key, not a label, so it stays en-CA and ignores preferences.dateFormat.
   const fmtDate = new Intl.DateTimeFormat("en-CA", {
     timeZone: safeTz,
     year: "numeric",

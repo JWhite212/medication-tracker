@@ -175,12 +175,29 @@
   transition-duration: 0.01ms !important;
 }
 
-/* High contrast: system preference */
+/* High contrast: system preference.
+ *
+ * Every line here must deliver MORE contrast than the @theme value it
+ * shadows, and these were all written against the pre-AA base — after that
+ * base was raised they had quietly become downgrades (text-muted measured
+ * 4.02:1, below both AA and the 4.53:1 it was overriding). Asking for more
+ * contrast must never give you less. theme-tokens.test.ts parses this block
+ * and compares each override against the token it replaces.
+ *
+ * --color-accent reaches the logged-out routes only: inside (app) the layout
+ * sets it inline from the user's stored hex and an inline style beats a media
+ * query. Raising it is still right for /, /auth/* and the like.
+ *
+ * --color-glass-border stays even though control boundaries moved to
+ * --color-border-strong: it is now a decorative hairline, several buttons
+ * still carry it, and 0.12 -> 0.24 is an increase in both readings.
+ */
 @media (prefers-contrast: more) {
   :root {
-    --color-text-muted: #9090a8;
-    --color-text-secondary: #a0a0b8;
+    --color-text-muted: #ababba;
+    --color-text-secondary: #d4d4e0;
     --color-glass-border: rgba(255, 255, 255, 0.24);
-    --color-accent: #818cf8;
+    --color-border-strong: rgba(255, 255, 255, 0.5);
+    --color-accent: #3730a3;
   }
 }

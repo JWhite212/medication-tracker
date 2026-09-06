@@ -10,10 +10,29 @@ import { contrastRatio, compositeOver, readableForeground } from "$lib/utils/con
  * token in app.css and breaks a pair, this goes red.
  */
 function readThemeTokens(): Record<string, string> {
-  const cssPath = fileURLToPath(new URL("../../src/app.css", import.meta.url));
-  const css = readFileSync(cssPath, "utf8");
-  const block = css.match(/@theme\s*\{([\s\S]*?)\n\}/);
-  if (!block) throw new Error("Could not find the @theme block in src/app.css");
+  return parseDeclarations(readAppCss(), /@theme\s*\{([\s\S]*?)\n\}/, "the @theme block");
+}
+
+/**
+ * The `prefers-contrast: more` overrides. This block was invisible to the
+ * test for the whole of 1a, which is how it ended up shipping LESS contrast
+ * than the base it overrides once the base was raised.
+ */
+function readHighContrastTokens(): Record<string, string> {
+  return parseDeclarations(
+    readAppCss(),
+    /@media \(prefers-contrast: more\)\s*\{\s*:root\s*\{([\s\S]*?)\n\s*\}/,
+    "the prefers-contrast block",
+  );
+}
+
+function readAppCss(): string {
+  return readFileSync(fileURLToPath(new URL("../../src/app.css", import.meta.url)), "utf8");
+}
+
+function parseDeclarations(css: string, re: RegExp, label: string): Record<string, string> {
+  const block = css.match(re);
+  if (!block) throw new Error(`Could not find ${label} in src/app.css`);
   const tokens: Record<string, string> = {};
   for (const line of block[1].split("\n")) {
     const m = line.match(/^\s*(--[\w-]+):\s*(.+?);\s*$/);
@@ -158,6 +177,62 @@ describe("control boundaries meet the 3:1 non-text minimum (WCAG 1.4.11)", () =>
       const border = compositeOver(whiteAlpha(T["--color-border-strong"]), bg);
       const ratio = contrastRatio(border, bg);
       expect(ratio, `composites to ${border}, ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(3);
+    });
+  }
+});
+
+describe("prefers-contrast: more raises contrast on every token it overrides", () => {
+  const HC = readHighContrastTokens();
+
+  /**
+   * How each override is measured. An override with no entry here fails the
+   * first test rather than being silently skipped — adding a line to the
+   * block must be a decision about what "more contrast" means for it.
+   *
+   * "text"        worst ratio across the six surfaces
+   * "white-alpha" worst ratio of the composited hairline against its surface
+   * "fill"        ratio against --color-accent-fg
+   */
+  const ROLES: Record<string, "text" | "white-alpha" | "fill"> = {
+    "--color-text-muted": "text",
+    "--color-text-secondary": "text",
+    "--color-glass-border": "white-alpha",
+    "--color-border-strong": "white-alpha",
+    "--color-accent": "fill",
+  };
+
+  function worstRatio(role: string, value: string): number {
+    if (role === "fill") return contrastRatio(T["--color-accent-fg"], value);
+    const ratios = Object.values(surfaces()).map((bg) =>
+      role === "white-alpha"
+        ? contrastRatio(compositeOver(whiteAlpha(value), bg), bg)
+        : contrastRatio(value, bg),
+    );
+    return Math.min(...ratios);
+  }
+
+  it("declares a role for every token it overrides", () => {
+    expect(Object.keys(HC).sort()).toEqual(Object.keys(ROLES).sort());
+  });
+
+  for (const [token, role] of Object.entries(ROLES)) {
+    it(`${token} beats the base it shadows`, () => {
+      expect(HC[token], `${token} is not overridden in the prefers-contrast block`).toBeDefined();
+      expect(T[token], `${token} is not defined in @theme`).toBeDefined();
+      const base = worstRatio(role, T[token]);
+      const high = worstRatio(role, HC[token]);
+      expect(
+        high,
+        `${HC[token]} is ${high.toFixed(2)}:1 but the base ${T[token]} is ${base.toFixed(2)}:1`,
+      ).toBeGreaterThan(base);
+    });
+  }
+
+  for (const [token, role] of Object.entries(ROLES)) {
+    if (role === "white-alpha") continue; // hairlines and fills carry their own thresholds
+    it(`${token} still meets 4.5:1`, () => {
+      const high = worstRatio(role, HC[token]);
+      expect(high, `${HC[token]} is ${high.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
     });
   }
 });

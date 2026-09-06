@@ -363,7 +363,10 @@ overrides date fields to ISO strings:
 
 > The four enum-valued fields are `string` in the emitted type, not unions — the column type is
 > `text` and the doors, not the serializer, enforce the value set. `src/lib/appearance/schema.ts`
-> exports `AppearanceValues` if a client wants the narrow type.
+> exports `AppearanceValues`, but it narrows only three of them (`dateFormat`, `timeFormat`,
+> `uiDensity`) — `exportFormat` belongs to the data settings page, not the appearance registry,
+> and has no exported narrow type anywhere in the repo; it exists only as an inline
+> `z.enum(["pdf", "csv"])` repeated across three schemas in `src/lib/utils/validation.ts`.
 
 ## 4. `POST /commands`
 

@@ -9,6 +9,7 @@
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import KeyboardShortcuts from "$components/KeyboardShortcuts.svelte";
   import RefillsCard from "$components/RefillsCard.svelte";
+  import EmptyState from "$components/EmptyState.svelte";
   import type { DoseLogWithMedication } from "$lib/types";
   import { formatDueIn } from "$lib/utils/time";
   import { getMedicationBackground } from "$lib/utils/medication-style";
@@ -105,11 +106,7 @@
       {/if}
 
       {#if data.doses.length === 0 && overdueMeds.length === 0}
-        <div
-          class="border-glass-border bg-glass rounded-xl border p-8 text-center backdrop-blur-xl"
-        >
-          <p class="text-text-secondary">No doses logged today</p>
-        </div>
+        <EmptyState title="No doses logged today" />
       {:else if data.doses.length > 0}
         <div class="space-y-2" role="list" aria-label="Today's doses">
           {#each data.doses as dose (dose.id)}

@@ -29,6 +29,7 @@ const BASE_ROW = {
   doseLogPageSize: 20,
   heatmapPeriod: 90,
   exportFormat: "pdf",
+  updatedAt: new Date("2026-08-01T00:00:00Z"),
 };
 
 async function auditRows() {
@@ -103,7 +104,7 @@ describe("updatePreferences audit", () => {
 
     await updatePreferences("u1", { accentColor: "#4f46e5", timeFormat: "12h" });
 
-    expect((await storedRow()).updatedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect((await storedRow()).updatedAt.getTime()).toBeGreaterThan(before.getTime());
     expect(await auditRows()).toHaveLength(0);
   });
 
@@ -125,9 +126,14 @@ describe("updatePreferences audit", () => {
   });
 
   it("audits only the fields a partial payload named", async () => {
-    // exportFormat is the only field submitted; heatmapPeriod must not
-    // leak into the recorded changes even though it is part of the row
-    // the UPDATE returns.
+    // exportFormat is the only field submitted, and it is the only key
+    // computeChanges is given to walk (see the `submitted` narrowing in
+    // updatePreferences) -- so no other column, changed or not, can appear
+    // in the recorded diff. This fixture doesn't change any other column;
+    // pinning a genuine divergence (some other field changing underneath
+    // an unrelated submission) would need a second write racing this one,
+    // which is out of scope here and covered instead by
+    // tests/unit/pg/preferences-audit.test.ts.
     await updatePreferences("u1", { exportFormat: "csv" });
 
     expect((await auditRows())[0].changes).toEqual({

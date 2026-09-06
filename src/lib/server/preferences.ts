@@ -58,6 +58,15 @@ export async function updatePreferences(
   // version that writer committed. Without it, two overlapping instant
   // saves both diff against the same stale row and the second one's
   // change is never audited -- see tests/unit/pg/preferences-audit.test.ts.
+  //
+  // That test runs on PGlite, a single in-process backend, so it can never
+  // produce two overlapping *statements* -- it only reproduces the
+  // JS-level interleaving (both calls' getOrCreatePreferences reads
+  // landing before either UPDATE), which moving the read inside the write
+  // fixes on its own, lock or no lock. `for update` itself is only
+  // exercisable with two real Postgres backends, so this suite gives it no
+  // coverage; the READ COMMITTED reasoning above is the only reason to
+  // keep it.
   const previous = db
     .$with("previous")
     .as(db.select().from(userPreferences).where(eq(userPreferences.userId, userId)).for("update"));

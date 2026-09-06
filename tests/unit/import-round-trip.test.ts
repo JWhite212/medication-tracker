@@ -267,6 +267,45 @@ describe("JSON backup round trip", () => {
     expect(JSON.stringify(result.bundle)).not.toContain(USER_ID);
     expect(JSON.stringify(result.bundle)).not.toContain("source@example.com");
   });
+
+  it("round-trips every appearance option at a non-default value", () => {
+    // The failure this guards is silent: serializePreferences spreads the
+    // whole row, so a field missing from the import schema is emitted on
+    // export and dropped on the way back in -- a 200, no error, no audit
+    // row, and the setting is gone. Non-default values only, or a dropped
+    // field would look identical to a preserved one. (The "preserves
+    // preferences" case above leaves accentColor and dateFormat at their
+    // column defaults, so it can't tell a preserved default from a
+    // silently dropped one -- this case can't fall into that trap.)
+    const appearance = {
+      accentColor: "#f97316",
+      dateFormat: "YYYY-MM-DD" as const,
+      timeFormat: "24h" as const,
+      uiDensity: "compact" as const,
+      reducedMotion: true,
+    };
+
+    const envelope = JSON.stringify({
+      version: 1,
+      preferences: s.serializePreferences({
+        userId: USER_ID,
+        ...appearance,
+        overdueEmailReminders: false,
+        overduePushReminders: true,
+        lowInventoryEmailAlerts: true,
+        lowInventoryPushAlerts: false,
+        doseLogPageSize: 50,
+        heatmapPeriod: 180,
+        exportFormat: "csv",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      }),
+    });
+
+    const appearanceResult = parseBackup(envelope);
+    expect(appearanceResult.ok).toBe(true);
+    if (!appearanceResult.ok) return;
+    expect(appearanceResult.bundle.preferences).toMatchObject(appearance);
+  });
 });
 
 /** Byte-for-byte what generateCsvReport emits, for the same rows. */

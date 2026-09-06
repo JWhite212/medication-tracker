@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The Date Format setting now does something. `user_preferences.dateFormat` had been write-only since the original schema — stored, validated at all three doors, rendered as a `<select>`, and read by no formatter — so changing it changed no date anywhere in the app. A new `formatUserDate` (`src/lib/utils/time.ts`) is its single reader, and the Log day headings, medication inventory-event history, PDF report and Settings → Security session expiry now follow it. The preference selects a locale rather than a literal pattern, so the `DD/MM/YYYY` default renders exactly what those surfaces rendered before and no existing account sees its dates change. Date _keys_ — the day keys in analytics/schedule/log/medications and the CSV date cell, which the importer re-reads as strict `YYYY-MM-DD` — deliberately keep their hardcoded ISO format. Two latent bugs fell out with it: the inventory-event history had been rendering in the browser's timezone rather than the profile's, and the session-expiry line used a bare `toLocaleDateString()`.
+- The Date Format setting now does something. `user_preferences.dateFormat` had been write-only since the original schema — stored, validated at all three doors, rendered as a `<select>`, and read by no formatter — so changing it changed no date anywhere in the app. A new `formatUserDate` (`src/lib/utils/time.ts`) is its single reader, and the Log day headings, medication inventory-event history, PDF report and Settings → Security session expiry now follow it. The two named-month options select a locale rather than a literal pattern, so the `DD/MM/YYYY` default renders exactly what those surfaces rendered before and no existing account sees its dates change; `YYYY-MM-DD` is assembled from `formatToParts` instead, because a locale is not obliged to emit ISO order and `en-CA` in particular already changed pattern once (ICU 72) — and since this code runs in the viewer's browser, a server-side test could never catch it. Date _keys_ — the day keys in analytics/schedule/log/medications and the CSV date cell, which the importer re-reads as strict `YYYY-MM-DD` — deliberately keep their hardcoded ISO format. Two latent bugs fell out with it: the inventory-event history had been rendering in the browser's timezone rather than the profile's, and the session-expiry line used a bare `toLocaleDateString()`.
 - Dark palette raised to WCAG AA. `--color-text-secondary` (3.63:1 → 7.21:1) and `--color-text-muted` (2.64:1 → 4.53:1) now clear 4.5:1 on all six surfaces including the glass composites; a new `--color-danger-ink` (`#f98686`, 5.24:1) carries the 26 files that use danger as text, while the `#ef4444` fill is unchanged; a new `--color-border-strong` gives form inputs a 3:1 boundary (WCAG 1.4.11), which the 1.33:1 decorative hairline never provided.
 - The accent splits into two tokens. `--color-accent` (`#4f46e5`) is the fill, and white on it now measures 6.29:1 rather than 4.47:1; `--color-accent-ink` is the text and border variant, derived per user from the stored accent so it tints with it (`#4f46e5` → `#9792f0`, 4.59:1) rather than being frozen at one hue. No single value satisfies both roles — the fill scores 1.99:1 as text. The stored default moves to `#4f46e5` with a backfill, because the layout writes it inline and an inline style beats the stylesheet.
 - Tinted chips (`bg-danger/20 text-danger-ink` and the like) are measured against the backdrop they actually composite onto rather than the nearest opaque surface, which raised `--color-info` to `#a5a8f8` (4.71:1 on a hovered card) and `--color-danger-ink` to `#f98686` (5.00:1 in the same place).
@@ -128,22 +128,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - SvelteKit (Svelte 5 runes) app skeleton with Drizzle ORM on Neon Postgres.
-- Lucia v3 session-based authentication with email/password and Google OAuth.
-- Core medication tracker surfaces: medications CRUD, dose logging, history, dashboard, analytics.
-- PWA installability and Web Push notifications (VAPID).
-- WCAG 2.2 AA accessibility pass on core flows.
-- CSV and PDF export of dose history.
-- Smart reminders via Vercel Cron.
-- Password reset flow with secure-token verification.
-- 2FA (TOTP) enrolment and verification.
-- Onboarding welcome flow, My Day timeline, side-effect logging, dose-edit modal.
-- CSP headers, breached-password check via HIBP, baseline rate limiting.
-- Brand assets (vector SVGs), inline SVG nav icons, dark-mode-first Tailwind v4 theme.
-- Initial CLAUDE.md guidance file for AI-assisted development.
-
-[Unreleased]: https://github.com/JWhite212/medication-tracker/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/JWhite212/medication-tracker/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/JWhite212/medication-tracker/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/JWhite212/medication-tracker/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/JWhite212/medication-tracker/compare/v0.0.1...v0.1.0
-[0.0.1]: https://github.com/JWhite212/medication-tracker/releases/tag/v0.0.1

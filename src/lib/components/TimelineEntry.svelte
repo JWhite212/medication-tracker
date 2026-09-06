@@ -56,7 +56,7 @@
           </span>
         {:else if dose.status === "missed"}
           <span
-            class="bg-danger/15 text-danger ml-2 rounded-full px-2 py-0.5 text-xs font-semibold tracking-wider uppercase"
+            class="bg-danger/15 text-danger-ink ml-2 rounded-full px-2 py-0.5 text-xs font-semibold tracking-wider uppercase"
           >
             Missed
           </span>
@@ -68,7 +68,7 @@
       <span class="text-text-secondary"
         >{formatUserTime(new Date(dose.takenAt), timezone, timeFormat)}</span
       >
-      <span class="text-accent font-medium">
+      <span class="text-accent-ink font-medium">
         <TimeSince date={new Date(dose.takenAt)} />
       </span>
     </div>
@@ -83,7 +83,7 @@
             e.stopPropagation();
             onedit?.(dose);
           }}
-          class="text-text-muted hover:text-accent text-xs"
+          class="text-text-muted hover:text-accent-ink text-xs"
           aria-label="Edit dose"
         >
           ✎
@@ -107,7 +107,7 @@
         <button
           type="submit"
           onclick={(e) => e.stopPropagation()}
-          class="text-text-muted hover:text-danger text-xs disabled:cursor-not-allowed disabled:opacity-50"
+          class="text-text-muted hover:text-danger-ink text-xs disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="Delete dose"
           disabled={deleting}
         >
@@ -129,7 +129,7 @@
       {#each dose.sideEffects as effect}
         <span
           class="rounded-full px-2 py-0.5 text-xs font-medium {effect.severity === 'severe'
-            ? 'bg-danger/15 text-danger'
+            ? 'bg-danger/15 text-danger-ink'
             : effect.severity === 'moderate'
               ? 'bg-warning/15 text-warning'
               : 'bg-text-secondary/30 text-text-primary'}"

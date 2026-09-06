@@ -39,7 +39,7 @@
         <select
           id="exportFormat"
           name="exportFormat"
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           <option value="pdf" selected={data.preferences.exportFormat === "pdf"}>PDF</option>
           <option value="csv" selected={data.preferences.exportFormat === "csv"}>CSV</option>
@@ -89,13 +89,13 @@
   </GlassCard>
 
   <GlassCard>
-    <h2 class="text-danger mb-4 text-lg font-semibold">Danger Zone</h2>
+    <h2 class="text-danger-ink mb-4 text-lg font-semibold">Danger Zone</h2>
     <p class="text-text-secondary mb-4 text-sm">
       Permanently delete your account and all associated data. This action cannot be undone.
     </p>
     <button
       type="button"
-      class="border-danger text-danger hover:bg-danger/10 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+      class="border-danger-ink text-danger-ink hover:bg-danger/10 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
       onclick={() => (showDeleteConfirm = true)}
     >
       Delete My Account
@@ -104,25 +104,25 @@
 </div>
 
 <Modal open={showDeleteConfirm} onclose={() => (showDeleteConfirm = false)}>
-  <h3 class="text-danger mb-2 text-lg font-semibold">Delete Account</h3>
+  <h3 class="text-danger-ink mb-2 text-lg font-semibold">Delete Account</h3>
   <p class="text-text-secondary mb-4 text-sm">
     Type <strong>DELETE</strong> to confirm. All your medications, dose history, and settings will be
     permanently removed.
   </p>
   {#if form?.deleteError}
-    <p class="bg-danger/10 text-danger mb-3 rounded-lg px-4 py-2 text-sm">{form.deleteError}</p>
+    <p class="bg-danger/10 text-danger-ink mb-3 rounded-lg px-4 py-2 text-sm">{form.deleteError}</p>
   {/if}
   <input
     type="text"
     bind:value={deleteConfirmText}
     placeholder="Type DELETE"
-    class="border-glass-border bg-surface-raised text-text-primary focus:border-danger focus:ring-danger mb-3 w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+    class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink mb-3 w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
   />
   <input
     type="password"
     bind:value={deletePassword}
     placeholder="Enter your password"
-    class="border-glass-border bg-surface-raised text-text-primary focus:border-danger focus:ring-danger mb-4 w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+    class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink mb-4 w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
   />
   <div class="flex gap-3">
     <button
@@ -137,7 +137,7 @@
       <button
         type="submit"
         disabled={deleteConfirmText !== "DELETE" || !deletePassword}
-        class="bg-danger w-full rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        class="bg-danger text-danger-fg w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
         Delete Permanently
       </button>

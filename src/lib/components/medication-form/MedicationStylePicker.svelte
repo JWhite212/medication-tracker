@@ -42,9 +42,9 @@
         <button
           type="button"
           onclick={() => (selectedColour = colour)}
-          class="focus:ring-accent h-8 w-8 rounded-full transition-transform hover:scale-110 focus:ring-2 focus:ring-offset-2 focus:outline-none {selectedColour ===
+          class="focus:ring-accent-ink h-8 w-8 rounded-full transition-transform hover:scale-110 focus:ring-2 focus:ring-offset-2 focus:outline-none {selectedColour ===
           colour
-            ? 'ring-accent scale-110 ring-2 ring-offset-2'
+            ? 'ring-accent-ink scale-110 ring-2 ring-offset-2'
             : ''}"
           style="background-color: {colour}"
           aria-label="Select primary colour {colour}"
@@ -57,7 +57,7 @@
             showSecondary = true;
             selectedColourSecondary = PRESET_COLOURS[2];
           }}
-          class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed border-white/30 text-lg text-white/40 transition-colors hover:border-white/50 hover:text-white/60"
+          class="border-border-strong text-text-muted hover:text-text-secondary flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed text-lg transition-colors"
           aria-label="Add secondary colour">+</button
         >
       {/if}
@@ -73,9 +73,9 @@
           <button
             type="button"
             onclick={() => (selectedColourSecondary = colour)}
-            class="focus:ring-accent h-8 w-8 rounded-full transition-transform hover:scale-110 focus:ring-2 focus:ring-offset-2 focus:outline-none {selectedColourSecondary ===
+            class="focus:ring-accent-ink h-8 w-8 rounded-full transition-transform hover:scale-110 focus:ring-2 focus:ring-offset-2 focus:outline-none {selectedColourSecondary ===
             colour
-              ? 'ring-accent scale-110 ring-2 ring-offset-2'
+              ? 'ring-accent-ink scale-110 ring-2 ring-offset-2'
               : ''}"
             style="background-color: {colour}"
             aria-label="Select secondary colour {colour}"
@@ -88,7 +88,7 @@
             selectedColourSecondary = null;
             selectedPattern = "solid";
           }}
-          class="border-danger/50 text-danger/70 hover:border-danger hover:text-danger flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed text-sm transition-colors"
+          class="border-danger-ink/50 text-danger-ink/70 hover:border-danger-ink hover:text-danger-ink flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed text-sm transition-colors"
           aria-label="Remove secondary colour">&times;</button
         >
       </div>
@@ -104,7 +104,7 @@
             onclick={() => (selectedPattern = pat.id)}
             class="h-11 w-11 rounded-lg border-2 transition-transform hover:scale-105 {selectedPattern ===
             pat.id
-              ? 'scale-105 border-white'
+              ? 'border-text-primary scale-105'
               : 'border-transparent'}"
             style="background: {getMedicationBackground(
               selectedColour,
@@ -151,5 +151,5 @@
     </div>
   {/if}
 
-  {#if errors["colour"]?.[0]}<p class="text-danger mt-1 text-sm">{errors["colour"][0]}</p>{/if}
+  {#if errors["colour"]?.[0]}<p class="text-danger-ink mt-1 text-sm">{errors["colour"][0]}</p>{/if}
 </fieldset>

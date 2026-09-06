@@ -30,12 +30,12 @@
   let tooltip = $state<{ text: string; x: number; y: number } | null>(null);
 
   function intensity(count: number): string {
-    if (count === 0) return "bg-white/10";
+    if (count === 0) return "bg-heatmap-0";
     const ratio = count / maxCount;
-    if (ratio < 0.25) return "bg-emerald-500/30";
-    if (ratio < 0.5) return "bg-emerald-500/55";
-    if (ratio < 0.75) return "bg-emerald-500/80";
-    return "bg-emerald-500";
+    if (ratio < 0.25) return "bg-heatmap-1";
+    if (ratio < 0.5) return "bg-heatmap-2";
+    if (ratio < 0.75) return "bg-heatmap-3";
+    return "bg-heatmap-4";
   }
 
   function showTooltip(e: MouseEvent, date: string, count: number) {
@@ -62,7 +62,7 @@
           {@const cell = week.find((c) => c.row === rowIdx)}
           {#if cell}
             <div
-              class="heatmap-cell animate-fade-in h-[11px] w-[11px] cursor-default rounded-[2px] transition-opacity hover:opacity-80 {intensity(
+              class="heatmap-cell animate-fade-in h-[11px] w-[11px] cursor-default rounded-xs transition-opacity hover:opacity-80 {intensity(
                 cell.count,
               )}"
               style="animation-delay: {weekIdx * 15}ms"
@@ -81,8 +81,8 @@
 
   {#if tooltip}
     <div
-      class="pointer-events-none absolute z-30 rounded bg-gray-900 px-2 py-1 text-xs text-white shadow"
-      style="left: {tooltip.x}px; top: {tooltip.y}px;"
+      class="border-glass-border text-text-primary pointer-events-none absolute z-30 rounded-sm border px-2 py-1 text-xs shadow-lg backdrop-blur-xl"
+      style="left: {tooltip.x}px; top: {tooltip.y}px; background-color: var(--color-surface-overlay)"
     >
       {tooltip.text}
     </div>
@@ -90,9 +90,19 @@
 </div>
 
 <style>
+  /* Two independent switches. The media query is the OS setting; the
+     attribute is the app's own preference, set on a wrapper in
+     (app)/+layout.svelte. The attribute selector MUST be :global() — it
+     targets an ancestor outside this component's scope, and without it
+     Svelte compiles the rule away as an unused selector and the toggle
+     silently does nothing. See tests/unit/heatmap-motion.test.ts. */
   @media (prefers-reduced-motion: reduce) {
     .heatmap-cell {
       animation-delay: 0ms !important;
     }
+  }
+
+  :global([data-reduced-motion="true"]) .heatmap-cell {
+    animation-delay: 0ms !important;
   }
 </style>

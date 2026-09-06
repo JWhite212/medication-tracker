@@ -168,7 +168,7 @@
             {/if}
           </p>
         {:else if form?.resendError}
-          <p class="text-danger mt-2">{form.resendError}</p>
+          <p class="text-danger-ink mt-2">{form.resendError}</p>
         {/if}
         <form method="POST" action="?/resendVerification" use:enhance class="mt-2">
           <button
@@ -209,7 +209,7 @@
               type="checkbox"
               name="overdueEmailReminders"
               bind:checked={overdueEmail}
-              class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
+              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
             />
           </label>
           <label class="flex cursor-pointer items-center justify-between">
@@ -223,7 +223,7 @@
               type="checkbox"
               name="overduePushReminders"
               bind:checked={overduePush}
-              class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
+              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
             />
           </label>
         </div>
@@ -247,7 +247,7 @@
               type="checkbox"
               name="lowInventoryEmailAlerts"
               bind:checked={lowInvEmail}
-              class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
+              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
             />
           </label>
           <label class="flex cursor-pointer items-center justify-between">
@@ -261,7 +261,7 @@
               type="checkbox"
               name="lowInventoryPushAlerts"
               bind:checked={lowInvPush}
-              class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
+              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
             />
           </label>
         </div>
@@ -285,7 +285,7 @@
       <ul class="space-y-1 text-sm">
         {#each data.mutedMedications as med (med.id)}
           <li>
-            <a class="hover:text-accent underline" href="/medications/{med.id}">{med.name}</a>
+            <a class="hover:text-accent-ink underline" href="/medications/{med.id}">{med.name}</a>
           </li>
         {/each}
       </ul>
@@ -306,7 +306,7 @@
           onclick={togglePush}
           disabled={pushLoading}
           class="rounded-lg px-4 py-2 text-sm font-medium transition-colors {pushEnabled
-            ? 'bg-danger/10 text-danger hover:bg-danger/20'
+            ? 'bg-danger/10 text-danger-ink hover:bg-danger/20'
             : 'bg-accent text-accent-fg hover:opacity-90'} disabled:opacity-50"
         >
           {pushLoading ? "Updating..." : pushEnabled ? "Disable" : "Enable"}
@@ -412,7 +412,7 @@
           </p>
         {/if}
         {#if form?.testError}
-          <p class="text-danger text-xs">{form.testError}</p>
+          <p class="text-danger-ink text-xs">{form.testError}</p>
         {:else if form?.testOk}
           <p class="text-success text-xs">{form.testMessage}</p>
           {#if awaitingConfirmation}

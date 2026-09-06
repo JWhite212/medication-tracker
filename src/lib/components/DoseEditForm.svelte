@@ -53,7 +53,7 @@
       name="takenAt"
       type="datetime-local"
       value={toDateTimeLocal(new Date(dose.takenAt))}
-      class="border-glass-border bg-surface text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+      class="border-border-strong bg-surface text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     />
   </div>
 
@@ -66,7 +66,7 @@
       min="1"
       max="10"
       value={dose.quantity}
-      class="border-glass-border bg-surface text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+      class="border-border-strong bg-surface text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     />
   </div>
 
@@ -76,7 +76,7 @@
       id="notes"
       name="notes"
       rows="2"
-      class="border-glass-border bg-surface text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+      class="border-border-strong bg-surface text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
       placeholder="Optional notes...">{dose.notes ?? ""}</textarea
     >
   </div>
@@ -99,7 +99,7 @@
     <button
       type="submit"
       disabled={loading}
-      class="bg-accent text-accent-fg hover:bg-accent-hover flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
+      class="bg-accent text-accent-fg flex-1 rounded-lg py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
     >
       {loading ? "Saving..." : "Save Changes"}
     </button>

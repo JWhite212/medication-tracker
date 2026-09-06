@@ -5,9 +5,15 @@
 
   let { data, form } = $props();
 
+  // Every swatch must pair with a legible foreground: the layout derives
+  // --color-accent-fg from whichever of these the user picks, so a preset
+  // that cannot reach 4.5:1 with either near-black or white ships an
+  // illegible primary button. tests/unit/theme-tokens.test.ts asserts this
+  // list, parsing it from this file. #6366f1 (4.47) and #8b5cf6 (4.46) both
+  // failed and were replaced by the next step down their own ramp.
   const presetColours = [
-    "#6366f1",
-    "#8b5cf6",
+    "#4f46e5",
+    "#7c3aed",
     "#ec4899",
     "#ef4444",
     "#f59e0b",
@@ -48,7 +54,7 @@
               type="button"
               class="h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 {selectedColour ===
               colour
-                ? 'scale-110 border-white'
+                ? 'border-text-primary scale-110'
                 : 'border-transparent'}"
               style="background-color: {colour}"
               onclick={() => (selectedColour = colour)}
@@ -63,7 +69,7 @@
         <select
           id="dateFormat"
           name="dateFormat"
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           {#each ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"] as fmt}
             <option value={fmt} selected={fmt === data.preferences.dateFormat}>{fmt}</option>
@@ -76,7 +82,7 @@
         <select
           id="timeFormat"
           name="timeFormat"
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           <option value="12h" selected={data.preferences.timeFormat === "12h"}
             >12-hour (2:30 PM)</option
@@ -97,7 +103,7 @@
         <select
           id="uiDensity"
           name="uiDensity"
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           <option value="comfortable" selected={data.preferences.uiDensity === "comfortable"}
             >Comfortable</option
@@ -114,7 +120,7 @@
           id="reducedMotion"
           name="reducedMotion"
           checked={data.preferences.reducedMotion}
-          class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
+          class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
         />
         <label for="reducedMotion" class="text-sm font-medium">
           Reduce motion

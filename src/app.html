@@ -9,7 +9,10 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- `black-translucent` paints light glyphs over page content, which is
+         unreadable over a light surface. `default` follows the theme-color meta
+         above and stays correct when 1c adds a light palette. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="MedTracker" />
     <script type="application/ld+json">
       {
@@ -27,7 +30,7 @@
   <body data-sveltekit-preload-data="hover">
     <a
       href="#main-content"
-      class="focus:bg-accent sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:px-4 focus:py-2 focus:text-white"
+      class="focus:bg-accent focus:text-accent-fg sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:px-4 focus:py-2"
       >Skip to main content</a
     >
     <div style="display: contents">%sveltekit.body%</div>

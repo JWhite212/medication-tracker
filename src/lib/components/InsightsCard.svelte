@@ -8,7 +8,7 @@
   function dotClass(severity: Insight["severity"]): string {
     if (severity === "warning") return "bg-warning";
     if (severity === "positive") return "bg-success";
-    return "bg-accent";
+    return "bg-info";
   }
 </script>
 

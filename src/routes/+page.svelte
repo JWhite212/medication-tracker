@@ -34,7 +34,7 @@
       >
       <a
         href="/auth/register"
-        class="bg-accent hover:bg-accent-hover rounded-lg px-4 py-2 text-sm font-medium text-white"
+        class="bg-accent hover:bg-accent-hover text-accent-fg rounded-lg px-4 py-2 text-sm font-medium"
         >Get Started</a
       >
     </div>
@@ -52,7 +52,7 @@
           class="max-w-2xl text-3xl leading-tight font-bold tracking-tight sm:text-4xl lg:text-5xl"
         >
           Track your medications
-          <span class="text-accent">effortlessly</span>
+          <span class="text-accent-ink">effortlessly</span>
         </h1>
         <p class="text-text-secondary mt-4 max-w-lg text-lg">
           Log doses with a single tap. See live timers. Track adherence. Beautiful, fast, and
@@ -61,7 +61,7 @@
         <div class="mt-8 flex flex-wrap gap-4">
           <a
             href="/auth/register"
-            class="bg-accent hover:bg-accent-hover hover:shadow-accent/25 rounded-xl px-8 py-3 text-lg font-medium text-white transition-all hover:shadow-lg"
+            class="bg-accent hover:bg-accent-hover hover:shadow-accent/25 text-accent-fg rounded-xl px-8 py-3 text-lg font-medium transition-all hover:shadow-lg"
           >
             Start Tracking
           </a>

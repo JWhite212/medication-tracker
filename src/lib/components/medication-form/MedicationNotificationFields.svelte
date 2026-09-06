@@ -53,7 +53,7 @@
       type="checkbox"
       name="notificationsEnabled"
       bind:checked={enabled}
-      class="accent-accent size-4 rounded"
+      class="accent-accent size-4 rounded-xs"
     />
     Notify me about this medication
   </label>
@@ -67,13 +67,13 @@
             id={field.name}
             name={field.name}
             value={field.value}
-            class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+            class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           >
             <option value="inherit">Use account default</option>
             <option value="on">Always</option>
             <option value="off">Never</option>
           </select>
-          {#if errors[field.name]?.[0]}<p class="text-danger mt-1 text-sm">
+          {#if errors[field.name]?.[0]}<p class="text-danger-ink mt-1 text-sm">
               {errors[field.name]?.[0]}
             </p>{/if}
         </div>
@@ -92,7 +92,7 @@
           id="notifyOffsetMinutes"
           name="notifyOffsetMinutes"
           value={offsetMinutes}
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           <option value="0">Straight away</option>
           <option value="30">30 minutes</option>
@@ -111,7 +111,7 @@
           id="notifyRepeatEveryMinutes"
           name="notifyRepeatEveryMinutes"
           value={repeatEveryMinutes}
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           <option value="">Don't repeat</option>
           <option value="30">Every 30 minutes</option>
@@ -126,7 +126,7 @@
           id="notifyMaxRepeats"
           name="notifyMaxRepeats"
           value={maxRepeats}
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           <option value="0">Just once</option>
           <option value="1">1 more reminder</option>

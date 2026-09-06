@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Audit branches (`audit/*`) are landing repository hygiene, accessibility follow-ups, and developer-experience improvements.
 
+### Fixed
+
+- Dark palette raised to WCAG AA. `--color-text-secondary` (3.63:1 → 7.21:1) and `--color-text-muted` (2.64:1 → 4.53:1) now clear 4.5:1 on all six surfaces including the glass composites; a new `--color-danger-ink` (`#f98686`, 5.24:1) carries the 26 files that use danger as text, while the `#ef4444` fill is unchanged; a new `--color-border-strong` gives form inputs a 3:1 boundary (WCAG 1.4.11), which the 1.33:1 decorative hairline never provided.
+- The accent splits into two tokens. `--color-accent` (`#4f46e5`) is the fill, and white on it now measures 6.29:1 rather than 4.47:1; `--color-accent-ink` is the text and border variant, derived per user from the stored accent so it tints with it (`#4f46e5` → `#9792f0`, 4.59:1) rather than being frozen at one hue. No single value satisfies both roles — the fill scores 1.99:1 as text. The stored default moves to `#4f46e5` with a backfill, because the layout writes it inline and an inline style beats the stylesheet.
+- Tinted chips (`bg-danger/20 text-danger-ink` and the like) are measured against the backdrop they actually composite onto rather than the nearest opaque surface, which raised `--color-info` to `#a5a8f8` (4.71:1 on a hovered card) and `--color-danger-ink` to `#f98686` (5.00:1 in the same place).
+- `@media (prefers-contrast: more)` raises contrast again. Its overrides pre-dated the AA base and had become downgrades — `--color-text-muted` measured 4.02:1 against the base's 4.53:1.
+- Toast notifications render outside the dashboard. `<Toast />` is mounted once in the app layout; it was previously mounted only on `/dashboard`, so dose deletion on `/log` and the push toggles in settings produced no visible confirmation at all.
+- Compact display density no longer pushes page content under the fixed mobile header — the rule used the `padding` shorthand, which reset `padding-top`.
+- The activity heatmap honours the in-app "Reduce motion" setting, not just the OS one. The rule was compiled away as an unused selector because it targets an ancestor from inside a scoped `<style>` block.
+- Heatmap colours, the Heatmap tooltip, and thirteen hardcoded `text-white` foregrounds now come from theme tokens.
+- Native checkboxes, radios, scrollbars and date-picker glyphs render dark via `color-scheme`, instead of as bright white OS widgets on a near-black page.
+
 ## [0.4.0] — Phase 4: polish, scheduling, demo, docs
 
 ### Added

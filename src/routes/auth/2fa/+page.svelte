@@ -21,7 +21,7 @@
     <p class="text-text-secondary mb-6">Enter the 6-digit code from your authenticator app.</p>
 
     {#if form?.error}
-      <div class="bg-danger/10 text-danger mb-4 rounded-lg p-3 text-sm" role="alert">
+      <div class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm" role="alert">
         {form.error}
       </div>
     {/if}
@@ -48,21 +48,21 @@
           maxlength="6"
           required
           oninput={sanitize}
-          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 text-center text-2xl tracking-widest focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 text-center text-2xl tracking-widest focus:ring-1 focus:outline-none"
           placeholder="000000"
         />
       </div>
       <button
         type="submit"
         disabled={loading}
-        class="bg-accent hover:bg-accent-hover w-full rounded-lg py-2.5 font-medium text-white transition-colors disabled:opacity-50"
+        class="bg-accent hover:bg-accent-hover text-accent-fg w-full rounded-lg py-2.5 font-medium transition-colors disabled:opacity-50"
       >
         {loading ? "Verifying..." : "Verify"}
       </button>
     </form>
 
     <p class="text-text-secondary mt-6 text-center text-sm">
-      <a href="/auth/login" class="text-accent hover:underline">Back to login</a>
+      <a href="/auth/login" class="text-accent-ink hover:underline">Back to login</a>
     </p>
   </div>
 </div>

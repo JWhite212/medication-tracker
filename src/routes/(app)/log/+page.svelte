@@ -138,7 +138,7 @@
     <select
       name="medication"
       aria-label="Filter by medication"
-      class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
+      class="border-border-strong bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
       onchange={submitOnChange}
     >
       <option value="">All medications</option>
@@ -149,7 +149,7 @@
     <select
       name="status"
       aria-label="Filter by status"
-      class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
+      class="border-border-strong bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
       onchange={submitOnChange}
     >
       <option value="any" selected={data.filters.status === "any"}>Any status</option>
@@ -161,7 +161,7 @@
       type="date"
       name="from"
       aria-label="From date"
-      class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
+      class="border-border-strong bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
       value={data.filters.from ?? ""}
       onchange={submitOnChange}
     />
@@ -170,7 +170,7 @@
       type="date"
       name="to"
       aria-label="To date"
-      class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
+      class="border-border-strong bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
       value={data.filters.to ?? ""}
       onchange={submitOnChange}
     />
@@ -179,7 +179,7 @@
       name="q"
       aria-label="Search notes"
       placeholder="Search notes…"
-      class="border-glass-border bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-48"
+      class="border-border-strong bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-48"
       value={searchInput}
       oninput={handleSearch}
     />
@@ -188,7 +188,7 @@
         type="checkbox"
         name="withSideEffects"
         value="1"
-        class="border-glass-border bg-surface-raised h-4 w-4 rounded"
+        class="border-border-strong bg-surface-raised h-4 w-4 rounded-xs"
         checked={data.filters.withSideEffects}
         onchange={submitOnChange}
       />
@@ -196,7 +196,7 @@
     </label>
     <button
       type="submit"
-      class="border-glass-border bg-surface-raised text-text-secondary hover:text-text-primary rounded-lg border px-3 py-2 text-sm"
+      class="border-border-strong bg-surface-raised text-text-secondary hover:text-text-primary rounded-lg border px-3 py-2 text-sm"
     >
       Apply
     </button>

@@ -34,7 +34,7 @@
         <div class="flex items-center gap-1.5">
           <span class="text-text-secondary">{stat.adherence}%</span>
           {#if trend && trend.direction !== "flat"}
-            <span class="text-xs {trend.direction === 'up' ? 'text-success' : 'text-danger'}">
+            <span class="text-xs {trend.direction === 'up' ? 'text-success' : 'text-danger-ink'}">
               {trend.direction === "up" ? "\u2191" : "\u2193"}{trend.percent}%
             </span>
           {/if}

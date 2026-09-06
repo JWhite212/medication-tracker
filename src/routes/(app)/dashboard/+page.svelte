@@ -5,11 +5,11 @@
   import QuickLogBar from "$components/QuickLogBar.svelte";
   import TimelineEntry from "$components/TimelineEntry.svelte";
   import OnboardingWelcome from "$components/OnboardingWelcome.svelte";
-  import Toast from "$components/ui/Toast.svelte";
   import Modal from "$components/ui/Modal.svelte";
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import KeyboardShortcuts from "$components/KeyboardShortcuts.svelte";
   import RefillsCard from "$components/RefillsCard.svelte";
+  import EmptyState from "$components/EmptyState.svelte";
   import type { DoseLogWithMedication } from "$lib/types";
   import { formatDueIn } from "$lib/utils/time";
   import { getMedicationBackground } from "$lib/utils/medication-style";
@@ -39,8 +39,6 @@
 <svelte:head>
   <title>Dashboard — MedTracker</title>
 </svelte:head>
-
-<Toast />
 
 {#if data.medications.length === 0}
   <OnboardingWelcome />
@@ -97,7 +95,7 @@
                 <input type="hidden" name="medicationId" value={entry.medicationId} />
                 <button
                   type="submit"
-                  class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded px-2 py-1 text-xs transition-colors"
+                  class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded-xs px-2 py-1 text-xs transition-colors"
                 >
                   Skip
                 </button>
@@ -108,11 +106,7 @@
       {/if}
 
       {#if data.doses.length === 0 && overdueMeds.length === 0}
-        <div
-          class="border-glass-border bg-glass rounded-xl border p-8 text-center backdrop-blur-xl"
-        >
-          <p class="text-text-secondary">No doses logged today</p>
-        </div>
+        <EmptyState title="No doses logged today" body="Use Quick Log above to record one." />
       {:else if data.doses.length > 0}
         <div class="space-y-2" role="list" aria-label="Today's doses">
           {#each data.doses as dose (dose.id)}

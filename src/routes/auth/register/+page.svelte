@@ -58,11 +58,11 @@
           type="text"
           required
           value={formValues.name ?? ""}
-          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Your name"
         />
         {#if errors.name}
-          <p class="text-danger mt-1 text-sm" role="alert">{errors.name[0]}</p>
+          <p class="text-danger-ink mt-1 text-sm" role="alert">{errors.name[0]}</p>
         {/if}
       </div>
 
@@ -74,11 +74,11 @@
           type="email"
           required
           value={formValues.email ?? ""}
-          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="you@example.com"
         />
         {#if errors.email}
-          <p class="text-danger mt-1 text-sm" role="alert">{errors.email[0]}</p>
+          <p class="text-danger-ink mt-1 text-sm" role="alert">{errors.email[0]}</p>
         {/if}
       </div>
 
@@ -90,11 +90,11 @@
           type="password"
           required
           minlength="8"
-          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Min. 8 characters"
         />
         {#if errors.password}
-          <p class="text-danger mt-1 text-sm" role="alert">{errors.password[0]}</p>
+          <p class="text-danger-ink mt-1 text-sm" role="alert">{errors.password[0]}</p>
         {/if}
       </div>
 
@@ -103,7 +103,7 @@
           type="checkbox"
           name="disclaimerAcknowledged"
           required
-          class="border-glass-border bg-surface-raised text-accent focus:ring-accent mt-0.5 h-4 w-4 rounded border focus:ring-1"
+          class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink mt-0.5 h-4 w-4 rounded-xs border focus:ring-1"
         />
         <span> I understand MedTracker is a personal tracking tool, not medical advice. </span>
       </label>
@@ -113,14 +113,16 @@
       <button
         type="submit"
         disabled={loading}
-        class="bg-accent hover:bg-accent-hover w-full rounded-lg py-2.5 font-medium text-white transition-colors disabled:opacity-50"
+        class="bg-accent hover:bg-accent-hover text-accent-fg w-full rounded-lg py-2.5 font-medium transition-colors disabled:opacity-50"
       >
         {loading ? "Creating account..." : "Create account"}
       </button>
     </form>
 
     <p class="text-text-secondary mt-6 text-center text-sm">
-      Already have an account? <a href="/auth/login" class="text-accent hover:underline">Sign in</a>
+      Already have an account? <a href="/auth/login" class="text-accent-ink hover:underline"
+        >Sign in</a
+      >
     </p>
   </div>
 </div>

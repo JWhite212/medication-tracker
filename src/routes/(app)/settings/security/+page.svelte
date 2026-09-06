@@ -78,7 +78,7 @@
       </p>
     {/if}
     {#if form?.totpError}
-      <p class="bg-danger/10 text-danger mb-4 rounded-lg px-4 py-2 text-sm" role="alert">
+      <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm" role="alert">
         {form.totpError}
       </p>
     {/if}
@@ -99,7 +99,7 @@
           />
         </div>
         <p class="text-text-muted text-center text-xs">
-          Manual entry: <code class="bg-surface-overlay rounded px-2 py-0.5 text-xs"
+          Manual entry: <code class="bg-surface-overlay rounded-xs px-2 py-0.5 text-xs"
             >{form.totpSetup.secret}</code
           >
         </p>
@@ -130,7 +130,7 @@
             <Input label="Authenticator code" name="code" placeholder="000000" required />
             <button
               type="submit"
-              class="border-danger/30 text-danger hover:bg-danger/10 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors"
+              class="border-danger-ink/30 text-danger-ink hover:bg-danger/10 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors"
             >
               Disable 2FA
             </button>
@@ -168,7 +168,8 @@
             <div class="flex items-center gap-2">
               <p class="text-sm font-medium">Session</p>
               {#if session.id === data.currentSessionId}
-                <span class="bg-accent/10 text-accent rounded-full px-2 py-0.5 text-xs font-medium"
+                <span
+                  class="bg-accent/10 text-accent-ink rounded-full px-2 py-0.5 text-xs font-medium"
                   >Current</span
                 >
               {/if}
@@ -183,7 +184,7 @@
               <input type="hidden" name="sessionId" value={session.id} />
               <button
                 type="submit"
-                class="border-danger/30 text-danger hover:bg-danger/10 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+                class="border-danger-ink/30 text-danger-ink hover:bg-danger/10 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
               >
                 Revoke
               </button>
@@ -216,7 +217,7 @@
     >
       <button
         type="submit"
-        class="border-danger/30 text-danger hover:bg-danger/10 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors"
+        class="border-danger-ink/30 text-danger-ink hover:bg-danger/10 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors"
       >
         Sign Out
       </button>

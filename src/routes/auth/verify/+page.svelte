@@ -16,7 +16,7 @@
       <p class="text-text-secondary mt-2">Your email has been verified successfully.</p>
     {:else}
       <p class="text-4xl">&#10007;</p>
-      <h1 class="text-danger mt-3 text-2xl font-bold">Verification Failed</h1>
+      <h1 class="text-danger-ink mt-3 text-2xl font-bold">Verification Failed</h1>
       <p class="text-text-secondary mt-2">{data.error}</p>
     {/if}
     <a

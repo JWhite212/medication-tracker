@@ -49,7 +49,7 @@
       aria-pressed={mode === "interval"}
       class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
       'interval'
-        ? 'border-accent bg-accent/15 text-accent'
+        ? 'border-accent-ink bg-accent/15 text-accent-ink'
         : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
     >
       Interval
@@ -60,7 +60,7 @@
       aria-pressed={mode === "fixed_time"}
       class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
       'fixed_time'
-        ? 'border-accent bg-accent/15 text-accent'
+        ? 'border-accent-ink bg-accent/15 text-accent-ink'
         : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
     >
       Fixed time
@@ -71,7 +71,7 @@
       aria-pressed={mode === "prn"}
       class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
       'prn'
-        ? 'border-accent bg-accent/15 text-accent'
+        ? 'border-accent-ink bg-accent/15 text-accent-ink'
         : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
     >
       As needed (PRN)
@@ -95,9 +95,9 @@
       min="0.5"
       max="72"
       step="0.5"
-      class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+      class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     />
-    {#if errors["schedules"]?.[0]}<p class="text-danger mt-1 text-sm">
+    {#if errors["schedules"]?.[0]}<p class="text-danger-ink mt-1 text-sm">
         {errors["schedules"][0]}
       </p>{/if}
   </div>
@@ -116,14 +116,14 @@
             <input
               type="time"
               bind:value={fixedTimes[idx]}
-              class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent flex-1 rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+              class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink flex-1 rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
               aria-label="Time of day {idx + 1}"
             />
             <button
               type="button"
               onclick={() => removeFixedTime(idx)}
               disabled={fixedTimes.length <= 1}
-              class="border-glass-border text-text-secondary hover:text-danger hover:border-danger rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              class="border-glass-border text-text-secondary hover:text-danger-ink hover:border-danger-ink rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Remove this time"
             >
               Remove
@@ -156,7 +156,7 @@
             class="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors {daysOfWeek.includes(
               value,
             )
-              ? 'border-accent bg-accent/15 text-accent'
+              ? 'border-accent-ink bg-accent/15 text-accent-ink'
               : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
           >
             {short}
@@ -164,7 +164,7 @@
         {/each}
       </div>
     </div>
-    {#if errors["schedules"]?.[0]}<p class="text-danger mt-1 text-sm">
+    {#if errors["schedules"]?.[0]}<p class="text-danger-ink mt-1 text-sm">
         {errors["schedules"][0]}
       </p>{/if}
   </div>

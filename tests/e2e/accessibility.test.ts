@@ -15,6 +15,18 @@ function isBlocking(impact: string | null | undefined): impact is BlockingSeveri
 
 async function scan(page: import("@playwright/test").Page, label: string): Promise<void> {
   const results = await new AxeBuilder({ page }).analyze();
+
+  // `incomplete` is where axe puts checks it could not resolve — notably
+  // colour-contrast behind a semi-transparent, backdrop-filtered parent,
+  // which is every glass card in this app. It is not a gate (axe genuinely
+  // cannot decide these), but it must be visible: this suite passed for
+  // months against a palette with six measured contrast failures.
+  const contrastUnknown = results.incomplete.filter((r) => r.id === "color-contrast");
+  if (contrastUnknown.length > 0) {
+    const nodes = contrastUnknown.reduce((n, r) => n + r.nodes.length, 0);
+    console.log(`[axe] ${label}: ${nodes} node(s) with undetermined colour contrast`);
+  }
+
   const blocking = results.violations.filter((v) => isBlocking(v.impact));
   if (blocking.length > 0) {
     const lines = blocking.map(
@@ -53,5 +65,9 @@ test.describe("accessibility", () => {
     await page.goto("/analytics");
     await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
     await scan(page, "/analytics");
+
+    await page.goto("/settings/appearance");
+    await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
+    await scan(page, "/settings/appearance");
   });
 });

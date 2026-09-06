@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatTimeSince,
   formatTime,
+  formatUserDate,
   startOfDay,
   formatDueIn,
   computeTimingStatus,
@@ -56,6 +57,79 @@ describe("formatTime", () => {
     const date = new Date("2026-04-15T14:30:00Z");
     const result = formatTime(date, "America/New_York");
     expect(result).toBe("10:30 am");
+  });
+});
+
+describe("formatUserDate", () => {
+  // 15 Apr 2026 is a Wednesday. 18:20 London so the UTC instant and the
+  // London civil date agree, keeping the timezone cases legible.
+  const date = new Date("2026-04-15T17:20:00Z");
+
+  it("orders the fields per the stored preference", () => {
+    expect(formatUserDate(date, "UTC", "DD/MM/YYYY")).toBe("15 Apr 2026");
+    expect(formatUserDate(date, "UTC", "MM/DD/YYYY")).toBe("Apr 15, 2026");
+    expect(formatUserDate(date, "UTC", "YYYY-MM-DD")).toBe("2026-04-15");
+  });
+
+  it("renders YYYY-MM-DD as a real ISO date, never a named month", () => {
+    // The one option whose label is literally an all-numeric pattern. The
+    // year is forced on even when the call site asks for no year, because
+    // an ISO date without one is not an ISO date.
+    expect(formatUserDate(date, "UTC", "YYYY-MM-DD", { year: false })).toBe("2026-04-15");
+    expect(formatUserDate(date, "UTC", "YYYY-MM-DD", { weekday: true })).toBe("Wed, 2026-04-15");
+  });
+
+  it("lets the call site choose the fields and the preference choose the order", () => {
+    expect(formatUserDate(date, "UTC", "DD/MM/YYYY", { weekday: true, year: false })).toBe(
+      "Wed 15 Apr",
+    );
+    expect(formatUserDate(date, "UTC", "MM/DD/YYYY", { weekday: true, year: false })).toBe(
+      "Wed, Apr 15",
+    );
+  });
+
+  it("defaults to DD/MM/YYYY, matching the schema column default", () => {
+    expect(formatUserDate(date, "UTC")).toBe(formatUserDate(date, "UTC", "DD/MM/YYYY"));
+  });
+
+  it("resolves the date in the given timezone, not the runtime's", () => {
+    // 17:20Z is still the 15th in London but already the 16th in Auckland.
+    expect(formatUserDate(date, "Pacific/Auckland", "YYYY-MM-DD")).toBe("2026-04-16");
+    expect(formatUserDate(date, "America/New_York", "YYYY-MM-DD")).toBe("2026-04-15");
+  });
+
+  // The reason the preference maps to a locale rather than to a literal
+  // pattern string: every call site below previously hardcoded its own
+  // Intl options, and the default preference has to reproduce them exactly
+  // or shipping this changes what every untouched account already sees.
+  it("reproduces each previously-hardcoded format on the default preference", () => {
+    const asBefore = (opts: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", ...opts }).format(date);
+
+    // export-pdf.ts formatDateInTz
+    expect(formatUserDate(date, "UTC", "DD/MM/YYYY", { weekday: true, year: true })).toBe(
+      asBefore({ weekday: "short", day: "numeric", month: "short", year: "numeric" }),
+    );
+
+    // (app)/log/+page.svelte formatDateLabel
+    expect(formatUserDate(date, "UTC", "DD/MM/YYYY", { weekday: true, year: false })).toBe(
+      asBefore({ weekday: "short", day: "numeric", month: "short" }),
+    );
+
+    // (app)/medications/[id]/+page.svelte formatEventTime — date half only;
+    // that site formatted day as "2-digit", which differs from "numeric"
+    // for single-digit days alone (see the next case).
+    expect(formatUserDate(date, "UTC", "DD/MM/YYYY")).toBe(
+      asBefore({ day: "2-digit", month: "short", year: "numeric" }),
+    );
+  });
+
+  it("drops the leading zero on single-digit days", () => {
+    // The one accepted rendering change: inventory history used to pad to
+    // "05 Apr 2026". Unifying on the canonical formatter costs the pad
+    // rather than adding a per-site knob for it.
+    const fifth = new Date("2026-04-05T12:00:00Z");
+    expect(formatUserDate(fifth, "UTC", "DD/MM/YYYY")).toBe("5 Apr 2026");
   });
 });
 

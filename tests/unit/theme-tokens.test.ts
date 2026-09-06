@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { contrastRatio, compositeOver } from "$lib/utils/contrast";
+import { contrastRatio, compositeOver, readableForeground } from "$lib/utils/contrast";
 
 /**
  * Parses the real @theme block rather than duplicating the palette, so this
@@ -28,6 +28,25 @@ function whiteAlpha(value: string): number {
   const m = value.match(/^rgba\(255,\s*255,\s*255,\s*([\d.]+)\)$/);
   if (!m) throw new Error(`Expected a white-alpha token, got: ${value}`);
   return Number(m[1]);
+}
+
+/**
+ * The accent swatches offered on /settings/appearance, read from the page
+ * itself. These are not @theme tokens — they are the values written to
+ * `user_preferences.accent_color` and then set inline as --color-accent,
+ * where they beat every stylesheet rule. Raising the @theme accent without
+ * raising these left every real user on the failing pair.
+ */
+function readAccentPresets(): string[] {
+  const path = fileURLToPath(
+    new URL("../../src/routes/(app)/settings/appearance/+page.svelte", import.meta.url),
+  );
+  const src = readFileSync(path, "utf8");
+  const block = src.match(/const presetColours = \[([\s\S]*?)\]/);
+  if (!block) throw new Error("Could not find presetColours in the appearance page");
+  const hexes = block[1].match(/#[0-9a-f]{6}/gi) ?? [];
+  if (hexes.length === 0) throw new Error("presetColours parsed to an empty list");
+  return hexes;
 }
 
 const T = readThemeTokens();
@@ -81,6 +100,27 @@ describe("text tokens meet 4.5:1 on every surface they render on", () => {
         expect(ratio, `${T[token]} on ${bg} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
       });
     }
+  }
+});
+
+describe("every accent preset a user can pick carries a legible foreground", () => {
+  const presets = readAccentPresets();
+
+  it("offers the swatches the page is documented to offer", () => {
+    expect(presets).toHaveLength(10);
+    expect(presets[0]).toBe(T["--color-accent"]);
+  });
+
+  for (const preset of presets) {
+    const allowed = ALLOWED_BELOW_THRESHOLD.some(
+      (a) => a.token === preset && a.surface === "accent preset",
+    );
+    it.skipIf(allowed)(`${preset} as a fill`, () => {
+      const { color, ratio } = readableForeground(preset);
+      expect(ratio, `best foreground ${color} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    });
   }
 });
 

@@ -5,9 +5,15 @@
 
   let { data, form } = $props();
 
+  // Every swatch must pair with a legible foreground: the layout derives
+  // --color-accent-fg from whichever of these the user picks, so a preset
+  // that cannot reach 4.5:1 with either near-black or white ships an
+  // illegible primary button. tests/unit/theme-tokens.test.ts asserts this
+  // list, parsing it from this file. #6366f1 (4.47) and #8b5cf6 (4.46) both
+  // failed and were replaced by the next step down their own ramp.
   const presetColours = [
-    "#6366f1",
-    "#8b5cf6",
+    "#4f46e5",
+    "#7c3aed",
     "#ec4899",
     "#ef4444",
     "#f59e0b",

@@ -120,6 +120,13 @@
       "when": 1787343881911,
       "tag": "0016_yummy_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788714959103,
+      "tag": "0017_free_black_panther",
+      "breakpoints": true
     }
   ]
 }

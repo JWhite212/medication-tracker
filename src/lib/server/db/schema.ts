@@ -212,7 +212,12 @@ export const userPreferences = pgTable("user_preferences", {
   userId: text("user_id")
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
-  accentColor: text("accent_color").notNull().default("#6366f1"),
+  // The (app) layout sets --color-accent inline from this value, and an
+  // inline style beats every stylesheet rule — so raising the @theme accent
+  // did nothing for a real user until this default moved too. #6366f1 was
+  // 4.47:1 with white; #4f46e5 is 6.29:1. Migration 0017 backfills the rows
+  // that never customised it.
+  accentColor: text("accent_color").notNull().default("#4f46e5"),
   dateFormat: text("date_format").notNull().default("DD/MM/YYYY"),
   timeFormat: text("time_format").notNull().default("12h"),
   uiDensity: text("ui_density").notNull().default("comfortable"),

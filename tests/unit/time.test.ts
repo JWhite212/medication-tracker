@@ -79,6 +79,39 @@ describe("formatUserDate", () => {
     expect(formatUserDate(date, "UTC", "YYYY-MM-DD", { weekday: true })).toBe("Wed, 2026-04-15");
   });
 
+  // Regression guard. The ISO branch used to hand the whole job to
+  // Intl.DateTimeFormat("en-CA", ...) and trust the result to come back as
+  // YYYY-MM-DD. ECMA-402 does not promise that — en-CA's pattern changed
+  // once already in ICU 72 — and because this runs client-side, the ICU that
+  // matters is the viewer's browser, not the one under this suite. These
+  // assert the *shape*, so they hold even where a pattern assumption would
+  // not, and they are the check a locale change would otherwise slip past.
+  it("assembles the ISO date from parts, not from a locale pattern", () => {
+    const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+    for (const tz of [
+      "UTC",
+      "Europe/London",
+      "America/New_York",
+      "Pacific/Auckland",
+      "Asia/Kolkata",
+    ]) {
+      expect(formatUserDate(date, tz, "YYYY-MM-DD")).toMatch(ISO);
+    }
+
+    // Zero-padded on a single-digit month and day, which is where a
+    // "numeric" fallback would visibly diverge from ISO.
+    expect(formatUserDate(new Date("2026-01-05T12:00:00Z"), "UTC", "YYYY-MM-DD")).toBe(
+      "2026-01-05",
+    );
+
+    // The weekday is a rendering choice layered on top; the ISO half of the
+    // string keeps its exact shape underneath it.
+    const withWeekday = formatUserDate(date, "UTC", "YYYY-MM-DD", { weekday: true });
+    expect(withWeekday).toMatch(/^[A-Za-z.]+, \d{4}-\d{2}-\d{2}$/);
+    expect(withWeekday.split(", ")[1]).toMatch(ISO);
+  });
+
   it("lets the call site choose the fields and the preference choose the order", () => {
     expect(formatUserDate(date, "UTC", "DD/MM/YYYY", { weekday: true, year: false })).toBe(
       "Wed 15 Apr",

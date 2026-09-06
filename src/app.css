@@ -4,19 +4,47 @@
   --color-glass: rgba(255, 255, 255, 0.08);
   --color-glass-border: rgba(255, 255, 255, 0.12);
   --color-glass-hover: rgba(255, 255, 255, 0.14);
+  /* Control boundaries need 3:1 against their surface (WCAG 1.4.11); the
+     decorative hairline above is 1.33:1 and cannot serve both roles. */
+  --color-border-strong: rgba(255, 255, 255, 0.34);
   --color-surface: #0a0a0f;
   --color-surface-raised: #12121a;
   --color-surface-overlay: #1a1a25;
   --color-text-primary: #f0f0f5;
-  --color-text-secondary: #8888a0;
-  --color-text-muted: #71718a;
-  --color-accent: #6366f1;
-  --color-accent-hover: #818cf8;
+  --color-text-secondary: #c3c3d4;
+  --color-text-muted: #9a9aac;
+  /* accent = fills. accent-ink = the same accent, legible as text. These
+     cannot be one token: #4f46e5 scores 1.99:1 as text, and #8f92f5 scores
+     2.76:1 with white on it. The layout sets --color-accent inline from the
+     user's stored hex; --color-accent-ink is derived. */
+  --color-accent: #4f46e5;
+  --color-accent-hover: #6366f1;
   --color-accent-fg: #ffffff;
+  --color-accent-ink: #8f92f5;
+  /* success and warning need no ink variant: both already clear 4.5:1 as
+     text on all six surfaces (4.94 and 5.84) and 4.5:1 as fills with a
+     near-black foreground (7.44 and 8.79). danger does not — #ef4444 is
+     3.33:1 as text — so it splits like the accent rather than shifting the
+     fill to salmon across 16 files to fix the other 26. */
   --color-success: #10b981;
+  --color-success-fg: #111111;
   --color-warning: #f59e0b;
+  --color-warning-fg: #111111;
   --color-danger: #ef4444;
+  --color-danger-fg: #111111;
+  --color-danger-ink: #f37474;
+  /* Neutral/informational. Previously `accent` did this job, which collides
+     with warning/danger the moment a user picks an amber accent. */
+  --color-info: #8f92f5;
+  --color-scrim: rgba(0, 0, 0, 0.6);
+  /* Accent-neutral so the activity heatmap does not fight the user's accent. */
+  --color-heatmap-0: #1b2b2e;
+  --color-heatmap-1: #1e5a56;
+  --color-heatmap-2: #22867c;
+  --color-heatmap-3: #2bb3a0;
+  --color-heatmap-4: #54e0c4;
   --font-sans: system-ui, -apple-system, sans-serif;
+  --radius-xs: 0.25rem;
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
@@ -24,6 +52,15 @@
 }
 
 @layer base {
+  :root {
+    /* Makes native checkboxes, radios, scrollbars and the date-picker glyph
+       render dark. There are 14 native checkbox/radio inputs in the app with
+       no appearance:none and no accent-color, so today they paint as bright
+       white widgets on a near-black page. This does NOT restyle a closed
+       <select> — that needs appearance:none plus a drawn chevron. */
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-surface text-text-primary font-sans antialiased;
   }

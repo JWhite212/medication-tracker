@@ -6,11 +6,15 @@ import {
   appearanceImportShape,
   appearancePayloadShape,
 } from "$lib/appearance/schema";
-import { APPEARANCE_KEYS } from "$lib/appearance/registry";
+import {
+  APPEARANCE_ENTRIES,
+  APPEARANCE_KEYS,
+  type AppearanceEntries,
+} from "$lib/appearance/registry";
 
 describe("arity 1 — the per-field form doors", () => {
   it("defines one action schema per registry key", () => {
-    expect(APPEARANCE_ACTION_KEYS.sort()).toEqual([...APPEARANCE_KEYS].sort());
+    expect([...APPEARANCE_ACTION_KEYS].sort()).toEqual([...APPEARANCE_KEYS].sort());
   });
 
   it("accepts exactly its own field", () => {
@@ -94,6 +98,53 @@ describe("arity 3 — the backup import shape", () => {
     expect(schema.safeParse({}).success).toBe(true);
     expect(schema.safeParse({ uiDensity: "compact", reducedMotion: false }).success).toBe(true);
   });
+});
+
+describe("option-value coverage — every registry select value round-trips through every arity", () => {
+  // schema.ts's `satisfies` clauses only catch a schema that ACCEPTS a value
+  // the registry disallows; they do not catch a schema that OMITS one of
+  // the registry's option values (a narrower z.enum still satisfies the
+  // wider ZodType). This closes that gap at runtime. Expectations are
+  // derived from APPEARANCE_ENTRIES, never hand-written, so this can't
+  // become a second restatement of the registry's option lists.
+  //
+  // reducedMotion is deliberately excluded: it's a checkbox, not a select,
+  // and its differing per-arity input types (on/off string vs boolean) are
+  // already covered by "maps the checkbox's on/off pair..." and "takes
+  // reducedMotion as a JSON boolean..." above.
+  const selectEntries = APPEARANCE_ENTRIES.filter(
+    (e): e is Extract<AppearanceEntries[number], { control: "select" }> => e.control === "select",
+  );
+
+  const arityPayloadSchema = z.object(appearancePayloadShape);
+  const arityImportSchema = z.object(appearanceImportShape);
+  const NOT_A_REGISTRY_OPTION = "not-a-registry-option";
+
+  for (const entry of selectEntries) {
+    const key = entry.key;
+
+    it(`arity 1 (form) accepts exactly ${key}'s registry option set`, () => {
+      const fieldSchema = appearanceFieldSchemas[key];
+      for (const option of entry.options) {
+        expect(fieldSchema.safeParse({ [key]: option.value }).success).toBe(true);
+      }
+      expect(fieldSchema.safeParse({ [key]: NOT_A_REGISTRY_OPTION }).success).toBe(false);
+    });
+
+    it(`arity 2 (/api/v1 payload) accepts exactly ${key}'s registry option set`, () => {
+      for (const option of entry.options) {
+        expect(arityPayloadSchema.safeParse({ [key]: option.value }).success).toBe(true);
+      }
+      expect(arityPayloadSchema.safeParse({ [key]: NOT_A_REGISTRY_OPTION }).success).toBe(false);
+    });
+
+    it(`arity 3 (import) accepts exactly ${key}'s registry option set`, () => {
+      for (const option of entry.options) {
+        expect(arityImportSchema.safeParse({ [key]: option.value }).success).toBe(true);
+      }
+      expect(arityImportSchema.safeParse({ [key]: NOT_A_REGISTRY_OPTION }).success).toBe(false);
+    });
+  }
 });
 
 describe("the three arities are genuinely different objects", () => {

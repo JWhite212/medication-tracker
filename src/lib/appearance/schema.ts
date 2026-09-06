@@ -19,6 +19,7 @@
  */
 import { z } from "zod";
 import {
+  APPEARANCE_KEYS,
   entryFor,
   type AppearanceEntries,
   type AppearanceKey,
@@ -34,9 +35,23 @@ type OptionValues<E> = E extends { options: infer O extends readonly SelectOptio
  * The registry's option values as a tuple `z.enum` can consume, with the
  * literals preserved. The single `as never` is the only cast here:
  * `.map()` widens to `string[]` at the type level while producing exactly
- * the right tuple at runtime. Every use of it is re-checked by the
- * `satisfies` clauses below, so a drift is a compile error, not a silent
- * widening.
+ * the right tuple at runtime.
+ *
+ * The `satisfies` clauses below only catch drift in ONE direction: a call
+ * site that accepts a value the registry disallows (e.g. hand-writing
+ * `z.enum(["12h", "24h", "36h"])`) is a compile error, because the
+ * resulting `_output` widens past `Pick<AppearanceValues, K>` /
+ * `AppearanceValues[K] | undefined`. An arity that OMITS one of the
+ * registry's option values (e.g. `z.enum(["12h"])`) does not -- a narrower
+ * enum still satisfies the wider `ZodType`, so that direction compiles
+ * clean. Every arity here is safe only because it calls `optionValues(key)`
+ * rather than hand-typing a literal list; that is code discipline, not a
+ * type guarantee. The missing-option-value direction is covered instead by
+ * the runtime test in `tests/unit/appearance-schema.test.ts` that parses
+ * every value in `entry.options` against each arity and derives its
+ * expectations from `APPEARANCE_ENTRIES`, not by this function's types.
+ * (A missing KEY -- an entire entry dropped from an arity's object -- is a
+ * separate, compiler-enforced case: TS1360.)
  */
 function optionValues<K extends AppearanceKey>(
   key: K,
@@ -111,5 +126,13 @@ export const appearanceImportShape = {
   reducedMotion: z.boolean().optional(),
 } satisfies { [K in AppearanceKey]: z.ZodType<AppearanceValues[K] | undefined> };
 
-/** The named actions the appearance page must define. */
-export const APPEARANCE_ACTION_KEYS = Object.keys(appearanceFieldSchemas) as AppearanceKey[];
+/**
+ * The named actions the appearance page must define. Re-exported from the
+ * registry rather than `Object.keys(appearanceFieldSchemas)`: that would
+ * need a second `as` cast (`Object.keys` widens to `string[]`), in a module
+ * whose stated rule is that `optionValues`'s `as never` is the only one.
+ * The `satisfies` clause on `appearanceFieldSchemas` above already proves
+ * the two key sets are identical -- a key dropped from that object is
+ * TS1360 -- so this is not a second source of truth, just a re-export.
+ */
+export const APPEARANCE_ACTION_KEYS = APPEARANCE_KEYS;

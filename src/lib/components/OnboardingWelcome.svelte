@@ -34,14 +34,14 @@
       <h2 class="mb-4 text-xl font-bold">Two ways to track</h2>
       <div class="space-y-4">
         <div class="border-glass-border bg-surface-raised rounded-lg border p-4">
-          <p class="text-accent mb-1 font-medium">Scheduled</p>
+          <p class="text-accent-ink mb-1 font-medium">Scheduled</p>
           <p class="text-text-secondary text-sm">
             For medications you take on a regular schedule. MedTracker will show adherence stats and
             help you stay consistent.
           </p>
         </div>
         <div class="border-glass-border bg-surface-raised rounded-lg border p-4">
-          <p class="text-accent mb-1 font-medium">As-needed (PRN)</p>
+          <p class="text-accent-ink mb-1 font-medium">As-needed (PRN)</p>
           <p class="text-text-secondary text-sm">
             For medications you take only when needed. Track usage frequency without the pressure of
             a schedule.
@@ -58,7 +58,7 @@
         </button>
         <button
           type="button"
-          class="text-accent hover:text-accent-hover text-sm font-medium transition-colors"
+          class="text-accent-ink hover:text-accent-hover text-sm font-medium transition-colors"
           onclick={() => (step = 2)}
         >
           Next
@@ -74,7 +74,7 @@
       <div class="space-y-3 text-sm">
         <div class="flex items-start gap-3">
           <span
-            class="bg-accent/20 text-accent mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
+            class="bg-accent/20 text-accent-ink mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
             >1</span
           >
           <p class="text-text-secondary">
@@ -84,7 +84,7 @@
         </div>
         <div class="flex items-start gap-3">
           <span
-            class="bg-accent/20 text-accent mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
+            class="bg-accent/20 text-accent-ink mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
             >2</span
           >
           <p class="text-text-secondary">
@@ -94,7 +94,7 @@
         </div>
         <div class="flex items-start gap-3">
           <span
-            class="bg-accent/20 text-accent mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
+            class="bg-accent/20 text-accent-ink mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
             >3</span
           >
           <p class="text-text-secondary">

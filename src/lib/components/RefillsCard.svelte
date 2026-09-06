@@ -5,16 +5,16 @@
   let { entries }: Props = $props();
 
   function severityClass(severity: RefillForecastEntry["severity"]): string {
-    if (severity === "critical") return "border-danger/40 bg-danger/5";
+    if (severity === "critical") return "border-danger-ink/40 bg-danger/5";
     if (severity === "warning") return "border-warning/40 bg-warning/5";
-    if (severity === "watch") return "border-accent/30 bg-accent/5";
+    if (severity === "watch") return "border-accent-ink/30 bg-accent/5";
     return "border-glass-border bg-glass";
   }
 
   function severityLabel(severity: RefillForecastEntry["severity"]): string {
-    if (severity === "critical") return "text-danger";
+    if (severity === "critical") return "text-danger-ink";
     if (severity === "warning") return "text-warning";
-    if (severity === "watch") return "text-accent";
+    if (severity === "watch") return "text-accent-ink";
     return "text-text-secondary";
   }
 

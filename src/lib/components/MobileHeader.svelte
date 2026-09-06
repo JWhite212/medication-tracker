@@ -26,7 +26,7 @@
 
   <a
     href="/settings"
-    class="bg-accent/20 text-accent flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
+    class="bg-accent/20 text-accent-ink flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
   >
     {user.name.charAt(0).toUpperCase()}
   </a>

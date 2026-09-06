@@ -52,7 +52,7 @@
       <a
         href={item.href}
         class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors {active
-          ? 'bg-accent/15 text-accent'
+          ? 'bg-accent/15 text-accent-ink'
           : 'text-text-secondary hover:bg-glass-hover hover:text-text-primary'}"
         aria-current={active ? "page" : undefined}
         onclick={() => mobile && onclose?.()}
@@ -71,7 +71,7 @@
       onclick={() => mobile && onclose?.()}
     >
       <div
-        class="bg-accent/20 text-accent flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
+        class="bg-accent/20 text-accent-ink flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
       >
         {user.name.charAt(0).toUpperCase()}
       </div>

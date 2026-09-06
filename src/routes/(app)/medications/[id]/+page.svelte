@@ -58,7 +58,7 @@
         Refill recorded. New count: {form.newCount}.
       </p>
     {:else if form?.refillError}
-      <p class="bg-danger/10 text-danger mb-4 rounded-lg px-4 py-2 text-sm">
+      <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm">
         {form.refillError}
       </p>
     {/if}
@@ -70,7 +70,7 @@
           : ""}{form.quantityChange}).
       </p>
     {:else if form?.adjustError}
-      <p class="bg-danger/10 text-danger mb-4 rounded-lg px-4 py-2 text-sm">
+      <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm">
         {form.adjustError}
       </p>
     {/if}
@@ -91,7 +91,7 @@
           step="1"
           required
           placeholder="30"
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-32 rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-32 rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
         />
       </div>
       <div>
@@ -102,7 +102,7 @@
           type="text"
           maxlength="200"
           placeholder="e.g. picked up at pharmacy"
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
         />
       </div>
       <button
@@ -139,7 +139,7 @@
             step="1"
             required
             placeholder={data.medication.inventoryCount?.toString() ?? "0"}
-            class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-32 rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+            class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-32 rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
           />
         </div>
         <div>
@@ -150,7 +150,7 @@
             type="text"
             maxlength="200"
             placeholder="e.g. spilled 4 pills"
-            class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+            class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
           />
         </div>
         <button
@@ -212,7 +212,7 @@
         <form method="POST" action="?/unarchive">
           <button
             type="submit"
-            class="border-accent text-accent hover:bg-accent/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+            class="border-accent-ink text-accent-ink hover:bg-accent/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
           >
             Unarchive
           </button>
@@ -225,7 +225,7 @@
         <form method="POST" action="?/archive">
           <button
             type="submit"
-            class="border-danger text-danger hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+            class="border-danger-ink text-danger-ink hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
           >
             Archive
           </button>

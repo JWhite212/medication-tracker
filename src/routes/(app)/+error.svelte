@@ -10,7 +10,7 @@
   <div
     class="border-glass-border bg-glass flex flex-col items-center rounded-xl border p-12 text-center backdrop-blur-xl"
   >
-    <p class="text-accent text-5xl font-bold">{$page.status}</p>
+    <p class="text-accent-ink text-5xl font-bold">{$page.status}</p>
     <h1 class="text-text-primary mt-4 text-xl font-semibold">
       {$page.status === 404 ? "Page not found" : "Something went wrong"}
     </h1>

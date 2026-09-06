@@ -31,7 +31,7 @@
       class="flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg backdrop-blur-xl {toast.type ===
       'success'
         ? 'border-success/30 bg-success/10 text-success'
-        : 'border-danger/30 bg-danger/10 text-danger'}"
+        : 'border-danger-ink/30 bg-danger/10 text-danger-ink'}"
       role="alert"
     >
       <span class="text-sm">{toast.message}</span>

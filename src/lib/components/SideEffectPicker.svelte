@@ -66,7 +66,7 @@
         type="button"
         onclick={() => toggle(name)}
         class="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors {isSelected(name)
-          ? 'border-accent bg-accent/15 text-accent-hover'
+          ? 'border-accent-ink bg-accent/15 text-accent-hover'
           : 'border-glass-border bg-glass text-text-secondary hover:bg-glass-hover'}"
       >
         {name}
@@ -78,7 +78,7 @@
       <button
         type="button"
         onclick={() => toggle(effect.name)}
-        class="border-accent bg-accent/15 text-accent-hover rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+        class="border-accent-ink bg-accent/15 text-accent-hover rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
       >
         {effect.name}
       </button>
@@ -92,7 +92,7 @@
       bind:value={customInput}
       onkeydown={handleKeydown}
       placeholder="Add custom effect..."
-      class="border-glass-border bg-surface text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent flex-1 rounded-lg border px-3 py-1.5 text-sm focus:ring-1 focus:outline-none"
+      class="border-border-strong bg-surface text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink flex-1 rounded-lg border px-3 py-1.5 text-sm focus:ring-1 focus:outline-none"
     />
     <button
       type="button"
@@ -123,7 +123,7 @@
                     ? 'bg-text-secondary/30 text-text-primary'
                     : opt.value === 'moderate'
                       ? 'bg-warning/20 text-warning'
-                      : 'bg-danger/20 text-danger'
+                      : 'bg-danger/20 text-danger-ink'
                   : 'text-text-muted hover:text-text-secondary'}"
               >
                 {opt.label}

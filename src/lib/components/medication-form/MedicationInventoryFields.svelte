@@ -29,9 +29,9 @@
       type="number"
       value={inventoryCount}
       placeholder="e.g. 30"
-      class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+      class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     />
-    {#if errors["inventoryCount"]?.[0]}<p class="text-danger mt-1 text-sm">
+    {#if errors["inventoryCount"]?.[0]}<p class="text-danger-ink mt-1 text-sm">
         {errors["inventoryCount"][0]}
       </p>{/if}
   </div>
@@ -46,9 +46,9 @@
       type="number"
       value={inventoryAlertThreshold}
       placeholder="e.g. 7"
-      class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+      class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     />
-    {#if errors["inventoryAlertThreshold"]?.[0]}<p class="text-danger mt-1 text-sm">
+    {#if errors["inventoryAlertThreshold"]?.[0]}<p class="text-danger-ink mt-1 text-sm">
         {errors["inventoryAlertThreshold"][0]}
       </p>{/if}
   </div>
@@ -61,8 +61,8 @@
     name="notes"
     rows="3"
     placeholder="Optional notes..."
-    class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+    class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     >{notes}</textarea
   >
-  {#if errors["notes"]?.[0]}<p class="text-danger mt-1 text-sm">{errors["notes"][0]}</p>{/if}
+  {#if errors["notes"]?.[0]}<p class="text-danger-ink mt-1 text-sm">{errors["notes"][0]}</p>{/if}
 </div>

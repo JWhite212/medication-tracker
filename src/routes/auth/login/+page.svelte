@@ -43,7 +43,7 @@
     {/if}
 
     {#if errors.form}
-      <div class="bg-danger/10 text-danger mb-4 rounded-lg p-3 text-sm" role="alert">
+      <div class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm" role="alert">
         {errors.form[0]}
       </div>
     {/if}
@@ -67,7 +67,7 @@
           type="email"
           required
           value={form?.email ?? ""}
-          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="you@example.com"
         />
       </div>
@@ -78,12 +78,12 @@
           name="password"
           type="password"
           required
-          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Your password"
         />
       </div>
       <div class="flex items-center justify-between">
-        <a href="/auth/reset-password" class="text-accent text-sm hover:underline"
+        <a href="/auth/reset-password" class="text-accent-ink text-sm hover:underline"
           >Forgot password?</a
         >
       </div>
@@ -118,7 +118,7 @@
 
     <p class="text-text-secondary mt-6 text-center text-sm">
       Don't have an account?
-      <a href="/auth/register" class="text-accent hover:underline">Sign up</a>
+      <a href="/auth/register" class="text-accent-ink hover:underline">Sign up</a>
     </p>
   </div>
 </div>

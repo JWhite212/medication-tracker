@@ -52,7 +52,7 @@
     type="button"
     class="border-glass-border bg-glass text-text-primary flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium backdrop-blur-xl transition-colors {selected.length >
     0
-      ? 'border-accent/60'
+      ? 'border-accent-ink/60'
       : ''}"
     aria-expanded={open}
     aria-haspopup="true"

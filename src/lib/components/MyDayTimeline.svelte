@@ -137,7 +137,7 @@
                     <input type="hidden" name="quantity" value="1" />
                     <button
                       type="submit"
-                      class="text-accent hover:bg-accent/10 rounded-md px-2 py-0.5 text-xs font-medium transition-colors"
+                      class="text-accent-ink hover:bg-accent/10 rounded-md px-2 py-0.5 text-xs font-medium transition-colors"
                       aria-label="Log {slot.medicationName}"
                     >
                       Log

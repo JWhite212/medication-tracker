@@ -100,7 +100,7 @@
             class="text-xs font-medium {timing.status === 'overdue'
               ? 'text-warning'
               : timing.status === 'due_now'
-                ? 'text-accent animate-pulse'
+                ? 'text-accent-ink animate-pulse'
                 : 'text-text-muted'}"
           >
             {formatDueIn(timing.minutesUntilDue * 60_000)}

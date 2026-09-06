@@ -102,7 +102,7 @@
 
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:gap-4">
     <GlassCard class="animate-fade-in-up text-center" style="animation-delay: 0ms">
-      <p class="text-accent text-3xl font-bold">{data.streak}</p>
+      <p class="text-accent-ink text-3xl font-bold">{data.streak}</p>
       <p class="text-text-secondary mt-1 text-sm">Day Streak</p>
     </GlassCard>
     <GlassCard class="animate-fade-in-up text-center" style="animation-delay: 80ms">
@@ -115,7 +115,7 @@
           <span
             class="text-xs {data.trends.adherence.direction === 'up'
               ? 'text-success'
-              : 'text-danger'}"
+              : 'text-danger-ink'}"
           >
             {data.trends.adherence.direction === "up" ? "\u2191" : "\u2193"}{data.trends.adherence
               .percent}%
@@ -141,7 +141,9 @@
         <span class="text-text-secondary text-sm">Doses ({periodLabel(data.period)})</span>
         {#if data.trends.doses.direction !== "flat"}
           <span
-            class="text-xs {data.trends.doses.direction === 'up' ? 'text-success' : 'text-danger'}"
+            class="text-xs {data.trends.doses.direction === 'up'
+              ? 'text-success'
+              : 'text-danger-ink'}"
           >
             {data.trends.doses.direction === "up" ? "\u2191" : "\u2193"}{data.trends.doses.percent}%
           </span>
@@ -222,7 +224,7 @@
           {@const count = data.hourly.find((h: { hour: number }) => h.hour === hour)?.count ?? 0}
           {@const scheduled = data.scheduledHours.includes(hour)}
           <div class="flex h-full flex-1 flex-col items-center justify-end gap-1">
-            <div class="text-accent flex h-3 items-end text-[10px] leading-none">
+            <div class="text-accent-ink flex h-3 items-end text-[10px] leading-none">
               {scheduled ? "▼" : ""}
             </div>
             <div

@@ -18,13 +18,13 @@
   <select
     id="form"
     name="form"
-    class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+    class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
   >
     {#each FORM_OPTIONS as opt}
       <option value={opt.value} selected={formValue === opt.value}>{opt.label}</option>
     {/each}
   </select>
-  {#if errors["form"]?.[0]}<p class="text-danger mt-1 text-sm">{errors["form"][0]}</p>{/if}
+  {#if errors["form"]?.[0]}<p class="text-danger-ink mt-1 text-sm">{errors["form"][0]}</p>{/if}
 </div>
 
 <div>
@@ -32,13 +32,13 @@
   <select
     id="category"
     name="category"
-    class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+    class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
   >
     {#each CATEGORY_OPTIONS as opt}
       <option value={opt.value} selected={categoryValue === opt.value}>{opt.label}</option>
     {/each}
   </select>
-  {#if errors["category"]?.[0]}<p class="text-danger mt-1 text-sm">
+  {#if errors["category"]?.[0]}<p class="text-danger-ink mt-1 text-sm">
       {errors["category"][0]}
     </p>{/if}
 </div>

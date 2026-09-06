@@ -52,7 +52,7 @@
           class="max-w-2xl text-3xl leading-tight font-bold tracking-tight sm:text-4xl lg:text-5xl"
         >
           Track your medications
-          <span class="text-accent">effortlessly</span>
+          <span class="text-accent-ink">effortlessly</span>
         </h1>
         <p class="text-text-secondary mt-4 max-w-lg text-lg">
           Log doses with a single tap. See live timers. Track adherence. Beautiful, fast, and

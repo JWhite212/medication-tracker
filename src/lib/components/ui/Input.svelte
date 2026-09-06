@@ -23,7 +23,7 @@
 <div>
   <label for={name} class="mb-1 block text-sm font-medium">
     {label}
-    {#if required}<span class="text-danger" aria-hidden="true">*</span>{/if}
+    {#if required}<span class="text-danger-ink" aria-hidden="true">*</span>{/if}
   </label>
   <input
     id={name}
@@ -35,10 +35,12 @@
     aria-invalid={error ? "true" : undefined}
     aria-describedby={error ? `${name}-error` : undefined}
     aria-required={required ? "true" : undefined}
-    class="bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none {error
-      ? 'border-danger'
+    class="bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none {error
+      ? 'border-danger-ink'
       : 'border-glass-border'}"
     {...rest}
   />
-  {#if error}<p id={`${name}-error`} class="text-danger mt-1 text-sm" role="alert">{error}</p>{/if}
+  {#if error}<p id={`${name}-error`} class="text-danger-ink mt-1 text-sm" role="alert">
+      {error}
+    </p>{/if}
 </div>

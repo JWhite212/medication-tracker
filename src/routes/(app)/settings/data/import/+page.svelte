@@ -115,7 +115,7 @@
           <li>{imported.inventoryEventsCreated} inventory events restored</li>
         {/if}
         {#if imported.medicationsDeleted > 0}
-          <li class="text-danger">
+          <li class="text-danger-ink">
             {imported.medicationsDeleted} medications and {imported.dosesDeleted} dose entries were replaced
           </li>
         {/if}
@@ -155,7 +155,7 @@
             fileName = chosen?.name ?? "";
             fileSize = chosen?.size ?? 0;
           }}
-          class="border-glass-border bg-surface-raised text-text-primary file:bg-accent file:text-accent-fg w-full rounded-lg border px-4 py-2.5 text-sm file:mr-4 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+          class="border-border-strong bg-surface-raised text-text-primary file:bg-accent file:text-accent-fg w-full rounded-lg border px-4 py-2.5 text-sm file:mr-4 file:rounded-md file:border-0 file:px-3 file:py-1.5 file:text-sm file:font-medium"
         />
 
         <p class="text-text-muted mt-3 text-xs">
@@ -183,10 +183,10 @@
             </span>
           </label>
 
-          <label class="border-danger/40 flex gap-3 rounded-lg border p-3">
+          <label class="border-danger-ink/40 flex gap-3 rounded-lg border p-3">
             <input type="radio" name="mode" value="replace" bind:group={mode} class="mt-1" />
             <span>
-              <span class="text-danger block text-sm font-medium">Replace everything</span>
+              <span class="text-danger-ink block text-sm font-medium">Replace everything</span>
               <span class="text-text-muted block text-sm">
                 Deletes all current medications, schedules, doses and inventory history, then
                 restores the file. Cannot be undone.
@@ -196,7 +196,7 @@
         </div>
 
         {#if mode === "replace"}
-          <div class="border-danger/40 bg-danger/5 mt-4 rounded-lg border p-3">
+          <div class="border-danger-ink/40 bg-danger/5 mt-4 rounded-lg border p-3">
             {#if data.hasPassword}
               <label for="password" class="mb-1 block text-sm font-medium"
                 >Confirm your password</label
@@ -207,7 +207,7 @@
                 name="password"
                 bind:value={password}
                 autocomplete="current-password"
-                class="border-glass-border bg-surface-raised text-text-primary focus:border-danger focus:ring-danger w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+                class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
               />
             {:else}
               <label for="confirmPhrase" class="mb-1 block text-sm font-medium">
@@ -219,7 +219,7 @@
                 name="confirmPhrase"
                 bind:value={confirmPhrase}
                 autocomplete="off"
-                class="border-glass-border bg-surface-raised text-text-primary focus:border-danger focus:ring-danger w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+                class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
               />
             {/if}
           </div>
@@ -264,7 +264,7 @@
       </GlassCard>
 
       {#if form?.importError}
-        <p class="bg-danger/10 text-danger rounded-lg px-4 py-3 text-sm">{form.importError}</p>
+        <p class="bg-danger/10 text-danger-ink rounded-lg px-4 py-3 text-sm">{form.importError}</p>
       {/if}
 
       {#if preview}
@@ -295,7 +295,7 @@
           </dl>
 
           {#if preview.summary.medicationsDeleted > 0 || preview.summary.dosesDeleted > 0}
-            <p class="bg-danger/10 text-danger mt-3 rounded-lg px-4 py-3 text-sm">
+            <p class="bg-danger/10 text-danger-ink mt-3 rounded-lg px-4 py-3 text-sm">
               Replace mode will first delete {preview.summary.medicationsDeleted} medications and
               {preview.summary.dosesDeleted} dose entries.
             </p>
@@ -345,7 +345,7 @@
                   value={mapping[name] ?? "skip"}
                   onchange={(event) =>
                     (mapping = { ...mapping, [name]: event.currentTarget.value })}
-                  class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+                  class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
                 >
                   <option value="skip">Skip</option>
                   <option value="create">Create as new</option>

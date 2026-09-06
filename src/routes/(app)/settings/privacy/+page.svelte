@@ -100,7 +100,9 @@
         Revoked {form.removed} session{form.removed === 1 ? "" : "s"}.
       </p>
     {:else if form?.revokeError}
-      <p class="bg-danger/10 text-danger mb-3 rounded-lg px-4 py-2 text-sm">{form.revokeError}</p>
+      <p class="bg-danger/10 text-danger-ink mb-3 rounded-lg px-4 py-2 text-sm">
+        {form.revokeError}
+      </p>
     {/if}
     <form
       method="POST"
@@ -120,7 +122,7 @@
           autocomplete="current-password"
           bind:value={revokePassword}
           required
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
         />
       </label>
       <button
@@ -146,7 +148,7 @@
             Removed {form.removed} dose log entr{form.removed === 1 ? "y" : "ies"}.
           </p>
         {:else if form?.wipeDosesError}
-          <p class="bg-danger/10 text-danger mb-2 rounded-lg px-4 py-2 text-sm">
+          <p class="bg-danger/10 text-danger-ink mb-2 rounded-lg px-4 py-2 text-sm">
             {form.wipeDosesError}
           </p>
         {/if}
@@ -168,12 +170,12 @@
               autocomplete="current-password"
               bind:value={wipeDosesPassword}
               required
-              class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+              class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
             />
           </label>
           <button
             type="submit"
-            class="border-danger text-danger hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+            class="border-danger-ink text-danger-ink hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
           >
             Delete dose history
           </button>
@@ -191,7 +193,7 @@
             Removed {form.removed} archived medication{form.removed === 1 ? "" : "s"}.
           </p>
         {:else if form?.wipeArchivedError}
-          <p class="bg-danger/10 text-danger mb-2 rounded-lg px-4 py-2 text-sm">
+          <p class="bg-danger/10 text-danger-ink mb-2 rounded-lg px-4 py-2 text-sm">
             {form.wipeArchivedError}
           </p>
         {/if}
@@ -213,12 +215,12 @@
               autocomplete="current-password"
               bind:value={wipeArchivedPassword}
               required
-              class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
+              class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
             />
           </label>
           <button
             type="submit"
-            class="border-danger text-danger hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+            class="border-danger-ink text-danger-ink hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
           >
             Delete archived medications
           </button>
@@ -233,7 +235,7 @@
         </p>
         <a
           href="/settings/data"
-          class="border-danger text-danger hover:bg-danger/10 inline-flex rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+          class="border-danger-ink text-danger-ink hover:bg-danger/10 inline-flex rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
         >
           Go to delete account
         </a>

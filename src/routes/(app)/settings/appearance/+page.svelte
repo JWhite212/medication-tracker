@@ -63,7 +63,7 @@
         <select
           id="dateFormat"
           name="dateFormat"
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           {#each ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"] as fmt}
             <option value={fmt} selected={fmt === data.preferences.dateFormat}>{fmt}</option>
@@ -76,7 +76,7 @@
         <select
           id="timeFormat"
           name="timeFormat"
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           <option value="12h" selected={data.preferences.timeFormat === "12h"}
             >12-hour (2:30 PM)</option
@@ -97,7 +97,7 @@
         <select
           id="uiDensity"
           name="uiDensity"
-          class="border-glass-border bg-surface-raised text-text-primary focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           <option value="comfortable" selected={data.preferences.uiDensity === "comfortable"}
             >Comfortable</option
@@ -114,7 +114,7 @@
           id="reducedMotion"
           name="reducedMotion"
           checked={data.preferences.reducedMotion}
-          class="border-glass-border bg-surface-raised text-accent focus:ring-accent h-4 w-4 rounded"
+          class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded"
         />
         <label for="reducedMotion" class="text-sm font-medium">
           Reduce motion

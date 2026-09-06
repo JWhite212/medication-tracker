@@ -16,7 +16,7 @@
     <p class="text-text-secondary mb-6">Choose a strong password for your account</p>
 
     {#if form?.error}
-      <div class="bg-danger/10 text-danger mb-4 rounded-lg p-3 text-sm">
+      <div class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm">
         {form.error}
       </div>
     {/if}
@@ -42,7 +42,7 @@
           type="password"
           required
           minlength="8"
-          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Min. 8 characters"
         />
       </div>
@@ -55,7 +55,7 @@
           type="password"
           required
           minlength="8"
-          class="border-glass-border bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent focus:ring-accent w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+          class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Repeat your password"
         />
       </div>
@@ -70,7 +70,7 @@
     </form>
 
     <p class="text-text-secondary mt-6 text-center text-sm">
-      <a href="/auth/login" class="text-accent hover:underline">Back to sign in</a>
+      <a href="/auth/login" class="text-accent-ink hover:underline">Back to sign in</a>
     </p>
   </div>
 </div>

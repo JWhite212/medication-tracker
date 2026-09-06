@@ -1,14 +1,16 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { beforeNavigate } from "$app/navigation";
   import { onDestroy } from "svelte";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
   import { showToast } from "$lib/components/ui/Toast.svelte";
   import { APPEARANCE_ENTRIES, actionFor, entryFor } from "$lib/appearance/registry";
   import type { AppearanceKey } from "$lib/appearance/registry";
+  import { shouldSubmitField } from "$lib/appearance/save-guard";
   import type { SubmitFunction } from "@sveltejs/kit";
 
-  let { data } = $props();
+  let { data, form } = $props();
 
   const presetColours = entryFor("accentColor").presets;
 
@@ -84,6 +86,37 @@
     timers.clear();
   });
 
+  /**
+   * Flushes every debounced-but-not-yet-submitted save immediately. A
+   * mouse user mostly dodges losing a pending change by accident --
+   * clicking a link blurs the control first, which already flushes via
+   * onblur -- but nothing guarantees a blur happens before a navigation,
+   * so a keyboard user who changes a control and immediately hits
+   * browser Back (or a link, or closes the tab) within the debounce
+   * window would otherwise lose that change silently.
+   */
+  function flushAllPending() {
+    for (const key of [...timers.keys()]) flushSave(key);
+  }
+
+  // Covers SvelteKit-driven navigations: link clicks, goto(), and
+  // browser back/forward while the app stays mounted.
+  beforeNavigate(() => {
+    flushAllPending();
+  });
+
+  // Covers the case beforeNavigate cannot: a full page unload (closing
+  // the tab, typing a new URL, a hard reload) never goes through
+  // SvelteKit's router, so beforeNavigate does not fire for it. pagehide
+  // is the closest browser signal available. This is best-effort ONLY --
+  // the browser can tear the document (and its in-flight fetch) down
+  // before the request this triggers actually completes, so there is no
+  // guarantee the save lands, unlike the beforeNavigate path above.
+  $effect(() => {
+    window.addEventListener("pagehide", flushAllPending);
+    return () => window.removeEventListener("pagehide", flushAllPending);
+  });
+
   function labelOf(key: AppearanceKey) {
     return entryFor(key).label;
   }
@@ -133,12 +166,17 @@
   }
 
   function submitField(key: AppearanceKey) {
-    const form = formEls[key];
-    if (!form) return;
+    const formEl = formEls[key];
+    if (!formEl) return;
     // Arrowing away and back lands on the value already stored: no POST,
     // so a keyboard user cannot burn a rate-limit token standing still.
-    if (values[key] === acked[key]) return;
-    form.requestSubmit();
+    // Safe ONLY when nothing is in flight for this key -- `acked` is "the
+    // last value the SERVER confirmed", so mid-save it still holds the
+    // PRE-save value, and comparing a newer change against that stale
+    // value would wrongly read as "no change" and drop it. See
+    // shouldSubmitField's doc for the full failure mode this guards.
+    if (!shouldSubmitField(values[key], acked[key], inFlight.has(key))) return;
+    formEl.requestSubmit();
   }
 
   function save(key: AppearanceKey): SubmitFunction {
@@ -164,6 +202,10 @@
       return async ({ result, update }) => {
         inFlight.delete(key);
         let rateLimited = false;
+        // Only meaningful when rateLimited ends up true; falls back to
+        // the normal debounce if the server didn't send one (or sent
+        // something bogus).
+        let retryDelayMs = SAVE_DEBOUNCE_MS;
 
         if (result.type === "success") {
           acked[key] = attempted;
@@ -179,7 +221,17 @@
           // control back. Skip it if the user already chose something newer.
           if (!queued.has(key)) values[key] = previous as never;
           status[key] = "error";
-          rateLimited = result.type === "failure" && result.status === 429;
+          if (result.type === "failure" && result.status === 429) {
+            rateLimited = true;
+            const serverDelay = result.data?.retryAfterMs;
+            if (
+              typeof serverDelay === "number" &&
+              Number.isFinite(serverDelay) &&
+              serverDelay > 0
+            ) {
+              retryDelayMs = serverDelay;
+            }
+          }
           showToast(
             result.type === "failure" && typeof result.data?.saveError === "string"
               ? result.data.saveError
@@ -206,14 +258,18 @@
               // The server just asked us to slow down; replaying the
               // instant update() resolves would produce a second
               // rejected POST -- and a second error toast -- for the one
-              // user intent that queued behind this save. Re-arm the
-              // normal debounce timer instead of retrying immediately.
+              // user intent that queued behind this save. Re-arm using
+              // the server's own retryAfterMs rather than the normal
+              // debounce: SAVE_DEBOUNCE_MS is far shorter than any
+              // plausible rate-limit window, so replaying on it would
+              // almost certainly 429 again and produce a second rejected
+              // POST of its own.
               timers.set(
                 key,
                 setTimeout(() => {
                   timers.delete(key);
                   submitField(key);
-                }, SAVE_DEBOUNCE_MS),
+                }, retryDelayMs),
               );
             } else {
               submitField(key);
@@ -229,6 +285,36 @@
     if (status[key] === "saved") return "Saved";
     if (status[key] === "error") return "Not saved";
     return "";
+  }
+
+  /**
+   * No-JS feedback, derived from the `form` prop SvelteKit sets after
+   * every action submission -- success or failure alike. This is a
+   * SEPARATE channel from `statusText` / `announcement`: those are
+   * populated only inside the `use:enhance` callback in `save()` above,
+   * so for a user with no JavaScript -- or in the window before
+   * `hydrated` flips, which is the same window the `{#if !hydrated}` Save
+   * buttons below exist for -- they never fire. The existing per-control
+   * status <p> can't double as this channel either: it is deliberately
+   * aria-hidden, because the polite region already covers JS users.
+   *
+   * Every named action shares one `form` prop, so this is gated on the
+   * key the result actually belongs to -- otherwise saving one control
+   * would flash feedback under every other control on the page too.
+   */
+  function noJsFeedback(key: AppearanceKey): { text: string; ok: boolean } | undefined {
+    if (!form || form.key !== key) return undefined;
+    if (form.success) {
+      return { text: `${labelOf(key)} saved.`, ok: true };
+    }
+    if (typeof form.saveError === "string") {
+      return { text: form.saveError, ok: false };
+    }
+    if (form.errors) {
+      const messages = (form.errors as Record<string, string[] | undefined>)[key];
+      return { text: messages?.[0] ?? `Could not save ${labelOf(key).toLowerCase()}.`, ok: false };
+    }
+    return undefined;
   }
 </script>
 
@@ -288,6 +374,12 @@
           >
             Save accent colour
           </button>
+          {@const feedback = noJsFeedback("accentColor")}
+          {#if feedback}
+            <p class="mt-1 text-xs {feedback.ok ? 'text-success' : 'text-danger-ink'}">
+              {feedback.text}
+            </p>
+          {/if}
         {/if}
         <p class="text-text-muted mt-1 h-4 text-xs" aria-hidden="true">
           {statusText("accentColor")}
@@ -327,6 +419,12 @@
             >
               Save {entry.label.toLowerCase()}
             </button>
+            {@const feedback = noJsFeedback(entry.key)}
+            {#if feedback}
+              <p class="mt-1 text-xs {feedback.ok ? 'text-success' : 'text-danger-ink'}">
+                {feedback.text}
+              </p>
+            {/if}
           {/if}
           <p class="text-text-muted mt-1 h-4 text-xs" aria-hidden="true">
             {statusText(entry.key)}
@@ -370,6 +468,12 @@
           >
             Save motion setting
           </button>
+          {@const feedback = noJsFeedback("reducedMotion")}
+          {#if feedback}
+            <p class="mt-1 text-xs {feedback.ok ? 'text-success' : 'text-danger-ink'}">
+              {feedback.text}
+            </p>
+          {/if}
         {/if}
         <p class="text-text-muted mt-1 h-4 text-xs" aria-hidden="true">
           {statusText("reducedMotion")}

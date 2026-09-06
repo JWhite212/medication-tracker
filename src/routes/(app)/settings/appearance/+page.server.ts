@@ -50,6 +50,11 @@ function fieldAction(key: AppearanceKey) {
       return fail(429, {
         key,
         saveError: `Too many changes. Try again in ${Math.ceil(retryAfterMs / 1000)} seconds.`,
+        // Raw milliseconds, alongside the formatted message above: the
+        // client re-arms its retry timer against this rather than the
+        // normal save debounce, which is far shorter than any plausible
+        // rate-limit window and would just produce a second 429.
+        retryAfterMs,
       });
     }
 

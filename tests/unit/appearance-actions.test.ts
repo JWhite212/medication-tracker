@@ -81,7 +81,7 @@ describe("the appearance page's named actions", () => {
     expect(updatePreferences).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       status: 429,
-      data: { key: "uiDensity", saveError: expect.any(String) },
+      data: { key: "uiDensity", saveError: expect.any(String), retryAfterMs: 30_000 },
     });
     expect((result as { data: { saveError: string } }).data.saveError.length).toBeGreaterThan(0);
   });

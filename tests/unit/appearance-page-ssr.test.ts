@@ -54,7 +54,36 @@ const user = {
   emailVerified: true,
 };
 
-const { body } = render(Page, { props: { data: { user, preferences } } });
+const { body } = render(Page, { props: { data: { user, preferences }, form: null } });
+
+// Findings 2: with no JavaScript, the action's result (`form`) is the ONLY
+// feedback channel available -- `statusText`/`announcement` are populated
+// exclusively inside the `use:enhance` callback, which never runs without
+// JS. Each of these renders the page with a `form` value shaped like one
+// of the three outcomes `+page.server.ts`'s `fieldAction` can actually
+// return, gated to a single control (`uiDensity`) so cross-control leakage
+// is also checked below.
+const { body: successBody } = render(Page, {
+  props: { data: { user, preferences }, form: { success: true, key: "uiDensity" } },
+});
+
+const { body: validationErrorBody } = render(Page, {
+  props: {
+    data: { user, preferences },
+    form: { key: "uiDensity", errors: { uiDensity: ["Invalid enum value."] } },
+  },
+});
+
+const { body: rateLimitedBody } = render(Page, {
+  props: {
+    data: { user, preferences },
+    form: {
+      key: "uiDensity",
+      saveError: "Too many changes. Try again in 30 seconds.",
+      retryAfterMs: 30_000,
+    },
+  },
+});
 
 describe("appearance page SSR (no-JS path)", () => {
   it("emits one form per control, each targeting its own named action", () => {
@@ -115,5 +144,27 @@ describe("appearance page SSR (no-JS path)", () => {
 
   it("no longer renders the shared success banner", () => {
     expect(body).not.toContain("Appearance settings saved");
+  });
+});
+
+describe("appearance page SSR (no-JS feedback from the form prop)", () => {
+  it("renders success feedback for the control the result belongs to", () => {
+    expect(successBody).toContain("Display Density saved.");
+  });
+
+  it("does not leak success feedback onto any other control", () => {
+    expect(successBody.match(/saved\./g) ?? []).toHaveLength(1);
+    expect(successBody).not.toContain("Accent Colour saved.");
+    expect(successBody).not.toContain("Reduce motion saved.");
+  });
+
+  it("renders the 400 validation message for the control the result belongs to", () => {
+    expect(validationErrorBody).toContain("Invalid enum value.");
+  });
+
+  it("renders the formatted 429 message for the control the result belongs to", () => {
+    // The action builds this exact sentence server-side
+    // (+page.server.ts:52) -- a silent no-JS 429 was the concrete bug.
+    expect(rateLimitedBody).toContain("Too many changes. Try again in 30 seconds.");
   });
 });

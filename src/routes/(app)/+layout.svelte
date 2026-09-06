@@ -44,11 +44,11 @@
     >
       <button
         type="button"
-        class="absolute inset-0 bg-black/60"
+        class="bg-scrim absolute inset-0"
         aria-label="Close navigation"
         onclick={() => (sidebarOpen = false)}
       ></button>
-      <div class="relative h-full w-64 transform transition-transform duration-200">
+      <div class="relative h-full w-64">
         <Sidebar user={data.user} mobile={true} onclose={() => (sidebarOpen = false)} />
       </div>
     </div>

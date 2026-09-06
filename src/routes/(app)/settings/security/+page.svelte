@@ -99,7 +99,7 @@
           />
         </div>
         <p class="text-text-muted text-center text-xs">
-          Manual entry: <code class="bg-surface-overlay rounded px-2 py-0.5 text-xs"
+          Manual entry: <code class="bg-surface-overlay rounded-xs px-2 py-0.5 text-xs"
             >{form.totpSetup.secret}</code
           >
         </p>

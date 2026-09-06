@@ -58,7 +58,7 @@
 
 {#if open}
   <div
-    class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    class="bg-scrim fixed inset-0 z-40 flex items-center justify-center backdrop-blur-sm"
     onclick={handleBackdrop}
     onkeydown={handleKeydown}
     role="dialog"

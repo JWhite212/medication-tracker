@@ -62,7 +62,7 @@
           {@const cell = week.find((c) => c.row === rowIdx)}
           {#if cell}
             <div
-              class="heatmap-cell animate-fade-in h-[11px] w-[11px] cursor-default rounded-[2px] transition-opacity hover:opacity-80 {intensity(
+              class="heatmap-cell animate-fade-in h-[11px] w-[11px] cursor-default rounded-xs transition-opacity hover:opacity-80 {intensity(
                 cell.count,
               )}"
               style="animation-delay: {weekIdx * 15}ms"

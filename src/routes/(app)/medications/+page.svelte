@@ -41,7 +41,7 @@
                 type="submit"
                 disabled={i === 0}
                 aria-label="Move {medication.name} up"
-                class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
+                class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded-xs px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
               >
                 <span aria-hidden="true">&#9650;</span>
               </button>
@@ -53,7 +53,7 @@
                 type="submit"
                 disabled={i === data.medications.length - 1}
                 aria-label="Move {medication.name} down"
-                class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
+                class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded-xs px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
               >
                 <span aria-hidden="true">&#9660;</span>
               </button>

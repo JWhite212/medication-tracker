@@ -103,7 +103,7 @@
           type="checkbox"
           name="disclaimerAcknowledged"
           required
-          class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink mt-0.5 h-4 w-4 rounded border focus:ring-1"
+          class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink mt-0.5 h-4 w-4 rounded-xs border focus:ring-1"
         />
         <span> I understand MedTracker is a personal tracking tool, not medical advice. </span>
       </label>

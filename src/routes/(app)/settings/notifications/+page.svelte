@@ -209,7 +209,7 @@
               type="checkbox"
               name="overdueEmailReminders"
               bind:checked={overdueEmail}
-              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded"
+              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
             />
           </label>
           <label class="flex cursor-pointer items-center justify-between">
@@ -223,7 +223,7 @@
               type="checkbox"
               name="overduePushReminders"
               bind:checked={overduePush}
-              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded"
+              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
             />
           </label>
         </div>
@@ -247,7 +247,7 @@
               type="checkbox"
               name="lowInventoryEmailAlerts"
               bind:checked={lowInvEmail}
-              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded"
+              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
             />
           </label>
           <label class="flex cursor-pointer items-center justify-between">
@@ -261,7 +261,7 @@
               type="checkbox"
               name="lowInventoryPushAlerts"
               bind:checked={lowInvPush}
-              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded"
+              class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
             />
           </label>
         </div>

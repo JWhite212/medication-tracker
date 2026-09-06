@@ -53,7 +53,7 @@
       type="checkbox"
       name="notificationsEnabled"
       bind:checked={enabled}
-      class="accent-accent size-4 rounded"
+      class="accent-accent size-4 rounded-xs"
     />
     Notify me about this medication
   </label>

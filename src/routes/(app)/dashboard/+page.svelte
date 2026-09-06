@@ -95,7 +95,7 @@
                 <input type="hidden" name="medicationId" value={entry.medicationId} />
                 <button
                   type="submit"
-                  class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded px-2 py-1 text-xs transition-colors"
+                  class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded-xs px-2 py-1 text-xs transition-colors"
                 >
                   Skip
                 </button>

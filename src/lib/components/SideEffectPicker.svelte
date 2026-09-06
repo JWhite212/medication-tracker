@@ -117,7 +117,7 @@
               <button
                 type="button"
                 onclick={() => setSeverity(effect.name, opt.value)}
-                class="rounded px-2 py-0.5 text-xs font-medium transition-colors {effect.severity ===
+                class="rounded-xs px-2 py-0.5 text-xs font-medium transition-colors {effect.severity ===
                 opt.value
                   ? opt.value === 'mild'
                     ? 'bg-text-secondary/30 text-text-primary'

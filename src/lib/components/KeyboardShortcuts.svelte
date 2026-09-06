@@ -67,7 +67,7 @@
 
 {#if showHelp}
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    class="bg-scrim fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"
     onclick={(e) => {
       if (e.target === e.currentTarget) showHelp = false;
     }}

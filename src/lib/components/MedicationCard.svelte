@@ -10,7 +10,7 @@
   function refillChipClass(severity: MedicationWithStats["refillSeverity"]): string {
     if (severity === "critical") return "bg-danger/15 text-danger-ink";
     if (severity === "warning") return "bg-warning/15 text-warning";
-    if (severity === "watch") return "bg-accent/15 text-accent-ink";
+    if (severity === "watch") return "bg-info/15 text-info";
     return "";
   }
 

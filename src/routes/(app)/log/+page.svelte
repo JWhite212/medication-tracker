@@ -188,7 +188,7 @@
         type="checkbox"
         name="withSideEffects"
         value="1"
-        class="border-border-strong bg-surface-raised h-4 w-4 rounded"
+        class="border-border-strong bg-surface-raised h-4 w-4 rounded-xs"
         checked={data.filters.withSideEffects}
         onchange={submitOnChange}
       />

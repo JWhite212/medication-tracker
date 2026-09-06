@@ -114,7 +114,7 @@
           id="reducedMotion"
           name="reducedMotion"
           checked={data.preferences.reducedMotion}
-          class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded"
+          class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
         />
         <label for="reducedMotion" class="text-sm font-medium">
           Reduce motion

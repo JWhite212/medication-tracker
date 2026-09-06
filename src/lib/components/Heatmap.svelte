@@ -90,9 +90,19 @@
 </div>
 
 <style>
+  /* Two independent switches. The media query is the OS setting; the
+     attribute is the app's own preference, set on a wrapper in
+     (app)/+layout.svelte. The attribute selector MUST be :global() — it
+     targets an ancestor outside this component's scope, and without it
+     Svelte compiles the rule away as an unused selector and the toggle
+     silently does nothing. See tests/unit/heatmap-motion.test.ts. */
   @media (prefers-reduced-motion: reduce) {
     .heatmap-cell {
       animation-delay: 0ms !important;
     }
+  }
+
+  :global([data-reduced-motion="true"]) .heatmap-cell {
+    animation-delay: 0ms !important;
   }
 </style>

@@ -1,0 +1,32 @@
+name: Block Bot Commits
+
+on:
+  pull_request:
+    branches:
+      - main # Update this if your default branch is named differently
+
+jobs:
+  check-authors:
+    name: check-authors
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to fetch the full commit history of the PR
+
+      - name: Inspect commit authors
+        run: |
+          # Get all commit author names and emails between the base and head of the PR
+          AUTHORS=$(git log --format="%an <%ae>" ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+          
+          echo "Commits in this PR are authored by:"
+          echo "$AUTHORS"
+          
+          # Search for the Claude app, generic GitHub bots, or bot emails
+          if echo "$AUTHORS" | grep -iE '\[bot\]|bot@noreply\.github\.com|claude|anthropics'; then
+            echo "::error::This pull request contains commits authored by a bot. To prevent bots from being listed as contributors, these commits cannot be merged."
+            exit 1
+          else
+            echo "No bot commits detected. Validation passed."
+          fi

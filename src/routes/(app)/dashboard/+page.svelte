@@ -106,7 +106,7 @@
       {/if}
 
       {#if data.doses.length === 0 && overdueMeds.length === 0}
-        <EmptyState title="No doses logged today" />
+        <EmptyState title="No doses logged today" body="Use Quick Log above to record one." />
       {:else if data.doses.length > 0}
         <div class="space-y-2" role="list" aria-label="Today's doses">
           {#each data.doses as dose (dose.id)}

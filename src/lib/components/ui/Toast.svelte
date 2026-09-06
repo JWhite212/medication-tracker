@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import { browser } from "$app/environment";
+
   type ToastItem = {
     id: string;
     message: string;
@@ -6,6 +8,16 @@
     undoAction?: () => void;
   };
 
+  /**
+   * Module-level state, so EXACTLY ONE <Toast /> may be mounted — it now
+   * lives in (app)/+layout.svelte. Mount a second and every toast renders
+   * twice in two aria-live regions, and screen readers announce it twice.
+   *
+   * The `browser` guard exists because the layout mount means this module is
+   * evaluated during SSR on every authenticated page. Module state is
+   * per-process on the server, so a showToast() reached during SSR would be
+   * visible to whichever user rendered next.
+   */
   let toasts = $state<ToastItem[]>([]);
 
   export function showToast(
@@ -13,6 +25,7 @@
     type: "success" | "error" = "success",
     undoAction?: () => void,
   ) {
+    if (!browser) return;
     const id = crypto.randomUUID();
     toasts.push({ id, message, type, undoAction });
     setTimeout(() => {

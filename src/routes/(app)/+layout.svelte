@@ -1,6 +1,7 @@
 <script lang="ts">
   import Sidebar from "$components/Sidebar.svelte";
   import MobileHeader from "$components/MobileHeader.svelte";
+  import Toast from "$components/ui/Toast.svelte";
   import type { SessionUser } from "$lib/types";
   import { readableForeground } from "$lib/utils/contrast";
 
@@ -63,4 +64,6 @@
       {@render children()}
     </main>
   </div>
+
+  <Toast />
 </div>

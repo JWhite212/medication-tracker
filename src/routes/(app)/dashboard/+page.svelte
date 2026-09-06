@@ -5,7 +5,6 @@
   import QuickLogBar from "$components/QuickLogBar.svelte";
   import TimelineEntry from "$components/TimelineEntry.svelte";
   import OnboardingWelcome from "$components/OnboardingWelcome.svelte";
-  import Toast from "$components/ui/Toast.svelte";
   import Modal from "$components/ui/Modal.svelte";
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import KeyboardShortcuts from "$components/KeyboardShortcuts.svelte";
@@ -39,8 +38,6 @@
 <svelte:head>
   <title>Dashboard — MedTracker</title>
 </svelte:head>
-
-<Toast />
 
 {#if data.medications.length === 0}
   <OnboardingWelcome />

@@ -71,4 +71,10 @@ Server-first SvelteKit app (Svelte 5 runes). Pages load via `+page.server.ts`, m
 
 ## Styling
 
-Tailwind CSS v4 with custom theme in `src/app.css`. Dark-mode-first. Key tokens: `glass`, `glass-border`, `surface`, `surface-raised`, `text-primary`, `text-secondary`, `accent`.
+Tailwind CSS v4 with custom theme in `src/app.css`. Dark-mode-first. Key tokens: `glass`, `surface`, `surface-raised`, `text-primary`, `text-secondary`, `accent`.
+
+- **A colour splits three ways by ROLE, and the roles are not interchangeable.** `accent` = fill (`bg-`), `accent-ink` = text/border/ring, `accent-fg` = the foreground that sits _on_ the fill. `danger` splits identically (`danger` / `danger-ink` / `danger-fg`). No single value does two jobs: `#4f46e5` is 1.99:1 as text and `#8f92f5` is 2.76:1 with white on it. `success` and `warning` need no ink variant — they already clear both.
+- **`--color-info` is deliberately a separate token from `--color-accent-ink` even when they hold the same value.** The ink moves with the user's accent; info must not, or an amber accent turns every neutral "info" chip amber and it collides with `warning`. Do not simplify them into one.
+- **`--color-glass-border` is decorative; `--color-border-strong` is the control boundary.** The hairline is 1.33:1 and cannot satisfy WCAG 1.4.11's 3:1, so any interactive control's resting border takes `border-strong`.
+- **`src/routes/(app)/+layout.svelte` sets `--color-accent`, `--color-accent-fg` and `--color-accent-ink` as inline styles from `data.preferences.accentColor`, and inline beats every stylesheet rule.** So a value changed in `@theme` does NOT change inside the authenticated app — `@theme`'s accent values are the logged-out fallback, and the value that reaches real users is the column default in `schema.ts`. `accent-fg`/`accent-ink` are derived by `readableForeground`/`readableInk` in `src/lib/utils/contrast.ts`, the single WCAG implementation; never hand-roll the maths.
+- `tests/unit/theme-tokens.test.ts` parses `src/app.css` (both `@theme` and the `prefers-contrast` block) and the appearance page's preset list, so it cannot drift from what ships. It asserts text tokens, fills, control boundaries and the tinted `/10 /15 /20` chips against the backdrop each actually composites onto — a new chip combination belongs in that table, with its real DOM nesting.

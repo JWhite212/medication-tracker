@@ -49,14 +49,14 @@ describe("the appearance page's named actions", () => {
     } as never);
 
     expect(updatePreferences).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ status: 400 });
+    expect(result).toMatchObject({ status: 400, data: { key: "uiDensity" } });
   });
 
   it("400s on a value outside the option list", async () => {
     const result = await actions.uiDensity({ ...post({ uiDensity: "roomy" }), locals } as never);
 
     expect(updatePreferences).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ status: 400 });
+    expect(result).toMatchObject({ status: 400, data: { key: "uiDensity" } });
   });
 
   it("maps the checkbox pair to a boolean", async () => {
@@ -79,7 +79,11 @@ describe("the appearance page's named actions", () => {
       expect.any(Number),
     );
     expect(updatePreferences).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ status: 429 });
+    expect(result).toMatchObject({
+      status: 429,
+      data: { key: "uiDensity", saveError: expect.any(String) },
+    });
+    expect((result as { data: { saveError: string } }).data.saveError.length).toBeGreaterThan(0);
   });
 
   it("401s an anonymous POST instead of 500ing on locals.user!", async () => {

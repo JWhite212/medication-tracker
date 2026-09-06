@@ -59,6 +59,11 @@ describe("preference door conformance", () => {
     const columns = Object.keys(getTableColumns(userPreferences)).filter(
       (c) => c !== "userId" && c !== "updatedAt",
     );
+    // Guards against the loop below silently asserting nothing if this
+    // ever returned an empty (or truncated) list -- a drizzle refactor, a
+    // mis-merge, or an accidental re-export would all still leave this
+    // test green with zero real assertions run.
+    expect(columns).toHaveLength(12);
     for (const column of columns) {
       expect(apiKeys, `/api/v1 door is missing ${column}`).toContain(column);
       expect(importKeys, `import door is missing ${column}`).toContain(column);
@@ -66,7 +71,7 @@ describe("preference door conformance", () => {
   });
 
   it("keeps the two API doors on the same key set", () => {
-    expect(apiKeys.sort()).toEqual(importKeys.sort());
+    expect([...apiKeys].sort()).toEqual([...importKeys].sort());
   });
 
   it("agrees on heatmapPeriod's bound at both doors", () => {

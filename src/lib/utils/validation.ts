@@ -224,9 +224,10 @@ export const passwordChangeSchema = z
 
 // HTML form checkboxes only submit when checked, so each field
 // accepts an optional "on" string and transforms to a boolean. Used by
-// the notification schema; the appearance doors take a required
-// "on" | "off" pair instead, because a per-field action cannot tell an
-// absent checkbox apart from a mistyped field name.
+// the notification schema and the import page's section toggles; the
+// appearance doors take a required "on" | "off" pair instead, because a
+// per-field action cannot tell an absent checkbox apart from a mistyped
+// field name.
 const checkboxField = z
   .string()
   .optional()

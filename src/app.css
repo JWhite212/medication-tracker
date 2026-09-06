@@ -41,10 +41,15 @@
   --color-warning-fg: #111111;
   --color-danger: #ef4444;
   --color-danger-fg: #111111;
-  --color-danger-ink: #f37474;
+  --color-danger-ink: #f98686;
   /* Neutral/informational. Previously `accent` did this job, which collides
-     with warning/danger the moment a user picks an amber accent. */
-  --color-info: #8f92f5;
+     with warning/danger the moment a user picks an amber accent. Kept as a
+     token of its own even when it holds the same value as accent-ink: that
+     one moves with the user's accent and this one must not.
+     Lighter than accent-ink because its only site renders it ON a tint of
+     itself (bg-info/15) inside a card that lightens again on hover — the
+     opaque-surface reading is not the binding one. */
+  --color-info: #a5a8f8;
   --color-scrim: rgba(0, 0, 0, 0.6);
   /* Accent-neutral so the activity heatmap does not fight the user's accent. */
   --color-heatmap-0: #1b2b2e;

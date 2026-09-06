@@ -197,6 +197,69 @@ describe("solid fills carry a legible foreground", () => {
   }
 });
 
+/**
+ * Tinted chips: `bg-danger/20 text-danger-ink` and friends. The opaque
+ * surfaces above are not what these render on — the chip paints a fraction of
+ * its own fill over whatever is behind it, which lightens the backdrop and
+ * costs the foreground contrast. Nothing asserted that, so live combinations
+ * were sitting below 4.5 while every token passed on its own.
+ *
+ * Each backdrop below is the real DOM nesting, read off the component, not a
+ * representative surface.
+ */
+describe("tinted chips are legible over the backdrop they actually paint on", () => {
+  const glass = whiteAlpha(T["--color-glass"]);
+  const glassHover = whiteAlpha(T["--color-glass-hover"]);
+
+  // MedicationCard: .bg-glass.hover:bg-glass-hover > page <main> on --color-surface.
+  const card = compositeOver(glass, T["--color-surface"]);
+  const cardHover = compositeOver(glassHover, T["--color-surface"]);
+  // SideEffectPicker severity chips: .bg-glass > DoseEditForm > Modal panel
+  // on --color-surface-raised.
+  const modalGlass = compositeOver(glass, T["--color-surface-raised"]);
+  // MyDayTimeline: row.hover:bg-glass-hover > .bg-glass group > page.
+  const row = card;
+  const rowHover = compositeOver(glassHover, card);
+
+  // [fill, alpha, backdrop, foreground, threshold]. 3:1 rather than 4.5 where
+  // the foreground is a glyph in a status circle (WCAG 1.4.11), not text.
+  const CHIPS: [string, number, string, string, number, string][] = [
+    ["--color-info", 0.15, card, "--color-info", 4.5, "medications refill chip (watch)"],
+    ["--color-info", 0.15, cardHover, "--color-info", 4.5, "…hovered"],
+    ["--color-warning", 0.15, card, "--color-warning", 4.5, "medications refill chip (warning)"],
+    ["--color-warning", 0.15, cardHover, "--color-warning", 4.5, "…hovered"],
+    ["--color-danger", 0.15, card, "--color-danger-ink", 4.5, "medications refill chip (critical)"],
+    ["--color-danger", 0.15, cardHover, "--color-danger-ink", 4.5, "…hovered"],
+    ["--color-danger", 0.2, modalGlass, "--color-danger-ink", 4.5, "side effect severity: severe"],
+    ["--color-warning", 0.2, modalGlass, "--color-warning", 4.5, "side effect severity: moderate"],
+    [
+      "--color-text-secondary",
+      0.3,
+      modalGlass,
+      "--color-text-primary",
+      4.5,
+      "side effect severity: mild",
+    ],
+    ["--color-success", 0.2, row, "--color-success", 3, "timeline status glyph: taken"],
+    ["--color-success", 0.2, rowHover, "--color-success", 3, "…hovered"],
+    ["--color-warning", 0.2, row, "--color-warning", 3, "timeline status glyph: skipped"],
+    ["--color-warning", 0.2, rowHover, "--color-warning", 3, "…hovered"],
+  ];
+
+  for (const [fill, alpha, base, fg, threshold, site] of CHIPS) {
+    it(`${fg} on ${fill}/${alpha * 100} — ${site}`, () => {
+      expect(T[fill], `${fill} is not defined`).toBeDefined();
+      expect(T[fg], `${fg} is not defined`).toBeDefined();
+      const chip = compositeOver(alpha, base, T[fill]);
+      const ratio = contrastRatio(T[fg], chip);
+      expect(
+        ratio,
+        `${T[fg]} on ${chip} (${T[fill]} at ${alpha} over ${base}) is ${ratio.toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(threshold);
+    });
+  }
+});
+
 describe("control boundaries meet the 3:1 non-text minimum (WCAG 1.4.11)", () => {
   for (const [name, bg] of Object.entries(surfaces())) {
     if (name.startsWith("glass")) continue; // a control never sits on its own hover state

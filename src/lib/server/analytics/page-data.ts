@@ -14,6 +14,7 @@ import type {
 import type { getRefillForecast } from "$lib/server/inventory";
 import type { getMedicationOptions } from "$lib/server/medications";
 import type { MedicationSchedule } from "$lib/server/schedules";
+import { HEATMAP_PERIOD_BOUNDS } from "$lib/preferences/schema";
 
 /**
  * Everything the analytics page computes once its data is in hand.
@@ -26,19 +27,25 @@ import type { MedicationSchedule } from "$lib/server/schedules";
 
 const VALID_PERIODS = new Set(["7", "30", "90", "365"]);
 
-// Mirrors the bound `heatmapPeriod` gets at its two write doors
-// (src/lib/utils/validation.ts). A row written through the door BEFORE it
-// was bounded can still hold anything outside 1-3650, and heatmapPeriod
-// has no form door of its own to catch it on the way back in -- the only
-// way to fix a bad stored value is another /api/v1 call. Clamped here, at
-// the one place every page load reads it, so a stale out-of-range value
-// can't reach `new Date(now - period * 2 * 86400000)` or the per-day
-// render loop. Only the preference fallback needs this: the `?period=`
-// query param path is already restricted to VALID_PERIODS above.
-const MIN_HEATMAP_PERIOD = 1;
-const MAX_HEATMAP_PERIOD = 3650;
+// The SAME bound `heatmapPeriod` gets at its two write doors, imported from
+// the substrate rather than restated -- this used to be a third hand-written
+// copy of 1-3650, one door change away from disagreeing with the doors it
+// says it mirrors. A row written BEFORE the door was bounded can still hold
+// anything outside the range, and heatmapPeriod has no form door of its own
+// to catch it on the way back in -- the only way to fix a bad stored value
+// is another /api/v1 call. Clamped here, at the one place every page load
+// reads it, so a stale out-of-range value can't reach
+// `new Date(now - period * 2 * 86400000)` or the per-day render loop.
+//
+// A door policy applied on READ, deliberately, and the narrow exception to
+// the `MAX_INTERVAL_HOURS` rule: there the stored 168 predates the bound and
+// must still produce a rate, so clamping on read would drop a medication out
+// of forecasting. Here the stored value drives nothing but the size of a
+// render loop, so clamping costs a stale row a shorter heatmap and saves the
+// page. Only the preference fallback needs it: the `?period=` query param
+// path is already restricted to VALID_PERIODS above.
 function clampHeatmapPeriod(period: number): number {
-  return Math.min(Math.max(period, MIN_HEATMAP_PERIOD), MAX_HEATMAP_PERIOD);
+  return Math.min(Math.max(period, HEATMAP_PERIOD_BOUNDS.min), HEATMAP_PERIOD_BOUNDS.max);
 }
 
 // Bounds-check the optional from/to query params. Reject dates earlier than

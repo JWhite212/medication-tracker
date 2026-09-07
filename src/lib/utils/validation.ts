@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { MAX_INTERVAL_HOURS } from "$lib/utils/schedule-rate";
 import { appearanceImportShape, appearancePayloadShape } from "$lib/appearance/schema";
+import {
+  EXPORT_FORMATS,
+  preferenceImportShape,
+  preferencePayloadShape,
+} from "$lib/preferences/schema";
 
 export const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -240,8 +245,11 @@ export const notificationSchema = z.object({
   lowInventoryPushAlerts: checkboxField,
 });
 
+// Arity 1 for exportFormat: required, because a select always submits. The
+// option list is the substrate's, so the form door cannot offer a value the
+// API doors would reject.
 export const dataSchema = z.object({
-  exportFormat: z.enum(["pdf", "csv"]),
+  exportFormat: z.enum(EXPORT_FORMATS),
 });
 
 export const logFilterSchema = z.object({
@@ -350,22 +358,12 @@ export const archivePayload = z.object({ medicationId: z.string() });
 export const reorderPayload = z.object({ medId1: z.string(), medId2: z.string() });
 
 export const updatePreferencesPayload = z.object({
-  // The five appearance options come from the registry-derived shape, so
-  // adding one there cannot leave this door behind. The compiler enforces
-  // the coverage (see the `satisfies` clauses in appearance/schema.ts);
-  // tests/unit/preference-door-conformance.test.ts covers the seven keys
-  // the registry does not own.
+  // Both halves are derived, so no preference is restated at this door and
+  // none can be left behind: the five appearance options come from the
+  // registry-derived shape, the other seven from the preference substrate.
+  // Between them the two `satisfies` clauses cover every mutable column.
   ...appearancePayloadShape,
-  overdueEmailReminders: z.boolean().optional(),
-  overduePushReminders: z.boolean().optional(),
-  lowInventoryEmailAlerts: z.boolean().optional(),
-  lowInventoryPushAlerts: z.boolean().optional(),
-  doseLogPageSize: z.number().int().min(5).max(100).optional(),
-  // Bounded to match the import door. It was unbounded here, and the
-  // value reaches Heatmap.svelte's per-day render loop unclamped -- an
-  // account owner's own API token could ask for ten million DOM nodes.
-  heatmapPeriod: z.number().int().min(1).max(3650).optional(),
-  exportFormat: z.enum(["pdf", "csv"]).optional(),
+  ...preferencePayloadShape,
 });
 
 // ---------------------------------------------------------------------------
@@ -565,13 +563,7 @@ const importProfileSchema = z.object({
 
 const importPreferencesSchema = z.object({
   ...appearanceImportShape,
-  overdueEmailReminders: z.boolean().optional(),
-  overduePushReminders: z.boolean().optional(),
-  lowInventoryEmailAlerts: z.boolean().optional(),
-  lowInventoryPushAlerts: z.boolean().optional(),
-  doseLogPageSize: z.number().int().min(5).max(100).optional(),
-  heatmapPeriod: z.number().int().min(1).max(3650).optional(),
-  exportFormat: z.enum(["pdf", "csv"]).optional(),
+  ...preferenceImportShape,
 });
 
 export const IMPORT_SUPPORTED_VERSION = 1;

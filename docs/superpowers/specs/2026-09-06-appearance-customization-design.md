@@ -221,6 +221,11 @@ why that consolidation has to land in 1a, before 1c can switch a light palette o
 at all. That stays true — the guard is advisory, per the original design — but with the
 split, a bad choice degrades the fill rather than making every label unreadable.
 
+**Shipped as `--color-accent-ink`, and only half-delivered.** 1a landed the token and the
+shared luminance module, but kept the derivation per-user and **inline on the wrapper**
+rather than per-scheme in the theme layer — so the half of this decision that 1c actually
+depends on is still outstanding. See [1c — Theme](#1c--theme).
+
 ### Why the contrast block moves into the theme table (decision 5)
 
 Once `:root:root` wins unconditionally, `@media (prefers-contrast: more)` stops meaning
@@ -497,10 +502,32 @@ already hand-rolls exactly this workaround for medication pills, and is the temp
 split from 1a. `--color-surface-overlay` also inverts direction — four of its five uses
 are recessed tracks and chips that must go darker in light mode, not lighter.
 
-New tokens: `--color-info` (breaks the accent-as-status overload, where refill "watch" and
-neutral insights currently render `text-accent` and would collide with `warning`/`danger`
-for anyone picking an amber accent), `--color-danger-fg`, `--color-success-fg`,
-`--color-warning-fg`, `--color-scrim`, `--color-accent-text`, and `--color-heatmap-0..4`.
+**The token list this section originally carried has already shipped.** 1a added
+`--color-info` (which broke the accent-as-status overload, where refill "watch" and neutral
+insights rendered `text-accent` and collided with `warning`/`danger` for anyone picking an
+amber accent), `--color-success-fg`, `--color-warning-fg`, `--color-danger-fg`,
+`--color-scrim` and `--color-heatmap-0..4` — all of them at `app.css:39-59`. It needed them
+to fix the contrast failures and the hardcoded heatmap ramp, and a token cannot be
+introduced by the PR that merely adds its second value. So **1c introduces no new token
+names.** What it adds is a light arm for the ones that exist, plus the three structural
+flips above.
+
+**The one that did not ship as designed is the accent text token.** Decision 4 called it
+`--color-accent-text`, derived per scheme and owned by the theme layer. What 1a shipped is
+`--color-accent-ink`, derived per _user_ by `readableInk` and set **inline on the `(app)`
+wrapper div** (`(app)/+layout.svelte:33`), alongside the fill. That solved 1a's problem —
+133 text/border/ring sites frozen at indigo for a user who picked amber — and left 1c's
+untouched, in exactly the way decision 4 warned about for `--color-accent`: an inline style
+on a wrapper outranks the theme layer, so a light scheme physically cannot re-tune it.
+
+`readableInk` compounds it twice, and both are structural rather than a matter of values.
+It only ever lightens **toward white** (`compositeOver(step / 100, colour)`,
+`contrast.ts:100`), where a light page needs darkening toward black; and it solves against
+`INK_BACKDROP = "#33333a"` (`contrast.ts:77`), the lightest of the six _dark_ surfaces. So
+1c gives `readableInk` a per-scheme backdrop and overlay, and **moves the ink out of the
+wrapper's inline styles and into the theme block**, where the scheme can own it. The fill
+stays inline, per decision 4. `contrast.ts:6-7` already names this as the caller it was
+extracted for.
 
 **`data-density` and `data-reduced-motion` move off the wrapper div in the same commit
 that the theme block starts setting anything they touch.** If both exist, the wrapper is a

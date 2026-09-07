@@ -187,7 +187,16 @@ const CASES: Case[] = [
   // which does not list it, and a 400 would stop short of locals.user.
   { route: "settings", action: "default", actions: settings.actions, fields: { name: "A", timezone: "Europe/London" } }, // prettier-ignore
 
-  { route: "settings/appearance", action: "default", actions: appearance.actions, fields: { accentColor: "#6366f1", dateFormat: "DD/MM/YYYY", timeFormat: "24h", uiDensity: "comfortable" } }, // prettier-ignore
+  // The appearance page has no `default` action: it exposes one named action
+  // per option (spec decision 7), so each gets its own case. Each schema is a
+  // `strictObject` with exactly ONE required key, so a body carrying all five
+  // fields — as the single `default` case used to — now fails validation and
+  // would 400 before ever reaching the guard, proving nothing.
+  { route: "settings/appearance", action: "accentColor", actions: appearance.actions, fields: { accentColor: "#4f46e5" } }, // prettier-ignore
+  { route: "settings/appearance", action: "dateFormat", actions: appearance.actions, fields: { dateFormat: "DD/MM/YYYY" } }, // prettier-ignore
+  { route: "settings/appearance", action: "timeFormat", actions: appearance.actions, fields: { timeFormat: "24h" } }, // prettier-ignore
+  { route: "settings/appearance", action: "uiDensity", actions: appearance.actions, fields: { uiDensity: "comfortable" } }, // prettier-ignore
+  { route: "settings/appearance", action: "reducedMotion", actions: appearance.actions, fields: { reducedMotion: "on" } }, // prettier-ignore
 
   { route: "settings/data", action: "updateFormat", actions: data.actions, fields: { exportFormat: "csv" } }, // prettier-ignore
   { route: "settings/data", action: "deleteAccount", actions: data.actions, fields: { password: "hunter2" } }, // prettier-ignore

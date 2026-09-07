@@ -116,11 +116,27 @@ export function isoDayKey(date: Date, timezone: string): string {
 }
 
 /**
- * Build a UTC instant from calendar fields, safe for years below 100.
+ * Build a UTC instant from calendar fields, safe for years below 100 and for
+ * out-of-range fields.
  *
  * `Date.UTC(50, 0, 1)` is 1950, not year 50 — the two-digit-year mapping is
- * specified behaviour, not a quirk to route around at the call site. Setting
- * the year afterwards is the documented escape.
+ * specified behaviour, not a quirk to route around at the call site. So the
+ * year has to be set rather than passed.
+ *
+ * It has to be set FIRST, though, and with the month and day in the same
+ * call. An earlier version built the instant on a year-2000 pivot and then
+ * called `setUTCFullYear(year)` alone, which loses a whole year whenever a
+ * field overflows past 31 December: the rollover incremented the *pivot*
+ * (2000 → 2001) and the year was then overwritten, so `2026-12-32` came back
+ * as 2026-01-01 rather than 2027-01-01. The pivot being a leap year cost a
+ * day as well — `2026-02-31` resolved to 2 March instead of 3. Both doors
+ * that reach here are shape checks rather than calendar checks by design
+ * (`DATETIME_LOCAL_RE`, `DAY_KEY_RE`), so overflowing fields are reachable
+ * input, and a dose could be stored a year in the past with no error.
+ *
+ * `setUTCFullYear(year, month, day)` normalises the overflow against the
+ * requested year, which is what `Date.UTC` would have done if it could be
+ * trusted with the year at all.
  */
 function utcFromFields(
   year: number,
@@ -130,8 +146,9 @@ function utcFromFields(
   minute: number,
   second: number,
 ): number {
-  const d = new Date(Date.UTC(2000, month - 1, day, hour, minute, second));
-  d.setUTCFullYear(year);
+  const d = new Date(0);
+  d.setUTCFullYear(year, month - 1, day);
+  d.setUTCHours(hour, minute, second, 0);
   return d.getTime();
 }
 
@@ -285,12 +302,7 @@ export function wallClockToInstant(dayKey: string, timeOfDay: string, timezone: 
  */
 export function shiftDayKey(dayKey: string, days: number): string {
   const [year, month, day] = dayKey.split("-").map(Number);
-
-  // Land on the target date FIRST, then step. Rolling the day inside
-  // `utcFromFields` would do the arithmetic on the pivot year's calendar and
-  // then have `setUTCFullYear` overwrite the year the rollover just produced
-  // — `shiftDayKey("2026-12-31", 1)` came back as 2026-01-01.
-  const shifted = new Date(utcFromFields(year, month, day, 0, 0, 0) + days * MS_PER_DAY);
+  const shifted = new Date(utcFromFields(year, month, day + days, 0, 0, 0));
 
   return [
     String(shifted.getUTCFullYear()).padStart(4, "0"),
@@ -377,6 +389,38 @@ export function formatUserDate(
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * Whether `YYYY-MM-DD` names a day that actually exists.
+ *
+ * A shape check is not a calendar check: `/^\d{4}-\d{2}-\d{2}$/` matches
+ * `2026-13-45` and `2026-02-31` quite happily, and `Date` then NORMALISES
+ * them — to 2027-01-14 and 3 March respectively — rather than rejecting
+ * them. Silent normalisation is the wrong answer at a door: a user who
+ * typed a nonsense date wants to be told, not to be shown April 2027's
+ * dose log without explanation.
+ *
+ * The round-trip catches both out-of-range components and dates that do not
+ * exist. It goes through `utcFromFields` so it is right for years below 100,
+ * where `Date.UTC` maps two-digit years into the 1900s and would reject a
+ * perfectly good year 50.
+ */
+export function isCalendarDay(year: number, month: number, day: number): boolean {
+  const probe = new Date(utcFromFields(year, month, day, 0, 0, 0));
+
+  return (
+    probe.getUTCFullYear() === year &&
+    probe.getUTCMonth() === month - 1 &&
+    probe.getUTCDate() === day
+  );
+}
+
+/** Whether a `YYYY-MM-DD` string names a day that actually exists. */
+export function isCalendarDayKey(dayKey: string): boolean {
+  if (!DAY_KEY_RE.test(dayKey)) return false;
+  const [year, month, day] = dayKey.split("-").map(Number);
+  return isCalendarDay(year, month, day);
+}
+
+/**
  * A `?from=` / `?to=` query param as an instant, reading a bare `YYYY-MM-DD`
  * as a civil day in the USER'S timezone.
  *
@@ -414,6 +458,11 @@ export function parseDayRangeParam(
   if (!value) return null;
 
   if (DAY_KEY_RE.test(value)) {
+    // A shape-only check would silently NORMALISE `2026-13-99` into April
+    // 2027 and hand back an empty log with no explanation. Rejected instead,
+    // which the caller reads as "no bound" — the same treatment the import
+    // door gives a bad date cell.
+    if (!isCalendarDayKey(value)) return null;
     const dayKey = edge === "end" ? shiftDayKey(value, 1) : value;
     return wallClockToInstant(dayKey, "00:00", timezone);
   }

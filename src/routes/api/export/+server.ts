@@ -3,7 +3,7 @@ import { generateReport } from "$lib/server/export-pdf";
 import { generateCsvReport } from "$lib/server/export-csv";
 import { getOrCreatePreferences } from "$lib/server/preferences";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
-import { parseDayRangeParam, type DateFormat } from "$lib/utils/time";
+import { parseDayRangeParam, isoDayKey, type DateFormat } from "$lib/utils/time";
 import type { RequestHandler } from "./$types";
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -48,13 +48,22 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   if (fromDate >= toDate) {
     error(400, "'from' must be before 'to'");
   }
-  if (toDate.getTime() - fromDate.getTime() > 366 * 86400000) {
+  // Measured in whole CIVIL days, not raw milliseconds. `toDate` is the
+  // exclusive start of the day after the requested end, so the requested span
+  // is one shorter than the delta; and the delta itself is not a multiple of
+  // 86,400,000 once a range straddles a DST transition, which made the SAME
+  // request pass or fail depending only on the caller's profile timezone.
+  const spanDays = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) - 1;
+  if (spanDays > 366) {
     error(400, "Date range must not exceed 1 year");
   }
 
   const preferences = await getOrCreatePreferences(locals.user.id);
   const format = url.searchParams.get("format") ?? preferences.exportFormat ?? "pdf";
-  const dateStr = fromDate.toISOString().split("T")[0];
+  // The civil day is asked for, not read off the instant: `fromDate` is a
+  // LOCAL midnight now, so `toISOString()` names the previous UTC date for
+  // every user east of UTC. See the invariant on `wallClockToInstant`.
+  const dateStr = isoDayKey(fromDate, tz);
   const timeFormat = preferences.timeFormat as "12h" | "24h";
   const dateFormat = preferences.dateFormat as DateFormat;
 

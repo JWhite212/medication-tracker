@@ -120,10 +120,21 @@ picked the earlier instant in New York and the later one in London, purely
 as an emergent property, and a choice that can wobble mints a fresh key
 and re-sends a reminder the user already received. Second, **deploying
 this change moves the resolved slot for any fixed-time medication within
-`|offset|` hours of a transition**, which costs one duplicate notification
-per affected user if it lands on or beside a transition day. Deploy inside
-a clear window; the same constraint applies to a rollback.
-`OVERDUE_LOOKBACK_DAYS = 1`, so the blackout is transition day ±1.
+`|offset|` hours of a transition**, which costs duplicate notifications if
+it lands on or beside a transition day. Deploy inside a clear window; the
+same constraint applies to a rollback. `OVERDUE_LOOKBACK_DAYS = 1`, so the
+blackout is transition day ±1.
+
+The cost is **one** duplicate only where `notifyRepeatEveryMinutes` is
+null. With repeats configured, moving the slot re-bases the whole nag
+series: `computeNagIndex` derives its ordinal from `slot + offsetMinutes`,
+so every `…:nK` key in the series is fresh, not just the base one. The
+extra sends are `offset shift ÷ tick interval`, capped at `maxRepeats + 1`
+— with the 30-minute `reminder-tick` cadence and a one-hour shift that is
+two, and it was measured at two by simulating both branches' real
+`computeOverdueSlot` / `computeNagIndex` / `buildOverdueDedupeKey` across
+America/New_York 2026-11-01 and Australia/Sydney 2026-10-04 (five
+notifications in steady state, seven across the deploy).
 
 **Two things this does not repair.** Doses already written on a transition
 day by the old `parseDateTimeLocal` are an hour out and stay that way

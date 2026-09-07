@@ -2,7 +2,7 @@ import { error, json } from "@sveltejs/kit";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { getAuditLogForExport, buildAuditCsv } from "$lib/server/audit-export";
 import type { RequestHandler } from "./$types";
-import { parseDayRangeParam } from "$lib/utils/time";
+import { parseDayRangeParam, isoDayKey } from "$lib/utils/time";
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX_REQUESTS = 10;
@@ -45,13 +45,22 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   if (fromDate >= toDate) {
     error(400, "'from' must be before 'to'");
   }
-  if (toDate.getTime() - fromDate.getTime() > 366 * 86400000) {
+  // Measured in whole CIVIL days, not raw milliseconds. `toDate` is the
+  // exclusive start of the day after the requested end, so the requested span
+  // is one shorter than the delta; and the delta itself is not a multiple of
+  // 86,400,000 once a range straddles a DST transition, which made the SAME
+  // request pass or fail depending only on the caller's profile timezone.
+  const spanDays = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) - 1;
+  if (spanDays > 366) {
     error(400, "Date range must not exceed 1 year");
   }
 
   const rows = await getAuditLogForExport(locals.user.id, fromDate, toDate);
   const csv = buildAuditCsv(rows);
-  const dateStr = fromDate.toISOString().split("T")[0];
+  // The civil day is asked for, not read off the instant: `fromDate` is a
+  // LOCAL midnight now, so `toISOString()` names the previous UTC date for
+  // every user east of UTC. See the invariant on `wallClockToInstant`.
+  const dateStr = isoDayKey(fromDate, tz);
 
   return new Response(csv, {
     headers: {

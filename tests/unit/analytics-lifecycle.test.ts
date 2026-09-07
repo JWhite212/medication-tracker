@@ -73,6 +73,94 @@ describe("clampEffectiveDays", () => {
     const to = new Date(APR_15.getTime() + 6 * HOUR);
     expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(0);
   });
+
+  // The PDF export's bounds are LOCAL midnights (`parseDayRangeParam`), so a
+  // civil range containing a spring-forward is one transition short of
+  // `days * 24h`. Counted in flat 24-hour days it loses a whole day — the
+  // clinician report printing "Expected events: 30" over 31 days of doses,
+  // and adding an "Overuse" line to a patient with perfect adherence.
+  it("counts a civil range shortened by a spring-forward as its full length", () => {
+    // Europe/London, 1–31 March 2026: 31 civil days, one hour short of 31*24h,
+    // less the millisecond `lastIncludedInstant` subtracts.
+    const to = new Date(APR_15.getTime() + 31 * DAY - HOUR - 1);
+    expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(31);
+  });
+
+  it("counts a civil range shortened by a two-hour transition too", () => {
+    // Antarctica/Troll moves UTC+0 to UTC+2 — the widest transition there is.
+    const to = new Date(APR_15.getTime() + 31 * DAY - 2 * HOUR - 1);
+    expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(31);
+  });
+
+  it("counts a single civil day containing the transition as one day", () => {
+    // The acute case: a one-day London report on 29 March 2026 spans 23h.
+    // Truncating scored it 0, so the PDF read "Expected events: 0,
+    // Adherence: 0%" for a patient who had taken their dose.
+    const to = new Date(APR_15.getTime() + DAY - HOUR - 1);
+    expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(1);
+  });
+
+  // The other edge of the same slack, pinned so the trade is a recorded
+  // decision rather than a side effect: 22h is the point at which a partial
+  // overlap starts being charged. `Math.round` charged from 12h.
+  it("does not charge a partial overlap of twenty-one hours", () => {
+    const to = new Date(APR_15.getTime() + 21 * HOUR);
+    expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(0);
+  });
+
+  it("charges a partial overlap of twenty-three hours, and that is the accepted cost", () => {
+    const to = new Date(APR_15.getTime() + 23 * HOUR);
+    expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(1);
+  });
+
+  // The slack is only as wide as the widest real transition, so it has to
+  // fail if tzdata ever widens one — otherwise the day comes back silently.
+  it("is at least as wide as every DST transition the runtime knows about", () => {
+    const TOLERANCE_HOURS = 2;
+    const YEAR_START = Date.UTC(2026, 0, 1);
+    const YEAR_END = Date.UTC(2027, 0, 1);
+    // A transition persists for months, so sampling twice a day finds every
+    // one of them and measures each exactly — the offset is constant on
+    // either side. One formatter per zone, not one per sample: constructing
+    // them is the whole cost, and doing it inline takes this from 0.6s to 17.
+    let widest = 0;
+    let widestZone = "";
+    for (const tz of Intl.supportedValuesOf("timeZone")) {
+      const dtf = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        hour12: false,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const offsetMs = (ms: number) => {
+        const p: Record<string, string> = {};
+        for (const part of dtf.formatToParts(new Date(ms))) {
+          if (part.type !== "literal") p[part.type] = part.value;
+        }
+        return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute) - ms;
+      };
+
+      let prev = offsetMs(YEAR_START);
+      for (let t = YEAR_START + 12 * HOUR; t <= YEAR_END; t += 12 * HOUR) {
+        const cur = offsetMs(t);
+        if (cur !== prev) {
+          const shift = Math.abs(cur - prev) / HOUR;
+          if (shift > widest) {
+            widest = shift;
+            widestZone = tz;
+          }
+          prev = cur;
+        }
+      }
+    }
+    // Antarctica/Troll (UTC+0 to UTC+2) at the time of writing. The assertion
+    // is the BOUND, not the zone — a new three-hour transition anywhere would
+    // make the clamp lose a day again, silently, and must fail here instead.
+    expect(widest, `widest transition is in ${widestZone}`).toBeLessThanOrEqual(TOLERANCE_HOURS);
+  });
 });
 
 describe("isActiveOn", () => {

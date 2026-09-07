@@ -155,4 +155,60 @@ describe("the clinician PDF's adherence summary", () => {
     expect(summaryBlock()).toContain("Adherence: 100%");
     expect(summaryBlock()).toContain("Overuse: 50%");
   });
+
+  // `api/export/+server.ts` builds these bounds with `parseDayRangeParam(...,
+  // tz, ...)`, so they are LOCAL midnights — and a civil range containing a
+  // spring-forward is an hour short of `days * 24h`. Counted in flat 24-hour
+  // days it loses one, which on this document means a month's report claiming
+  // fewer expected doses than it has days, and an overuse line on a patient
+  // who took every dose.
+  describe("across a spring-forward, for a user in a DST zone", () => {
+    // Europe/London, 1–31 March 2026. BST starts on the 29th, so local
+    // midnight on 1 April is 30 days and 23 hours after local midnight on
+    // 1 March, not 31 flat days.
+    const MARCH_FROM = new Date("2026-03-01T00:00:00Z");
+    const APRIL_FROM = new Date("2026-03-31T23:00:00Z");
+
+    it("counts every civil day, and claims no overuse from the missing hour", async () => {
+      await seedScheduledMed("sched");
+      // One dose on each of the 31 civil days.
+      for (let day = 1; day <= 31; day++) {
+        await pgDb.seedDose({
+          medicationId: "sched",
+          takenAt: new Date(Date.UTC(2026, 2, day, 9, 0, 0)),
+        });
+      }
+
+      await generateReport("u1", "Europe/London", MARCH_FROM, APRIL_FROM, "", "24h", "DD/MM/YYYY");
+
+      expect(summaryBlock()).toContain("Taken events: 31");
+      expect(summaryBlock()).toContain("Expected events: 31");
+      expect(summaryBlock()).toContain("Adherence: 100%");
+      expect(summaryBlock().some((l) => l.startsWith("Overuse:"))).toBe(false);
+    });
+
+    it("counts the transition day itself as a day", async () => {
+      // The acute case: a one-day report on 29 March spans 23 local hours.
+      // Truncating scored it zero, so a patient who took their dose read
+      // "Expected events: 0" and "Adherence: 0%".
+      await seedScheduledMed("sched");
+      await pgDb.seedDose({
+        medicationId: "sched",
+        takenAt: new Date("2026-03-29T09:00:00Z"),
+      });
+
+      await generateReport(
+        "u1",
+        "Europe/London",
+        new Date("2026-03-29T00:00:00Z"),
+        new Date("2026-03-29T23:00:00Z"),
+        "",
+        "24h",
+        "DD/MM/YYYY",
+      );
+
+      expect(summaryBlock()).toContain("Expected events: 1");
+      expect(summaryBlock()).toContain("Adherence: 100%");
+    });
+  });
 });

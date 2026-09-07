@@ -65,12 +65,42 @@ export function currentTOTPStep(): number {
 // concurrent attempts on the same step lose the race deterministically
 // — at most one returns true.
 export async function verifyAndConsumeTOTPCode(userId: string, code: string): Promise<boolean> {
+  return verifyAndConsume(userId, code, false);
+}
+
+/**
+ * The same verify-and-consume, plus the one check a LOGIN door needs and
+ * the enrolment door must not have: that the account has actually turned
+ * 2FA on.
+ *
+ * `verifyAndConsumeTOTPCode` deliberately does not check
+ * `twoFactorEnabled`, because `verifyTwoFactor` calls it to confirm the
+ * very enrolment that sets the flag. That made the check easy to omit at
+ * the doors that mint a session — and both of them omitted it.
+ *
+ * It matters because `setupTwoFactor` persists `totpSecret` when the QR
+ * code is generated, BEFORE the user confirms, and nothing clears it if
+ * they abandon the flow. An account with `twoFactorEnabled = false` can
+ * therefore be holding a live TOTP credential — one that was displayed on
+ * screen in plaintext base32 next to the QR — and without this check a
+ * code derived from it was accepted as a complete login.
+ */
+export async function verifySecondFactorForLogin(userId: string, code: string): Promise<boolean> {
+  return verifyAndConsume(userId, code, true);
+}
+
+async function verifyAndConsume(
+  userId: string,
+  code: string,
+  requireEnabled: boolean,
+): Promise<boolean> {
   const [row] = await db
-    .select({ totpSecret: users.totpSecret })
+    .select({ totpSecret: users.totpSecret, twoFactorEnabled: users.twoFactorEnabled })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
   if (!row?.totpSecret) return false;
+  if (requireEnabled && !row.twoFactorEnabled) return false;
 
   const step = currentTOTPStep();
   const decoded = decodeBase32(decryptSecret(row.totpSecret));

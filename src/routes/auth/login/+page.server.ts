@@ -15,6 +15,7 @@ import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { hasOAuthProviders } from "$lib/server/auth/oauth";
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
+import { signPreAuthToken } from "$lib/server/api/preauth";
 
 export const load: PageServerLoad = async ({ locals, url }) => {
   if (locals.user) redirect(302, "/dashboard");
@@ -79,7 +80,10 @@ export const actions: Actions = {
 
     // If 2FA is enabled, redirect to TOTP verification
     if (user.twoFactorEnabled) {
-      cookies.set("pending_2fa", user.id, {
+      // A SIGNED claim, not the raw id — the id alone is forgeable, and
+      // /auth/2fa would then mint a session for anyone holding a code. The
+      // token's own TTL matches this cookie's maxAge.
+      cookies.set("pending_2fa", signPreAuthToken(user.id), {
         path: "/",
         maxAge: 300,
         httpOnly: true,

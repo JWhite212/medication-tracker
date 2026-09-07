@@ -1,20 +1,42 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { lucia } from "$lib/server/auth/lucia";
-import { verifyAndConsumeTOTPCode } from "$lib/server/auth/totp";
+import { verifySecondFactorForLogin } from "$lib/server/auth/totp";
+import { verifyPreAuthToken } from "$lib/server/api/preauth";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
+/**
+ * The `pending_2fa` cookie carries a SIGNED single-use claim, not a user id.
+ *
+ * It used to hold the raw id. `httpOnly` stops JavaScript reading a cookie;
+ * it does nothing to stop an attacker SETTING one on their own request. So
+ * the whole first factor could be skipped: set `pending_2fa` to a victim's
+ * id, POST a valid 6-digit code, receive a full session — no password at any
+ * point. That is not a break of TOTP, it is the removal of the password from
+ * the pair, which makes a shoulder-surfed or phished code sufficient on its
+ * own. The user id is not secret by design: `toSessionUser` ships it in the
+ * profile block of every `/api/v1` export and sync response.
+ *
+ * The fix is not a new format. `src/lib/server/api/preauth.ts` already mints
+ * exactly the right claim — HMAC-signed over the key, a `jti` for single
+ * use, and a 5-minute expiry — and `/api/v1/auth/2fa` has consumed it since
+ * that door was built. Two transports, one seam: bearer there, cookie here.
+ */
+function claimsFrom(cookies: { get(name: string): string | undefined }) {
+  const token = cookies.get("pending_2fa");
+  return token ? verifyPreAuthToken(token) : null;
+}
+
 export const load: PageServerLoad = async ({ cookies }) => {
-  const pendingUserId = cookies.get("pending_2fa");
-  if (!pendingUserId) redirect(302, "/auth/login");
+  if (!claimsFrom(cookies)) redirect(302, "/auth/login");
   return {};
 };
 
 export const actions: Actions = {
-  default: async ({ request, cookies, getClientAddress }) => {
-    const pendingUserId = cookies.get("pending_2fa");
-    if (!pendingUserId) redirect(302, "/auth/login");
+  default: async ({ request, cookies }) => {
+    const claims = claimsFrom(cookies);
+    if (!claims) redirect(302, "/auth/login");
 
     const formData = Object.fromEntries(await request.formData());
     const code = String(formData.code ?? "");
@@ -22,16 +44,19 @@ export const actions: Actions = {
     if (code.length !== 6 || !/^\d{6}$/.test(code))
       return fail(400, { error: "Enter a 6-digit code" });
 
-    // Wrong codes are otherwise free to guess: the TOTP step counter
-    // only advances on success, so cap verification attempts. The key
-    // is scoped by client IP as well as the pending user id: the
-    // pending_2fa cookie is unauthenticated and forgeable, so keying on
-    // the user id alone would let anyone who knows a victim's id
-    // pre-exhaust (lock out) their 2FA budget. Scoping by IP means an
-    // attacker only burns their own bucket, and it no longer shares a
-    // key with the API 2FA path.
+    // Wrong codes are otherwise free to guess: the TOTP step counter only
+    // advances on success, so cap verification attempts per ACCOUNT.
+    //
+    // This key used to carry the client IP as well, and that was the right
+    // call at the time: while the cookie was forgeable, keying on the user
+    // id alone let anyone who knew a victim's id pre-exhaust their budget
+    // and lock them out. The cost was that the cap no longer bounded the
+    // thing it exists to bound — six digits at five tries per address, with
+    // addresses free, is not a cap at all. Signing the claim removes the
+    // lockout vector (minting one needs the password), so the limit can go
+    // back to being per-account, where it bites.
     const { allowed, retryAfterMs } = await checkRateLimit(
-      `2fa:${pendingUserId}:${getClientAddress()}`,
+      `2fa:${claims.userId}`,
       5,
       15 * 60 * 1000,
     );
@@ -41,20 +66,28 @@ export const actions: Actions = {
       });
     }
 
-    // Atomic verify-and-consume rejects replay of the same TOTP step.
-    const ok = await verifyAndConsumeTOTPCode(pendingUserId, code);
+    // Atomic verify-and-consume rejects replay of the same TOTP step, and
+    // the login arm additionally requires that 2FA is actually enabled —
+    // an abandoned enrolment leaves a usable secret behind.
+    const ok = await verifySecondFactorForLogin(claims.userId, code);
     if (!ok) return fail(400, { error: "Invalid code — try again" });
+
+    // Burn the jti before minting anything, exactly as `/api/v1/auth/2fa`
+    // does: a captured cookie cannot mint a second session inside its TTL.
+    const consumeWindowMs = Math.max(claims.exp - Date.now(), 1000);
+    const consumed = await checkRateLimit(`preauth:${claims.jti}`, 1, consumeWindowMs);
+    if (!consumed.allowed) redirect(302, "/auth/login");
 
     cookies.delete("pending_2fa", { path: "/" });
 
-    const session = await lucia.createSession(pendingUserId, {});
+    const session = await lucia.createSession(claims.userId, {});
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {
       path: ".",
       ...sessionCookie.attributes,
     });
 
-    await logAudit(pendingUserId, "session", session.id, "create");
+    await logAudit(claims.userId, "session", session.id, "create");
     redirect(302, "/dashboard");
   },
 };

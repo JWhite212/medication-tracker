@@ -129,6 +129,37 @@ redirect flow implemented in `/api/v1` (deferred).
      If Apple didn't share an email (relay-hidden), a synthetic
      `<appleUserId>@privaterelay.appleid.com` address is used. **200**: `{ token, user }`.
 
+### `POST /auth/reauth`
+
+Mints a short-lived password proof for the destructive commands in §4. Requires an
+authenticated bearer token (`requireApiUser`) — this re-confirms a password for a
+session that already exists, it does not establish one.
+
+Body:
+
+```ts
+{
+  password: string;
+  purpose: ReauthPurpose;
+}
+```
+
+`purpose` is one of `REAUTH_PURPOSES` (`src/lib/server/auth/reauth.ts`); the two
+that matter here are `"wipe_dose_history"` and `"wipe_archived_medications"`. The
+token is bound to the purpose it was minted for.
+
+- **200**: `{ reauthToken: string; expiresInMs: 300000 }`. Single-use — `requireRecentReauth`
+  stamps `used_at` when the command redeems it.
+- `400` if the body fails validation, including an unknown `purpose` — `{ message: "Invalid reauth payload" }`.
+- `401` on a wrong password — `{ message: "Incorrect password" }`. Also `401` for an
+  **OAuth-only account**, which has no password to confirm and therefore cannot mint a
+  token at all; the destructive commands stay closed for those accounts, matching the web
+  privacy page, which likewise offers them no alternative confirmation.
+- `429` when the attempt budget is spent (§6B shape). The budget lives in `confirmReauth`
+  and is keyed `reauth:<userId>` — **shared with the browser doors on purpose**, so an
+  attacker cannot get a fresh allowance by switching transport. 10 attempts / 15 minutes.
+  The count is taken before the Argon2 verify, so a refused attempt costs no CPU.
+
 ### The `user` object (`SessionUser`, via `toSessionUser`)
 
 Returned by all three auth endpoints (`src/lib/server/api/serialize.ts:toSessionUser`):
@@ -442,8 +473,8 @@ then delegates to an existing web-app domain function (no reimplemented business
 | `unarchive`                        | `archivePayload`: `{ medicationId: string }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `unarchiveMedication`                                                                                                                                           | `{ ok: true }`                                                                                                                                                                                                                                                                                                              |
 | `reorder`                          | `reorderPayload`: `{ medId1: string; medId2: string }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `swapSortOrder` (swaps `sortOrder` between the two)                                                                                                             | `{ ok: true }`                                                                                                                                                                                                                                                                                                              |
 | `update_preferences`               | `updatePreferencesPayload`: all fields optional — `accentColor` (`/^#[0-9a-fA-F]{6}$/`), `theme` (`"dark"\|"light"\|"system"`), `dateFormat` (`"DD/MM/YYYY"\|"MM/DD/YYYY"\|"YYYY-MM-DD"`), `timeFormat` (`"12h"\|"24h"`), `uiDensity` (`"comfortable"\|"compact"`), `reducedMotion`, `overdueEmailReminders`, `overduePushReminders`, `lowInventoryEmailAlerts`, `lowInventoryPushAlerts` (booleans), `doseLogPageSize` (int 5-100), `heatmapPeriod` (int, bounded 1-3650 — it was previously unbounded here and bounded only at the import door; the value reaches the heatmap's per-day render loop unclamped), `exportFormat` (`"pdf"\|"csv"`) | `getOrCreatePreferences` (ensures the singleton row exists — Apple/API-first users have no `user_preferences` row until first touched) then `updatePreferences` | `{ preferences: <raw updated UserPreferences row> }` (raw DB row, not passed through `serializePreferences` — dates still serialize to ISO via default `toJSON`) — same `{ preferences }` wrapper shape as `upsert_medication_with_schedules`'s `{ medication }`                                                            |
-| `wipe_dose_history`                | none (payload ignored)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `wipeDoseHistory`                                                                                                                                               | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
-| `wipe_archived_medications`        | none (payload ignored)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `wipeArchivedMedications`                                                                                                                                       | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
+| `wipe_dose_history`                | `reauthTokenPayload`: `{ reauthToken: string }` — **required.** Mint it with `POST /api/v1/auth/reauth` (`purpose: "wipe_dose_history"`); it is single-use and expires in 5 minutes. A missing, spent, expired or wrong-purpose token throws `ReauthRequiredError` and deletes nothing                                                                                                                                                                                                                                                                                                                                                            | `wipeDoseHistory`                                                                                                                                               | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
+| `wipe_archived_medications`        | `reauthTokenPayload`: `{ reauthToken: string }` — **required**, `purpose: "wipe_archived_medications"`. A token minted for one wipe does not authorise the other                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `wipeArchivedMedications`                                                                                                                                       | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
 
 `MedicationInput` (`medicationSchema`): `{ name: string (1-200); dosageAmount: string (/^\d+(\.\d+)?$/); dosageUnit: string (1-20); form: "tablet"|"capsule"|"liquid"|"softgel"|"patch"|"injection"|"inhaler"|"drops"|"cream"|"other"; category: "prescription"|"otc"|"supplement"; colour: string (hex); colourSecondary?: string (hex); pattern?: "solid"|"split"|"gradient"|"stripes"|"h-stripes"|"dots"|"checkerboard"|"radial" (default "solid"); scheduleType?: "scheduled"|"as_needed" (default "scheduled"); notes?: string (≤1000); scheduleIntervalHours?: string; inventoryCount?: number (≥0, coerced); inventoryAlertThreshold?: number (≥0, coerced); notificationsEnabled?: "on"|"off"|boolean (absent/anything-but-"off"/false ⇒ enabled); notifyOverdueEmail?, notifyOverduePush?, notifyLowInventoryEmail?, notifyLowInventoryPush?: "inherit"|"on"|"off"|boolean|null (default "inherit"); notifyOffsetMinutes?: number|string (coerced, 0-720, default 0); notifyRepeatEveryMinutes?: number|string|null (coerced, 1-1440; omit/empty string/null ⇒ null/"do not repeat"); notifyMaxRepeats?: number|string (coerced, 0-10, default 3) }`.
 
@@ -469,6 +500,15 @@ not repeat", the same as a pre-this-feature client would get.
 - `{ scheduleKind: "prn" }`
 
 ### Wipes bump the sync epoch
+
+**Both wipes require a password proof.** They are irreversible and write no
+per-row tombstone, and the browser has always demanded a password for them
+(`settings/privacy`). This door demanded nothing, so a stolen bearer token was
+sufficient to destroy a user's entire dose history through the same code path.
+Call `POST /api/v1/auth/reauth` with `{ password, purpose }` to obtain a
+`reauthToken`, then pass it in the command payload; `requireRecentReauth`
+redeems it single-use. An OAuth-only account has no password to confirm and so
+cannot mint one — the same position it is in on the web privacy page.
 
 `wipe_dose_history` and `wipe_archived_medications` (`src/lib/server/api/wipe.ts`) each run
 their delete + `users.syncEpoch + 1` + an audit-log row (`entityId: "*"`) inside **one

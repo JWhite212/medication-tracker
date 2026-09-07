@@ -6,7 +6,7 @@ import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferenc
 import { dataSchema } from "$lib/utils/validation";
 import { logAudit } from "$lib/server/audit";
 import { lucia } from "$lib/server/auth/lucia";
-import { confirmReauth } from "$lib/server/auth/reauth";
+import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -44,7 +44,7 @@ export const actions: Actions = {
 
     const reauth = await confirmReauth(userId, password, "delete_account");
     if (!reauth.ok) {
-      return fail(400, { deleteError: "Incorrect password." });
+      return fail(400, { deleteError: reauthMessage(reauth) });
     }
 
     await logAudit(userId, "user", userId, "delete");

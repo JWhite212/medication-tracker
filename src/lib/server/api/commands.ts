@@ -12,6 +12,8 @@ import {
 } from "$lib/server/medications";
 import { updatePreferences } from "$lib/server/preferences";
 import { wipeDoseHistory, wipeArchivedMedications } from "$lib/server/api/wipe";
+import { requireRecentReauth, type ReauthPurpose } from "$lib/server/auth/reauth";
+import { reauthTokenPayload } from "$lib/utils/validation";
 import {
   logDosePayload,
   skipDosePayload,
@@ -29,6 +31,13 @@ export class UnknownCommandError extends Error {
   constructor(type: string) {
     super(`Unknown command: ${type}`);
     this.name = "UnknownCommandError";
+  }
+}
+
+export class ReauthRequiredError extends Error {
+  constructor(purpose: string) {
+    super(`Re-authentication required for: ${purpose}`);
+    this.name = "ReauthRequiredError";
   }
 }
 
@@ -122,9 +131,39 @@ const handlers: Record<string, Handler> = {
     const preferences = await updatePreferences(userId, updates);
     return { preferences };
   },
-  wipe_dose_history: async (userId) => wipeDoseHistory(userId),
-  wipe_archived_medications: async (userId) => wipeArchivedMedications(userId),
+  // Both wipes are irreversible and delete data no tombstone can restore,
+  // so they take a password proof — obtained from POST /api/v1/auth/reauth
+  // and redeemed single-use here. Without it a stolen bearer token was
+  // enough to destroy a user's entire dose history through the same code
+  // path `settings/privacy` guards with a password prompt.
+  wipe_dose_history: async (userId, payload) => {
+    await consumeReauth(userId, payload, "wipe_dose_history");
+    return wipeDoseHistory(userId);
+  },
+  wipe_archived_medications: async (userId, payload) => {
+    await consumeReauth(userId, payload, "wipe_archived_medications");
+    return wipeArchivedMedications(userId);
+  },
 };
+
+/**
+ * Redeem the reauth token a destructive command must carry.
+ *
+ * Throws rather than returning a result, because `runCommands` releases the
+ * reservation and allows retry on a throw — which is what an unauthorised
+ * command should get. A consumed or expired token is indistinguishable from
+ * a wrong one on purpose.
+ */
+async function consumeReauth(
+  userId: string,
+  payload: unknown,
+  purpose: ReauthPurpose,
+): Promise<void> {
+  const parsed = reauthTokenPayload.safeParse(payload);
+  if (!parsed.success) throw new ReauthRequiredError(purpose);
+  const ok = await requireRecentReauth(userId, purpose, parsed.data.reauthToken);
+  if (!ok) throw new ReauthRequiredError(purpose);
+}
 
 export async function dispatchCommand(
   userId: string,

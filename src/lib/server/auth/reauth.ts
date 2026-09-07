@@ -3,6 +3,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { reauthTokens, users } from "$lib/server/db/schema";
 import { verifyPassword } from "$lib/server/auth/password";
+import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { createHash, randomBytes } from "crypto";
 
 // Server-side re-authentication tokens for sensitive actions.
@@ -22,19 +23,27 @@ import { createHash, randomBytes } from "crypto";
 // pages today, callers can simply use confirmReauth() and treat the
 // inserted row as the audit trail.
 
-export type ReauthPurpose =
-  | "change_password"
-  | "enable_2fa"
-  | "disable_2fa"
-  | "delete_account"
-  | "export_data"
-  | "revoke_all_sessions"
-  | "wipe_dose_history"
-  | "wipe_archived_medications"
-  // Replace-mode import deletes every medication (cascading to
-  // schedules, doses and inventory events) before restoring a file, so
-  // it is gated like the other destructive actions.
-  | "import_replace_data";
+/**
+ * The purposes as DATA, so the `/api/v1/auth/reauth` door can enumerate
+ * them into a zod enum rather than restating the union as a second list
+ * that drifts.
+ */
+export const REAUTH_PURPOSES = [
+  "change_password",
+  "enable_2fa",
+  "disable_2fa",
+  "delete_account",
+  "export_data",
+  "revoke_all_sessions",
+  "wipe_dose_history",
+  "wipe_archived_medications",
+  // Replace-mode import deletes every medication (cascading to schedules,
+  // doses and inventory events) before restoring a file, so it is gated
+  // like the other destructive actions.
+  "import_replace_data",
+] as const;
+
+export type ReauthPurpose = (typeof REAUTH_PURPOSES)[number];
 
 const REAUTH_TTL_MS = 5 * 60 * 1000;
 
@@ -42,11 +51,55 @@ function hashToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
 
+/**
+ * How many password confirmations one account may attempt in a window.
+ *
+ * Generous, because a legitimate user genuinely does fumble a password
+ * across several sensitive actions — but finite, which is the point. The
+ * budget is per ACCOUNT rather than per (account, purpose): a per-purpose
+ * bucket would hand an attacker eight times the guesses for the cost of
+ * rotating a form field.
+ */
+export const REAUTH_MAX_ATTEMPTS = 10;
+export const REAUTH_WINDOW_MS = 15 * 60 * 1000;
+
+export type ReauthResult = {
+  ok: boolean;
+  token?: string;
+  /** Set when the attempt was refused without checking the password. */
+  rateLimited?: boolean;
+  retryAfterMs?: number;
+};
+
+/**
+ * Confirm a password for a sensitive action, and bound how often that can
+ * be attempted.
+ *
+ * The limit lives HERE rather than at the doors because there are five of
+ * them — change password, enable 2FA, disable 2FA, delete account, wipe
+ * data, replace-mode import — and none had one. Anyone holding a stolen or
+ * borrowed session cookie could guess the account password without limit
+ * and without leaving so much as a failed-login audit row. Each guess also
+ * burns a full Argon2 verify, so the same endpoints doubled as a
+ * CPU-exhaustion lever on a serverless budget.
+ *
+ * The count is taken BEFORE the verify, so a refused attempt costs no
+ * Argon2 — otherwise the limiter caps the oracle but not the cost.
+ *
+ * There is no cross-user lockout vector to weigh against this, unlike the
+ * 2FA door: reaching this function at all requires an authenticated session
+ * for the account being guessed.
+ */
 export async function confirmReauth(
   userId: string,
   password: string,
   purpose: ReauthPurpose,
-): Promise<{ ok: boolean; token?: string }> {
+): Promise<ReauthResult> {
+  const limit = await checkRateLimit(`reauth:${userId}`, REAUTH_MAX_ATTEMPTS, REAUTH_WINDOW_MS);
+  if (!limit.allowed) {
+    return { ok: false, rateLimited: true, retryAfterMs: limit.retryAfterMs };
+  }
+
   const [user] = await db
     .select({ passwordHash: users.passwordHash })
     .from(users)
@@ -67,6 +120,17 @@ export async function confirmReauth(
   });
 
   return { ok: true, token: raw };
+}
+
+/**
+ * A refused attempt must not read as a wrong password: telling the user
+ * their own password is wrong when the limiter turned them away is both
+ * misleading and, for someone mid-recovery, alarming.
+ */
+export function reauthMessage(reauth: { rateLimited?: boolean; retryAfterMs?: number }): string {
+  return reauth.rateLimited
+    ? `Too many password attempts. Try again in ${Math.ceil((reauth.retryAfterMs ?? 0) / 60000)} minutes.`
+    : "Incorrect password.";
 }
 
 export async function requireRecentReauth(

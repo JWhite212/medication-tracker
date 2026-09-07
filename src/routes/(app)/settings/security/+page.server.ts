@@ -5,7 +5,7 @@ import { users, sessions } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
 import { passwordChangeSchema } from "$lib/utils/validation";
 import { hashPassword } from "$lib/server/auth/password";
-import { confirmReauth } from "$lib/server/auth/reauth";
+import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
 import {
   generateTOTPSecret,
   getTOTPUri,
@@ -20,7 +20,7 @@ async function requiresPasswordReauth(
   userId: string,
   currentPassword: string,
   purpose: "enable_2fa" | "disable_2fa",
-): Promise<boolean> {
+): Promise<{ ok: boolean; message?: string }> {
   const [account] = await db
     .select({ passwordHash: users.passwordHash })
     .from(users)
@@ -29,10 +29,10 @@ async function requiresPasswordReauth(
 
   // OAuth-only accounts do not have a password hash. They should still
   // be able to manage 2FA using their authenticated session.
-  if (!account?.passwordHash) return true;
+  if (!account?.passwordHash) return { ok: true };
 
   const reauth = await confirmReauth(userId, currentPassword, purpose);
-  return reauth.ok;
+  return reauth.ok ? { ok: true } : { ok: false, message: reauthMessage(reauth) };
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -63,7 +63,7 @@ export const actions: Actions = {
     const reauth = await confirmReauth(userId, parsed.data.currentPassword, "change_password");
     if (!reauth.ok)
       return fail(400, {
-        passwordErrors: { currentPassword: ["Incorrect password"] },
+        passwordErrors: { currentPassword: [reauthMessage(reauth)] },
       });
 
     const newHash = await hashPassword(parsed.data.newPassword);
@@ -115,10 +115,10 @@ export const actions: Actions = {
     const formData = await request.formData();
     const currentPassword = String(formData.get("currentPassword") ?? "");
 
-    const reauthOk = await requiresPasswordReauth(locals.user!.id, currentPassword, "enable_2fa");
-    if (!reauthOk)
+    const reauth = await requiresPasswordReauth(locals.user!.id, currentPassword, "enable_2fa");
+    if (!reauth.ok)
       return fail(400, {
-        totpError: "Incorrect password — re-enter to enable 2FA",
+        totpError: reauth.message ?? "Incorrect password — re-enter to enable 2FA",
       });
 
     const secret = generateTOTPSecret();
@@ -166,8 +166,8 @@ export const actions: Actions = {
     const code = String(formData.code ?? "");
     const currentPassword = String(formData.currentPassword ?? "");
 
-    const reauthOk = await requiresPasswordReauth(locals.user!.id, currentPassword, "disable_2fa");
-    if (!reauthOk) return fail(400, { totpError: "Incorrect password" });
+    const reauth2fa = await requiresPasswordReauth(locals.user!.id, currentPassword, "disable_2fa");
+    if (!reauth2fa.ok) return fail(400, { totpError: reauth2fa.message ?? "Incorrect password" });
 
     const ok = await verifyAndConsumeTOTPCode(locals.user!.id, code);
     if (!ok) return fail(400, { totpError: "Invalid code" });

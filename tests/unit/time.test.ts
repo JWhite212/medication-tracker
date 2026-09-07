@@ -112,6 +112,17 @@ describe("formatUserDate", () => {
     expect(withWeekday.split(", ")[1]).toMatch(ISO);
   });
 
+  // The case above asserts a shape that the *old* locale-delegating
+  // implementation also satisfies on this runtime, so on its own it would not
+  // notice a revert. A year below 1000 does notice: `year: "numeric"` renders
+  // "999", and only the explicit padStart in `isoDate` widens it to "0999".
+  // This is the one assertion in the suite that fails if YYYY-MM-DD is ever
+  // handed back to a locale — which is exactly how this regressed once before.
+  it("pads a year below 1000, which locale delegation would not", () => {
+    const earlyYear = new Date(Date.UTC(999, 0, 5));
+    expect(formatUserDate(earlyYear, "UTC", "YYYY-MM-DD")).toBe("0999-01-05");
+  });
+
   it("lets the call site choose the fields and the preference choose the order", () => {
     expect(formatUserDate(date, "UTC", "DD/MM/YYYY", { weekday: true, year: false })).toBe(
       "Wed 15 Apr",

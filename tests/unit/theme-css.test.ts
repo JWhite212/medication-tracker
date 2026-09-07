@@ -160,6 +160,26 @@ describe("buildThemeStyle", () => {
     expect(buildThemeStyle("dark", "")).toMatch(/--color-accent-ink: #[0-9a-f]{6};/);
   });
 
+  // `user_preferences.theme` is a bare `text()` column with no CHECK, so a
+  // direct write, a restored backup, or a future door added without the enum
+  // can hold anything. Without the guard, `SCHEMES[theme]` is `undefined` and
+  // the next line throws — inside the (app) layout's `$derived`, on every
+  // authenticated page. Assert the dark arm specifically (not just "some
+  // arm"), because the fallback constant is `FALLBACK_THEME = "dark"` and a
+  // looser assertion (e.g. merely "doesn't throw") would still pass if the
+  // fallback silently changed to something else. `color-scheme: dark;` only
+  // appears in the dark arm's body, and `prefers-color-scheme` only appears
+  // in the `system` arm's media queries — its absence proves this took the
+  // single-arm dark path, not the system path.
+  it.each(["garbage", "", "Dark"])(
+    "falls back to the dark arm rather than throwing on an invalid theme: %j",
+    (bad) => {
+      const css = buildThemeStyle(bad, "#4f46e5");
+      expect(css).toContain("color-scheme: dark;");
+      expect(css).not.toContain("prefers-color-scheme");
+    },
+  );
+
   it("derives a different ink per scheme from the same accent", () => {
     const css = buildThemeStyle("system", "#f59e0b");
     // Amber already clears 4.5:1 on the DARK backdrop (5.84:1), so the dark

@@ -40,6 +40,39 @@ describe("clampEffectiveDays", () => {
   it("returns 0 for a zero-width range", () => {
     expect(clampEffectiveDays(APR_15, APR_15, APR_15, null)).toBe(0);
   });
+
+  // Every fixture above sits on a whole number of days, so none of them can
+  // tell one rounding mode from another — which is why the half-up skew
+  // survived. These four pin the mode itself. Two are needed on the round
+  // side: one at the 0.5 tie and one away from it, because a probe at the
+  // tie alone leaves `Math.round` alive for 15.75.
+  const HOUR = 3_600_000;
+  const DAY = 86_400_000;
+
+  it("counts a span of fifteen days and twelve hours as fifteen days", () => {
+    // Math.round(15.5) === 16 — the skew arrives at local noon.
+    const to = new Date(APR_15.getTime() + 15 * DAY + 12 * HOUR);
+    expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(15);
+  });
+
+  it("counts a span of fifteen days and eighteen hours as fifteen days", () => {
+    const to = new Date(APR_15.getTime() + 15 * DAY + 18 * HOUR);
+    expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(15);
+  });
+
+  it("counts a span one millisecond short of thirty days as thirty", () => {
+    // `export-pdf.ts` hands the breakdown `to - 1ms` so its summary counts
+    // exactly the rows the dose table beneath it lists. Truncating instead
+    // of rounding would silently drop the report's last day, so the range
+    // is closed at its final millisecond.
+    const to = new Date(APR_15.getTime() + 30 * DAY - 1);
+    expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(30);
+  });
+
+  it("counts a six-hour overlap as zero days", () => {
+    const to = new Date(APR_15.getTime() + 6 * HOUR);
+    expect(clampEffectiveDays(APR_15, to, APR_15, null)).toBe(0);
+  });
 });
 
 describe("isActiveOn", () => {

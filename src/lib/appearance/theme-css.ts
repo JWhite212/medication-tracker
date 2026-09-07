@@ -32,6 +32,8 @@
  */
 import {
   readableInk,
+  bindingBackdrop,
+  compositeOver,
   INK_BACKDROP,
   INK_BACKDROP_LIGHT,
   READABLE_LIGHT,
@@ -149,6 +151,51 @@ const SCHEMES = {
   },
 } as const;
 
+/** The alpha of the `bg-accent/15` chips the ink is rendered on. */
+export const ACCENT_CHIP_ALPHA = 0.15;
+
+/**
+ * `rgba(R, G, B, A)` -> the alpha and the colour it composites toward.
+ *
+ * `--color-glass` is the only token this module composites that is stored as
+ * an alpha overlay rather than a solid hex, so this parses just that shape —
+ * it is not a general CSS-colour parser.
+ */
+function parseRgbaOverlay(value: string): { alpha: number; overlay: string } {
+  const m = value.match(/^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/);
+  if (!m) throw new Error(`accentInkFor: expected an rgba() token, got: "${value}"`);
+  const hex = (n: string) => Number(n).toString(16).padStart(2, "0");
+  return { alpha: Number(m[4]), overlay: `#${hex(m[1])}${hex(m[2])}${hex(m[3])}` };
+}
+
+/**
+ * The accent ink for one scheme.
+ *
+ * Solved against the tinted chips as well as the opaque surfaces, because
+ * `INK_BACKDROP`/`INK_BACKDROP_LIGHT` are the worst OPAQUE surface and a tint
+ * composites darker in light mode — so an ink solved only against those was
+ * legible everywhere except the three places it is actually used. Measured:
+ * all ten presets failed in light (3.68-4.34) while passing every opaque
+ * surface. The dark scheme is unaffected; the chip constraint never binds
+ * there.
+ *
+ * Exported so `tests/unit/theme-tokens.test.ts` asserts the real derivation
+ * rather than a copy of it.
+ */
+export function accentInkFor(scheme: keyof typeof SCHEMES, accent: string): string {
+  const s = SCHEMES[scheme];
+  const glass = parseRgbaOverlay(s.tokens["--color-glass"]);
+  const glassOnSurface = compositeOver(glass.alpha, s.tokens["--color-surface"], glass.overlay);
+  const chipBackdrops = [
+    s.tokens["--color-surface-raised"],
+    glassOnSurface,
+    s.tokens["--color-surface-overlay"],
+  ];
+  const chips = chipBackdrops.map((bg) => compositeOver(ACCENT_CHIP_ALPHA, bg, accent));
+  const backdrop = bindingBackdrop([s.inkBackdrop, ...chips], s.inkOverlay);
+  return readableInk(accent, { backdrop, overlay: s.inkOverlay });
+}
+
 function declarations(tokens: Record<string, string>, indent: string): string {
   return Object.entries(tokens)
     .map(([k, v]) => `${indent}${k}: ${v};`)
@@ -158,7 +205,7 @@ function declarations(tokens: Record<string, string>, indent: string): string {
 /** One scheme's `:root:root` rule plus its high-contrast override. */
 function arm(scheme: keyof typeof SCHEMES, accent: string, indent: string): string {
   const s = SCHEMES[scheme];
-  const ink = readableInk(accent, { backdrop: s.inkBackdrop, overlay: s.inkOverlay });
+  const ink = accentInkFor(scheme, accent);
   const body = [
     `${indent}  color-scheme: ${s.colorScheme};`,
     declarations(s.tokens, `${indent}  `),

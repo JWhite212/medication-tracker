@@ -128,6 +128,29 @@ export function readableInk(
 }
 
 /**
+ * Of several backdrops an ink renders on, the one that yields the LEAST
+ * contrast — the constraint that binds.
+ *
+ * Which that is depends on the direction of the solve, and `overlay` encodes
+ * it: darkening toward READABLE_DARK means dark text on a light page, where
+ * contrast falls as the backdrop darkens, so the darkest candidate binds.
+ * Lightening toward white is the mirror. Independent of the ink itself, so it
+ * can be chosen before solving.
+ */
+export function bindingBackdrop(candidates: readonly string[], overlay: string): string {
+  const darkening = overlay === READABLE_DARK;
+  return candidates.reduce((a, b) =>
+    (
+      darkening
+        ? relativeLuminance(b) < relativeLuminance(a)
+        : relativeLuminance(b) > relativeLuminance(a)
+    )
+      ? b
+      : a,
+  );
+}
+
+/**
  * Pick whichever of near-black / white contrasts better against `background`,
  * and report the ratio achieved. Callers that care whether the winner is
  * actually legible must check `ratio` — the better of two failing options is

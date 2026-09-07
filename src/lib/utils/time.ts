@@ -312,6 +312,42 @@ export function shiftDayKey(dayKey: string, days: number): string {
 }
 
 /**
+ * How many civil dates an export range may name, inclusive of both ends.
+ *
+ * A door policy, in the same sense as `MAX_INTERVAL_HOURS` — and it lives
+ * here, next to the counting primitive, because BOTH export doors have to
+ * spend the same budget. They did not: one said `> 366` and the other
+ * `>= 366`, so the same request succeeded at `/api/export` and failed at
+ * `/api/audit`. 366 is one leap year.
+ */
+export const MAX_EXPORT_RANGE_DAYS = 366;
+
+/**
+ * How many civil dates lie between two day keys, counting both ends.
+ *
+ * Counted from the KEYS, never from the elapsed milliseconds between two
+ * instants, and that distinction is not pedantry. A zone can skip a
+ * calendar date entirely: Pacific/Apia crossed the date line in 2011 and
+ * 2011-12-30 never happened there. Measuring the range
+ * `2010-12-31 … 2012-01-02` by instants gives 367 days elapsed, so a
+ * cardinality derived from it reads 367 — while the range actually names
+ * **368** dates. A 366-day cap let that through.
+ *
+ * Key arithmetic has no such hole: each key becomes UTC midnight, and UTC
+ * has neither DST nor date-line politics, so the subtraction is exact for
+ * every zone.
+ */
+export function inclusiveDayCount(fromKey: string, toKey: string): number {
+  const [fy, fm, fd] = fromKey.split("-").map(Number);
+  const [ty, tm, td] = toKey.split("-").map(Number);
+
+  const from = utcFromFields(fy, fm, fd, 0, 0, 0);
+  const to = utcFromFields(ty, tm, td, 0, 0, 0);
+
+  return Math.round((to - from) / MS_PER_DAY) + 1;
+}
+
+/**
  * Day of week (0 = Sunday) of a local calendar date key.
  *
  * Takes the key, never an instant. Reading the weekday off a resolved

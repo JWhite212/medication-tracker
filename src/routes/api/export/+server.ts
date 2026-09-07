@@ -3,7 +3,13 @@ import { generateReport } from "$lib/server/export-pdf";
 import { generateCsvReport } from "$lib/server/export-csv";
 import { getOrCreatePreferences } from "$lib/server/preferences";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
-import { parseDayRangeParam, isoDayKey, type DateFormat } from "$lib/utils/time";
+import {
+  parseDayRangeParam,
+  isoDayKey,
+  inclusiveDayCount,
+  MAX_EXPORT_RANGE_DAYS,
+  type DateFormat,
+} from "$lib/utils/time";
 import type { RequestHandler } from "./$types";
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -48,13 +54,14 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   if (fromDate >= toDate) {
     error(400, "'from' must be before 'to'");
   }
-  // Measured in whole CIVIL days, not raw milliseconds. `toDate` is the
-  // exclusive start of the day after the requested end, so the requested span
-  // is one shorter than the delta; and the delta itself is not a multiple of
-  // 86,400,000 once a range straddles a DST transition, which made the SAME
-  // request pass or fail depending only on the caller's profile timezone.
-  const spanDays = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) - 1;
-  if (spanDays > 366) {
+  // Counted as CIVIL DATES from the day keys, not as elapsed milliseconds.
+  // A zone can skip a date outright — Pacific/Apia's 2011-12-30 never
+  // happened — so an instant-derived count reads one day short there and let
+  // an over-long range through. `inclusiveDayCount` is exact for every zone,
+  // and both export doors spend the same budget from the same constant; they
+  // previously disagreed by a day.
+  const lastIncludedKey = isoDayKey(new Date(toDate.getTime() - 1), tz);
+  if (inclusiveDayCount(isoDayKey(fromDate, tz), lastIncludedKey) > MAX_EXPORT_RANGE_DAYS) {
     error(400, "Date range must not exceed 1 year");
   }
 

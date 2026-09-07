@@ -135,29 +135,48 @@ describe("the filename names the requested civil day", () => {
   });
 });
 
-describe("the one-year cap counts civil days, not milliseconds", () => {
-  it("accepts a 366-day range", async () => {
+describe("the one-year cap counts CIVIL DATES, and both doors spend the same budget", () => {
+  // MAX_EXPORT_RANGE_DAYS is 366 inclusive dates — one leap year. The cap
+  // used to be measured in elapsed milliseconds, which made it depend on the
+  // caller's timezone and let a date-line skip smuggle an extra day through.
+  it("accepts exactly 366 inclusive dates", async () => {
     expect(await statusOf(callExport("from=2026-01-01&to=2027-01-01"))).toBe(200);
   });
 
-  it("rejects a 368-day range", async () => {
-    expect(await statusOf(callExport("from=2026-01-01&to=2027-01-04"))).toBe(400);
+  it("rejects 367", async () => {
+    expect(await statusOf(callExport("from=2026-01-01&to=2027-01-02"))).toBe(400);
+  });
+
+  it("accepts a full leap year", async () => {
+    // 2028-01-01 .. 2028-12-31 is 366 dates. A clinician exporting "the last
+    // year" must not be refused for the year having a 29 February in it.
+    expect(await statusOf(callExport("from=2028-01-01&to=2028-12-31"))).toBe(200);
   });
 
   it.each(["UTC", "Europe/London", "America/New_York", "Pacific/Auckland", "Australia/Lord_Howe"])(
     "the same request has the same outcome in %s",
     async (timezone) => {
-      // The guard used to compare an instant delta against a fixed
+      // The old guard compared an instant delta against a fixed
       // 366 x 86,400,000. A range straddling a transition is an hour longer
       // in milliseconds, so the identical request returned 200 in London and
       // 400 in New York — the cap depended on the caller's profile.
-      expect(await statusOf(callExport("from=2026-03-09&to=2027-03-09", timezone))).toBe(200);
+      expect(await statusOf(callExport("from=2026-03-09&to=2027-03-08", timezone))).toBe(200);
     },
   );
 
-  it("the audit door has the same cap", async () => {
+  it("counts a date the zone skipped — Pacific/Apia's missing 2011-12-30", async () => {
+    // 2010-12-31 .. 2012-01-02 names 368 calendar dates, but Apia crossed the
+    // date line in 2011 so only 367 days elapsed between those local
+    // midnights. An instant-derived count read 366 and let it through.
+    expect(await statusOf(callExport("from=2010-12-31&to=2012-01-02", "Pacific/Apia"))).toBe(400);
+  });
+
+  it("the audit door spends the identical budget", async () => {
+    // These two disagreed by a day: `> 366` at one door, `>= 366` at the
+    // other, so the same request succeeded at one and failed at the other.
     expect(await statusOf(callAudit("from=2026-01-01&to=2027-01-01"))).toBe(200);
-    expect(await statusOf(callAudit("from=2026-01-01&to=2027-01-04"))).toBe(400);
+    expect(await statusOf(callAudit("from=2026-01-01&to=2027-01-02"))).toBe(400);
+    expect(await statusOf(callAudit("from=2010-12-31&to=2012-01-02", "Pacific/Apia"))).toBe(400);
   });
 });
 

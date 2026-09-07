@@ -1329,7 +1329,12 @@ const token = (page: Page, name: string) =>
   page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
 
 test.describe("theme resolution", () => {
-  test.use({ contrast: "more" });
+  // NOT `test.use({ contrast: "more" })` — `contrast` is not on
+  // PlaywrightTestOptions in 1.59.1, only on BrowserContextOptions and
+  // emulateMedia, so the fixture form does not typecheck.
+  test.beforeEach(async ({ page }) => {
+    await page.emulateMedia({ contrast: "more" });
+  });
 
   test("resolves the same token on a hard load and a client-side nav", async ({ page }) => {
     await login(page, SEEDED_EMAIL, SEEDED_PASSWORD);
@@ -1351,10 +1356,13 @@ test.describe("theme resolution", () => {
   });
 
   test("an explicit light theme beats a dark OS preference", async ({ page }) => {
-    await login(page, SEEDED_EMAIL, SEEDED_PASSWORD);
-    await page.goto("/settings/appearance");
-    await page.selectOption("#theme", "light");
-    await expect(page.locator("#theme")).toHaveValue("light");
+    // Logs in as the DEDICATED light-mode user rather than flipping the shared
+    // row. playwright.config.ts sets no `workers: 1`, so mutating the seeded
+    // user's theme here would leave it on light for whatever ran next — most
+    // damagingly the dark-mode axe scan in accessibility.test.ts. It is also a
+    // better test: it does not depend on the appearance page's save path,
+    // which is a different unit's job to prove.
+    await login(page, E2E_LIGHT_EMAIL, E2E_LIGHT_PASSWORD);
 
     await page.emulateMedia({ colorScheme: "dark", contrast: "no-preference" });
     await page.goto("/dashboard");

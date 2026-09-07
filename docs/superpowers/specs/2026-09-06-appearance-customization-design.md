@@ -496,10 +496,19 @@ Tailwind-700 picks, which fail: `#047857` measures 4.35 on `surface-overlay` and
 
 **Three tokens cannot be mirrored** and need structural changes, not new values:
 `--color-glass` is white-alpha, an elevation _lightener_, and a no-op on a light page;
-`--color-glass-hover` must flip sign, because light cards hover darker (`medication-style.ts:56-61`
-already hand-rolls exactly this workaround for medication pills, and is the template);
 `--color-glass-border` must flip to dark-alpha, on top of the `--color-border-strong`
-split from 1a. `--color-surface-overlay` also inverts direction — four of its five uses
+split from 1a.
+
+**`--color-glass-hover` was the third, and "flip sign" is the wrong reading of it** — kept
+here because 1c only discovered that by shipping it into a test. The visual requirement is
+real (a light card must read darker on hover), but the mechanism is not a sign flip:
+`bg-glass` and `hover:bg-glass-hover` are two backgrounds on the **same element**, so they
+composite over the same page rather than stacking, and the darker of the two is simply the
+**lower white alpha**. Flipping to `rgba(0,0,0,0.045)` made a hovered card `#e3e5eb`
+against a `#eef0f6` page — darker than the background it sits on — and dropped the hovered
+refill chips to 4.15:1. The shipped value is `rgba(255,255,255,0.4)` against `glass`'s
+`0.72`. `medication-style.ts:56-61` remains the precedent for the _intent_, not the
+technique. `--color-surface-overlay` also inverts direction — four of its five uses
 are recessed tracks and chips that must go darker in light mode, not lighter.
 
 **The token list this section originally carried has already shipped.** 1a added

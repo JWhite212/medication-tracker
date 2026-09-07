@@ -112,6 +112,21 @@ Vercel auto-builds. Watch the build logs in the dashboard. A successful
 build runs `vite build` via `@sveltejs/adapter-vercel` and emits
 serverless functions under `.vercel/output/`.
 
+**The build checks this table before it builds.** Every variable marked
+`Yes (prod)` above is verified against the deploying environment by
+`scripts/vercel-build.mjs`, and a missing one aborts the build with the
+name of the variable and the environment to set it in. The list is not
+duplicated there — both that check and the server's boot check read
+`src/lib/server/env-contract.js`, so this table and the enforcement cannot
+drift apart.
+
+The check applies to **Production and Preview** builds, which are exactly
+the environments where the server boots with `dev === false` and enforces
+the same rules. `vercel dev` and local builds are exempt.
+
+If it fires, the message names what to fix; `docs/RUNBOOK.md` §4b covers
+the case where the deploy already went out.
+
 ## 8. Post-deploy verification
 
 Replace `https://your-app.vercel.app` with your deployment URL.

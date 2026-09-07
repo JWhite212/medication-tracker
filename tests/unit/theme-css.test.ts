@@ -184,10 +184,14 @@ describe("buildThemeStyle", () => {
     const css = buildThemeStyle("system", "#f59e0b");
     // Amber already clears 4.5:1 on the DARK backdrop (5.84:1), so the dark
     // arm echoes the accent unchanged — 3 of the 10 presets do. On light it
-    // is 1.71:1 raw and must darken. The property under test is that the two
-    // arms disagree, which is the whole reason the ink cannot stay inline on
-    // the wrapper: one inline value cannot serve both schemes.
+    // is 1.71:1 raw and must darken — and further still than the opaque
+    // surface alone would require, because accentInkFor also solves against
+    // the bg-accent/15 chip backdrops (see $lib/appearance/theme-css.ts):
+    // #8c5d0e clears the opaque surface but not the chip, #83580e clears
+    // both. The property under test is that the two arms disagree, which is
+    // the whole reason the ink cannot stay inline on the wrapper: one inline
+    // value cannot serve both schemes.
     expect(css).toContain("--color-accent-ink: #f59e0b;");
-    expect(css).toContain("--color-accent-ink: #8c5d0e;");
+    expect(css).toContain("--color-accent-ink: #83580e;");
   });
 });

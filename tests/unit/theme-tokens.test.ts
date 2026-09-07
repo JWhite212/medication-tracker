@@ -13,6 +13,7 @@ import {
   READABLE_DARK,
 } from "$lib/utils/contrast";
 import { entryFor } from "$lib/appearance/registry";
+import { accentInkFor, ACCENT_CHIP_ALPHA } from "$lib/appearance/theme-css";
 import { blockBody, parseDeclarations } from "./helpers/css-tokens";
 
 function readAppCss(): string {
@@ -188,7 +189,7 @@ describe.each(SCHEMES)(
 
 describe.each(SCHEMES)(
   "$name — every accent preset a user can pick carries a legible foreground",
-  ({ T, inkBackdrop, inkOverlay, pickInkBackdrop }) => {
+  ({ name: schemeName, T, inkBackdrop, inkOverlay, pickInkBackdrop }) => {
     const presets = readAccentPresets();
 
     it("offers the swatches the page is documented to offer", () => {
@@ -197,31 +198,38 @@ describe.each(SCHEMES)(
     });
 
     // The backdrops a tinted accent chip actually paints on — the sidebar /
-    // mobile-header avatar initial (resting state) and the onboarding step
-    // numerals. `card` is built the same way the CHIPS table below builds it
-    // (MedicationCard: .bg-glass > page <main> on --color-surface) — the
-    // onboarding numeral's real parent is exactly that bg-glass card.
-    // `surface-raised` is the avatar's own resting backdrop (the `<aside>` /
-    // `<header>` it sits in). These composite DARKER in luminance than any
+    // mobile-header avatar initial (resting AND hovered) and the onboarding
+    // step numerals. `card` is built the same way the CHIPS table below
+    // builds it (MedicationCard: .bg-glass > page <main> on
+    // --color-surface) — the onboarding numeral's real parent is exactly
+    // that bg-glass card. `surface-raised` is the avatar's own resting
+    // backdrop (the `<aside>` / `<header>` it sits in). `surface-overlay` is
+    // the avatar's HOVERED backdrop: Sidebar's `<a href="/settings">`
+    // wrapping the avatar carries `hover:bg-surface-overlay`, an opaque
+    // token that replaces `surface-raised` outright on hover (not a second
+    // layer stacked on it). These composite DARKER in luminance than any
     // opaque surface `surfaces()` enumerates, so the ink solved against the
     // worst OPAQUE surface (inkBackdrop) does not automatically clear them —
-    // see Important Finding 1.
+    // see Important Finding 1. `accentInkFor` (src/lib/appearance/theme-css.ts)
+    // is the production fix: it solves against the binding backdrop across
+    // both the opaque surfaces and these three chip composites, so this test
+    // asserts the real derivation rather than a copy of it.
     //
     // Deliberately NOT `cardHover` (glass-hover composited over
     // --color-surface): no element among the five changed sites carries that
     // combination. MobileHeader's avatar and the onboarding numerals have no
     // hover state of their own at all, and Sidebar's chip `<div>` doesn't
-    // either — only its WRAPPING `<a>` does, and it composites glass-hover
-    // over --color-surface-RAISED, not --color-surface. Reusing `cardHover`
-    // verbatim tests a pixel combination nothing in the app ever paints,
-    // which is exactly the failure mode `surfaces()`'s own docstring warns
-    // against ("the real DOM nesting, read off the component, not a
-    // representative surface"). The wrapping `<a>`'s actual hover backdrop is
-    // a separate, real finding — see the report, not this test.
+    // either — only its WRAPPING `<a>` does, and on hover that `<a>` paints
+    // opaque `surface-overlay`, not glass-hover over --color-surface-raised.
+    // Reusing `cardHover` verbatim would test a pixel combination nothing in
+    // the app ever paints, which is exactly the failure mode `surfaces()`'s
+    // own docstring warns against ("the real DOM nesting, read off the
+    // component, not a representative surface").
     const glass = alphaOf(T["--color-glass"]);
     const ACCENT_CHIP_BACKDROPS: Record<string, string> = {
       card: compositeOver(glass.alpha, T["--color-surface"], glass.overlay),
       "surface-raised": T["--color-surface-raised"],
+      "surface-overlay (avatar hovered)": T["--color-surface-overlay"],
     };
 
     for (const preset of presets) {
@@ -248,19 +256,22 @@ describe.each(SCHEMES)(
         }
       });
 
-      // bg-accent/15 text-accent-ink: Sidebar/MobileHeader avatar initial,
-      // OnboardingWelcome step numerals (Important Finding 1). The ink's
-      // opaque-surface guarantee does not reach a tinted chip. Was /20 —
-      // failed here for 6 of 10 presets in light and 1 in dark (#f97316 on
-      // the onboarding-numeral card backdrop); /15 is the shipped fix.
+      // bg-accent/15 text-accent-ink: Sidebar/MobileHeader avatar initial
+      // (resting and hovered), OnboardingWelcome step numerals (Important
+      // Finding 1). The ink's opaque-surface guarantee does not reach a
+      // tinted chip. Was /20 — failed here for 6 of 10 presets in light and
+      // 1 in dark (#f97316 on the onboarding-numeral card backdrop); /15
+      // alone did not fix it either — all ten presets still fail in light
+      // (3.68-4.34) when the ink is solved only against the opaque
+      // inkBackdrop. `accentInkFor` fixes the derivation itself.
       it(`${preset} accent/15 chip clears 4.5:1 (avatar initial, onboarding numerals)`, () => {
-        const ink = readableInk(preset, { backdrop: inkBackdrop, overlay: inkOverlay });
-        for (const [name, bg] of Object.entries(ACCENT_CHIP_BACKDROPS)) {
-          const chip = compositeOver(0.15, bg, preset);
+        const ink = accentInkFor(schemeName, preset);
+        for (const [site, bg] of Object.entries(ACCENT_CHIP_BACKDROPS)) {
+          const chip = compositeOver(ACCENT_CHIP_ALPHA, bg, preset);
           const ratio = contrastRatio(ink, chip);
           expect(
             ratio,
-            `${preset} -> ${ink} on accent/15 over ${name} (${chip}) is ${ratio.toFixed(2)}:1`,
+            `${preset} -> ${ink} on accent/${ACCENT_CHIP_ALPHA * 100} over ${site} (${chip}) is ${ratio.toFixed(2)}:1`,
           ).toBeGreaterThanOrEqual(4.5);
         }
       });

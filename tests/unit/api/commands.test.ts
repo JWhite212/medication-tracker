@@ -158,11 +158,27 @@ vi.mock("$lib/server/api/wipe", () => ({
   wipeArchivedMedications: (userId: string) => wipeArchivedMedications(userId),
 }));
 
-const { runCommands, dispatchCommand, UnknownCommandError } =
+// The redeemer is real code with real SQL; what belongs here is that the
+// destructive commands CALL it, with their own purpose, and refuse when it
+// says no. Its own behaviour is covered in tests/unit/auth-reauth.test.ts.
+const requireRecentReauth = vi.fn(
+  async (_userId: string, _purpose: string, _token: string): Promise<boolean> => true,
+);
+vi.mock("$lib/server/auth/reauth", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  requireRecentReauth: (userId: string, purpose: string, token: string) =>
+    requireRecentReauth(userId, purpose, token),
+}));
+
+const { runCommands, dispatchCommand, UnknownCommandError, ReauthRequiredError } =
   await import("../../../src/lib/server/api/commands");
 
 beforeEach(() => {
   fakeDb.reset();
+  requireRecentReauth.mockClear();
+  requireRecentReauth.mockResolvedValue(true);
+  wipeDoseHistory.mockClear();
+  wipeArchivedMedications.mockClear();
   logDose.mockClear();
   logSkippedDose.mockClear();
   updateDose.mockClear();
@@ -515,23 +531,53 @@ describe("dispatchCommand — medication + schedule + preference + wipe commands
     expect(result).toEqual({ preferences: { userId: "u1", accentColor: "#123456" } });
   });
 
-  it("wipe_dose_history calls wipeDoseHistory with the userId and returns {deleted}", async () => {
+  // Both wipes are irreversible and leave no per-row tombstone. The browser
+  // has always demanded a password for them (settings/privacy); this door
+  // demanded nothing, so a stolen bearer token could destroy a user's whole
+  // dose history through the same code path. They now redeem a token minted
+  // by POST /api/v1/auth/reauth.
+  it("wipe_dose_history redeems the reauth token and returns {deleted}", async () => {
+    requireRecentReauth.mockResolvedValueOnce(true);
     wipeDoseHistory.mockResolvedValueOnce({ deleted: 12 });
 
-    const result = await dispatchCommand("u1", "wipe_dose_history", {});
+    const result = await dispatchCommand("u1", "wipe_dose_history", { reauthToken: "tok" });
 
-    expect(wipeDoseHistory).toHaveBeenCalledTimes(1);
+    expect(requireRecentReauth).toHaveBeenCalledWith("u1", "wipe_dose_history", "tok");
     expect(wipeDoseHistory).toHaveBeenCalledWith("u1");
     expect(result).toEqual({ deleted: 12 });
   });
 
-  it("wipe_archived_medications calls wipeArchivedMedications with the userId and returns {deleted}", async () => {
+  it("wipe_archived_medications redeems its own purpose", async () => {
+    requireRecentReauth.mockResolvedValueOnce(true);
     wipeArchivedMedications.mockResolvedValueOnce({ deleted: 3 });
 
-    const result = await dispatchCommand("u1", "wipe_archived_medications", {});
+    const result = await dispatchCommand("u1", "wipe_archived_medications", {
+      reauthToken: "tok",
+    });
 
-    expect(wipeArchivedMedications).toHaveBeenCalledTimes(1);
-    expect(wipeArchivedMedications).toHaveBeenCalledWith("u1");
+    // The purpose is per-command: a token minted to wipe dose history must
+    // not also authorise wiping archived medications.
+    expect(requireRecentReauth).toHaveBeenCalledWith("u1", "wipe_archived_medications", "tok");
     expect(result).toEqual({ deleted: 3 });
+  });
+
+  it.each([
+    ["no payload at all", {}],
+    ["an empty token", { reauthToken: "" }],
+    ["a token under the wrong key", { token: "tok" }],
+  ])("wipe_dose_history refuses %s and deletes nothing", async (_label, payload) => {
+    await expect(dispatchCommand("u1", "wipe_dose_history", payload)).rejects.toThrow(
+      ReauthRequiredError,
+    );
+    expect(wipeDoseHistory).not.toHaveBeenCalled();
+  });
+
+  it("refuses a token the redeemer rejects — spent, expired, or another user's", async () => {
+    requireRecentReauth.mockResolvedValueOnce(false);
+
+    await expect(
+      dispatchCommand("u1", "wipe_dose_history", { reauthToken: "stale" }),
+    ).rejects.toThrow(ReauthRequiredError);
+    expect(wipeDoseHistory).not.toHaveBeenCalled();
   });
 });

@@ -6,6 +6,7 @@ import {
   readableForeground,
   readableInk,
   INK_BACKDROP,
+  INK_BACKDROP_LIGHT,
   READABLE_DARK,
   READABLE_LIGHT,
 } from "$lib/utils/contrast";
@@ -120,5 +121,40 @@ describe("readableForeground", () => {
     const { ratio } = readableForeground("#6366f1");
     expect(ratio).toBeGreaterThan(4);
     expect(ratio).toBeLessThan(4.5);
+  });
+});
+
+describe("compositeOver rejects non-hex input", () => {
+  // Without this guard compositeOver("garbage") returns "#23c1NaN",
+  // relativeLuminance rejects it and returns 0, and contrastRatio then
+  // reports ~21:1 — so a mis-parsed light token makes an assertion PASS.
+  it("throws on a malformed base", () => {
+    expect(() => compositeOver(0.1, "garbage")).toThrow(/not a hex colour/i);
+  });
+
+  it("throws on a malformed overlay", () => {
+    expect(() => compositeOver(0.1, "#ffffff", "nope")).toThrow(/not a hex colour/i);
+  });
+});
+
+describe("readableInk darkens for a light scheme", () => {
+  it("solves against the darkest light surface by darkening toward black", () => {
+    const ink = readableInk("#f59e0b", {
+      backdrop: INK_BACKDROP_LIGHT,
+      overlay: READABLE_DARK,
+    });
+    expect(ink).toBe("#8c5d0e");
+    expect(contrastRatio(ink, INK_BACKDROP_LIGHT)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("leaves an accent that is already legible on light untouched", () => {
+    expect(readableInk("#4f46e5", { backdrop: INK_BACKDROP_LIGHT, overlay: READABLE_DARK })).toBe(
+      "#4f46e5",
+    );
+  });
+
+  it("still lightens for the dark scheme by default", () => {
+    const ink = readableInk("#4f46e5");
+    expect(contrastRatio(ink, INK_BACKDROP)).toBeGreaterThanOrEqual(4.5);
   });
 });

@@ -25,7 +25,15 @@ vi.mock("$lib/server/api/preauth", () => ({
 }));
 
 const verifyAndConsumeTOTPCode = vi.fn(async (_userId: string, _code: string) => state.totpResult);
+// Both arms are exported so the test can assert WHICH one the door calls.
+// Mocking only the enrolment arm is how this suite came to say nothing
+// about a check that exists precisely to tell them apart.
+const verifySecondFactorForLogin = vi.fn(
+  async (_userId: string, _code: string) => state.totpResult,
+);
 vi.mock("$lib/server/auth/totp", () => ({
+  verifySecondFactorForLogin: (userId: string, code: string) =>
+    verifySecondFactorForLogin(userId, code),
   verifyAndConsumeTOTPCode: (userId: string, code: string) =>
     verifyAndConsumeTOTPCode(userId, code),
 }));
@@ -82,6 +90,7 @@ beforeEach(() => {
   rlCalls.length = 0;
   verifyPreAuthToken.mockClear();
   verifyAndConsumeTOTPCode.mockClear();
+  verifySecondFactorForLogin.mockClear();
   checkRateLimit.mockClear();
   createSession.mockClear();
 });
@@ -98,7 +107,7 @@ describe("POST /api/v1/auth/2fa", () => {
     await expect(call({ preAuthToken: "garbage", code: "123456" })).rejects.toMatchObject({
       status: 401,
     });
-    expect(verifyAndConsumeTOTPCode).not.toHaveBeenCalled();
+    expect(verifySecondFactorForLogin).not.toHaveBeenCalled();
   });
 
   it("rate-limits attempts per user and never checks the code when limited", async () => {
@@ -111,7 +120,7 @@ describe("POST /api/v1/auth/2fa", () => {
     expect(body).toEqual({ error: "rate_limited", retryAfterSeconds: 120 });
     expect(res.headers.get("Retry-After")).toBe("120");
     expect(rlCalls[0]).toMatchObject({ key: "2fa:u1", max: 5, windowMs: 900_000 });
-    expect(verifyAndConsumeTOTPCode).not.toHaveBeenCalled();
+    expect(verifySecondFactorForLogin).not.toHaveBeenCalled();
   });
 
   it("returns 401 for a valid token with the wrong code, without consuming the token", async () => {
@@ -144,7 +153,7 @@ describe("POST /api/v1/auth/2fa", () => {
         emailVerified: true,
       },
     });
-    expect(verifyAndConsumeTOTPCode).toHaveBeenCalledWith("u1", "123456");
+    expect(verifySecondFactorForLogin).toHaveBeenCalledWith("u1", "123456");
     const consume = rlCalls.find((c) => c.key === "preauth:jti-1");
     expect(consume).toMatchObject({ max: 1 });
     expect(createSession).toHaveBeenCalledWith("u1", {});
@@ -172,5 +181,23 @@ describe("POST /api/v1/auth/2fa", () => {
       status: 400,
     });
     expect(verifyPreAuthToken).not.toHaveBeenCalled();
+  });
+});
+
+describe("the second factor must be one the account actually enabled", () => {
+  it("goes through the login arm, not the enrolment one", async () => {
+    // Both doors consume the SAME signed claim, so a `pending_2fa` cookie is
+    // byte-for-byte a valid `preAuthToken`. Leaving this door on the arm that
+    // skips the `twoFactorEnabled` check would make the browser door's check
+    // bypassable by changing transport — and `setupTwoFactor` persists a
+    // secret before the user confirms, so the unchecked state is reachable.
+    state.preAuthClaims = claims();
+    state.totpResult = true;
+    seedUser({ ...baseUser });
+
+    await call({ preAuthToken: "t", code: "123456" });
+
+    expect(verifySecondFactorForLogin).toHaveBeenCalledWith("u1", "123456");
+    expect(verifyAndConsumeTOTPCode).not.toHaveBeenCalled();
   });
 });

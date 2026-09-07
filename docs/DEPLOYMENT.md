@@ -156,7 +156,33 @@ git push origin main                              # ship the code that uses it
 ```
 
 Always ship the migration before (or atomically with) the code that
-depends on it — Vercel does not gate deploys on migrations.
+depends on it.
+
+**Production deploys gate on the schema (since 2026-09-07).**
+`scripts/vercel-build.mjs` runs `drizzle-kit push` before the build whenever
+`VERCEL_ENV=production`, and aborts the build unless push reports success — so
+a deploy can no longer ship code that references a column the database lacks.
+Preview and local builds still skip it and never touch the production schema.
+
+- Opt a single production deploy out with `MIGRATE_ON_BUILD=false`.
+- Opt a preview in with `MIGRATE_ON_BUILD=true` (it will target whatever
+  `DATABASE_URL` that environment has — check before you do).
+
+This replaced an opt-in `MIGRATE_ON_BUILD=true` flag that was never set in the
+Vercel Production environment, so the sync had in fact never run: production
+drifted three migrations behind, and the first code change that read a missing
+column took down every authenticated page. See RUNBOOK §4a.
+
+Two behaviours of `drizzle-kit push` the wrapper works around, both verified
+against a branch of the production database rather than assumed:
+
+- **It exits 0 even when it fails**, so the wrapper checks its output for a
+  success marker (`Changes applied` or `No changes detected`) instead of its
+  exit status.
+- **It will not apply destructive changes unattended** — it asks, and CI has no
+  TTY. A pending drop therefore fails the build until someone applies it by
+  hand. That is the intended behaviour, not a bug to route around with
+  `--force`.
 
 ### If `drizzle-kit migrate` hangs
 

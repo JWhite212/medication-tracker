@@ -117,14 +117,59 @@ bleeding, then fix forward at your own pace.
 
 Ordered by how often they have actually happened.
 
-| Symptom                                              | Likely cause                                                                                              | Fix                                                                             |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| No reminders at all, cron returns 500                | `CRON_SECRET` unset in Vercel **Production** specifically                                                 | Set it in Production scope, redeploy                                            |
-| Reminders arrive for some meds, never the later ones | Cron hit the function time limit mid-loop; the loop is sequential and ordered                             | Confirm `maxDuration` is still set on the cron route; check for a slow provider |
-| Cron works when triggered manually, not on schedule  | Vercel Hobby allows one cron run per day; the 30-min cadence comes from the `reminder-tick` GitHub Action | Check the Action is enabled and its secret matches                              |
-| Push silent, email fine                              | VAPID key rotated, or subscription expired (410)                                                          | 410s self-prune on the next tick; otherwise re-subscribe in Settings            |
-| First request after idle very slow                   | Neon compute auto-suspended                                                                               | Expected on the free tier; ~500ms–2s                                            |
-| `too many connections`                               | Using the unpooled Neon host                                                                              | Use the `-pooler` host in `DATABASE_URL`                                        |
+| Symptom                                                                             | Likely cause                                                                                                                                                                                                                                      | Fix                                                                             |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Every authenticated page 500s right after a deploy; `/` and `/auth/login` still 200 | The database is missing a column `schema.ts` declares. Drizzle emits explicit column lists, so one missing column breaks every query on that table — and `(app)/+layout.server.ts` loads preferences, so it takes down login and registration too | See [4a](#4a-a-deploy-shipped-code-the-database-cannot-satisfy) below           |
+| No reminders at all, cron returns 500                                               | `CRON_SECRET` unset in Vercel **Production** specifically                                                                                                                                                                                         | Set it in Production scope, redeploy                                            |
+| Reminders arrive for some meds, never the later ones                                | Cron hit the function time limit mid-loop; the loop is sequential and ordered                                                                                                                                                                     | Confirm `maxDuration` is still set on the cron route; check for a slow provider |
+| Cron works when triggered manually, not on schedule                                 | Vercel Hobby allows one cron run per day; the 30-min cadence comes from the `reminder-tick` GitHub Action                                                                                                                                         | Check the Action is enabled and its secret matches                              |
+| Push silent, email fine                                                             | VAPID key rotated, or subscription expired (410)                                                                                                                                                                                                  | 410s self-prune on the next tick; otherwise re-subscribe in Settings            |
+| First request after idle very slow                                                  | Neon compute auto-suspended                                                                                                                                                                                                                       | Expected on the free tier; ~500ms–2s                                            |
+| `too many connections`                                                              | Using the unpooled Neon host                                                                                                                                                                                                                      | Use the `-pooler` host in `DATABASE_URL`                                        |
+
+### 4a. A deploy shipped code the database cannot satisfy
+
+This has happened twice: migration `0007` (`medications.archived_at`, May) and
+`0018` (`user_preferences.theme`, 2026-09-07, which took down login and
+registration). Both times the cause was the same — production's schema was
+behind the code, and the first change that _read_ a missing column failed hard.
+
+**Why it is easy to miss:** a stale default or an undropped column is tolerated
+silently for months. Only a _missing_ column breaks, and then it breaks
+completely, because drizzle names every column in its `SELECT`.
+
+**Confirm it in one query** (Neon console, or the Neon MCP with the project id
+in the `NEON_PROJECT_ID` repo variable):
+
+```sql
+SELECT column_name FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = '<the table in the stack trace>';
+```
+
+Compare against the `pgTable` definition in `src/lib/server/db/schema.ts`.
+
+**Fix:** add the missing column exactly as the migration in `drizzle/` declares
+it. Additive columns with a default are safe to apply while the site is live and
+are backward compatible — code that predates them never names them.
+
+```sql
+ALTER TABLE "user_preferences" ADD COLUMN IF NOT EXISTS "theme" text DEFAULT 'dark' NOT NULL;
+```
+
+**Prevention, since 2026-09-07:** `scripts/vercel-build.mjs` runs
+`drizzle-kit push` on every _production_ build and aborts the build if it does
+not report success. Two things about that are worth knowing before you trust or
+change it:
+
+- **`drizzle-kit push` exits 0 when it fails.** With a destructive diff pending
+  it warns about data loss, throws because prompts need a TTY, applies nothing,
+  and still exits 0. The script therefore checks its _output_ for a success
+  marker and ignores the exit status. Do not "simplify" that back to a status
+  check.
+- **Push refuses to drop things unattended, by design.** If the build aborts
+  saying data-loss statements are pending, production has a column the code no
+  longer declares. Drop it by hand, then redeploy. Never add `--force`: that
+  hands unattended deploys permission to delete user data.
 
 ## 5. Escalation and communication
 

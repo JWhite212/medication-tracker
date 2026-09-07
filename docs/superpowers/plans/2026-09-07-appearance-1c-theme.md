@@ -802,21 +802,76 @@ describe("the TS tables cannot drift from app.css", () => {
   // generates the other, so this is what stops them diverging — without
   // it, a user on `light` and a user on `system` with a light OS would
   // render different colours from the same deploy.
-  it("declares the same key set for both schemes", () => {
-    expect(Object.keys(LIGHT_TOKENS).sort()).toEqual(Object.keys(DARK_TOKENS).sort());
-    expect(Object.keys(HC_LIGHT_TOKENS).sort()).toEqual(Object.keys(HC_DARK_TOKENS).sort());
+  //
+  // The check runs in BOTH directions. A one-directional test (iterate the
+  // TS table, look for each value in the CSS) cannot see a token ADDED to
+  // app.css's light arm and forgotten here — and that token is exactly the
+  // dangerous case: a `theme: dark` user on a light OS would keep the light
+  // value for it, because the SSR block never re-asserts what it does not
+  // know about.
+  const LIGHT_ARM = blockBody(CSS, /@media \(prefers-color-scheme: light\)\s*\{/, "the light arm");
+  const cssLight = parseDeclarations(blockBody(LIGHT_ARM, /:root\s*\{/, "the light :root"));
+  const cssTheme = parseDeclarations(blockBody(CSS, /@theme\s*\{/, "the @theme block"));
+  const cssHcLight = parseDeclarations(
+    blockBody(
+      blockBody(LIGHT_ARM, /@media \(prefers-contrast: more\)\s*\{/, "the light contrast block"),
+      /:root\s*\{/,
+      "the light contrast :root",
+    ),
+  );
+  const cssHcDark = parseDeclarations(
+    blockBody(
+      blockBody(
+        CSS.replace(LIGHT_ARM, ""),
+        /@media \(prefers-contrast: more\)\s*\{/,
+        "the dark contrast block",
+      ),
+      /:root\s*\{/,
+      "the dark contrast :root",
+    ),
+  );
+
+  it("carries exactly the tokens the app.css light arm overrides", () => {
+    // Not "the keys whose values differ" — that was the original wording and
+    // it is wrong. --color-accent-hover holds the same value in both schemes
+    // yet MUST be in the tables, because the light arm declares it and a
+    // dark-choosing user on a light OS needs it re-asserted.
+    const expected = Object.keys(cssLight).filter((k) => k.startsWith("--")).sort();
+    expect(Object.keys(LIGHT_TOKENS).sort()).toEqual(expected);
+    expect(Object.keys(DARK_TOKENS).sort()).toEqual(expected);
+  });
+
+  it("carries the high-contrast tokens, minus the accent the layout sets inline", () => {
+    const drop = (o: Record<string, string>) =>
+      Object.keys(o)
+        .filter((k) => k !== "--color-accent")
+        .sort();
+    expect(Object.keys(HC_LIGHT_TOKENS).sort()).toEqual(drop(cssHcLight));
+    expect(Object.keys(HC_DARK_TOKENS).sort()).toEqual(drop(cssHcDark));
   });
 
   it("emits dark values that match the @theme block", () => {
+    // Scoped to @theme, not the whole file: --color-accent-hover appears in
+    // BOTH @theme and the light arm with the same value, so an unscoped
+    // search would match the light copy and report the dark table as in sync
+    // even after @theme drifted.
     for (const [token, value] of Object.entries(DARK_TOKENS)) {
-      expect(CSS).toMatch(new RegExp(`${token}:\\s*${escapeRe(value)};`));
+      expect(cssTheme[token], `${token} missing from @theme`).toBe(value);
     }
   });
 
   it("emits light values that match the app.css light arm", () => {
-    const arm = CSS.slice(CSS.indexOf("@media (prefers-color-scheme: light)"));
     for (const [token, value] of Object.entries(LIGHT_TOKENS)) {
-      expect(arm).toMatch(new RegExp(`${token}:\\s*${escapeRe(value)};`));
+      expect(cssLight[token], `${token} missing from the light arm`).toBe(value);
+    }
+  });
+
+  it("emits high-contrast values that match both app.css arms", () => {
+    for (const [token, value] of Object.entries(HC_DARK_TOKENS)) {
+      expect(cssHcDark[token], `${token} missing from the dark contrast arm`).toBe(value);
+    }
+    for (const [token, value] of Object.entries(HC_LIGHT_TOKENS)) {
+      expect(cssHcLight[token], `${token} missing from the light contrast arm`).toBe(value);
     }
   });
 });
@@ -884,10 +939,6 @@ describe("buildThemeStyle", () => {
     expect(css).toContain("--color-accent-ink: #8c5d0e;");
   });
 });
-
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 ```
 
 - [ ] **Step 2: Run and watch it fail**
@@ -918,8 +969,11 @@ Create `src/lib/appearance/theme-css.ts`:
  * stylesheet at 23 — so at equal specificity the winner FLIPS between a hard
  * load and a client nav, and a plain F5 changes the palette.
  *
- * The tables below carry only the tokens that DIFFER between schemes, and
- * both carry the same key set. `theme: "dark"` still emits them, because a
+ * The tables below carry exactly the tokens the app.css light arm
+ * overrides, and both carry the same key set. Note that is NOT the same as
+ * "the tokens whose values differ": --color-accent-hover is identical in
+ * both schemes and still belongs here, because the light arm declares it and
+ * a dark-choosing user on a light OS needs it re-asserted. `theme: "dark"` still emits them, because a
  * dark-preferring user on a light OS would otherwise be left on the layered
  * light arm. tests/unit/theme-css.test.ts pins every value against app.css.
  */

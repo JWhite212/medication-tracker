@@ -1,4 +1,5 @@
-import { localTimeOnDateToUtc, getLocalDateString, getLocalDayOfWeek } from "$lib/utils/schedule";
+import { getLocalDateString } from "$lib/utils/schedule";
+import { wallClockToInstant, shiftDayKey, dayOfWeekForDayKey } from "$lib/utils/time";
 import { parseIntervalHours } from "$lib/utils/schedule-rate";
 
 export const FIXED_TIME_TOLERANCE_MS = 60 * 60 * 1000;
@@ -14,19 +15,6 @@ export const FIXED_TIME_TOLERANCE_MS = 60 * 60 * 1000;
  * adherence history, not a reminder.
  */
 export const OVERDUE_LOOKBACK_DAYS = 1;
-
-/**
- * Shift a local calendar date string (YYYY-MM-DD) by whole days.
- *
- * Done as pure UTC calendar arithmetic rather than by subtracting 24h
- * from an instant: `Date.UTC` rolls months and years over correctly and
- * has no DST, so "the previous local date" is exact even across a
- * transition, where a 24-hour subtraction can land on the wrong day.
- */
-function shiftLocalDate(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d - days)).toISOString().slice(0, 10);
-}
 
 export type OverdueRow = {
   scheduleKind: string;
@@ -65,15 +53,21 @@ export function computeOverdueSlot(row: OverdueRow, now: Date): Date | null {
     // revisited. It was not a delayed reminder — it was no reminder,
     // ever. See the regression tests in tests/unit/reminders-dedupe.
     for (let daysBack = 0; daysBack <= OVERDUE_LOOKBACK_DAYS; daysBack++) {
-      const dateStr = daysBack === 0 ? todayStr : shiftLocalDate(todayStr, daysBack);
-      const slotUtc = localTimeOnDateToUtc(dateStr, row.timeOfDay, tz);
+      const dateStr = daysBack === 0 ? todayStr : shiftDayKey(todayStr, -daysBack);
+      const slotUtc = wallClockToInstant(dateStr, row.timeOfDay, tz);
 
       // Not yet due — try the previous day's occurrence.
       if (slotUtc.getTime() > now.getTime()) continue;
 
-      // Day-of-week is a property of the slot's own date, not of today.
+      // Day-of-week is a property of the slot's own date, not of today —
+      // and it is read off that DATE KEY, never off `slotUtc`. Where a
+      // transition swallows the scheduled minute the instant can land on
+      // the next civil day (America/Godthab springs forward at 23:00
+      // local), and deriving the weekday from it would silently drop the
+      // slot for any day-restricted medication: no reminder at all, rather
+      // than a mistimed one.
       if (row.daysOfWeek && row.daysOfWeek.length > 0) {
-        if (!row.daysOfWeek.includes(getLocalDayOfWeek(slotUtc, tz))) continue;
+        if (!row.daysOfWeek.includes(dayOfWeekForDayKey(dateStr))) continue;
       }
 
       // A dose at or after the slot satisfies it however late it was —

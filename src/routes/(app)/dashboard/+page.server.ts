@@ -12,7 +12,7 @@ import {
   MedicationNotFoundError,
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
-import { parseDateTimeLocal, startOfDay, computeTimingStatus } from "$lib/utils/time";
+import { parseDateTimeLocal, startOfDay, endOfDay, computeTimingStatus } from "$lib/utils/time";
 import { computeScheduleSlots, timingStatusFromSlots } from "$lib/utils/schedule";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import { parseIntervalHours } from "$lib/utils/schedule-rate";
@@ -57,8 +57,12 @@ export const load: PageServerLoad = async ({ locals }) => {
     if (d.lastTakenAt) lastDoseByMedication[d.medicationId] = d.lastTakenAt;
   }
 
+  // Not `dayStart + 24h`: a civil day is 23, 24, 24.5 or 25 hours long, and
+  // the fixed offset silently truncated the long ones. On Europe/London
+  // 2026-10-25 it ended My Day at 23:00 local and dropped every slot in the
+  // last hour — the most common bedtime-medication slot there is.
   const dayStart = startOfDay(now, user.timezone);
-  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  const dayEnd = endOfDay(now, user.timezone);
 
   const scheduleSlots = computeScheduleSlots(
     medications,

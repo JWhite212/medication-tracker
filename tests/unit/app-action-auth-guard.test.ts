@@ -84,7 +84,19 @@ vi.mock("$lib/server/auth/lucia", () => ({
   },
 }));
 vi.mock("$lib/server/auth/reauth", () => ({ confirmReauth: never("confirmReauth") }));
-vi.mock("$lib/server/auth/rate-limit", () => ({ checkRateLimit: never("checkRateLimit") }));
+vi.mock("$lib/server/auth/rate-limit", async (importActual) => {
+  const actual = await importActual<typeof import("$lib/server/auth/rate-limit")>();
+  // Every callable throws: an anonymous POST must be refused BEFORE it can
+  // spend anyone's budget. LIMITS is the real table so the policies a door
+  // names still resolve.
+  return {
+    LIMITS: actual.LIMITS,
+    checkRateLimit: never("checkRateLimit"),
+    enforceLimit: never("enforceLimit"),
+    peekLimit: never("peekLimit"),
+    recordFailure: never("recordFailure"),
+  };
+});
 vi.mock("$lib/server/auth/password", () => ({ hashPassword: never("hashPassword") }));
 vi.mock("$lib/server/auth/totp", () => ({
   generateTOTPSecret: never("generateTOTPSecret"),

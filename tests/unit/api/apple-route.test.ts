@@ -1,3 +1,5 @@
+import { rateLimitSurface } from "../helpers/rate-limit";
+import { LIMITS } from "$lib/server/auth/rate-limit-policy";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "../helpers/fake-db";
 import { users, oauthAccounts } from "$lib/server/db/schema";
@@ -22,6 +24,16 @@ const verifyAppleIdentityToken = vi.fn(async (_idToken: string) => {
   if (state.identityThrows) throw new Error("invalid Apple identity token");
   return state.identityResult!;
 });
+// This door had NO limiter until the policy registry landed, which is why
+// this suite never mocked one.
+const rlCalls: Array<{ key: string; max?: number }> = [];
+const rateLimit = { allowed: true, retryAfterMs: 0 };
+const checkRateLimit = vi.fn(async (key: string, max?: number) => {
+  rlCalls.push({ key, max });
+  return rateLimit;
+});
+vi.mock("$lib/server/auth/rate-limit", () => rateLimitSurface({ primitive: checkRateLimit }));
+
 vi.mock("$lib/server/api/apple", () => ({
   verifyAppleIdentityToken: (idToken: string) => verifyAppleIdentityToken(idToken),
 }));
@@ -49,6 +61,7 @@ const { POST } = await import("../../../src/routes/api/v1/auth/apple/+server");
 const call = (body: object) =>
   POST({
     request: new Request("http://x", { method: "POST", body: JSON.stringify(body) }),
+    getClientAddress: () => "9.9.9.9",
   } as never);
 
 const baseUser = {
@@ -73,6 +86,7 @@ describe("POST /api/v1/auth/apple", () => {
   it("returns 400 (not 500) for a malformed JSON body", async () => {
     await expect(
       POST({
+        getClientAddress: () => "9.9.9.9",
         request: new Request("http://x", { method: "POST", body: "{not json" }),
       } as never),
     ).rejects.toMatchObject({ status: 400 });
@@ -192,5 +206,33 @@ describe("POST /api/v1/auth/apple", () => {
     await expect(call({ identityToken: "garbage" })).rejects.toMatchObject({ status: 401 });
     expect(createSession).not.toHaveBeenCalled();
     expect(inserts()).toHaveLength(0);
+  });
+});
+
+describe("the Apple door spends a budget", () => {
+  it("limits by client address before verifying the identity token", async () => {
+    // Apple's signature check is the real gate, but verifying costs a JWKS
+    // fetch and a crypto verify, and the create branch inserts a user for
+    // any valid identity — so an unbounded door is also an unbounded
+    // account-creation endpoint.
+    rlCalls.length = 0;
+    await Promise.resolve(call({ identityToken: "tok" })).catch(() => {});
+
+    expect(rlCalls[0]).toMatchObject({ key: `${LIMITS.appleSignIn.namespace}:9.9.9.9`, max: 10 });
+  });
+
+  it("returns 429 without touching the token when the budget is spent", async () => {
+    rlCalls.length = 0;
+    rateLimit.allowed = false;
+    rateLimit.retryAfterMs = 30_000;
+    try {
+      const res = await call({ identityToken: "tok" });
+      expect(res.status).toBe(429);
+      expect(res.headers.get("Retry-After")).toBe("30");
+      expect(verifyAppleIdentityToken).not.toHaveBeenCalled();
+    } finally {
+      rateLimit.allowed = true;
+      rateLimit.retryAfterMs = 0;
+    }
   });
 });

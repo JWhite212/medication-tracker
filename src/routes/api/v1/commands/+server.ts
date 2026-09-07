@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireApiUser } from "$lib/server/api/auth";
 import { runCommands } from "$lib/server/api/commands";
 import { readJson } from "$lib/server/api/read-json";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { rateLimitedResponse } from "$lib/server/api/rate-limit-response";
 
 const body = z.object({
@@ -19,7 +19,7 @@ export const POST: RequestHandler = async ({ request }) => {
   // Generous per-user cap. Each request already carries up to 200
   // commands, so this bounds abuse without throttling normal outbox
   // drains.
-  const { allowed, retryAfterMs } = await checkRateLimit(`api-commands:${user.id}`, 60, 60_000);
+  const { allowed, retryAfterMs } = await enforceLimit(LIMITS.apiCommands, user.id);
   if (!allowed) return rateLimitedResponse(retryAfterMs);
 
   const parsed = body.safeParse(await readJson(request));

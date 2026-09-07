@@ -3,7 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { registerSchema } from "$lib/utils/validation";
 import { hashPassword } from "$lib/server/auth/password";
 import { lucia } from "$lib/server/auth/lucia";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { db } from "$lib/server/db";
 import { users, emailVerificationTokens } from "$lib/server/db/schema";
 import { sha256 } from "@oslojs/crypto/sha2";
@@ -38,7 +38,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 export const actions: Actions = {
   default: async ({ request, cookies, getClientAddress }) => {
     const ip = getClientAddress();
-    const { allowed, retryAfterMs } = await checkRateLimit(`register:${ip}`, 5, 15 * 60 * 1000);
+    const { allowed, retryAfterMs } = await enforceLimit(LIMITS.register, ip);
     if (!allowed) {
       return fail(429, {
         errors: {

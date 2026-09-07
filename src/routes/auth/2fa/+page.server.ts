@@ -2,7 +2,7 @@ import { fail, redirect } from "@sveltejs/kit";
 import { lucia } from "$lib/server/auth/lucia";
 import { verifySecondFactorForLogin } from "$lib/server/auth/totp";
 import { verifyPreAuthToken } from "$lib/server/api/preauth";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -65,11 +65,7 @@ export const actions: Actions = {
     // rather than inventing an exposure. It is a 15-minute window that has to
     // be actively re-triggered — `checkRateLimit` does not extend `resetAt`
     // on a refused attempt — not a latching lock.
-    const { allowed, retryAfterMs } = await checkRateLimit(
-      `2fa:${claims.userId}`,
-      5,
-      15 * 60 * 1000,
-    );
+    const { allowed, retryAfterMs } = await enforceLimit(LIMITS.twoFactor, claims.userId);
     if (!allowed) {
       return fail(429, {
         error: `Too many attempts. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
@@ -85,7 +81,9 @@ export const actions: Actions = {
     // Burn the jti before minting anything, exactly as `/api/v1/auth/2fa`
     // does: a captured cookie cannot mint a second session inside its TTL.
     const consumeWindowMs = Math.max(claims.exp - Date.now(), 1000);
-    const consumed = await checkRateLimit(`preauth:${claims.jti}`, 1, consumeWindowMs);
+    const consumed = await enforceLimit(LIMITS.preauthBurn, claims.jti, {
+      windowMs: consumeWindowMs,
+    });
     if (!consumed.allowed) redirect(302, "/auth/login");
 
     cookies.delete("pending_2fa", { path: "/" });

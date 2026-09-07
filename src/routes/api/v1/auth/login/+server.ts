@@ -10,7 +10,7 @@ import {
   needsRehash,
   hashPassword,
 } from "$lib/server/auth/password";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit, peekLimit, recordFailure } from "$lib/server/auth/rate-limit";
 import { readJson } from "$lib/server/api/read-json";
 import { rateLimitedResponse } from "$lib/server/api/rate-limit-response";
 import { lucia } from "$lib/server/auth/lucia";
@@ -23,13 +23,19 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   if (!parsed.success) throw error(400, "Invalid credentials payload");
   const email = parsed.data.email.toLowerCase().trim();
 
-  // Per-IP first (throttles spraying across many emails from one
-  // source), then per-email (throttles a distributed attack on one
-  // account). The IP budget is looser: shared NATs are legitimate.
-  const byIp = await checkRateLimit(`api-login-ip:${getClientAddress()}`, 10, 15 * 60 * 1000);
+  // The SAME two policies the browser form spends, so the allowance cannot
+  // be refreshed by switching transport. They used to be four separate
+  // hand-written budgets across the two doors, which is how the browser one
+  // came to have no account-scoped limit at all.
+  const byIp = await enforceLimit(LIMITS.loginIp, getClientAddress());
   if (!byIp.allowed) return rateLimitedResponse(byIp.retryAfterMs);
-  const byEmail = await checkRateLimit(`api-login:${email}`, 5, 15 * 60 * 1000);
-  if (!byEmail.allowed) return rateLimitedResponse(byEmail.retryAfterMs);
+
+  // Peeked, not spent. This door DID bound the account before — but it
+  // counted every attempt, so anyone who knew an email could lock its owner
+  // out for fifteen minutes at a time, indefinitely. Failures are counted
+  // below instead, which bounds the attacker without arming them.
+  const byAccount = await peekLimit(LIMITS.loginAccount, email);
+  if (!byAccount.allowed) return rateLimitedResponse(byAccount.retryAfterMs);
 
   const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
@@ -39,12 +45,14 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   // for an unknown email, and this matches the web login action.
   if (!user || !user.passwordHash) {
     await verifyDummyPassword(parsed.data.password);
+    await recordFailure(LIMITS.loginAccount, email);
     throw error(401, "Invalid email or password");
   }
 
   const ok = await verifyPassword(user.passwordHash, parsed.data.password);
   if (!ok) {
     await logAudit(user.id, "session", "n/a", "failed_login");
+    await recordFailure(LIMITS.loginAccount, email);
     throw error(401, "Invalid email or password");
   }
 

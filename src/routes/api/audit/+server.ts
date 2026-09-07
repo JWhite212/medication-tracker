@@ -1,5 +1,5 @@
 import { error, json } from "@sveltejs/kit";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { getAuditLogForExport, buildAuditCsv } from "$lib/server/audit-export";
 import type { RequestHandler } from "./$types";
 import {
@@ -15,11 +15,7 @@ const RATE_MAX_REQUESTS = 10;
 export const GET: RequestHandler = async ({ locals, url }) => {
   if (!locals.user) error(401, "Unauthorized");
 
-  const { allowed, retryAfterMs } = await checkRateLimit(
-    `audit-export:${locals.user.id}`,
-    RATE_MAX_REQUESTS,
-    RATE_WINDOW_MS,
-  );
+  const { allowed, retryAfterMs } = await enforceLimit(LIMITS.auditExport, locals.user.id);
   if (!allowed) {
     const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
     return json(

@@ -12,7 +12,7 @@ import {
   describeTestPushResult,
 } from "$lib/server/push";
 import { isEmailConfigured, sendVerificationEmail } from "$lib/server/email";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { db } from "$lib/server/db";
 import { users, emailVerificationTokens, medications } from "$lib/server/db/schema";
 import type { Actions, PageServerLoad } from "./$types";
@@ -89,11 +89,7 @@ export const actions: Actions = {
   sendTest: async ({ locals }) => {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
-    const { allowed, retryAfterMs } = await checkRateLimit(
-      `push-test:${userId}`,
-      5,
-      15 * 60 * 1000,
-    );
+    const { allowed, retryAfterMs } = await enforceLimit(LIMITS.pushTest, userId);
     if (!allowed) {
       return fail(429, {
         testError: `Too many test notifications. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
@@ -135,11 +131,7 @@ export const actions: Actions = {
   resendVerification: async ({ locals }) => {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
-    const { allowed, retryAfterMs } = await checkRateLimit(
-      `email-resend:${userId}`,
-      3,
-      15 * 60 * 1000,
-    );
+    const { allowed, retryAfterMs } = await enforceLimit(LIMITS.emailResend, userId);
     if (!allowed) {
       return fail(429, {
         resendError: `Too many requests. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,

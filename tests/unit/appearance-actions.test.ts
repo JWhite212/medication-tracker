@@ -1,3 +1,4 @@
+import { rateLimitSurface } from "./helpers/rate-limit";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const updatePreferences = vi.fn(async () => ({}) as never);
@@ -8,7 +9,7 @@ vi.mock("$lib/server/preferences", () => ({
   updatePreferences,
   getOrCreatePreferences: vi.fn(async () => ({ userId: "u1" }) as never),
 }));
-vi.mock("$lib/server/auth/rate-limit", () => ({ checkRateLimit }));
+vi.mock("$lib/server/auth/rate-limit", () => rateLimitSurface({ primitive: checkRateLimit }));
 
 const { actions } = await import("../../src/routes/(app)/settings/appearance/+page.server");
 

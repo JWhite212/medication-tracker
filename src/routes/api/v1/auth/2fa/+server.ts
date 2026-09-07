@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { verifyPreAuthToken } from "$lib/server/api/preauth";
 import { readJson } from "$lib/server/api/read-json";
 import { verifySecondFactorForLogin } from "$lib/server/auth/totp";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { lucia } from "$lib/server/auth/lucia";
 import { toSessionUser } from "$lib/server/api/serialize";
 
@@ -22,7 +22,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
   // Wrong codes are otherwise free to guess: the TOTP step counter only
   // advances on success, so cap verification attempts per user.
-  const { allowed, retryAfterMs } = await checkRateLimit(`2fa:${claims.userId}`, 5, 15 * 60 * 1000);
+  const { allowed, retryAfterMs } = await enforceLimit(LIMITS.twoFactor, claims.userId);
   if (!allowed) {
     const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
     return json(
@@ -42,7 +42,9 @@ export const POST: RequestHandler = async ({ request }) => {
   // rate-limit ledger): a captured pre-auth token cannot mint a second
   // session after a successful login.
   const consumeWindowMs = Math.max(claims.exp - Date.now(), 1000);
-  const consumed = await checkRateLimit(`preauth:${claims.jti}`, 1, consumeWindowMs);
+  const consumed = await enforceLimit(LIMITS.preauthBurn, claims.jti, {
+    windowMs: consumeWindowMs,
+  });
   if (!consumed.allowed) throw error(401, "Challenge expired — sign in again");
 
   const [user] = await db.select().from(users).where(eq(users.id, claims.userId)).limit(1);

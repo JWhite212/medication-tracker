@@ -1,3 +1,5 @@
+import { rateLimitSurface } from "../helpers/rate-limit";
+import { LIMITS } from "$lib/server/auth/rate-limit-policy";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "../helpers/fake-db";
 import { users } from "$lib/server/db/schema";
@@ -14,7 +16,8 @@ function seedUser(row: Record<string, unknown> | null) {
 const state = {
   verifyResult: false,
   needsRehashResult: false,
-  rateLimitEmail: { allowed: true, retryAfterMs: 0 },
+  peek: { allowed: true, retryAfterMs: 0 },
+  rateLimit: { allowed: true, retryAfterMs: 0 },
   rateLimitIp: { allowed: true, retryAfterMs: 0 },
 };
 const rlCalls: Array<{ key: string; max: number | undefined; windowMs: number | undefined }> = [];
@@ -37,12 +40,16 @@ vi.mock("$lib/server/auth/password", () => ({
 
 const checkRateLimit = vi.fn(async (key: string, max?: number, windowMs?: number) => {
   rlCalls.push({ key, max, windowMs });
-  return key.startsWith("api-login-ip:") ? state.rateLimitIp : state.rateLimitEmail;
+  return key.startsWith(`${LIMITS.loginIp.namespace}:`) ? state.rateLimitIp : state.rateLimit;
 });
-vi.mock("$lib/server/auth/rate-limit", () => ({
-  checkRateLimit: (key: string, max?: number, windowMs?: number) =>
-    checkRateLimit(key, max, windowMs),
-}));
+vi.mock("$lib/server/auth/rate-limit", () =>
+  rateLimitSurface({
+    primitive: checkRateLimit,
+    // The account budget is PEEKED before the credential check and only
+    // spent on failure, so the suite has to drive the two independently.
+    peek: () => state.peek,
+  }),
+);
 
 const createSession = vi.fn(async (_userId: string, _attrs: object) => ({ id: "sess-1" }));
 vi.mock("$lib/server/auth/lucia", () => ({
@@ -89,7 +96,7 @@ beforeEach(() => {
   seedUser(null);
   state.verifyResult = false;
   state.needsRehashResult = false;
-  state.rateLimitEmail = { allowed: true, retryAfterMs: 0 };
+  state.peek = { allowed: true, retryAfterMs: 0 };
   state.rateLimitIp = { allowed: true, retryAfterMs: 0 };
   rlCalls.length = 0;
   verifyPassword.mockClear();
@@ -225,32 +232,62 @@ describe("POST /api/v1/auth/login", () => {
     expect(createSession).not.toHaveBeenCalled();
   });
 
-  it("rate-limits per IP as well as per email", async () => {
+  it("spends the IP budget on every attempt, and shares its policy with the browser door", async () => {
     seedUser({ ...baseUser });
     state.verifyResult = true;
 
     await call({ email: baseUser.email, password: "correct" });
-    expect(rlCalls.map((c) => c.key)).toEqual([
-      "api-login-ip:9.9.9.9",
-      `api-login:${baseUser.email}`,
-    ]);
-    // Assert the actual budgets/windows, not just the keys, so a
-    // loosened limit can't pass CI silently.
+
+    // The same named policy the browser form spends, so an attacker cannot
+    // refresh the allowance by switching transport.
+    expect(rlCalls.map((c) => c.key)).toEqual([`${LIMITS.loginIp.namespace}:9.9.9.9`]);
+    // Budgets asserted, not just keys, so a loosened limit cannot pass CI
+    // silently.
     expect(rlCalls[0]).toMatchObject({ max: 10, windowMs: 900_000 });
-    expect(rlCalls[1]).toMatchObject({ max: 5, windowMs: 900_000 });
   });
 
-  it("returns 429 when the IP budget is exhausted, before touching the email budget", async () => {
+  it("does NOT spend the account budget when the password is correct", async () => {
+    // The change that removes the lockout: this door used to count every
+    // attempt against the email, so anyone who knew an address could keep
+    // its owner out indefinitely. Only failures are counted now.
+    seedUser({ ...baseUser });
+    state.verifyResult = true;
+
+    await call({ email: baseUser.email, password: "correct" });
+
+    expect(rlCalls.map((c) => c.key)).not.toContain(
+      `${LIMITS.loginAccount.namespace}:${baseUser.email}`,
+    );
+  });
+
+  it.each([
+    ["a wrong password", true, "wrong"],
+    ["an unknown email", false, "whatever"],
+  ])("spends the account budget on %s", async (_label, seeded, password) => {
+    if (seeded) seedUser({ ...baseUser });
+    state.verifyResult = false;
+
+    // A rejected login throws a 401 rather than returning it.
+    await expect(call({ email: baseUser.email, password })).rejects.toMatchObject({ status: 401 });
+
+    // Counted for an unknown email too: a budget spent only on real accounts
+    // would answer "does this address exist?" through the 429.
+    expect(rlCalls.map((c) => c.key)).toContain(
+      `${LIMITS.loginAccount.namespace}:${baseUser.email}`,
+    );
+  });
+
+  it("returns 429 when the IP budget is exhausted, before touching the account budget", async () => {
     state.rateLimitIp = { allowed: false, retryAfterMs: 30_000 };
 
     const res = await call({ email: baseUser.email, password: "whatever" });
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBe("30");
-    expect(rlCalls.map((c) => c.key)).toEqual(["api-login-ip:9.9.9.9"]);
+    expect(rlCalls.map((c) => c.key)).toEqual([`${LIMITS.loginIp.namespace}:9.9.9.9`]);
   });
 
-  it("returns 429 with Retry-After when rate-limited per email (does not throw)", async () => {
-    state.rateLimitEmail = { allowed: false, retryAfterMs: 60000 };
+  it("returns 429 with Retry-After when the ACCOUNT budget is exhausted (does not throw)", async () => {
+    state.peek = { allowed: false, retryAfterMs: 60000 };
 
     const res = await call({ email: baseUser.email, password: "whatever" });
     expect(res.status).toBe(429);

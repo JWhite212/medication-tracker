@@ -1,3 +1,4 @@
+import { rateLimitSurface } from "../helpers/rate-limit";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "../helpers/fake-db";
 import { users } from "$lib/server/db/schema";
@@ -42,10 +43,7 @@ const checkRateLimit = vi.fn(async (key: string, max?: number, windowMs?: number
   rlCalls.push({ key, max, windowMs });
   return key.startsWith("preauth:") ? state.consume : state.rateLimit;
 });
-vi.mock("$lib/server/auth/rate-limit", () => ({
-  checkRateLimit: (key: string, max?: number, windowMs?: number) =>
-    checkRateLimit(key, max, windowMs),
-}));
+vi.mock("$lib/server/auth/rate-limit", () => rateLimitSurface({ primitive: checkRateLimit }));
 
 const createSession = vi.fn(async (_userId: string, _attrs: object) => ({ id: "sess-1" }));
 vi.mock("$lib/server/auth/lucia", () => ({

@@ -1,11 +1,11 @@
 import { error, fail } from "@sveltejs/kit";
-import { desc, eq, and, gte, lte, sql, ilike } from "drizzle-orm";
+import { desc, eq, and, gte, lt, sql, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { doseEditSchema, logFilterSchema } from "$lib/utils/validation";
 import { updateDose, deleteDose } from "$lib/server/doses";
-import { parseDateTimeLocal } from "$lib/utils/time";
+import { parseDateTimeLocal, parseDayRangeParam } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
 // Escape SQL LIKE wildcards so user input doesn't accidentally match
@@ -20,6 +20,7 @@ const pageParamSchema = z.coerce.number().int().min(1).max(1000).catch(1);
 
 export const load: PageServerLoad = async ({ locals, url, parent }) => {
   const userId = locals.user!.id;
+  const timezone = locals.user!.timezone;
   const { preferences } = await parent();
   const page = pageParamSchema.parse(url.searchParams.get("page") ?? 1);
   const limit = preferences.doseLogPageSize;
@@ -39,8 +40,16 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
 
   const conditions = [eq(doseLogs.userId, userId)];
   if (medFilter) conditions.push(eq(doseLogs.medicationId, medFilter));
-  if (from) conditions.push(gte(doseLogs.takenAt, new Date(from)));
-  if (to) conditions.push(lte(doseLogs.takenAt, new Date(to)));
+  // Read as civil days in the user's zone, and `lt` against an exclusive
+  // next-day bound so the whole `to` day is inside the range. `new Date(from)`
+  // parsed a bare YYYY-MM-DD as UTC midnight, which both excluded the end day
+  // east of UTC and, on garbage input, handed Drizzle an Invalid Date that
+  // threw a RangeError out of this load — a 500 on the one set of params here
+  // that was not validated.
+  const fromDate = parseDayRangeParam(from, timezone, "start");
+  const toDate = parseDayRangeParam(to, timezone, "end");
+  if (fromDate) conditions.push(gte(doseLogs.takenAt, fromDate));
+  if (toDate) conditions.push(lt(doseLogs.takenAt, toDate));
   if (f.status !== "any") conditions.push(eq(doseLogs.status, f.status));
   if (f.withSideEffects) {
     conditions.push(sql`jsonb_array_length(coalesce(${doseLogs.sideEffects}, '[]'::jsonb)) > 0`);

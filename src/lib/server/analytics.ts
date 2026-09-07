@@ -1,7 +1,13 @@
 import { eq, and, gte, lte, sql, desc, inArray } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
-import { startOfDay, isoDayKey, isoDayKeyFormatter } from "$lib/utils/time";
+import {
+  startOfDay,
+  isoDayKey,
+  isoDayKeyFormatter,
+  shiftDayKey,
+  wallClockToInstant,
+} from "$lib/utils/time";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import type { DoseLogStatus } from "$lib/server/db/schema";
@@ -449,10 +455,19 @@ export async function getDailyAdherenceSeries(
     countByDate.set(row.date, row.count);
   }
 
+  // Walk day KEYS, not a fixed 86_400_000 step from a local midnight. A
+  // civil day is 23, 24, 24.5 or 25 hours, so the fixed step drifts across a
+  // transition: measured on America/New_York with `now` a few days after the
+  // November fall-back, a 14-point series rendered 2026-11-01 twice and
+  // dropped 2026-11-04 — today's bar simply missing, for a fortnight after
+  // every autumn transition. `shiftDayKey` is pure calendar arithmetic and
+  // cannot drift; `wallClockToInstant` then gives each key's own midnight for
+  // the lifecycle comparison.
+  const fromKey = formatter(fromDate);
   const series: DailyAdherencePoint[] = [];
   for (let i = 0; i < span; i++) {
-    const day = new Date(fromDate.getTime() + i * 86400000);
-    const dateKey = formatter(day);
+    const dateKey = shiftDayKey(fromKey, i);
+    const day = wallClockToInstant(dateKey, "00:00", tz);
     const doseCount = countByDate.get(dateKey) ?? 0;
     // Sum expected only across meds active on this specific day.
     const expectedPerDay = expectedByMed.reduce(

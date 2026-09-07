@@ -8,7 +8,7 @@ import { db } from "$lib/server/db";
 import { doseLogs } from "$lib/server/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { getRefillForecast } from "$lib/server/inventory";
-import { startOfDay, isoDayKeyFormatter } from "$lib/utils/time";
+import { startOfDay, isoDayKey, shiftDayKey } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
 const SPARKLINE_DAYS = 14;
@@ -48,11 +48,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   // Sparkline day keys, joined against `date(... AT TIME ZONE ...)` above —
   // a key, not a label, so it stays en-CA and ignores preferences.dateFormat.
-  const fmtDate = isoDayKeyFormatter(safeTz);
+  // Walked as day KEYS rather than by stepping 86_400_000 ms from a local
+  // midnight: a civil day is not always 24 hours, so the fixed step
+  // duplicated the transition day and dropped TODAY from the sparkline for
+  // the fortnight after every autumn fall-back.
+  const fromKey = isoDayKey(sparklineFrom, safeTz);
   const dayKeys: string[] = [];
   for (let i = 0; i < SPARKLINE_DAYS; i++) {
-    const d = new Date(sparklineFrom.getTime() + i * 86400000);
-    dayKeys.push(fmtDate(d));
+    dayKeys.push(shiftDayKey(fromKey, i));
   }
 
   const seriesByMed = new Map<string, Map<string, number>>();

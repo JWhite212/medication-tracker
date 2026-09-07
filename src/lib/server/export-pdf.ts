@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, gte, lt, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications, type DoseLogStatus } from "$lib/server/db/schema";
 import { formatUserDate, formatUserTime, type DateFormat, type TimeFormat } from "$lib/utils/time";
@@ -96,7 +96,7 @@ export async function generateReport(
       .from(doseLogs)
       .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
       .where(
-        and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, from), lte(doseLogs.takenAt, to)),
+        and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, from), lt(doseLogs.takenAt, to)),
       )
       .orderBy(desc(doseLogs.takenAt)),
     db

@@ -1,3 +1,5 @@
+import { isoDayKeyFormatter } from "$lib/utils/time";
+
 /**
  * The activity heatmap's day grid.
  *
@@ -22,12 +24,15 @@ export interface HeatmapDay {
   row: number;
 }
 
-const ISO_DAY = new Intl.DateTimeFormat("en-CA", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  timeZone: "UTC",
-});
+/**
+ * The anchor below is noon UTC on the target civil date, so reading the key
+ * back in UTC yields that same date. It goes through `isoDayKeyFormatter`
+ * rather than `format()` for the reason that function exists: en-CA's
+ * short-date pattern is CLDR data, it already changed once in ICU 72, and
+ * this module runs against the VIEWER's browser ICU — a reordered field here
+ * would make every cell miss its count against the server's grouping key.
+ */
+const ISO_DAY = isoDayKeyFormatter("UTC");
 
 /**
  * `days` consecutive civil dates in `timezone`, oldest first, ending today.
@@ -55,7 +60,7 @@ export function buildHeatmapDays(
   const cells: HeatmapDay[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(anchor - i * 86_400_000);
-    cells.push({ date: ISO_DAY.format(d), row: d.getUTCDay() });
+    cells.push({ date: ISO_DAY(d), row: d.getUTCDay() });
   }
   return cells;
 }

@@ -31,6 +31,15 @@ export const E2E_NAME = "E2E Seeded";
 export const E2E_TZ = "Europe/London";
 export const E2E_EMAIL_PATTERN = "%@e2e.medtracker.test";
 
+// A second user, identical to the one above except `theme: "light"`. The
+// light-mode accessibility scan needs its own row rather than flipping the
+// shared seeded user's theme mid-suite: playwright.config.ts sets no
+// `workers: 1`, so mutating the shared row would pollute whatever anon-project
+// test happens to be running concurrently against the same account.
+export const E2E_LIGHT_EMAIL = "e2e-light@e2e.medtracker.test";
+export const E2E_LIGHT_PASSWORD = "e2e-medtracker-2026";
+export const E2E_LIGHT_NAME = "E2E Seeded (Light)";
+
 async function getDb() {
   loadDotEnv();
   const url = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -117,17 +126,30 @@ export async function deleteE2EUsers(): Promise<number> {
   return deleted.length;
 }
 
-export async function seedE2EUser(): Promise<{ userId: string; email: string }> {
-  await deleteE2EUsers();
+type SeedUserOptions = {
+  email: string;
+  password: string;
+  name: string;
+  theme: "dark" | "light";
+};
 
-  const db = await getDb();
+/**
+ * Seeds one fully-populated E2E account: user row, preferences (with the
+ * given theme), the three canonical medications, their schedules, and 14
+ * days of synthetic dose history. Shared by the primary (dark) and light
+ * seeded users so their data is identical apart from `theme`.
+ */
+async function seedOneUser(
+  db: Awaited<ReturnType<typeof getDb>>,
+  { email, password, name, theme }: SeedUserOptions,
+): Promise<{ userId: string; email: string }> {
   const userId = createId();
-  const passwordHash = await hashPassword(E2E_PASSWORD);
+  const passwordHash = await hashPassword(password);
 
   await db.insert(users).values({
     id: userId,
-    email: E2E_EMAIL,
-    name: E2E_NAME,
+    email,
+    name,
     passwordHash,
     timezone: E2E_TZ,
     emailVerified: true,
@@ -136,6 +158,7 @@ export async function seedE2EUser(): Promise<{ userId: string; email: string }> 
   await db.insert(userPreferences).values({
     userId,
     accentColor: "#4f46e5",
+    theme,
     timeFormat: "12h",
     dateFormat: "DD/MM/YYYY",
     uiDensity: "comfortable",
@@ -245,7 +268,30 @@ export async function seedE2EUser(): Promise<{ userId: string; email: string }> 
     await db.insert(doseLogs).values(doseInserts.slice(i, i + CHUNK));
   }
 
-  return { userId, email: E2E_EMAIL };
+  return { userId, email };
+}
+
+export async function seedE2EUser(): Promise<{ userId: string; email: string }> {
+  await deleteE2EUsers();
+
+  const db = await getDb();
+  const primary = await seedOneUser(db, {
+    email: E2E_EMAIL,
+    password: E2E_PASSWORD,
+    name: E2E_NAME,
+    theme: "dark",
+  });
+  // Seeded alongside the primary user (not lazily, on first use) so that
+  // global-setup's single seedE2EUser() call leaves both accounts ready
+  // before any test runs.
+  await seedOneUser(db, {
+    email: E2E_LIGHT_EMAIL,
+    password: E2E_LIGHT_PASSWORD,
+    name: E2E_LIGHT_NAME,
+    theme: "light",
+  });
+
+  return primary;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

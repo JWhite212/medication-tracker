@@ -248,6 +248,27 @@ describe("the status breakdown aggregates per medication", () => {
     }
   }
 
+  // Every other fixture here puts its skipped doses on a medication whose
+  // `expectedTotal` is 0, where `- m.skippedEvents` cannot change the answer.
+  // Without this case that term is unfalsifiable: deleting it leaves the
+  // whole suite green while a deliberate skip silently counts as a miss.
+  it("counts a scheduled medication's own skipped doses as resolved, not missed", async () => {
+    await seedDailyMed("sched");
+    await seedDoses("sched", 20);
+    await seedDoses("sched", 5, "skipped");
+
+    const breakdown = await getDoseStatusBreakdown("u1", 30, "UTC", EXPLICIT_RANGE);
+
+    expect(breakdown.expectedTotal).toBe(30);
+    expect(breakdown.takenEvents).toBe(20);
+    expect(breakdown.skippedEvents).toBe(5);
+    // 30 expected, 20 taken and 5 deliberately skipped leaves 5 unaccounted
+    // for — a skipped dose is a decision, not a lapse.
+    expect(breakdown.missedEvents).toBe(5);
+    // ...but skipping is not adherence: the numerator is taken doses only.
+    expect(breakdown.adherencePercent).toBe(66.7);
+  });
+
   it("does not let a PRN medication's doses erase another medication's misses", async () => {
     await seedDailyMed("sched");
     await seedDoses("sched", 20);

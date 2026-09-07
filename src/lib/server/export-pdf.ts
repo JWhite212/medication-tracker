@@ -7,6 +7,18 @@ import { getDoseStatusBreakdown } from "$lib/server/analytics";
 const MEDICAL_DISCLAIMER =
   "MedTracker is a personal tracking tool. It does not provide medical advice, dosage recommendations, diagnosis, or emergency guidance. Always follow advice from a qualified healthcare professional.";
 
+/**
+ * The last instant inside a half-open range ending at `to`.
+ *
+ * `to` is the exclusive start of the day after the one requested, so rendering
+ * it directly as a label names a day whose rows the query deliberately
+ * excludes — a clinician-facing report that claimed to cover 1 Apr to 1 May
+ * when it covered 1 Apr to 30 Apr.
+ */
+function lastIncludedInstant(to: Date): Date {
+  return new Date(to.getTime() - 1);
+}
+
 function formatDateInTz(date: Date, timezone: string, dateFormat: DateFormat): string {
   return formatUserDate(date, timezone, dateFormat, { weekday: true, year: true });
 }
@@ -109,7 +121,14 @@ export async function generateReport(
       })
       .from(medications)
       .where(eq(medications.userId, userId)),
-    getDoseStatusBreakdown(userId, 0, timezone, { from, to }),
+    // `to` is EXCLUSIVE (see parseDayRangeParam), but `doseLogScope` still
+    // bounds with `lte`. Passing the last included instant keeps this summary
+    // counting exactly the rows the table above it lists — otherwise a dose
+    // landing precisely on the bound appears in the headline figure and not in
+    // the log beneath it, which CSV import makes reachable (it stores a
+    // `00:00` row at local midnight, millisecond zero). Converging the two on
+    // one bound belongs with the analytics-window work, not here.
+    getDoseStatusBreakdown(userId, 0, timezone, { from, to: lastIncludedInstant(to) }),
   ]);
 
   // Side-effect frequency aggregate
@@ -140,7 +159,7 @@ export async function generateReport(
     doc
       .fontSize(11)
       .text(
-        `${formatDateInTz(from, timezone, dateFormat)} — ${formatDateInTz(to, timezone, dateFormat)}`,
+        `${formatDateInTz(from, timezone, dateFormat)} — ${formatDateInTz(lastIncludedInstant(to), timezone, dateFormat)}`,
         { align: "center" },
       );
     doc.fontSize(9).fillColor("#666666").text(`Timezone: ${timezone}`, {

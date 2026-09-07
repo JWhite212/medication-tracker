@@ -6,6 +6,7 @@ import {
   preferenceImportShape,
   preferencePayloadShape,
 } from "$lib/preferences/schema";
+import { isCalendarDay } from "$lib/utils/time";
 
 export const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -206,19 +207,39 @@ export const doseLogSchema = z.object({
  * optionally with seconds. Browsers add the seconds field only when the
  * control has a sub-minute `step`, so both forms have to be accepted.
  *
- * A door check, not a calendar check — `2026-02-31T10:00` matches and then
- * resolves to 3 March, which is what `Date` does with it everywhere else.
- * The point is that the value REACHES `parseDateTimeLocal` as a wall clock
- * at all: `z.string().min(1)` let `takenAt=x` through, and the parser threw
- * on it, so a hand-edited form field returned a 500 instead of a field
- * error. `z.string().datetime()` is the wrong tool here — it demands a
- * timezone offset, which is exactly what datetime-local does not carry.
+ * `z.string().datetime()` is the wrong tool here and is why this field was
+ * left as a bare `z.string().min(1)` for so long: it demands a timezone
+ * offset, which is exactly what datetime-local does not carry. Under the old
+ * check `takenAt=x` passed, the parser threw on it, and a hand-edited form
+ * field returned a 500 where it should have returned a field error.
  */
-const DATETIME_LOCAL_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
+const DATETIME_LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:\d{2})?$/;
+
+/**
+ * Shape AND calendar, because shape alone is not enough on a write path.
+ *
+ * `2026-02-31T10:00` matches the pattern, and `Date` NORMALISES it to 3 March
+ * rather than rejecting it — so a shape-only check would silently store a
+ * dose on a day the user did not name. Time-of-day is bounded here too: `25`
+ * and `08:60` both match the digits and both roll into the next day or hour.
+ *
+ * This is the same round-trip `import/csv.ts` has always done on its date
+ * cell, and it now shares that implementation (`isCalendarDay` in
+ * `utils/time.ts`) rather than restating it.
+ */
+function isDateTimeLocal(value: string): boolean {
+  const match = DATETIME_LOCAL_RE.exec(value);
+  if (!match) return false;
+
+  const [, year, month, day, hour, minute] = match;
+  if (Number(hour) > 23 || Number(minute) > 59) return false;
+
+  return isCalendarDay(Number(year), Number(month), Number(day));
+}
 
 export const doseEditSchema = z.object({
   doseId: z.string().min(1),
-  takenAt: z.string().regex(DATETIME_LOCAL_RE, "Enter a valid date and time"),
+  takenAt: z.string().refine(isDateTimeLocal, "Enter a valid date and time"),
   quantity: z.coerce.number().int().min(1).max(10),
   notes: z.string().max(500).optional(),
   sideEffects: sideEffectsField,

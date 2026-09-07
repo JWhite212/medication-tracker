@@ -89,22 +89,33 @@ const medRows = [
 // delivers the same rows without depending on which runs first.
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
+const breakdownCalls: Array<{ from?: Date; to?: Date }> = [];
+
 vi.mock("$lib/server/analytics", () => ({
-  getDoseStatusBreakdown: async () => ({
-    takenEvents: 1,
-    takenQuantity: 2,
-    skippedEvents: 1,
-    missedEvents: 1,
-    expectedTotal: 3,
-    adherencePercent: 33,
-    overusePercent: 0,
-  }),
+  getDoseStatusBreakdown: async (
+    _userId: string,
+    _days: number,
+    _tz: string,
+    filter?: { from?: Date; to?: Date },
+  ) => {
+    breakdownCalls.push({ from: filter?.from, to: filter?.to });
+    return {
+      takenEvents: 1,
+      takenQuantity: 2,
+      skippedEvents: 1,
+      missedEvents: 1,
+      expectedTotal: 3,
+      adherencePercent: 33,
+      overusePercent: 0,
+    };
+  },
 }));
 
 const { generateReport } = await import("../../src/lib/server/export-pdf");
 
 beforeEach(() => {
   textCalls.length = 0;
+  breakdownCalls.length = 0;
   fakeDb.reset();
   fakeDb.seed(doseLogs, doseRows);
   fakeDb.seed(medications, medRows);
@@ -143,5 +154,35 @@ describe("generateReport — dose log rendering", () => {
     await generateReport("user_1", "Europe/London", new Date("2026-06-01"), new Date("2026-06-30"));
     expect(textCalls).toContain("Missed events: 1");
     expect(textCalls).toContain("Skipped events: 1");
+  });
+});
+
+describe("generateReport — the reporting period it claims to cover", () => {
+  // `to` is the EXCLUSIVE start of the day after the requested end (see
+  // parseDayRangeParam), so both the banner and the summary query have to
+  // step back off it. This is a document a user hands to a clinician.
+  const from = new Date("2026-04-01T00:00:00Z");
+  const to = new Date("2026-05-01T00:00:00Z"); // exclusive: covers 1–30 April
+
+  it("names the last day INSIDE the window, not the exclusive bound", async () => {
+    await generateReport("user_1", "UTC", from, to, undefined, "24h", "DD/MM/YYYY");
+
+    const banner = textCalls.find((line) => line.includes("—") && line.includes("Apr"))!;
+    expect(banner).toContain("1 Apr 2026");
+    expect(banner).toContain("30 Apr 2026");
+    expect(banner).not.toContain("May");
+  });
+
+  it("bounds the summary at the same instant as the dose table", async () => {
+    // `doseLogScope` still compares with `lte` while the table's own query
+    // moved to `lt`. Handing both the raw exclusive bound would count a dose
+    // landing exactly on it in the headline figure and omit it from the log
+    // beneath — reachable, because CSV import stores a `00:00` row at exactly
+    // local midnight.
+    await generateReport("user_1", "UTC", from, to, undefined, "24h", "DD/MM/YYYY");
+
+    expect(breakdownCalls).toHaveLength(1);
+    expect(breakdownCalls[0].from).toEqual(from);
+    expect(breakdownCalls[0].to!.getTime()).toBe(to.getTime() - 1);
   });
 });

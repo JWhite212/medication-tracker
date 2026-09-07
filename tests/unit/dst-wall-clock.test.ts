@@ -9,6 +9,7 @@ import {
   parseDateTimeLocal,
   formatDateTimeLocal,
   parseDayRangeParam,
+  isCalendarDay,
 } from "$lib/utils/time";
 import { computeScheduleSlots } from "$lib/utils/schedule";
 import { doseEditSchema } from "$lib/utils/validation";
@@ -538,30 +539,95 @@ describe("day-of-week filters read the requested date, not the resolved instant"
     expect(slotsOn(sunday)).toEqual([]);
   });
 
-  it("My Day reads the weekday off the day key too", () => {
-    // Within a single civil day the two readings can only differ for a slot
-    // that rolls past `endOfDay`, which the window then drops — so unlike
-    // the reminder sweep this change is defensive rather than currently
-    // observable. It is here so the two surfaces cannot drift apart the
-    // moment the window widens.
+  it("computeScheduleSlots reads the weekday off the day key too", () => {
+    // A TWO-day window, deliberately. Inside a single civil day the two
+    // readings cannot differ — any slot whose instant rolls forward is past
+    // `endOfDay` and the window drops it either way — so a one-day window
+    // makes this test unfalsifiable, which is what an earlier version of it
+    // was. Widening to Saturday..Sunday is the smallest window in which the
+    // Godthab 23:30 slot is inside the range AND its resolved instant reads
+    // as a different weekday from the date that produced it.
     const timezone = "America/Godthab";
-    const now = new Date("2026-03-28T20:00:00Z");
+    const saturday = new Date("2026-03-28T12:00:00Z");
+    const sunday = new Date("2026-03-29T12:00:00Z");
     const slotsFor = (daysOfWeek: number[]) =>
       computeScheduleSlots(
         [makeMed()],
-        new Map([["med-1", [makeFixedTimeSchedule("20:00", { daysOfWeek })]]]),
+        new Map([["med-1", [makeFixedTimeSchedule("23:30", { daysOfWeek })]]]),
         [] as DoseLogWithMedication[],
         {},
-        startOfDay(now, timezone),
-        endOfDay(now, timezone),
+        startOfDay(saturday, timezone),
+        endOfDay(sunday, timezone),
         timezone,
-        now,
+        sunday,
       );
 
-    expect(slotsFor([6]).map((s) => localOf(new Date(s.expectedTime), timezone))).toEqual([
-      "2026-03-28, 20:00",
-    ]);
-    expect(slotsFor([0])).toEqual([]);
+    // Saturday's 23:30 resolves into Sunday the 29th. Keyed on the requested
+    // date it is still a Saturday slot and survives; keyed on the instant it
+    // reads as Sunday and a Saturday-only medication loses it entirely.
+    expect(slotsFor([6]).map((s) => s.expectedTime)).toEqual(["2026-03-29T01:30:00.000Z"]);
+
+    // ...and the filter is still a filter: Sunday-only keeps only Sunday's.
+    expect(slotsFor([0]).map((s) => s.expectedTime)).toEqual(["2026-03-30T00:30:00.000Z"]);
+  });
+});
+
+describe("calendar fields that overflow", () => {
+  // `DATETIME_LOCAL_RE` and `DAY_KEY_RE` are shape checks, so overflowing
+  // fields reach the resolver. It must normalise them the way `Date` does —
+  // an earlier version built the instant on a year-2000 pivot and set the
+  // year afterwards, which lost a whole year on any rollover past 31 December
+  // and a day on February in a non-leap year.
+  it.each([
+    ["2026-12-32", "00:00", "2027-01-01T00:00:00.000Z"],
+    ["2026-13-01", "00:00", "2027-01-01T00:00:00.000Z"],
+    ["2026-02-31", "00:00", "2026-03-03T00:00:00.000Z"],
+    ["2026-12-31", "25:00", "2027-01-01T01:00:00.000Z"],
+  ])("wallClockToInstant(%s, %s) normalises like Date", (dayKey, timeOfDay, expected) => {
+    expect(wallClockToInstant(dayKey, timeOfDay, "UTC").toISOString()).toBe(expected);
+  });
+
+  it("years below 100 are literal, not mapped into the 1900s", () => {
+    // `Date.UTC(50, 0, 1)` is 1950. The resolver must not inherit that.
+    expect(wallClockToInstant("0050-03-04", "10:00", "UTC").toISOString()).toBe(
+      "0050-03-04T10:00:00.000Z",
+    );
+    expect(isCalendarDay(50, 3, 4)).toBe(true);
+  });
+
+  it.each([
+    [2026, 2, 31],
+    [2026, 13, 1],
+    [2026, 12, 32],
+    [2026, 0, 1],
+    [2027, 2, 29],
+  ])("isCalendarDay(%i, %i, %i) is false", (year, month, day) => {
+    expect(isCalendarDay(year, month, day)).toBe(false);
+  });
+
+  it.each([
+    [2026, 2, 28],
+    [2028, 2, 29],
+    [2026, 12, 31],
+    [999, 4, 15],
+  ])("isCalendarDay(%i, %i, %i) is true", (year, month, day) => {
+    expect(isCalendarDay(year, month, day)).toBe(true);
+  });
+
+  it("the range door REJECTS an impossible day rather than normalising it", () => {
+    // Silently reading `?from=2026-13-99` as April 2027 would hand back an
+    // empty log with no explanation.
+    expect(parseDayRangeParam("2026-13-99", "UTC", "start")).toBeNull();
+    expect(parseDayRangeParam("2026-02-31", "UTC", "start")).toBeNull();
+    expect(parseDayRangeParam("2026-04-15", "UTC", "start")).not.toBeNull();
+  });
+
+  it("the takenAt door rejects one too, rather than storing a normalised dose", () => {
+    const base = { doseId: "d1", quantity: "1" };
+    for (const takenAt of ["2026-02-31T10:00", "2026-13-01T10:00", "2026-04-15T25:00"]) {
+      expect(doseEditSchema.safeParse({ ...base, takenAt }).success).toBe(false);
+    }
+    expect(doseEditSchema.safeParse({ ...base, takenAt: "2026-04-15T10:00" }).success).toBe(true);
   });
 });
 

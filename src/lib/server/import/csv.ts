@@ -5,7 +5,7 @@
 // reduced to timezone-less local minutes. Everything this module does is
 // a documented reconstruction of what the exporter threw away, and every
 // row it can't reconstruct becomes a warning rather than a silent drop.
-import { parseDateTimeLocal } from "$lib/utils/time";
+import { parseDateTimeLocal, isCalendarDay } from "$lib/utils/time";
 import { IMPORT_MAX_MEDICATIONS, isImportableTime } from "$lib/utils/validation";
 import { stripBom } from "./detect";
 import { DOSE_CSV_HEADER } from "./detect";
@@ -198,17 +198,12 @@ export function parseIsoDate(raw: string): { year: number; month: number; day: n
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  const probe = new Date(Date.UTC(year, month - 1, day));
 
-  // Round-trip check catches both out-of-range components (month 13) and
-  // dates that don't exist (31 February).
-  if (
-    probe.getUTCFullYear() !== year ||
-    probe.getUTCMonth() !== month - 1 ||
-    probe.getUTCDate() !== day
-  ) {
-    return null;
-  }
+  // The round-trip catches both out-of-range components (month 13) and dates
+  // that don't exist (31 February). It lives in utils/time.ts because the
+  // /log, /api/export and /api/audit date params need exactly the same check
+  // — this was the first of four doors to need it, not the only one.
+  if (!isCalendarDay(year, month, day)) return null;
 
   return { year, month, day };
 }

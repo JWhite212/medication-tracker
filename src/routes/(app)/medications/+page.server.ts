@@ -8,7 +8,7 @@ import { db } from "$lib/server/db";
 import { doseLogs } from "$lib/server/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { getRefillForecast } from "$lib/server/inventory";
-import { startOfDay, isoDayKey, shiftDayKey } from "$lib/utils/time";
+import { isoDayKey, shiftDayKey, wallClockToInstant } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
 const SPARKLINE_DAYS = 14;
@@ -19,7 +19,17 @@ export const load: PageServerLoad = async ({ locals }) => {
   const timezone = locals.user!.timezone;
   const safeTz = validTimezones.has(timezone) ? timezone : "UTC";
 
-  const sparklineFrom = startOfDay(new Date(Date.now() - (SPARKLINE_DAYS - 1) * 86400000), safeTz);
+  // Both the window and the keys are derived from ONE anchor: today's day
+  // key, stepped back in whole calendar days. Subtracting
+  // `13 * 86_400_000` from an instant first — even before taking its local
+  // midnight — lands a day early inside a one-hour band for the fortnight
+  // after a transition, and once the key walk below became exact that error
+  // stopped being absorbed by a duplicated key and propagated to the far end:
+  // measured across three zones over every hour of 2026, the last bar became
+  // TOMORROW (always empty) after an autumn fall-back, and stayed on
+  // YESTERDAY after a spring-forward.
+  const fromKey = shiftDayKey(isoDayKey(new Date(), safeTz), -(SPARKLINE_DAYS - 1));
+  const sparklineFrom = wallClockToInstant(fromKey, "00:00", safeTz);
   const tzExpr = sql.raw(`'${safeTz}'`);
 
   const [medications, archived, dailyRows, refillForecast] = await Promise.all([
@@ -48,11 +58,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   // Sparkline day keys, joined against `date(... AT TIME ZONE ...)` above —
   // a key, not a label, so it stays en-CA and ignores preferences.dateFormat.
-  // Walked as day KEYS rather than by stepping 86_400_000 ms from a local
-  // midnight: a civil day is not always 24 hours, so the fixed step
-  // duplicated the transition day and dropped TODAY from the sparkline for
-  // the fortnight after every autumn fall-back.
-  const fromKey = isoDayKey(sparklineFrom, safeTz);
+  // Stepped as calendar days from the same anchor as the window: a civil day
+  // is not always 24 hours, so a fixed 86_400_000 step emitted the transition
+  // day twice and dropped today for the fortnight after every fall-back.
   const dayKeys: string[] = [];
   for (let i = 0; i < SPARKLINE_DAYS; i++) {
     dayKeys.push(shiftDayKey(fromKey, i));

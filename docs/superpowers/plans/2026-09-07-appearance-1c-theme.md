@@ -518,6 +518,12 @@ Delete `color-scheme: dark;` and its comment from `@layer base { :root { … } }
  */
 @layer theme {
   :root {
+    /* Makes native checkboxes, radios, scrollbars and the date-picker glyph
+       render dark. There are 14 native checkbox/radio inputs in the app with
+       no appearance:none and no accent-color, so without this they paint as
+       bright white widgets on a near-black page. This does NOT restyle a
+       closed <select> — that needs appearance:none plus a drawn chevron. The
+       light arm below sets the mirror value for the same reason. */
     color-scheme: dark;
   }
 

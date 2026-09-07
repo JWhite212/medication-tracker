@@ -16,8 +16,11 @@
  * stylesheet at 23 — so at equal specificity the winner FLIPS between a hard
  * load and a client nav, and a plain F5 changes the palette.
  *
- * The tables below carry only the tokens that DIFFER between schemes, and
- * both carry the same key set. `theme: "dark"` still emits them, because a
+ * The tables below carry exactly the tokens the app.css light arm
+ * overrides, and both carry the same key set. Note that is NOT the same as
+ * "the tokens whose values differ": --color-accent-hover is identical in
+ * both schemes and still belongs here, because the light arm declares it and
+ * a dark-choosing user on a light OS needs it re-asserted. `theme: "dark"` still emits them, because a
  * dark-preferring user on a light OS would otherwise be left on the layered
  * light arm. tests/unit/theme-css.test.ts pins every value against app.css.
  */

@@ -303,19 +303,30 @@ have changed what **every** account sees, including the overwhelming majority si
 the `DD/MM/YYYY` default who never opened the page — a silent app-wide regression
 delivered as a bug fix, and a loss of the weekday the Log headings carry deliberately.
 
-So the preference maps to a **locale** instead: `en-GB` / `en-US` / `en-CA`. The default
-then reproduces every prior hardcoded format byte-for-byte (asserted in
-`tests/unit/time.test.ts`), and the setting genuinely reorders the fields for anyone who
-changes it. `formatUserDate` splits responsibility so this stays true as surfaces are
-added — the preference owns order and numeric-vs-named month, the call site owns which
-fields appear. `YYYY-MM-DD` is special-cased to force numeric month/day and a year,
-since it is the one value whose label promises a literal all-numeric shape.
+So the two named-month orders map to a **locale** instead: `DD/MM/YYYY` → `en-GB`,
+`MM/DD/YYYY` → `en-US`. The default then reproduces every prior hardcoded format
+byte-for-byte (asserted in `tests/unit/time.test.ts`), and the setting genuinely reorders
+the fields for anyone who changes it. `formatUserDate` splits responsibility so this
+stays true as surfaces are added — the preference owns order and numeric-vs-named month,
+the call site owns which fields appear.
+
+**`YYYY-MM-DD` is the exception, and it is not a locale.** The first cut of this repair
+mapped it to `en-CA` and let `Intl` render the whole string, which works on today's ICU
+and is why the empirical check passed. ECMA-402 does not promise it: field order and
+separator are CLDR data that is allowed to change, and `en-CA`'s short-date pattern
+already changed once in ICU 72, so a conformant implementation may return `15/04/2026`.
+`isoDate` therefore assembles the string from `formatToParts` — specified per field —
+and re-pads the widths. This matters more than the usual "don't parse localised output"
+caution because `formatUserDate` is reached from `.svelte` components, so the ICU that
+decides is the **viewer's browser**, not the pinned server one; and no test observing
+output on the server runtime can catch the divergence.
 
 **Four surfaces are labels and take the preference:** the Log day headings, the
 medication inventory-event history, the PDF report, and the session-expiry line on
-Settings → Security. The last two were also quietly wrong beforehand — the event history
-passed no `timeZone` at all, so it rendered in the _browser's_ zone while the rest of the
-app used the profile zone, and the security line used a bare `toLocaleDateString()`.
+Settings → Security. Two of them — the event history and the session-expiry line — were
+also quietly wrong beforehand: the event history passed no `timeZone` at all, so it
+rendered in the _browser's_ zone while the rest of the app used the profile zone, and the
+security line used a bare `toLocaleDateString()`.
 Routing both through the canonical formatter fixes that as a side effect. One accepted
 cosmetic change: the event history's day loses its leading zero (`05 Apr` → `5 Apr`),
 because unifying on one formatter is worth more than a per-site padding knob.

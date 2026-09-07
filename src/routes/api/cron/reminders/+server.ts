@@ -1,12 +1,9 @@
 import { json, error } from "@sveltejs/kit";
 import { env } from "$env/dynamic/private";
 import { timingSafeEqual } from "crypto";
-import { lt } from "drizzle-orm";
 import { checkOverdueMedications, checkLowInventoryMedications } from "$lib/server/reminders";
 import { pingHeartbeat } from "$lib/server/heartbeat";
-import { purgeExpiredReminderEvents } from "$lib/server/reminders/retention";
-import { db } from "$lib/server/db";
-import { passwordResetTokens, rateLimits } from "$lib/server/db/schema";
+import { runRetentionForTick } from "$lib/server/retention";
 import type { RequestHandler } from "./$types";
 
 // The reminder tick is sequential by design: reminders.ts awaits
@@ -43,17 +40,23 @@ export const GET: RequestHandler = async ({ request }) => {
   if (!safeCompare(authHeader, `Bearer ${cronSecret}`)) {
     error(401, "Unauthorized");
   }
-  await checkOverdueMedications();
-  await checkLowInventoryMedications();
+  // Retention runs whatever the sweeps did. It used to be three consecutive
+  // awaits BELOW them, so a throw in either sweep skipped every purge —
+  // invisibly, because the loud symptom is the missing reminders. The sweeps
+  // still propagate (a failed tick must be a failed tick, so the platform and
+  // the dead-man switch both see it), but not before cleanup has had its turn.
+  let sweepFailure: unknown = null;
+  try {
+    await checkOverdueMedications();
+    await checkLowInventoryMedications();
+  } catch (thrown) {
+    sweepFailure = thrown;
+  }
 
-  // Clean up expired password reset tokens
-  await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, new Date()));
+  // Every policy, independently, never throwing — see server/retention.ts.
+  await runRetentionForTick(new Date());
 
-  // Clean up expired rate limit entries
-  await db.delete(rateLimits).where(lt(rateLimits.resetAt, new Date()));
-
-  // Purge reminder_events past the retention window (see retention.ts).
-  await purgeExpiredReminderEvents(new Date());
+  if (sweepFailure) throw sweepFailure;
 
   // Last, and only on the success path. Everything above either awaited
   // cleanly or threw out of this handler, so reaching this line is the

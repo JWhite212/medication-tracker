@@ -2,7 +2,7 @@ import { error, fail } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { medications, users } from "$lib/server/db/schema";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
 import { applyImport } from "$lib/server/import/apply";
 import { buildPlanFromFile } from "$lib/server/import/pipeline";
@@ -183,11 +183,7 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
 
-    const { allowed, retryAfterMs } = await checkRateLimit(
-      `import-preview:${userId}`,
-      PREVIEW_MAX,
-      PREVIEW_WINDOW_MS,
-    );
+    const { allowed, retryAfterMs } = await enforceLimit(LIMITS.importPreview, userId);
     if (!allowed) {
       return fail(429, {
         importError: `Too many import previews. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
@@ -220,11 +216,7 @@ export const actions: Actions = {
     // is spent on every attempt; the tight one is spent only immediately
     // before a real write, so a mistyped password on a replace doesn't
     // burn one of the day's few imports.
-    const attempt = await checkRateLimit(
-      `import-attempt:${userId}`,
-      ATTEMPT_MAX,
-      ATTEMPT_WINDOW_MS,
-    );
+    const attempt = await enforceLimit(LIMITS.importAttempt, userId);
     if (!attempt.allowed) {
       return fail(429, {
         importError: `Too many import attempts. Try again in ${Math.ceil(attempt.retryAfterMs / 60000)} minutes.`,
@@ -295,7 +287,7 @@ export const actions: Actions = {
       });
     }
 
-    const commit = await checkRateLimit(`import-commit:${userId}`, COMMIT_MAX, COMMIT_WINDOW_MS);
+    const commit = await enforceLimit(LIMITS.importCommit, userId);
     if (!commit.allowed) {
       return fail(429, {
         importError: `Too many imports. Try again in ${Math.ceil(commit.retryAfterMs / 60000)} minutes.`,

@@ -1,13 +1,14 @@
 // @vitest-environment node
+import { rateLimitSurface } from "../helpers/rate-limit";
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { reauthTokens } from "../../../src/lib/server/db/schema";
 
 vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock);
 vi.mock("$lib/server/auth/password", () => ({ verifyPassword: async () => true }));
-vi.mock("$lib/server/auth/rate-limit", () => ({
-  checkRateLimit: async () => ({ allowed: true, retryAfterMs: 0 }),
-}));
+vi.mock("$lib/server/auth/rate-limit", () =>
+  rateLimitSurface({ primitive: async () => ({ allowed: true, retryAfterMs: 0 }) }),
+);
 
 import { pgDb } from "../helpers/pg-db";
 

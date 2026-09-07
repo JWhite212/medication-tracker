@@ -1,3 +1,4 @@
+import { rateLimitSurface } from "../helpers/rate-limit";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Route-level wiring test: `requireApiUser` and `buildSyncResponse` are
@@ -19,10 +20,7 @@ const checkRateLimit = vi.fn(async (key: string, max?: number, windowMs?: number
   rlCalls.push({ key, max, windowMs });
   return state.rateLimit;
 });
-vi.mock("$lib/server/auth/rate-limit", () => ({
-  checkRateLimit: (key: string, max?: number, windowMs?: number) =>
-    checkRateLimit(key, max, windowMs),
-}));
+vi.mock("$lib/server/auth/rate-limit", () => rateLimitSurface({ primitive: checkRateLimit }));
 
 const buildSyncResponse = vi.fn(async (_userId: string, _since: string | null, _epoch: number) => ({
   epoch: 2,

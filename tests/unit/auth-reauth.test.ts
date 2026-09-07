@@ -1,3 +1,4 @@
+import { rateLimitSurface } from "./helpers/rate-limit";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHash } from "crypto";
 
@@ -36,12 +37,14 @@ vi.mock("$lib/server/auth/password", () => ({
 // tests/unit/pg/rate-limit.test.ts. What belongs HERE is that confirmReauth
 // consults it and short-circuits — composition, not SQL semantics.
 const rlCalls: Array<{ key: string; max?: number; windowMs?: number }> = [];
-vi.mock("$lib/server/auth/rate-limit", () => ({
-  checkRateLimit: async (key: string, max?: number, windowMs?: number) => {
-    rlCalls.push({ key, max, windowMs });
-    return state.rateLimit;
-  },
-}));
+vi.mock("$lib/server/auth/rate-limit", () =>
+  rateLimitSurface({
+    primitive: async (key: string, max?: number, windowMs?: number) => {
+      rlCalls.push({ key, max, windowMs });
+      return state.rateLimit;
+    },
+  }),
+);
 
 const { confirmReauth, REAUTH_MAX_ATTEMPTS, REAUTH_WINDOW_MS, reauthMessage } =
   await import("../../src/lib/server/auth/reauth");

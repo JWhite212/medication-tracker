@@ -2,7 +2,7 @@ import { error, json } from "@sveltejs/kit";
 import { generateReport } from "$lib/server/export-pdf";
 import { generateCsvReport } from "$lib/server/export-csv";
 import { getOrCreatePreferences } from "$lib/server/preferences";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import {
   parseDayRangeParam,
   isoDayKey,
@@ -18,12 +18,7 @@ const RATE_MAX_REQUESTS = 10;
 export const GET: RequestHandler = async ({ locals, url }) => {
   if (!locals.user) error(401, "Unauthorized");
 
-  const rateKey = `export:${locals.user.id}`;
-  const { allowed, retryAfterMs } = await checkRateLimit(
-    rateKey,
-    RATE_MAX_REQUESTS,
-    RATE_WINDOW_MS,
-  );
+  const { allowed, retryAfterMs } = await enforceLimit(LIMITS.exportReport, locals.user.id);
   if (!allowed) {
     const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
     return json(

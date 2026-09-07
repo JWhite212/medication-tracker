@@ -3,7 +3,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { reauthTokens, users } from "$lib/server/db/schema";
 import { verifyPassword } from "$lib/server/auth/password";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { createHash, randomBytes } from "crypto";
 
 // Server-side re-authentication tokens for sensitive actions.
@@ -95,7 +95,7 @@ export async function confirmReauth(
   password: string,
   purpose: ReauthPurpose,
 ): Promise<ReauthResult> {
-  const limit = await checkRateLimit(`reauth:${userId}`, REAUTH_MAX_ATTEMPTS, REAUTH_WINDOW_MS);
+  const limit = await enforceLimit(LIMITS.reauth, userId);
   if (!limit.allowed) {
     return { ok: false, rateLimited: true, retryAfterMs: limit.retryAfterMs };
   }

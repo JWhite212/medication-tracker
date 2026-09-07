@@ -1,3 +1,4 @@
+import { rateLimitSurface } from "./helpers/rate-limit";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "./helpers/fake-db";
 import { users } from "$lib/server/db/schema";
@@ -26,9 +27,9 @@ vi.mock("$lib/server/auth/password", () => ({
 vi.mock("$app/environment", () => ({ dev: true }));
 vi.mock("$lib/server/auth/oauth", () => ({ hasOAuthProviders: () => false }));
 vi.mock("$lib/server/audit", () => ({ logAudit: async () => {} }));
-vi.mock("$lib/server/auth/rate-limit", () => ({
-  checkRateLimit: async () => ({ allowed: true, retryAfterMs: 0 }),
-}));
+vi.mock("$lib/server/auth/rate-limit", () =>
+  rateLimitSurface({ primitive: async () => ({ allowed: true, retryAfterMs: 0 }) }),
+);
 
 vi.mock("$lib/server/auth/lucia", () => ({
   lucia: {

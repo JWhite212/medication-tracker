@@ -7,7 +7,7 @@
 // rendered PDF and a lossy dose CSV.
 import { error, json } from "@sveltejs/kit";
 import { buildFullExport } from "$lib/server/api/export";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import type { RequestHandler } from "./$types";
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -16,11 +16,7 @@ const RATE_MAX_REQUESTS = 10;
 export const GET: RequestHandler = async ({ locals }) => {
   if (!locals.user) error(401, "Unauthorized");
 
-  const { allowed, retryAfterMs } = await checkRateLimit(
-    `export-full:${locals.user.id}`,
-    RATE_MAX_REQUESTS,
-    RATE_WINDOW_MS,
-  );
+  const { allowed, retryAfterMs } = await enforceLimit(LIMITS.exportFull, locals.user.id);
   if (!allowed) {
     const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
     return json(

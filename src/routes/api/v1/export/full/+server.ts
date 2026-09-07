@@ -5,17 +5,13 @@
 // full-account dump.
 import type { RequestHandler } from "@sveltejs/kit";
 import { requireApiUser } from "$lib/server/api/auth";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { buildFullExport } from "$lib/server/api/export";
 
 export const GET: RequestHandler = async ({ request }) => {
   const { user } = await requireApiUser(request);
 
-  const { allowed, retryAfterMs } = await checkRateLimit(
-    `api-export:${user.id}`,
-    10,
-    15 * 60 * 1000,
-  );
+  const { allowed, retryAfterMs } = await enforceLimit(LIMITS.apiExportFull, user.id);
   if (!allowed) {
     const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
     return new Response(JSON.stringify({ error: "rate_limited", retryAfterSeconds }), {

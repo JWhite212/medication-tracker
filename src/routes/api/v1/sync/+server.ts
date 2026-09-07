@@ -2,7 +2,7 @@ import { json, error } from "@sveltejs/kit";
 import type { RequestHandler } from "@sveltejs/kit";
 import { requireApiUser } from "$lib/server/api/auth";
 import { buildSyncResponse } from "$lib/server/api/sync";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { rateLimitedResponse } from "$lib/server/api/rate-limit-response";
 
 export const GET: RequestHandler = async ({ request, url }) => {
@@ -10,7 +10,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 
   // Generous per-user cap: a client may sync on launch, foreground, and
   // after each command drain, so this only stops a runaway loop.
-  const { allowed, retryAfterMs } = await checkRateLimit(`api-sync:${user.id}`, 120, 60_000);
+  const { allowed, retryAfterMs } = await enforceLimit(LIMITS.apiSync, user.id);
   if (!allowed) return rateLimitedResponse(retryAfterMs);
 
   const since = url.searchParams.get("since");

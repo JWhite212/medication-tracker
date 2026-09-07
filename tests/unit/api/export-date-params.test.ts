@@ -1,3 +1,4 @@
+import { rateLimitSurface } from "../helpers/rate-limit";
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
 
 /**
@@ -22,7 +23,7 @@ const checkRateLimit = vi.fn(async () => ({ allowed: true, retryAfterMs: 0 }));
 vi.mock("$lib/server/export-pdf", () => ({ generateReport }));
 vi.mock("$lib/server/export-csv", () => ({ generateCsvReport }));
 vi.mock("$lib/server/audit-export", () => ({ getAuditLogForExport, buildAuditCsv }));
-vi.mock("$lib/server/auth/rate-limit", () => ({ checkRateLimit }));
+vi.mock("$lib/server/auth/rate-limit", () => rateLimitSurface({ primitive: checkRateLimit }));
 vi.mock("$lib/server/preferences", () => ({
   getOrCreatePreferences: async () => ({
     exportFormat: "csv",

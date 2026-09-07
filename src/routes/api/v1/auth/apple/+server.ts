@@ -10,6 +10,7 @@ import { verifyAppleIdentityToken } from "$lib/server/api/apple";
 import { readJson } from "$lib/server/api/read-json";
 import { signPreAuthToken } from "$lib/server/api/preauth";
 import { toSessionUser } from "$lib/server/api/serialize";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 
 const PROVIDER = "apple";
 const body = z.object({
@@ -17,7 +18,23 @@ const body = z.object({
   fullName: z.string().max(200).optional(),
 });
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+  // This door had no limiter of any kind — the only credential door in the
+  // app that was entirely unbounded. Apple's signature check is the real
+  // gate, but verifying a token costs a JWKS fetch and a crypto verify, and
+  // an unbounded door is also an unbounded account-creation endpoint: the
+  // "create" branch below inserts a user for any valid identity.
+  //
+  // Keyed by address rather than by account because there is no account yet
+  // at this point — the token is the only thing presented.
+  const rate = await enforceLimit(LIMITS.appleSignIn, getClientAddress());
+  if (!rate.allowed) {
+    return json(
+      { error: "rate_limited", retryAfterSeconds: Math.ceil(rate.retryAfterMs / 1000) },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rate.retryAfterMs / 1000)) } },
+    );
+  }
+
   const parsed = body.safeParse(await readJson(request));
   if (!parsed.success) throw error(400, "Invalid payload");
 

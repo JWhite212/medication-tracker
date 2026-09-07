@@ -4,14 +4,14 @@ import { pushSubscriptions } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { pushSubscriptionSchema } from "$lib/utils/validation";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import type { RequestHandler } from "@sveltejs/kit";
 
 export const POST: RequestHandler = async ({ request, locals }) => {
   if (!locals.user) throw error(401);
   const userId = locals.user.id;
 
-  const { allowed } = await checkRateLimit(`push-sub:${userId}`, 10, 60_000);
+  const { allowed } = await enforceLimit(LIMITS.pushSubscribe, userId);
   if (!allowed) throw error(429, "Too many requests");
 
   const body = await request.json();

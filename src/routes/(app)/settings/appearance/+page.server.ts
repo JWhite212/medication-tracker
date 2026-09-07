@@ -1,6 +1,6 @@
 import { error, fail } from "@sveltejs/kit";
 import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferences";
-import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import { appearanceFieldSchemas, APPEARANCE_ACTION_KEYS } from "$lib/appearance/schema";
 import type { AppearanceKey } from "$lib/appearance/registry";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
@@ -41,11 +41,7 @@ function fieldAction(key: AppearanceKey) {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
 
-    const { allowed, retryAfterMs } = await checkRateLimit(
-      `appearance:${userId}`,
-      APPEARANCE_MAX,
-      APPEARANCE_WINDOW_MS,
-    );
+    const { allowed, retryAfterMs } = await enforceLimit(LIMITS.appearanceSave, userId);
     if (!allowed) {
       return fail(429, {
         key,

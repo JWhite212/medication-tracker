@@ -1,3 +1,4 @@
+import { rateLimitSurface } from "./helpers/rate-limit";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // The real preauth module, not a mock: the whole point of this suite is
@@ -39,10 +40,7 @@ const checkRateLimit = vi.fn(async (key: string, max?: number, windowMs?: number
   }
   return state.rateLimit;
 });
-vi.mock("$lib/server/auth/rate-limit", () => ({
-  checkRateLimit: (key: string, max?: number, windowMs?: number) =>
-    checkRateLimit(key, max, windowMs),
-}));
+vi.mock("$lib/server/auth/rate-limit", () => rateLimitSurface({ primitive: checkRateLimit }));
 
 const createSession = vi.fn(async (_userId: string, _attrs: object) => ({ id: "sess-1" }));
 vi.mock("$lib/server/auth/lucia", () => ({

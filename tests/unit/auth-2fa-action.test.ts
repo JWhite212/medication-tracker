@@ -10,7 +10,6 @@ vi.mock("$env/dynamic/private", () => ({ env: { ENCRYPTION_KEY: "test-encryption
 const state = {
   totpResult: false,
   rateLimit: { allowed: true, retryAfterMs: 0 },
-  jtiBurnAllowed: true,
 };
 const rlCalls: Array<{ key: string; max: number | undefined; windowMs: number | undefined }> = [];
 
@@ -25,11 +24,19 @@ vi.mock("$lib/server/auth/totp", () => ({
     verifyAndConsumeTOTPCode(userId, code),
 }));
 
+// A real single-use ledger, not a switch. The burn is `checkRateLimit(key,
+// 1, ...)`, so modelling it as "first call for a key wins, later calls lose"
+// is faithful — and it is the only way a replay test can prove the key is
+// derived from `claims.jti`. A boolean switch would pass even if consumption
+// keyed on something constant.
+const spentKeys = new Set<string>();
 const checkRateLimit = vi.fn(async (key: string, max?: number, windowMs?: number) => {
   rlCalls.push({ key, max, windowMs });
-  // The jti burn is a rate-limit call with max=1; give it its own switch so
-  // a test can simulate a token that has already been spent.
-  if (key.startsWith("preauth:")) return { allowed: state.jtiBurnAllowed, retryAfterMs: 0 };
+  if (key.startsWith("preauth:")) {
+    if (spentKeys.has(key)) return { allowed: false, retryAfterMs: 0 };
+    spentKeys.add(key);
+    return { allowed: true, retryAfterMs: 0 };
+  }
   return state.rateLimit;
 });
 vi.mock("$lib/server/auth/rate-limit", () => ({
@@ -74,7 +81,7 @@ const validToken = () => signPreAuthToken("pending-user");
 beforeEach(() => {
   state.totpResult = false;
   state.rateLimit = { allowed: true, retryAfterMs: 0 };
-  state.jtiBurnAllowed = true;
+  spentKeys.clear();
   rlCalls.length = 0;
   verifySecondFactorForLogin.mockClear();
   verifyAndConsumeTOTPCode.mockClear();
@@ -185,17 +192,42 @@ describe("the claim is single-use", () => {
     expect(createSession).toHaveBeenCalled();
   });
 
-  it("a replayed cookie mints no second session", async () => {
-    // The burn is the same mechanism /api/v1/auth/2fa uses: max=1 against
-    // the rate-limit ledger, so the second attempt loses.
+  it("redeems a token once, then refuses that SAME token", async () => {
+    // Deliberately the same token twice, against a mock that spends keys for
+    // real. Minting a second token and forcing the burn to fail would pass
+    // even if consumption keyed on something constant — this fails unless
+    // the key is derived from the claim's own jti.
     state.totpResult = true;
-    state.jtiBurnAllowed = false;
+    const token = validToken();
 
-    await expect(call("123456", validToken())).rejects.toMatchObject({
+    await expect(call("123456", token)).rejects.toMatchObject({ location: "/dashboard" });
+    expect(createSession).toHaveBeenCalledTimes(1);
+
+    await expect(call("123456", token)).rejects.toMatchObject({
       status: 302,
       location: "/auth/login",
     });
-    expect(createSession).not.toHaveBeenCalled();
+    expect(createSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("...while a DIFFERENT token still works, so the burn is per-claim", async () => {
+    // The other half of the proof: spending one token must not latch the
+    // door shut for every other claim.
+    state.totpResult = true;
+
+    await expect(call("123456", validToken())).rejects.toMatchObject({ location: "/dashboard" });
+    await expect(call("123456", validToken())).rejects.toMatchObject({ location: "/dashboard" });
+    expect(createSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("the burned key carries the claim's own jti", async () => {
+    state.totpResult = true;
+    const token = validToken();
+    const jti = JSON.parse(Buffer.from(token.split(".")[0], "base64url").toString()).jti;
+
+    await expect(call("123456", token)).rejects.toBeDefined();
+
+    expect(rlCalls.map((c) => c.key)).toContain(`preauth:${jti}`);
   });
 });
 

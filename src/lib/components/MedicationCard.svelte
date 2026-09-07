@@ -2,6 +2,11 @@
   import type { MedicationWithStats } from "$lib/types";
   import { getMedicationBackground } from "$lib/utils/medication-style";
   import { expectedWeeklyDoses, adherencePercent } from "$lib/utils/adherence";
+  import { deserialize } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
+  import type { ActionResult } from "@sveltejs/kit";
+  import { showToast } from "$components/ui/Toast.svelte";
+  import { actionErrorMessage } from "$lib/utils/form-errors";
   import TimeSince from "$components/TimeSince.svelte";
   import Sparkline from "$components/Sparkline.svelte";
 
@@ -24,6 +29,24 @@
 
   let logging = $state(false);
 
+  /**
+   * Quick-log from the Medications list.
+   *
+   * This posts to the dashboard's action from a page that does not own it, so
+   * it cannot use `use:enhance` — the card is inside an `<a>` and there is no
+   * local form to progressively enhance. It stays a `fetch`, but it now does
+   * the two things `enhance` would have done for it and previously did not.
+   *
+   * It never checked `res.ok`. A dose logged against a medication deleted in
+   * another tab returned 404 and the card showed a spinner, then nothing —
+   * no toast, no error, no change. The user had every reason to believe the
+   * dose was recorded.
+   *
+   * And it never invalidated. Even a SUCCESSFUL log left "Last taken", the
+   * supply-days-left chip, the adherence bar and the sparkline showing
+   * pre-log values until the next navigation, so the card actively contradicted
+   * the action the user had just taken.
+   */
   async function quickLog(event: Event) {
     event.preventDefault();
     event.stopPropagation();
@@ -32,7 +55,21 @@
       const form = new FormData();
       form.set("medicationId", medication.id);
       form.set("quantity", "1");
-      await fetch("/dashboard?/logDose", { method: "POST", body: form });
+
+      const response = await fetch("/dashboard?/logDose", { method: "POST", body: form });
+      const result = deserialize(await response.text()) as ActionResult;
+
+      if (result.type === "success") {
+        showToast(`${medication.name} logged`, "success");
+        // Re-run this page's load so the card's own stats catch up.
+        await invalidateAll();
+      } else {
+        showToast(actionErrorMessage(result), "error");
+      }
+    } catch (error) {
+      // A network failure never reaches `deserialize`, so it needs its own
+      // arm — otherwise it is the one path that stays silent.
+      showToast(actionErrorMessage({ type: "error", error } as ActionResult), "error");
     } finally {
       logging = false;
     }

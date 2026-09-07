@@ -2,6 +2,7 @@
   import { enhance } from "$app/forms";
   import type { Medication, MedicationTimingStatus } from "$lib/types";
   import { showToast } from "$components/ui/Toast.svelte";
+  import { actionErrorMessage } from "$lib/utils/form-errors";
   import { getMedicationBackground, getReadableTextColor } from "$lib/utils/medication-style";
   import { formatDueIn } from "$lib/utils/time";
 
@@ -43,6 +44,12 @@
             const label = qty > 1 ? `${med.name} ×${qty} logged` : `${med.name} logged`;
             showToast(label, "success");
             triggerFlash(med.id);
+          } else if (result.type === "failure" || result.type === "error") {
+            // Without this arm the button spun and nothing else happened.
+            // `logDose` returns fail(404) for a medication deleted in another
+            // tab, so the dose silently was not recorded and the user had
+            // every reason to believe it was.
+            showToast(actionErrorMessage(result), "error");
           }
           await update();
         };

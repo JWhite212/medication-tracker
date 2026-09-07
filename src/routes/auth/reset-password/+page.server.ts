@@ -7,6 +7,7 @@ import { users, passwordResetTokens } from "$lib/server/db/schema";
 import { sendPasswordResetEmail } from "$lib/server/email";
 import { eq } from "drizzle-orm";
 import type { Actions, PageServerLoad } from "./$types";
+import { logWarn } from "$lib/server/log";
 
 export const load: PageServerLoad = async ({ locals, url }) => {
   if (locals.user) redirect(302, "/dashboard");
@@ -62,7 +63,11 @@ export const actions: Actions = {
       if (!result.ok) {
         // Log the typed reason but never the token; the response is
         // still "success" so we don't reveal whether the email exists.
-        console.warn(`password reset email skipped (${result.reason}): ${result.message}`);
+        logWarn("password reset email skipped", {
+          scope: "auth.resetPassword",
+          reason: result.reason,
+          detail: result.message,
+        });
       }
     }
 

@@ -16,6 +16,7 @@ import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { db } from "$lib/server/db";
 import { users, emailVerificationTokens, medications } from "$lib/server/db/schema";
 import type { Actions, PageServerLoad } from "./$types";
+import { logWarn } from "$lib/server/log";
 
 export const load: PageServerLoad = async ({ locals }) => {
   const prefs = await getOrCreatePreferences(locals.user!.id);
@@ -107,7 +108,12 @@ export const actions: Actions = {
       // categorised message from describeTestPushResult goes back to
       // the browser.
       if (!result.ok) {
-        console.warn(`test push failed (${result.reason}): ${result.message}`);
+        logWarn("test push failed", {
+          scope: "notifications.testPush",
+          userId: locals.user.id,
+          reason: result.reason,
+          detail: result.message,
+        });
       }
       const status =
         !result.ok && result.reason === "not_configured"
@@ -164,7 +170,12 @@ export const actions: Actions = {
 
     const result = await sendVerificationEmail(user.email, rawToken);
     if (!result.ok) {
-      console.warn(`resend verification email failed (${result.reason}): ${result.message}`);
+      logWarn("resend verification email failed", {
+        scope: "notifications.resendVerification",
+        userId: locals.user.id,
+        reason: result.reason,
+        detail: result.message,
+      });
       return fail(500, {
         resendError: "Could not send the verification email. Please try again later.",
       });

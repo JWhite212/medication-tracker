@@ -19,6 +19,7 @@ import {
 } from "./reminders/domain";
 import { withReminderClaim } from "./reminders/dispatch";
 import { resolveChannels } from "./notifications/resolve";
+import { logWarn } from "$lib/server/log";
 
 export {
   computeOverdueSlot,
@@ -293,17 +294,21 @@ export async function checkLowInventoryMedications() {
       try {
         pushWillFire = await hasPushSubscriptions(med.userId);
       } catch (err) {
-        console.warn(
-          `low-inventory push probe failed for med=${med.medicationId}: ${err instanceof Error ? err.message : "non-Error"}`,
+        logWarn(
+          "low-inventory push probe failed",
+          { scope: "reminders.lowInventory", medicationId: med.medicationId, userId: med.userId },
+          err,
         );
         continue;
       }
     }
 
     if (!emailWillFire && !pushWillFire) {
-      console.warn(
-        `low-inventory skipped for med=${med.medicationId}: no enabled channel can fire`,
-      );
+      logWarn("low-inventory skipped — no enabled channel can fire", {
+        scope: "reminders.lowInventory",
+        medicationId: med.medicationId,
+        userId: med.userId,
+      });
       continue;
     }
 

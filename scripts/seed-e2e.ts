@@ -37,7 +37,7 @@ export const E2E_EMAIL_PATTERN = "%@e2e.medtracker.test";
 // `workers: 1`, so mutating the shared row would pollute whatever anon-project
 // test happens to be running concurrently against the same account.
 export const E2E_LIGHT_EMAIL = "e2e-light@e2e.medtracker.test";
-export const E2E_LIGHT_PASSWORD = "e2e-medtracker-2026";
+export const E2E_LIGHT_PASSWORD = E2E_PASSWORD;
 export const E2E_LIGHT_NAME = "E2E Seeded (Light)";
 
 async function getDb() {

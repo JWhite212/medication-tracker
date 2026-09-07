@@ -15,17 +15,13 @@ const token = (page: Page, name: string) =>
   page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
 
 test.describe("theme resolution", () => {
-  // `test.use({ contrast: "more" })` does not typecheck against Playwright
-  // 1.59.1: `contrast` is a `BrowserContextOptions` / `Page.emulateMedia`
-  // field, not one of `PlaywrightTestOptions` (verified against
-  // node_modules/playwright/types/test.d.ts — no `contrast` key on that
-  // interface). Applying it in `beforeEach`, before each test's first
-  // navigation, reproduces the same effect.
-  test.beforeEach(async ({ page }) => {
-    await page.emulateMedia({ contrast: "more" });
-  });
-
   test("resolves the same token on a hard load and a client-side nav", async ({ page }) => {
+    // `test.use({ contrast: "more" })` does not typecheck against Playwright
+    // 1.59.1: `contrast` is a `BrowserContextOptions` / `Page.emulateMedia`
+    // field, not one of `PlaywrightTestOptions` (verified against
+    // node_modules/playwright/types/test.d.ts — no `contrast` key on that
+    // interface). Applied here, before the first navigation, instead.
+    await page.emulateMedia({ contrast: "more" });
     await login(page, SEEDED_EMAIL, SEEDED_PASSWORD);
 
     await page.goto("/dashboard");

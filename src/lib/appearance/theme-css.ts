@@ -9,12 +9,18 @@
  * dev vite-plugin-svelte's `code.lastIndexOf('</style>')` HMR hack appends a
  * stray ` *{}` to the CSS. Built here with the closing tag split instead.
  *
- * Why `:root:root` and not `:root`: specificity (0,2,0) beats the unlayered
- * `prefers-contrast` overrides in app.css regardless of head order. Measured
- * on the real build, SSR puts this block at head index 24 and the stylesheet
- * link at 25, while a client-side navigation appends it at 41 against a
- * stylesheet at 23 — so at equal specificity the winner FLIPS between a hard
- * load and a client nav, and a plain F5 changes the palette.
+ * Why `:root:root` and not `:root`: this block is unlayered, and app.css's
+ * `prefers-contrast` overrides now live inside `@layer theme` — an unlayered
+ * normal declaration always beats a layered one regardless of specificity or
+ * source order, so today the layer alone is enough to win. The extra
+ * specificity is kept as insurance against that block being unlayered again:
+ * if it ever is, `:root:root` (0,2,0) still beats a plain `:root` regardless
+ * of head order, where equal specificity would not. Measured on the real
+ * build when both blocks were unlayered: SSR put this block at head index 24
+ * and the stylesheet link at 25, while a client-side navigation appended it
+ * at 41 against a stylesheet at 23 — so at equal specificity the winner
+ * FLIPPED between a hard load and a client nav, and a plain F5 changed the
+ * palette.
  *
  * The tables below carry exactly the tokens the app.css light arm
  * overrides, and both carry the same key set. Note that is NOT the same as
@@ -156,6 +162,14 @@ function arm(scheme: keyof typeof SCHEMES, accent: string, indent: string): stri
   const body = [
     `${indent}  color-scheme: ${s.colorScheme};`,
     declarations(s.tokens, `${indent}  `),
+    // Looks dead — `readableInk` only ever returns `s.inkOverlay` (already
+    // known-safe) or a `compositeOver` result built from READABLE_LIGHT /
+    // READABLE_DARK, both 6-digit — so STRICT_HEX never actually rejects
+    // anything today. Keep it anyway: it is unreachable only by that
+    // coincidence, not by contract (`contrast.ts`'s HEX_RE accepts 3-digit
+    // hex, STRICT_HEX deliberately does not), and this is the one string
+    // that reaches `{@html}` below. For that string the rule is
+    // requirement, not defence in depth.
     `${indent}  --color-accent-ink: ${STRICT_HEX.test(ink) ? ink : s.inkOverlay};`,
   ].join("\n");
   return [

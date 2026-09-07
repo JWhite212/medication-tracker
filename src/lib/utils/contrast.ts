@@ -3,8 +3,8 @@
  *
  * This maths existed twice — privately in `utils/medication-style.ts` and
  * again as `accentFg()` in `routes/(app)/+layout.svelte` — with the same
- * formula written two different ways. The per-scheme accent derivation in a
- * later phase needs a third caller, so it lives here instead.
+ * formula written two different ways. The per-scheme accent derivation
+ * (theme light/dark/system) is a third caller, so it lives here instead.
  *
  * It sits in `utils/` and not `server/` because both existing consumers are
  * client-reachable.
@@ -94,6 +94,12 @@ export const INK_BACKDROP_LIGHT = "#e2e5ee";
 
 /**
  * Shift `colour` toward `overlay` until it is legible as text on `backdrop`.
+ *
+ * Exists for `--color-accent-ink`: a user-chosen accent is a fill colour,
+ * not text, and roughly 133 text/border/ring sites depend on a legible
+ * derivative of it. `accent` and `accent-ink` cannot be the same token —
+ * `#4f46e5` measures 1.99:1 as text, nowhere near AA — which is the one
+ * fact that stops someone "simplifying" the two back into one.
  *
  * Dark scheme: lighten toward white against the lightest surface.
  * Light scheme: darken toward black against the darkest surface.

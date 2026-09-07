@@ -3,6 +3,7 @@ import { generateReport } from "$lib/server/export-pdf";
 import { generateCsvReport } from "$lib/server/export-csv";
 import { getOrCreatePreferences } from "$lib/server/preferences";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
+import type { DateFormat } from "$lib/utils/time";
 import type { RequestHandler } from "./$types";
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -47,6 +48,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   const format = url.searchParams.get("format") ?? preferences.exportFormat ?? "pdf";
   const dateStr = fromDate.toISOString().split("T")[0];
   const timeFormat = preferences.timeFormat as "12h" | "24h";
+  const dateFormat = preferences.dateFormat as DateFormat;
 
   if (format === "csv") {
     const csv = await generateCsvReport(
@@ -71,6 +73,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     toDate,
     locals.user.name,
     timeFormat,
+    dateFormat,
   );
 
   return new Response(new Uint8Array(pdf), {

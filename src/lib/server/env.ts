@@ -8,7 +8,26 @@ import { env as privateEnv } from "$env/dynamic/private";
 import { env as publicEnv } from "$env/dynamic/public";
 import { dev, building } from "$app/environment";
 
-const required = ["DATABASE_URL"] as const;
+/**
+ * Variables whose absence must stop the boot rather than surface later as a
+ * 500 in the middle of someone's login.
+ *
+ * `ENCRYPTION_KEY` is here because its absence has the worst possible shape:
+ * it fails AFTER the password has been accepted. It is the HMAC key for the
+ * pre-auth claim that carries a user between the password step and the 2FA
+ * step, and the AES key for `users.totp_secret`. Without it a 2FA-enabled
+ * account cannot log in at all — but the app boots clean and every other
+ * page works, so the first symptom is a user who cannot get in and a stack
+ * trace nobody is watching for. That is the exact shape of the CRON_SECRET
+ * outage that ran undetected for four months (see CLAUDE.md).
+ *
+ * `CRON_SECRET` is deliberately NOT here, despite having caused exactly that
+ * outage. Without it only the reminder sweep fails; every page still works.
+ * Refusing to boot the whole app over a background job would turn a degraded
+ * feature into a total outage, and that failure already has its own detector
+ * — the cron dead-man switch added in #128.
+ */
+const required = ["DATABASE_URL", "ENCRYPTION_KEY"] as const;
 
 // `building` is true while SvelteKit prerenders pages at build time —
 // the app boots there with no runtime secrets available (CI and local

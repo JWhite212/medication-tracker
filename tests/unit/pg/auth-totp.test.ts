@@ -17,8 +17,13 @@ vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock)
 
 import { pgDb } from "../helpers/pg-db";
 
-const { generateTOTPSecret, encryptTOTPSecret, verifyAndConsumeTOTPCode, currentTOTPStep } =
-  await import("../../../src/lib/server/auth/totp");
+const {
+  generateTOTPSecret,
+  encryptTOTPSecret,
+  verifyAndConsumeTOTPCode,
+  verifySecondFactorForLogin,
+  currentTOTPStep,
+} = await import("../../../src/lib/server/auth/totp");
 
 function currentCode(secret: string): string {
   return generateTOTP(decodeBase32(secret), 30, 6);
@@ -39,8 +44,12 @@ beforeEach(async () => {
   await pgDb.reset();
 });
 
-async function seedUserWithSecret(secret: string, totpLastCounter: number | null = null) {
-  await pgDb.seedUser({ totpSecret: encryptTOTPSecret(secret), totpLastCounter });
+async function seedUserWithSecret(
+  secret: string,
+  totpLastCounter: number | null = null,
+  twoFactorEnabled = true,
+) {
+  await pgDb.seedUser({ totpSecret: encryptTOTPSecret(secret), totpLastCounter, twoFactorEnabled });
 }
 
 async function storedCounter(): Promise<number | null> {
@@ -95,5 +104,54 @@ describe("verifyAndConsumeTOTPCode against real Postgres", () => {
     // The compare-and-set is what makes this deterministic. A read-then-write
     // would let both through.
     expect(results.filter(Boolean)).toHaveLength(1);
+  });
+});
+
+describe("verifySecondFactorForLogin — the login arm", () => {
+  // `setupTwoFactor` writes `totpSecret` when it renders the QR code, before
+  // the user confirms, and nothing clears it if they walk away. So a row can
+  // hold a live, screen-displayed secret while `twoFactorEnabled` is false.
+  // The enrolment door must still accept that code (it is what turns the flag
+  // on); a LOGIN door must not, or the abandoned secret is a standalone
+  // credential.
+  it("rejects a valid code when the account never enabled 2FA", async () => {
+    const secret = generateTOTPSecret();
+    await seedUserWithSecret(secret, null, false);
+
+    expect(await verifySecondFactorForLogin("u1", currentCode(secret))).toBe(false);
+  });
+
+  it("...while the enrolment arm still accepts the very same code", async () => {
+    const secret = generateTOTPSecret();
+    await seedUserWithSecret(secret, null, false);
+
+    expect(await verifyAndConsumeTOTPCode("u1", currentCode(secret))).toBe(true);
+  });
+
+  it("accepts once the flag is on, and stamps the step like its sibling", async () => {
+    const secret = generateTOTPSecret();
+    await seedUserWithSecret(secret, null, true);
+
+    expect(await verifySecondFactorForLogin("u1", currentCode(secret))).toBe(true);
+    expect(await storedCounter()).toBe(currentTOTPStep());
+  });
+
+  it("does not consume the step when it rejects on the flag", async () => {
+    // A rejected login attempt must not burn the counter, or it would deny
+    // the user their next legitimate code after they finish enrolling.
+    const secret = generateTOTPSecret();
+    await seedUserWithSecret(secret, null, false);
+
+    await verifySecondFactorForLogin("u1", currentCode(secret));
+    expect(await storedCounter()).toBeNull();
+  });
+
+  it("still rejects a replay through the login arm", async () => {
+    const secret = generateTOTPSecret();
+    await seedUserWithSecret(secret, null, true);
+    const code = currentCode(secret);
+
+    expect(await verifySecondFactorForLogin("u1", code)).toBe(true);
+    expect(await verifySecondFactorForLogin("u1", code)).toBe(false);
   });
 });

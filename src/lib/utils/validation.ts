@@ -652,3 +652,12 @@ export const nameMappingSchema = z.record(
     z.object({ action: z.literal("skip") }),
   ]),
 );
+
+/**
+ * The proof a destructive `/api/v1` command carries.
+ *
+ * Minted by `POST /api/v1/auth/reauth` against the account password and
+ * redeemed single-use by `requireRecentReauth`. The browser doors take the
+ * password inline instead; this is the same gate over a different transport.
+ */
+export const reauthTokenPayload = z.object({ reauthToken: z.string().min(1) });

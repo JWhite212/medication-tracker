@@ -3,7 +3,7 @@ import { eq, and, count, ne } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications, sessions, auditLogs } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
-import { confirmReauth } from "$lib/server/auth/reauth";
+import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
 import { logAudit } from "$lib/server/audit";
 import {
   wipeArchivedMedications as wipeArchivedMedicationsForUser,
@@ -47,7 +47,7 @@ async function requirePassword(
   const password = String(formData.get("password") ?? "");
   if (!password) return { ok: false, error: "Password is required to confirm this action." };
   const reauth = await confirmReauth(userId, password, purpose);
-  if (!reauth.ok) return { ok: false, error: "Incorrect password." };
+  if (!reauth.ok) return { ok: false, error: reauthMessage(reauth) };
   return { ok: true };
 }
 

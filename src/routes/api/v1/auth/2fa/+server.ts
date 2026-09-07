@@ -6,7 +6,7 @@ import { users } from "$lib/server/db/schema";
 import { eq } from "drizzle-orm";
 import { verifyPreAuthToken } from "$lib/server/api/preauth";
 import { readJson } from "$lib/server/api/read-json";
-import { verifyAndConsumeTOTPCode } from "$lib/server/auth/totp";
+import { verifySecondFactorForLogin } from "$lib/server/auth/totp";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
 import { lucia } from "$lib/server/auth/lucia";
 import { toSessionUser } from "$lib/server/api/serialize";
@@ -31,7 +31,11 @@ export const POST: RequestHandler = async ({ request }) => {
     );
   }
 
-  const ok = await verifyAndConsumeTOTPCode(claims.userId, parsed.data.code);
+  // The LOGIN arm, same as /auth/2fa. Both doors consume the same signed
+  // claim, so a `pending_2fa` cookie value is byte-for-byte a valid
+  // `preAuthToken` — leaving one door on the enrolment arm would make the
+  // other's check bypassable simply by changing transport.
+  const ok = await verifySecondFactorForLogin(claims.userId, parsed.data.code);
   if (!ok) throw error(401, "Invalid code");
 
   // Burn the token's jti atomically (maxAttempts=1 against the

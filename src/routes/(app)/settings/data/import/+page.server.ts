@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { medications, users } from "$lib/server/db/schema";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
-import { confirmReauth } from "$lib/server/auth/reauth";
+import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
 import { applyImport } from "$lib/server/import/apply";
 import { buildPlanFromFile } from "$lib/server/import/pipeline";
 import { planIsEmpty } from "$lib/server/import/plan";
@@ -253,7 +253,7 @@ export const actions: Actions = {
           return fail(400, { importError: "Enter your password to replace all data." });
         }
         const reauth = await confirmReauth(userId, password, "import_replace_data");
-        if (!reauth.ok) return fail(400, { importError: "Incorrect password." });
+        if (!reauth.ok) return fail(400, { importError: reauthMessage(reauth) });
       } else {
         const phrase = String(upload.formData.get("confirmPhrase") ?? "").trim();
         if (phrase !== REPLACE_PHRASE) {

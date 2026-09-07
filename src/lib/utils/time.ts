@@ -544,6 +544,45 @@ export function formatDateTimeLocal(date: Date, timezone: string): string {
 }
 
 /**
+ * The instant a dose-edit submission means, given what it started as.
+ *
+ * A `datetime-local` value cannot express WHICH of two instants it names on
+ * a fall-back day. Europe/London 2026-10-25 has 01:30 twice — 00:30Z and
+ * 01:30Z — and both render as "2026-10-25T01:30". `parseDateTimeLocal`
+ * resolves that to the earlier one by policy, so a dose stored at the second
+ * occurrence, opened and saved WITHOUT TOUCHING ANYTHING, silently moved an
+ * hour earlier. One hour a year, but it corrupts the history that adherence,
+ * the heatmap and refill forecasting are computed from.
+ *
+ * The form carries the instant it rendered. If the submitted wall clock is
+ * the one that instant renders as, nothing was edited and the original
+ * instant is returned unchanged — which also preserves sub-minute precision
+ * the `HH:mm` control cannot show. Anything else is a real edit and resolves
+ * normally, taking the documented earlier-of-two policy.
+ *
+ * Comparing rendered forms rather than trusting a flag is deliberate: it
+ * cannot be fooled by a client that submits a stale `originalTakenAt`
+ * alongside a genuinely changed time, because the two would not match.
+ */
+export function resolveEditedInstant(
+  datetimeLocal: string,
+  originalIso: string | undefined,
+  timezone: string,
+): Date {
+  if (originalIso) {
+    const original = new Date(originalIso);
+    if (
+      !Number.isNaN(original.getTime()) &&
+      formatDateTimeLocal(original, timezone) === datetimeLocal.slice(0, 16)
+    ) {
+      return original;
+    }
+  }
+
+  return parseDateTimeLocal(datetimeLocal, timezone);
+}
+
+/**
  * Parse a datetime-local input value (e.g. "2026-04-15T18:20") as a Date in
  * the given IANA timezone. datetime-local carries no zone, so the wall clock
  * it names has to be resolved — which is `wallClockToInstant`'s whole job.

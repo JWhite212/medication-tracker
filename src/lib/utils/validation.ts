@@ -243,6 +243,11 @@ function isDateTimeLocal(value: string): boolean {
 export const doseEditSchema = z.object({
   doseId: z.string().min(1),
   takenAt: z.string().refine(isDateTimeLocal, "Enter a valid date and time"),
+  // The instant the form rendered, echoed back so an UNCHANGED save keeps
+  // it. A datetime-local value cannot say which of two instants it names on
+  // a fall-back day — see `resolveEditedInstant`. Optional, because a client
+  // that omits it simply gets the normal resolution.
+  originalTakenAt: z.string().datetime().optional(),
   quantity: z.coerce.number().int().min(1).max(10),
   notes: z.string().max(500).optional(),
   sideEffects: sideEffectsField,

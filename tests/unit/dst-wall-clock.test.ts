@@ -11,6 +11,7 @@ import {
   parseDayRangeParam,
   isCalendarDay,
   inclusiveDayCount,
+  resolveEditedInstant,
 } from "$lib/utils/time";
 import { computeScheduleSlots } from "$lib/utils/schedule";
 import { doseEditSchema } from "$lib/utils/validation";
@@ -793,5 +794,89 @@ describe("doseEditSchema.takenAt — every time field is bounded", () => {
         takenAt.slice(0, 16),
       );
     }
+  });
+});
+
+describe("resolveEditedInstant — an unchanged Save changes nothing", () => {
+  const tz = "Europe/London";
+  // 2026-10-25 has 01:30 TWICE in London: 00:30Z on BST, 01:30Z on GMT.
+  const firstOccurrence = new Date("2026-10-25T00:30:00.000Z");
+  const secondOccurrence = new Date("2026-10-25T01:30:00.000Z");
+
+  it("both ambiguous instants really do render identically", () => {
+    // The premise. If this stopped being true the rest of this block would
+    // be testing nothing.
+    expect(formatDateTimeLocal(firstOccurrence, tz)).toBe("2026-10-25T01:30");
+    expect(formatDateTimeLocal(secondOccurrence, tz)).toBe("2026-10-25T01:30");
+  });
+
+  it("keeps the SECOND occurrence when the form comes back untouched", () => {
+    // Without the carried instant this resolved to 00:30Z — a dose the user
+    // never edited, moved an hour earlier, in the history that adherence and
+    // refill forecasting are computed from.
+    const result = resolveEditedInstant(
+      formatDateTimeLocal(secondOccurrence, tz),
+      secondOccurrence.toISOString(),
+      tz,
+    );
+    expect(result.toISOString()).toBe("2026-10-25T01:30:00.000Z");
+  });
+
+  it("keeps the FIRST occurrence too, rather than snapping to a policy", () => {
+    const result = resolveEditedInstant(
+      formatDateTimeLocal(firstOccurrence, tz),
+      firstOccurrence.toISOString(),
+      tz,
+    );
+    expect(result.toISOString()).toBe("2026-10-25T00:30:00.000Z");
+  });
+
+  it("a REAL edit resolves normally, carried instant notwithstanding", () => {
+    // Moving the dose to 02:30 is a genuine change on the same fall-back
+    // day, so the carried instant must not override what the user asked for.
+    const result = resolveEditedInstant("2026-10-25T02:30", secondOccurrence.toISOString(), tz);
+    expect(result.toISOString()).toBe("2026-10-25T02:30:00.000Z");
+  });
+
+  it("an edit INTO the ambiguous hour still takes the earlier-of-two policy", () => {
+    // Editing 02:30 down to 01:30 names a wall clock that happens twice and
+    // carries no instant that renders as it, so the documented policy
+    // applies and nothing here special-cases it.
+    const from0230 = new Date("2026-10-25T02:30:00.000Z");
+    const result = resolveEditedInstant("2026-10-25T01:30", from0230.toISOString(), tz);
+    expect(result.toISOString()).toBe("2026-10-25T00:30:00.000Z");
+  });
+
+  it("preserves sub-minute precision the HH:mm control cannot show", () => {
+    const precise = new Date("2026-06-15T12:30:45.000Z");
+    const result = resolveEditedInstant(
+      formatDateTimeLocal(precise, tz),
+      precise.toISOString(),
+      tz,
+    );
+    expect(result.toISOString()).toBe("2026-06-15T12:30:45.000Z");
+  });
+
+  it.each([
+    ["absent", undefined],
+    ["not a date", "nonsense"],
+  ])("falls back to normal resolution when the carried instant is %s", (_label, original) => {
+    const result = resolveEditedInstant("2026-10-25T01:30", original, tz);
+    expect(result.toISOString()).toBe("2026-10-25T00:30:00.000Z");
+  });
+
+  it("cannot be fooled by a stale carried instant on a changed time", () => {
+    // A client submitting a genuinely different wall clock alongside an old
+    // originalTakenAt gets the wall clock it asked for, because the two
+    // rendered forms do not match.
+    const result = resolveEditedInstant("2026-06-15T09:00", secondOccurrence.toISOString(), tz);
+    expect(formatDateTimeLocal(result, tz)).toBe("2026-06-15T09:00");
+  });
+
+  it("round-trips on an ordinary day, unchanged", () => {
+    const ordinary = new Date("2026-06-15T12:30:00.000Z");
+    expect(
+      resolveEditedInstant(formatDateTimeLocal(ordinary, tz), ordinary.toISOString(), tz).getTime(),
+    ).toBe(ordinary.getTime());
   });
 });

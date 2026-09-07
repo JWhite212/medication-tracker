@@ -5,7 +5,7 @@ import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { doseEditSchema, logFilterSchema } from "$lib/utils/validation";
 import { updateDose, deleteDose } from "$lib/server/doses";
-import { parseDateTimeLocal, parseDayRangeParam } from "$lib/utils/time";
+import { resolveEditedInstant, parseDayRangeParam } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
 // Escape SQL LIKE wildcards so user input doesn't accidentally match
@@ -129,9 +129,9 @@ export const actions: Actions = {
     const parsed = doseEditSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
 
-    const { doseId, takenAt, quantity, notes, sideEffects } = parsed.data;
+    const { doseId, takenAt, originalTakenAt, quantity, notes, sideEffects } = parsed.data;
     const updated = await updateDose(locals.user!.id, doseId, {
-      takenAt: parseDateTimeLocal(takenAt, locals.user!.timezone),
+      takenAt: resolveEditedInstant(takenAt, originalTakenAt, locals.user!.timezone),
       quantity,
       notes,
       sideEffects: sideEffects ?? null,

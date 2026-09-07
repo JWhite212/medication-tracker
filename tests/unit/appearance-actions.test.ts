@@ -29,7 +29,7 @@ beforeEach(() => {
 describe("the appearance page's named actions", () => {
   it("defines one action per registry key and no default", async () => {
     expect(Object.keys(actions).sort()).toEqual(
-      ["accentColor", "dateFormat", "reducedMotion", "timeFormat", "uiDensity"].sort(),
+      ["accentColor", "dateFormat", "reducedMotion", "theme", "timeFormat", "uiDensity"].sort(),
     );
     // SvelteKit throws if `default` coexists with any named action.
     expect(actions).not.toHaveProperty("default");

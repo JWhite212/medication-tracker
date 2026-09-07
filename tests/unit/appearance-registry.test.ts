@@ -3,9 +3,10 @@ import { describe, it, expect } from "vitest";
 import { APPEARANCE_ENTRIES, APPEARANCE_KEYS, actionFor, entryFor } from "$lib/appearance/registry";
 
 describe("the appearance registry", () => {
-  it("owns exactly the five options the appearance page renders", () => {
+  it("owns exactly the six options the appearance page renders", () => {
     expect([...APPEARANCE_KEYS]).toEqual([
       "accentColor",
+      "theme",
       "dateFormat",
       "timeFormat",
       "uiDensity",

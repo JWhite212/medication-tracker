@@ -127,6 +127,13 @@
       "when": 1788714959103,
       "tag": "0017_free_black_panther",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788770263584,
+      "tag": "0018_wealthy_black_queen",
+      "breakpoints": true
     }
   ]
 }

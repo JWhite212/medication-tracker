@@ -64,7 +64,7 @@ describe("preference door conformance", () => {
     // ever returned an empty (or truncated) list -- a drizzle refactor, a
     // mis-merge, or an accidental re-export would all still leave this
     // test green with zero real assertions run.
-    expect(columns).toHaveLength(12);
+    expect(columns).toHaveLength(13);
     for (const column of columns) {
       expect(apiKeys, `/api/v1 door is missing ${column}`).toContain(column);
       expect(importKeys, `import door is missing ${column}`).toContain(column);
@@ -183,7 +183,7 @@ describe("preference door conformance — value domains", () => {
   it("checks every key both doors carry", () => {
     // Guards the generated cases below against silently covering nothing.
     // Key-set equality itself is asserted above; this is the count.
-    expect(sharedKeys).toHaveLength(12);
+    expect(sharedKeys).toHaveLength(13);
   });
 
   for (const key of sharedKeys) {

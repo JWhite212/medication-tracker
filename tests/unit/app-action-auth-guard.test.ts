@@ -193,6 +193,7 @@ const CASES: Case[] = [
   // fields — as the single `default` case used to — now fails validation and
   // would 400 before ever reaching the guard, proving nothing.
   { route: "settings/appearance", action: "accentColor", actions: appearance.actions, fields: { accentColor: "#4f46e5" } }, // prettier-ignore
+  { route: "settings/appearance", action: "theme", actions: appearance.actions, fields: { theme: "light" } }, // prettier-ignore
   { route: "settings/appearance", action: "dateFormat", actions: appearance.actions, fields: { dateFormat: "DD/MM/YYYY" } }, // prettier-ignore
   { route: "settings/appearance", action: "timeFormat", actions: appearance.actions, fields: { timeFormat: "24h" } }, // prettier-ignore
   { route: "settings/appearance", action: "uiDensity", actions: appearance.actions, fields: { uiDensity: "comfortable" } }, // prettier-ignore

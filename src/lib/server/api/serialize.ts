@@ -105,10 +105,23 @@ export function serializeDoseLog(d: {
   status: DoseLogStatus;
   updatedAt: Date;
 }) {
+  // Projected field by field, NOT `{ ...d }`. Callers hand this rows from a
+  // bare `db.select()` (see `api/sync.ts`), and TypeScript's structural
+  // typing lets a wider row through a narrower parameter — so a spread put
+  // every column ever added to `dose_logs` onto the sync wire and into the
+  // JSON export silently, whatever this signature said. `inventoryApplied`
+  // is the one that would have gone first: internal bookkeeping for how much
+  // stock a row removed, of no meaning to a client.
   return {
-    ...d,
+    id: d.id,
+    userId: d.userId,
+    medicationId: d.medicationId,
+    quantity: d.quantity,
     takenAt: iso(d.takenAt),
     loggedAt: iso(d.loggedAt),
+    notes: d.notes,
+    sideEffects: d.sideEffects,
+    status: d.status,
     updatedAt: iso(d.updatedAt),
   };
 }

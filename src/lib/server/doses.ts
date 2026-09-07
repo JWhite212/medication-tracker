@@ -78,6 +78,25 @@ export async function logDose(
   // runCommands' reserve-first idempotency (see commands.ts), which relies
   // on "handler threw" meaning "safe to retry" for every command handler.
   const dose = await dbTx.transaction(async (tx) => {
+    // Snapshot the count BEFORE anything else. It is needed in two places:
+    // the inventory event records both ends of the change, and the dose row
+    // stores how much it ACTUALLY removed — which is not `quantity` whenever
+    // the clamp below engages. Reading it before the insert rather than
+    // after is what lets that value be written with the row instead of in a
+    // second update.
+    const [med] = await tx
+      .select({ inventoryCount: medications.inventoryCount })
+      .from(medications)
+      .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
+      .limit(1);
+    const previousCount = med?.inventoryCount ?? null;
+
+    // What will really leave the bottle. `GREATEST(0, …)` cannot take more
+    // than there is, so a dose of 3 logged against a stock of 1 removes 1 —
+    // and a delete that gave back 3 would invent the other two.
+    const inventoryApplied =
+      previousCount === null ? 0 : previousCount - Math.max(0, previousCount - quantity);
+
     const [inserted] = await tx
       .insert(doseLogs)
       .values({
@@ -85,6 +104,7 @@ export async function logDose(
         userId,
         medicationId,
         quantity,
+        inventoryApplied,
         takenAt: takenAt ?? now,
         loggedAt: now,
         notes: notes ?? null,
@@ -92,15 +112,6 @@ export async function logDose(
         status: "taken",
       })
       .returning();
-
-    // Snapshot the count BEFORE the update so the inventory event
-    // can record both ends of the change.
-    const [med] = await tx
-      .select({ inventoryCount: medications.inventoryCount })
-      .from(medications)
-      .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
-      .limit(1);
-    const previousCount = med?.inventoryCount ?? null;
 
     await tx
       .update(medications)
@@ -118,14 +129,13 @@ export async function logDose(
     // Only record an event when inventory was actually tracked.
     // The actual delta accounts for the GREATEST(0, ...) clamp.
     if (previousCount !== null) {
-      const newCount = Math.max(0, previousCount - quantity);
       await recordInventoryEvent(tx, {
         userId,
         medicationId,
         eventType: "dose_taken",
-        quantityChange: newCount - previousCount,
+        quantityChange: -inventoryApplied,
         previousCount,
-        newCount,
+        newCount: previousCount - inventoryApplied,
       });
     }
 
@@ -185,10 +195,17 @@ export async function deleteDose(userId: string, doseId: string) {
         .limit(1);
       const previousCount = med?.inventoryCount ?? null;
 
+      // Give back exactly what this dose took, which is not always what it
+      // says it took. NULL means the row predates the column (or its
+      // backfill was skipped by a `drizzle-kit push`), and falling back to
+      // `quantity` reproduces the historical behaviour rather than
+      // restoring nothing — the same bug in the opposite direction.
+      const applied = dose.inventoryApplied ?? dose.quantity;
+
       await tx
         .update(medications)
         .set({
-          inventoryCount: sql`${medications.inventoryCount} + ${dose.quantity}`,
+          inventoryCount: sql`${medications.inventoryCount} + ${applied}`,
         })
         .where(
           and(
@@ -203,9 +220,9 @@ export async function deleteDose(userId: string, doseId: string) {
           userId,
           medicationId: dose.medicationId,
           eventType: "dose_deleted",
-          quantityChange: dose.quantity,
+          quantityChange: applied,
           previousCount,
-          newCount: previousCount + dose.quantity,
+          newCount: previousCount + applied,
         });
       }
     }
@@ -251,11 +268,75 @@ export async function updateDose(
   // Dose update + (optional) inventory diff in a single transaction
   // so a partial failure rolls back both.
   const updated = await dbTx.transaction(async (tx) => {
+    // The inventory arm has to run first: it needs the count as it stands
+    // before this edit, and it decides the `inventoryApplied` the row is
+    // written with.
+    let nextApplied: number | undefined;
+    let inventoryWrite: (() => Promise<void>) | undefined;
+
+    if (inventoryAffectingChange) {
+      const [med] = await tx
+        .select({ inventoryCount: medications.inventoryCount })
+        .from(medications)
+        .where(and(eq(medications.id, existing.medicationId), eq(medications.userId, userId)))
+        .limit(1);
+      const previousCount = med?.inventoryCount ?? null;
+
+      // What this dose took, and what it will take instead. Editing moves
+      // the APPLIED amount, never the difference of the two quantities: a
+      // dose of 3 logged against a stock of 1 only ever removed 1, so
+      // lowering it to 1 must change nothing, where `count - (1 - 3)`
+      // credited two doses that had never left the bottle.
+      //
+      // The new amount cannot exceed what the bottle would hold once this
+      // dose gives back what it took, hence `previousCount + applied`.
+      const applied = existing.inventoryApplied ?? existing.quantity;
+      nextApplied =
+        previousCount === null
+          ? 0
+          : Math.max(0, Math.min(updates.quantity!, previousCount + applied));
+      const delta = applied - nextApplied;
+
+      inventoryWrite = async () => {
+        await tx
+          .update(medications)
+          .set({
+            // GREATEST is belt-and-braces: `nextApplied <= previousCount +
+            // applied` already makes the result non-negative.
+            inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} + ${delta})`,
+          })
+          .where(
+            and(
+              eq(medications.id, existing.medicationId),
+              eq(medications.userId, userId),
+              isNotNull(medications.inventoryCount),
+            ),
+          );
+
+        if (previousCount !== null) {
+          await recordInventoryEvent(tx, {
+            userId,
+            medicationId: existing.medicationId,
+            eventType: "dose_quantity_updated",
+            quantityChange: delta,
+            previousCount,
+            newCount: previousCount + delta,
+          });
+        }
+      };
+    }
+
     const [u] = await tx
       .update(doseLogs)
       .set({
-        ...(updates.takenAt && { takenAt: updates.takenAt }),
-        ...(updates.quantity && { quantity: updates.quantity }),
+        ...(updates.takenAt !== undefined && { takenAt: updates.takenAt }),
+        // `!== undefined`, matching the gate at `inventoryAffectingChange`
+        // above. A truthiness test here let a quantity of 0 pass that gate,
+        // adjust the inventory, and never write the row — the two guards
+        // must agree. Unreachable today only because all four doors bound
+        // quantity at `min(1)`.
+        ...(updates.quantity !== undefined && { quantity: updates.quantity }),
+        ...(nextApplied !== undefined && { inventoryApplied: nextApplied }),
         ...(updates.notes !== undefined && { notes: updates.notes || null }),
         ...(updates.sideEffects !== undefined && {
           sideEffects: updates.sideEffects ?? null,
@@ -265,43 +346,7 @@ export async function updateDose(
       .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
       .returning();
 
-    if (inventoryAffectingChange) {
-      const diff = updates.quantity! - existing.quantity;
-      const [med] = await tx
-        .select({ inventoryCount: medications.inventoryCount })
-        .from(medications)
-        .where(and(eq(medications.id, existing.medicationId), eq(medications.userId, userId)))
-        .limit(1);
-      const previousCount = med?.inventoryCount ?? null;
-
-      await tx
-        .update(medications)
-        .set({
-          inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${diff})`,
-        })
-        .where(
-          and(
-            eq(medications.id, existing.medicationId),
-            eq(medications.userId, userId),
-            isNotNull(medications.inventoryCount),
-          ),
-        );
-
-      if (previousCount !== null) {
-        // diff > 0 → quantity went up → inventory drops; diff < 0 →
-        // inventory rises. The clamp at zero only matters when diff
-        // is positive and exceeds previousCount.
-        const newCount = Math.max(0, previousCount - diff);
-        await recordInventoryEvent(tx, {
-          userId,
-          medicationId: existing.medicationId,
-          eventType: "dose_quantity_updated",
-          quantityChange: newCount - previousCount,
-          previousCount,
-          newCount,
-        });
-      }
-    }
+    if (inventoryWrite) await inventoryWrite();
 
     const changes = computeChanges(existing, u);
     if (changes) await logAudit(userId, "dose_log", doseId, "update", changes, tx);

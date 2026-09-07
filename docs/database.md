@@ -164,7 +164,12 @@ Dedupe key format is type-specific:
   non-repeating medication's key is unchanged. **A slot can therefore
   mint up to `notify_max_repeats + 1` rows, not exactly one.**
 - Low inventory (`buildLowInventoryDedupeKey`):
-  `<userId>:<medicationId>:low_inventory:<inventoryCount>`.
+  `<userId>:<medicationId>:low_inventory:<episodeISO>[:n<index>]`, where
+  `episodeISO` is `medications.low_inventory_episode_at`. The key is scoped
+  to the low-stock EPISODE, not the count — with the count in it, the
+  threshold decided how many alerts a single descent produced (a threshold
+  of 10 sent eleven) and each count then stayed suppressed for 90 days, so
+  a refill-and-descend-again was silent. See ADR 0005.
 
 `sent_at` is stamped when the row is first inserted (i.e. first
 claimed), not when a send completes; `last_attempt_at` advances on

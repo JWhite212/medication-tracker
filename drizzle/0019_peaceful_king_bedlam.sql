@@ -1,0 +1,1 @@
+ALTER TABLE "medications" ADD COLUMN "low_inventory_episode_at" timestamp with time zone;

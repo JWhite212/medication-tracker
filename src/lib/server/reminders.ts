@@ -1,4 +1,4 @@
-import { sql, eq, or, and, isNotNull, ne, inArray, max } from "drizzle-orm";
+import { sql, eq, or, and, isNotNull, isNull, ne, inArray, max } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
   medications,
@@ -16,6 +16,7 @@ import {
   computeNagIndex,
   buildOverdueDedupeKey,
   buildLowInventoryDedupeKey,
+  LOW_INVENTORY_NAG_POLICY,
 } from "./reminders/domain";
 import { withReminderClaim } from "./reminders/dispatch";
 import { resolveChannels } from "./notifications/resolve";
@@ -214,6 +215,42 @@ export async function checkOverdueMedications() {
 }
 
 export async function checkLowInventoryMedications() {
+  // ONE clock for the whole tick, and deliberately the application's rather
+  // than the database's. The episode instant is written here and then read
+  // back by `computeNagIndex` to decide which nudge is due; sourcing the
+  // write from `sql`now()`` and the comparison from `new Date()` puts two
+  // clocks either side of one subtraction, so any skew between them
+  // silently shifts the nudge schedule — and under a frozen test clock it
+  // suppresses every alert outright.
+  const sweepStartedAt = new Date();
+
+  // Step 0 — close every episode whose stock has recovered, before reading
+  // anything. This one statement is the ONLY thing that re-arms a
+  // low-inventory alert, and it is a column predicate rather than a key
+  // comparison so it is correct for all six writers of `inventoryCount` —
+  // including the three (`updateMedicationWithSchedules`,
+  // `createMedicationWithSchedules`, `import/apply.ts`) that append no
+  // inventory event, i.e. the user who "refills" by typing a new number
+  // into the edit form.
+  //
+  // Strictly `>`: a count sitting exactly AT the threshold is still low, and
+  // `>=` would clear the episode and re-alert on every tick.
+  //
+  // Global, because the sweep is (the cron handler passes no user).
+  await db
+    .update(medications)
+    .set({ lowInventoryEpisodeAt: null })
+    .where(
+      and(
+        isNotNull(medications.lowInventoryEpisodeAt),
+        or(
+          isNull(medications.inventoryCount),
+          isNull(medications.inventoryAlertThreshold),
+          sql`${medications.inventoryCount} > ${medications.inventoryAlertThreshold}`,
+        ),
+      ),
+    );
+
   const lowMeds = await db
     .select({
       medicationId: medications.id,
@@ -221,6 +258,7 @@ export async function checkLowInventoryMedications() {
       userId: medications.userId,
       inventoryCount: medications.inventoryCount,
       inventoryAlertThreshold: medications.inventoryAlertThreshold,
+      lowInventoryEpisodeAt: medications.lowInventoryEpisodeAt,
       userEmail: users.email,
       userEmailVerified: users.emailVerified,
       userOverdueEmailReminders: userPreferences.overdueEmailReminders,
@@ -312,7 +350,66 @@ export async function checkLowInventoryMedications() {
       continue;
     }
 
-    const dedupeKey = buildLowInventoryDedupeKey(med.userId, med.medicationId, med.inventoryCount!);
+    // Open the episode if this is the first alert of one.
+    //
+    // AFTER the channel gates deliberately: opening it above them would
+    // burn the episode for a user who can receive nothing, and under an
+    // episode-scoped key a burned episode is silent until the count
+    // recovers — not just until the count next moves, as it was when the
+    // key held the count.
+    //
+    // Compare-and-set on `isNull`, so two overlapping ticks agree on one
+    // episode instant instead of minting two keys and alerting twice. The
+    // loser re-reads rather than assuming its own instant.
+    //
+    // NO TEST CAN FAIL ON THAT GUARD, and it is kept deliberately: it only
+    // discriminates when two sweeps race, and PGlite is a single backend —
+    // the same reason CLAUDE.md records that `.for("update")` is
+    // unexercisable here. Deleting it survives the whole suite. It stays
+    // because the two schedulers (the Vercel cron and the every-30-minutes
+    // GitHub Action) genuinely can overlap, and because without it a
+    // projection that ever dropped the column would silently reset a live
+    // episode's nudge schedule instead of re-reading it.
+    // Truthiness, not `=== null`: a projection that ever omits the column
+    // yields `undefined`, which a strict null check waves through and which
+    // then reaches computeNagIndex as a missing Date.
+    let episodeAt = med.lowInventoryEpisodeAt;
+    if (!episodeAt) {
+      const [opened] = await db
+        .update(medications)
+        .set({ lowInventoryEpisodeAt: sweepStartedAt })
+        .where(
+          and(
+            eq(medications.id, med.medicationId),
+            eq(medications.userId, med.userId),
+            isNull(medications.lowInventoryEpisodeAt),
+          ),
+        )
+        .returning({ at: medications.lowInventoryEpisodeAt });
+
+      if (opened?.at) {
+        episodeAt = opened.at;
+      } else {
+        const [current] = await db
+          .select({ at: medications.lowInventoryEpisodeAt })
+          .from(medications)
+          .where(eq(medications.id, med.medicationId))
+          .limit(1);
+        // Another tick opened it between our select and our update. If it
+        // has since been closed (stock recovered in the gap) there is
+        // nothing to alert about; the next tick will re-open if needed.
+        if (!current?.at) continue;
+        episodeAt = current.at;
+      }
+    }
+
+    // Which nudge of this episode is due, if any. Bounded by
+    // LOW_INVENTORY_NAG_POLICY, so an episode is at most three alerts and
+    // then silent until the count recovers above the threshold.
+    const nagIndex = computeNagIndex(episodeAt, LOW_INVENTORY_NAG_POLICY, sweepStartedAt);
+    if (nagIndex === null) continue;
+
+    const dedupeKey = buildLowInventoryDedupeKey(med.userId, med.medicationId, episodeAt, nagIndex);
     await withReminderClaim(
       {
         userId: med.userId,

@@ -26,8 +26,35 @@ unique `dedupe_key`. The key format is specific to the reminder type:
   with two fixed-time schedules on the same day doesn't collapse onto
   one key. The optional `:n<index>` ordinal is covered below.
 - **Low inventory** (`buildLowInventoryDedupeKey`):
-  `<userId>:<medicationId>:low_inventory:<inventoryCount>`, so a
-  fresh alert only fires once the count actually changes.
+  `<userId>:<medicationId>:low_inventory:<episodeISO>[:n<index>]`, where
+  `episodeISO` is `medications.low_inventory_episode_at` — the instant the
+  current low-stock episode opened.
+
+  It used to be `<inventoryCount>`, "so a fresh alert only fires once the
+  count actually changes". That is what the key did, and it was wrong in
+  both directions. Because every count was its own key, a descent from a
+  threshold of 10 to empty sent **eleven** alerts, and the threshold —
+  not any chosen policy — decided the volume. Because each of those keys
+  then persisted for its row's 90-day life, a user who refilled and ran
+  low again hit the already-claimed key for that count and was told
+  **nothing**.
+
+  An episode opens on the tick that first alerts and is closed by the
+  sweep the moment `inventory_count` rises strictly above
+  `inventory_alert_threshold` (or either becomes NULL). That single
+  column predicate is the ONLY thing that re-arms the alert. It is
+  deliberately a predicate on the count rather than an anchor into
+  `inventory_events`, because three writers of `inventory_count`
+  (`updateMedicationWithSchedules`, `createMedicationWithSchedules` and
+  `import/apply.ts`) append no ledger row at all — so a user who
+  "refills" by typing a new number into the edit form must still re-arm.
+
+  Within one episode the alert repeats on the same bounded ordinal the
+  overdue key uses, paced by `LOW_INVENTORY_NAG_POLICY` (daily, capped at
+  two) rather than by the per-medication `notify_repeat_every_minutes`:
+  those columns pace an overdue _dose_, and a medication set to repeat
+  every 30 minutes would otherwise nag about its stock every 30 minutes.
+  So an episode is at most three alerts, then silent until recovery.
 
 Claiming is an atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE
 <retryable>` (`claimReminderSlot` in

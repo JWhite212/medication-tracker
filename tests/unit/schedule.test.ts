@@ -39,6 +39,7 @@ function makeMed(overrides: Partial<Medication> = {}): Medication {
     archivedAt: null,
     startedAt: new Date("2026-01-01T00:00:00Z"),
     endedAt: null,
+    lowInventoryEpisodeAt: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
     ...overrides,

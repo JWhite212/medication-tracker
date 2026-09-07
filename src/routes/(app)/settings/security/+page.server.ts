@@ -1,4 +1,4 @@
-import { fail } from "@sveltejs/kit";
+import { error, fail } from "@sveltejs/kit";
 import { eq, and } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { users, sessions } from "$lib/server/db/schema";
@@ -50,11 +50,16 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
   changePassword: async ({ request, locals, cookies }) => {
+    // Form actions run BEFORE layout load functions, so the (app) group's
+    // auth guard has not executed at this point. Without this check an
+    // anonymous POST reaches `locals.user!.id` and 500s.
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const parsed = passwordChangeSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { passwordErrors: parsed.error.flatten().fieldErrors });
 
-    const userId = locals.user!.id;
+    const userId = locals.user.id;
     const reauth = await confirmReauth(userId, parsed.data.currentPassword, "change_password");
     if (!reauth.ok)
       return fail(400, {
@@ -82,6 +87,8 @@ export const actions: Actions = {
     return { passwordSuccess: true };
   },
   revokeSession: async ({ request, locals }) => {
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = await request.formData();
     const sessionId = formData.get("sessionId") as string;
     if (!sessionId || sessionId === locals.session!.id) {
@@ -103,6 +110,8 @@ export const actions: Actions = {
     return { sessionRevoked: true };
   },
   setupTwoFactor: async ({ request, locals }) => {
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = await request.formData();
     const currentPassword = String(formData.get("currentPassword") ?? "");
 
@@ -130,6 +139,8 @@ export const actions: Actions = {
     return { totpSetup: { qrCode, secret } };
   },
   verifyTwoFactor: async ({ request, locals }) => {
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const code = String(formData.code ?? "");
     if (code.length !== 6 || !/^\d{6}$/.test(code))
@@ -149,6 +160,8 @@ export const actions: Actions = {
     return { totpEnabled: true };
   },
   disableTwoFactor: async ({ request, locals }) => {
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const code = String(formData.code ?? "");
     const currentPassword = String(formData.currentPassword ?? "");

@@ -1,4 +1,4 @@
-import { fail, redirect } from "@sveltejs/kit";
+import { error, fail, redirect } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { users } from "$lib/server/db/schema";
@@ -16,6 +16,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
   updateFormat: async ({ request, locals }) => {
+    // Form actions run BEFORE layout load functions, so the (app) group's
+    // auth guard has not executed at this point. Without this check an
+    // anonymous POST reaches `locals.user!.id` and 500s.
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const parsed = dataSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { errors: parsed.error.flatten().fieldErrors });
@@ -26,7 +31,8 @@ export const actions: Actions = {
   },
 
   deleteAccount: async ({ request, locals, cookies }) => {
-    const userId = locals.user!.id;
+    if (!locals.user) error(401, "Unauthorized");
+    const userId = locals.user.id;
     const formData = await request.formData();
     const password = String(formData.get("password") ?? "");
 

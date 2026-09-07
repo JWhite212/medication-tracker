@@ -1409,7 +1409,19 @@ Add the comment the spec requires next to `style-src`:
 
 - [ ] **Step 5: `docs/api-v1-contract.md` and `docs/database.md`**
 
-Add `theme` (`"light" | "dark" | "system"`, default `"dark"`) to §3's preference field table, the `update_preferences` row at `:436`, and the `user_preferences` section of `docs/database.md`. Both are hand-written restatements with no compiler coupling, and `docs/api-v1-contract.md` is published to the separate `medtracker-mac` repo — a missing field there means an older Mac client silently drops the setting.
+Add `theme` (`"dark" | "light" | "system"`, default `"dark"`) to the `user_preferences`
+section of `docs/database.md`, and to **three** specific places in `docs/api-v1-contract.md`
+that Task 4's review pinned down:
+
+1. `:343-362` — the `SerializedPreferences` wire-contract type block gains `theme: string;`.
+2. `:364-369` — the explanatory note says "The four enum-valued fields … narrows only three
+   of them (`dateFormat`, `timeFormat`, `uiDensity`)". Both counts are now wrong: there are
+   **five** enum-valued fields and **four** are narrowed, `theme` joining the other three.
+3. `:443` — §4's `update_preferences` field list omits `theme`.
+
+While in the area, sweep the stale "the five appearance options" / "the appearance five"
+comments, which are six post-Task-4: `src/lib/preferences/schema.ts:13,19`,
+`src/lib/utils/validation.ts:362`, `tests/unit/preference-door-conformance.test.ts:108`. Both are hand-written restatements with no compiler coupling, and `docs/api-v1-contract.md` is published to the separate `medtracker-mac` repo — a missing field there means an older Mac client silently drops the setting.
 
 - [ ] **Step 6: `CHANGELOG.md`**
 

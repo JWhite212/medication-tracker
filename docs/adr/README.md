@@ -12,6 +12,7 @@ supersedes it.
 - [0004 — Lucia v3 for session auth, Argon2 for passwords](./0004-lucia-auth.md)
 - [0005 — Idempotent reminder dispatch via dedupe key](./0005-reminder-deduplication.md)
 - [0006 — Multi-row medication schedules](./0006-medication-schedules.md)
+- [0007 — One owner for wall-clock → instant resolution](./0007-wall-clock-resolution.md)
 
 ## Format
 

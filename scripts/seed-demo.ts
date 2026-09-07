@@ -181,8 +181,6 @@ async function main() {
     dateFormat: "DD/MM/YYYY",
     uiDensity: "comfortable",
     reducedMotion: false,
-    emailReminders: false, // legacy column, kept in sync with the split below
-    lowInventoryAlerts: false,
     overdueEmailReminders: false, // demo account shouldn't notify anyone
     overduePushReminders: false,
     lowInventoryEmailAlerts: false,

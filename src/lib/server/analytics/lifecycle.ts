@@ -6,14 +6,33 @@
 const MS_PER_DAY = 86_400_000;
 
 /**
- * Number of days in the intersection of `[rangeFrom, rangeTo]` and
+ * Number of WHOLE days in the intersection of `[rangeFrom, rangeTo]` and
  * `[startedAt, endedAt ?? +Infinity]`. Returns 0 when the lifecycle
  * window does not overlap the range at all (e.g. a med added today
  * being asked about last week's adherence).
  *
- * The result is rounded — partial days at either edge contribute as
- * fractional days that are then rounded to the nearest whole day,
- * matching the existing `effectiveDays` rounding in `analytics.ts`.
+ * **A partial day is not charged.** The result used to be `Math.round`ed,
+ * which charged a whole expected dose from the moment the partial day
+ * reached twelve hours — so a patient who had taken every dose since
+ * starting a medication fifteen and a half days ago was shown 16 expected,
+ * one missed, and 93.8% adherence, and the number moved at local noon with
+ * no user action. Rounding up cannot be right here: the extra dose renders
+ * as a red "Missed" segment, as a clinician-facing missed count and as a
+ * "Lowest adherence" insight, so fabricating one is the costlier error.
+ * `Math.ceil` is the same mistake made sooner — a medication added six
+ * hours ago would acquire a full day of expectation.
+ *
+ * The range is treated as **closed at `rangeTo`**, which is what the `+ 1`
+ * buys: `export-pdf.ts` hands the breakdown `to - 1ms` so its summary counts
+ * exactly the rows the dose table beneath it lists, and a plain truncation
+ * would score that 30-day report as 29 days. Tolerating exactly one
+ * millisecond is the same statement as subtracting exactly one.
+ *
+ * NB this measures a duration in UTC milliseconds, so it counts 24-hour
+ * days rather than civil days. `getDailyAdherenceSeries` counts day keys via
+ * `isActiveOn` instead, and the two still part company on a lifecycle edge
+ * falling mid-day. Converging them needs a shared civil-day counter and a
+ * timezone in this module; it is deliberately not this change.
  */
 export function clampEffectiveDays(
   rangeFrom: Date,
@@ -30,7 +49,7 @@ export function clampEffectiveDays(
   const effTo = Math.min(toMs, endMs);
 
   if (effTo <= effFrom) return 0;
-  return Math.max(0, Math.round((effTo - effFrom) / MS_PER_DAY));
+  return Math.floor((effTo - effFrom + 1) / MS_PER_DAY);
 }
 
 /**

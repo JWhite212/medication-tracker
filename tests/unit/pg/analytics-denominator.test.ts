@@ -354,3 +354,78 @@ describe("the status breakdown aggregates per medication", () => {
     expect(breakdown.overusePercent).toBe(0);
   });
 });
+
+/**
+ * The effective-days clamp.
+ *
+ * `clampEffectiveDays` rounded a millisecond duration half-up, so a
+ * medication whose window is clipped mid-day was charged a whole extra
+ * expected dose from twelve hours into the partial day — the skew arrived
+ * at local noon, with no user action, and rendered as a red Missed segment
+ * and a clinician-facing missed count.
+ *
+ * These fixtures deliberately do NOT use EXPLICIT_RANGE: a fractional span
+ * is the whole point, and every span the shipping tests above pin is a
+ * whole number of days, which is why 1825 green tests said nothing here.
+ */
+describe("the effective-days clamp", () => {
+  it("does not charge a whole day for a half-elapsed one", async () => {
+    // Default window: [NOW-30d, NOW] = [2026-07-22T12:00Z, 2026-08-21T12:00Z].
+    // Started at midnight on 6 August, so the clipped span is 15 days and
+    // 12 hours. Fifteen 20:00 slots have come due and all fifteen were taken.
+    await pgDb.seedMedication({
+      id: "m1",
+      name: "Evening med",
+      scheduleType: "scheduled",
+      startedAt: new Date("2026-08-06T00:00:00Z"),
+    });
+    await pgDb.seedSchedule({ medicationId: "m1", scheduleKind: "fixed_time", timeOfDay: "20:00" });
+    for (let i = 0; i < 15; i++) {
+      await pgDb.seedDose({
+        medicationId: "m1",
+        takenAt: new Date(Date.UTC(2026, 7, 6 + i, 20, 0, 0)),
+      });
+    }
+
+    const breakdown = await getDoseStatusBreakdown("u1", 30, "UTC");
+
+    expect(breakdown.takenEvents).toBe(15);
+    expect(breakdown.expectedTotal).toBe(15);
+    expect(breakdown.missedEvents).toBe(0);
+    expect(breakdown.adherencePercent).toBe(100);
+  });
+
+  it("counts a range bounded at its last included millisecond as whole days", async () => {
+    // The clinician PDF's exact call shape: `to` is the exclusive start of
+    // the next day, and `export-pdf.ts` hands the breakdown `to - 1ms` so
+    // the summary counts the same rows the table beneath it lists. That
+    // makes the span 29.999999988 days, and nothing in the repo pinned it.
+    await seedDailyMed("m1");
+
+    const breakdown = await getDoseStatusBreakdown("u1", 30, "UTC", {
+      from: EXPLICIT_RANGE.from,
+      to: new Date(EXPLICIT_RANGE.to.getTime() - 1),
+    });
+
+    expect(breakdown.expectedTotal).toBe(30);
+  });
+
+  it("expects nothing yet from a medication added six hours ago", async () => {
+    // The opposite error: rounding a partial day UP invents an expectation
+    // that has not elapsed, and a fabricated one is rendered as a missed
+    // dose and can reach `buildInsights`'s "Lowest adherence" ranking.
+    await pgDb.seedMedication({
+      id: "m1",
+      name: "Just added",
+      scheduleType: "scheduled",
+      startedAt: new Date(NOW.getTime() - 6 * 60 * 60 * 1000),
+    });
+    for (const timeOfDay of ["08:00", "14:00", "20:00"]) {
+      await pgDb.seedSchedule({ medicationId: "m1", scheduleKind: "fixed_time", timeOfDay });
+    }
+
+    const stats = await getPerMedicationStats("u1", 30, "UTC");
+
+    expect(stats[0].expectedTotal).toBe(0);
+  });
+});

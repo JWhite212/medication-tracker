@@ -10,13 +10,13 @@
  * `heatmapPeriod` proved what that costs — it was `z.number().int()` at the
  * `/api/v1` door and `z.number().int().min(1).max(3650)` on import, and the
  * unbounded value reached the activity heatmap's per-day render loop. The
- * five appearance options never drifted that way because they are derived
+ * six appearance options never drifted that way because they are derived
  * from one registry shape.
  *
  * The appearance module's `satisfies` clause would NOT have caught it.
  * `z.ZodType<number | undefined>` is satisfied by `z.number().int()` and by
  * `z.number().int().min(1).max(3650)` alike: a `satisfies` clause pins the
- * KEY SET and the OUTPUT TYPE, never a bound. The appearance five are safe
+ * KEY SET and the OUTPUT TYPE, never a bound. The appearance six are safe
  * from bound drift only because none of them carries a numeric bound.
  *
  * So the guarantee here is structural rather than nominal. Each domain is

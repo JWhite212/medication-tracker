@@ -31,9 +31,15 @@ export type AppearanceGroup = "colour" | "formatting" | "layout" | "motion";
 /**
  * How the stored value reaches the DOM.
  *
- * The data-attribute bindings are set on the `(app)` wrapper div today
- * (`(app)/+layout.svelte:34-35`); 1c moves them onto the theme `<style>`
- * block. Naming them here is the seam that lets 1c move them in one place.
+ * The data-attribute bindings are set on the `(app)` wrapper div
+ * (`(app)/+layout.svelte:34-35`) and STAY there. 1c planned to move them
+ * onto the theme `<style>` block and could not: `Heatmap.svelte:123`
+ * compiles to `[data-reduced-motion="true"] .heatmap-cell.svelte-<hash>`,
+ * and the hash is content-derived, so no externally-emitted stylesheet can
+ * target it. The invariant that replaces the move: the theme block emits
+ * only colour tokens and `color-scheme`, while these rules set only spacing
+ * and animation timing — disjoint, so the wrapper being a descendant of
+ * `:root` does not matter.
  *
  * `css-var` records only the property the *stored* value drives.
  * `derived` names the two tokens `readableForeground` / `readableInk`

@@ -172,7 +172,7 @@ additive if that trade stops being acceptable.
 ### Why `:root:root` (decision 3)
 
 `app.css:140-147` is an unlayered `@media (prefers-contrast: more) { :root { … } }`
-block overriding four tokens. A plain `html[data-theme]` or `:root` theme rule is also
+block overriding five tokens. A plain `html[data-theme]` or `:root` theme rule is also
 unlayered, so layer precedence separates nothing and the two collide.
 
 The collision is not stable, which is what makes it nasty. Measured on the real
@@ -229,7 +229,7 @@ depends on is still outstanding. See [1c — Theme](#1c--theme).
 ### Why the contrast block moves into the theme table (decision 5)
 
 Once `:root:root` wins unconditionally, `@media (prefers-contrast: more)` stops meaning
-anything — it is outranked by design. The four overrides therefore move into the theme
+anything — it is outranked by design. The five overrides therefore move into the theme
 table as a per-scheme `contrastMore` set, emitted inside the same specificity-bumped
 block. This is a strict improvement regardless: mirroring dark's high-contrast values
 into light moves contrast the wrong way, so a light arm had to be authored anyway.
@@ -486,6 +486,13 @@ silently rendered light (the OS beat the explicit choice), and `theme: light` wi
 OS produced an incoherent split state, because the media block redefines only a subset of
 tokens.
 
+**`@layer theme` is Tailwind's lowest layer** — it emits `@layer theme, base, components,
+utilities;`, so `base` outranks `theme`. `color-scheme: dark` used to live in `@layer
+base`, which meant a layered light arm could never have overridden it: every light-mode
+user would have kept dark native checkboxes, radios, scrollbars and the date-picker glyph.
+It had to move into `@layer theme` alongside both arms. This is also precisely what lets
+the unlayered `:root:root` SSR block (decision 3) beat the fallback unconditionally.
+
 The light palette is authored against measured ratios, not picked by eye: surface
 `#eef0f6`, raised `#ffffff`, overlay `#e2e5ee`, text `#14141c` / `#4c4c63` / `#5c5c72`,
 accent `#4f46e5` / `#4338ca`, success `#036b4e`, warning `#7f5300`, danger `#b41f17`.
@@ -538,11 +545,15 @@ wrapper's inline styles and into the theme block**, where the scheme can own it.
 stays inline, per decision 4. `contrast.ts:6-7` already names this as the caller it was
 extracted for.
 
-**`data-density` and `data-reduced-motion` move off the wrapper div in the same commit
-that the theme block starts setting anything they touch.** If both exist, the wrapper is a
-descendant and its server-data value wins for the whole app subtree — an optimistic write
-would appear to do nothing inside `(app)` while working on auth pages, which is the most
-confusing available failure.
+**`data-density` and `data-reduced-motion` do not move off the wrapper div** — kept here
+because 1c set out to move them onto the theme `<style>` block and found it impossible.
+`Heatmap.svelte:123`'s reduced-motion override compiles to
+`[data-reduced-motion="true"] .heatmap-cell.svelte-<hash>`, and that hash is
+content-derived per component, so no externally-emitted stylesheet — the theme block
+included — can ever target it. Verified by compiling the component. The invariant that
+replaces the move: the theme block emits only colour tokens and `color-scheme`, while
+these rules set only spacing and animation timing — disjoint by construction, so the
+wrapper being a descendant of `:root` does not matter.
 
 The manifest `background_color` decision lands here: it cannot vary per user, so it is set
 to the dark surface and light-mode users get a brief splash mismatch, recorded as a known

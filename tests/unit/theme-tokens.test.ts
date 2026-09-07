@@ -196,6 +196,34 @@ describe.each(SCHEMES)(
       expect(presets[0]).toBe(T["--color-accent"]);
     });
 
+    // The backdrops a tinted accent chip actually paints on — the sidebar /
+    // mobile-header avatar initial (resting state) and the onboarding step
+    // numerals. `card` is built the same way the CHIPS table below builds it
+    // (MedicationCard: .bg-glass > page <main> on --color-surface) — the
+    // onboarding numeral's real parent is exactly that bg-glass card.
+    // `surface-raised` is the avatar's own resting backdrop (the `<aside>` /
+    // `<header>` it sits in). These composite DARKER in luminance than any
+    // opaque surface `surfaces()` enumerates, so the ink solved against the
+    // worst OPAQUE surface (inkBackdrop) does not automatically clear them —
+    // see Important Finding 1.
+    //
+    // Deliberately NOT `cardHover` (glass-hover composited over
+    // --color-surface): no element among the five changed sites carries that
+    // combination. MobileHeader's avatar and the onboarding numerals have no
+    // hover state of their own at all, and Sidebar's chip `<div>` doesn't
+    // either — only its WRAPPING `<a>` does, and it composites glass-hover
+    // over --color-surface-RAISED, not --color-surface. Reusing `cardHover`
+    // verbatim tests a pixel combination nothing in the app ever paints,
+    // which is exactly the failure mode `surfaces()`'s own docstring warns
+    // against ("the real DOM nesting, read off the component, not a
+    // representative surface"). The wrapping `<a>`'s actual hover backdrop is
+    // a separate, real finding — see the report, not this test.
+    const glass = alphaOf(T["--color-glass"]);
+    const ACCENT_CHIP_BACKDROPS: Record<string, string> = {
+      card: compositeOver(glass.alpha, T["--color-surface"], glass.overlay),
+      "surface-raised": T["--color-surface-raised"],
+    };
+
     for (const preset of presets) {
       const allowed = ALLOWED_BELOW_THRESHOLD.some(
         (a) => a.token === preset && a.surface === "accent preset",
@@ -219,8 +247,35 @@ describe.each(SCHEMES)(
           ).toBeGreaterThanOrEqual(4.5);
         }
       });
+
+      // bg-accent/15 text-accent-ink: Sidebar/MobileHeader avatar initial,
+      // OnboardingWelcome step numerals (Important Finding 1). The ink's
+      // opaque-surface guarantee does not reach a tinted chip. Was /20 —
+      // failed here for 6 of 10 presets in light and 1 in dark (#f97316 on
+      // the onboarding-numeral card backdrop); /15 is the shipped fix.
+      it(`${preset} accent/15 chip clears 4.5:1 (avatar initial, onboarding numerals)`, () => {
+        const ink = readableInk(preset, { backdrop: inkBackdrop, overlay: inkOverlay });
+        for (const [name, bg] of Object.entries(ACCENT_CHIP_BACKDROPS)) {
+          const chip = compositeOver(0.15, bg, preset);
+          const ratio = contrastRatio(ink, chip);
+          expect(
+            ratio,
+            `${preset} -> ${ink} on accent/15 over ${name} (${chip}) is ${ratio.toFixed(2)}:1`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      });
     }
 
+    // INK_BACKDROP / INK_BACKDROP_LIGHT are constants in utils/, which cannot
+    // read this stylesheet. If a surface token moves, this is what says so.
+    //
+    // It pins the worst OPAQUE surface — but that is not the worst backdrop
+    // the ink actually renders on. A tinted chip (`bg-accent/20` and
+    // friends) composites darker in light mode than any opaque surface
+    // `surfaces()` enumerates, so an ink that clears this pin can still fail
+    // on a chip. That boundary — opaque surfaces covered here, tinted chips
+    // not — is exactly the gap Important Finding 1 shipped through; see the
+    // `accent/15 chip clears 4.5:1` tests above for the fix.
     it("solves the ink against the surface the scheme's worst case lands on", () => {
       const chosen = Object.values(surfaces(T)).reduce(pickInkBackdrop);
       expect(inkBackdrop).toBe(chosen);

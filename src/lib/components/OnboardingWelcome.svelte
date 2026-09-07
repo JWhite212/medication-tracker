@@ -74,7 +74,7 @@
       <div class="space-y-3 text-sm">
         <div class="flex items-start gap-3">
           <span
-            class="bg-accent/20 text-accent-ink mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
+            class="bg-accent/15 text-accent-ink mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
             >1</span
           >
           <p class="text-text-secondary">
@@ -84,7 +84,7 @@
         </div>
         <div class="flex items-start gap-3">
           <span
-            class="bg-accent/20 text-accent-ink mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
+            class="bg-accent/15 text-accent-ink mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
             >2</span
           >
           <p class="text-text-secondary">
@@ -94,7 +94,7 @@
         </div>
         <div class="flex items-start gap-3">
           <span
-            class="bg-accent/20 text-accent-ink mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
+            class="bg-accent/15 text-accent-ink mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
             >3</span
           >
           <p class="text-text-secondary">

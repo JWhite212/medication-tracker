@@ -1,4 +1,4 @@
-import { fail } from "@sveltejs/kit";
+import { error, fail } from "@sveltejs/kit";
 import { eq, and } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { sha256 } from "@oslojs/crypto/sha2";
@@ -63,6 +63,11 @@ export const actions: Actions = {
   // explicitly. Previously the default coexistence threw a 500 on
   // every POST. https://svelte.dev/docs/kit/form-actions#named-actions
   savePrefs: async ({ request, locals }) => {
+    // Form actions run BEFORE layout load functions, so the (app) group's
+    // auth guard has not executed at this point. Without this check an
+    // anonymous POST reaches `locals.user!.id` and 500s.
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const parsed = notificationSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { errors: parsed.error.flatten().fieldErrors });
@@ -81,7 +86,8 @@ export const actions: Actions = {
    * authenticated amplifier against the push services.
    */
   sendTest: async ({ locals }) => {
-    const userId = locals.user!.id;
+    if (!locals.user) error(401, "Unauthorized");
+    const userId = locals.user.id;
     const { allowed, retryAfterMs } = await checkRateLimit(
       `push-test:${userId}`,
       5,
@@ -121,7 +127,8 @@ export const actions: Actions = {
    * issues them). Rate-limited per user to prevent abuse.
    */
   resendVerification: async ({ locals }) => {
-    const userId = locals.user!.id;
+    if (!locals.user) error(401, "Unauthorized");
+    const userId = locals.user.id;
     const { allowed, retryAfterMs } = await checkRateLimit(
       `email-resend:${userId}`,
       3,

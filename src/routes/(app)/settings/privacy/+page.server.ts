@@ -1,4 +1,4 @@
-import { fail } from "@sveltejs/kit";
+import { error, fail } from "@sveltejs/kit";
 import { eq, and, count, ne } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications, sessions, auditLogs } from "$lib/server/db/schema";
@@ -59,7 +59,11 @@ export const actions: Actions = {
   // without it a native client keeps showing rows that are gone from the
   // server — which is exactly what the inline version here used to do.
   wipeDoseHistory: async ({ request, locals }) => {
-    const userId = locals.user!.id;
+    // Form actions run BEFORE layout load functions, so the (app) group's
+    // auth guard has not executed at this point. Without this check an
+    // anonymous POST reaches `locals.user!.id` and 500s.
+    if (!locals.user) error(401, "Unauthorized");
+    const userId = locals.user.id;
     const formData = await request.formData();
     const reauth = await requirePassword(userId, formData, "wipe_dose_history");
     if (!reauth.ok) return fail(400, { wipeDosesError: reauth.error });
@@ -69,7 +73,8 @@ export const actions: Actions = {
   },
 
   wipeArchivedMedications: async ({ request, locals }) => {
-    const userId = locals.user!.id;
+    if (!locals.user) error(401, "Unauthorized");
+    const userId = locals.user.id;
     const formData = await request.formData();
     const reauth = await requirePassword(userId, formData, "wipe_archived_medications");
     if (!reauth.ok) return fail(400, { wipeArchivedError: reauth.error });
@@ -79,7 +84,8 @@ export const actions: Actions = {
   },
 
   revokeOtherSessions: async ({ request, locals }) => {
-    const userId = locals.user!.id;
+    if (!locals.user) error(401, "Unauthorized");
+    const userId = locals.user.id;
     const formData = await request.formData();
     const reauth = await requirePassword(userId, formData, "revoke_all_sessions");
     if (!reauth.ok) return fail(400, { revokeError: reauth.error });

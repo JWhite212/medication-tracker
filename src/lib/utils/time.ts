@@ -42,6 +42,114 @@ export function formatTime(date: Date, timezone: string): string {
   return formatUserTime(date, timezone, "12h");
 }
 
+export type DateFormat = "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD";
+
+/**
+ * For the two named-month formats the preference selects a locale, not a
+ * literal pattern string.
+ *
+ * Both enum values name a field *order*, and each order already has a locale
+ * that renders it — including the abbreviated month names the app shows
+ * today. Formatting through the locale is what lets the default
+ * (`DD/MM/YYYY` → en-GB) reproduce the previous hardcoded output at every
+ * call site byte-for-byte, so nobody who never opened Appearance sees their
+ * dates change.
+ *
+ * `YYYY-MM-DD` is deliberately absent: a locale cannot be trusted to render
+ * it. See `isoDate` below.
+ */
+const DATE_FORMAT_LOCALES: Record<Exclude<DateFormat, "YYYY-MM-DD">, string> = {
+  "DD/MM/YYYY": "en-GB",
+  "MM/DD/YYYY": "en-US",
+};
+
+/**
+ * Assemble `YYYY-MM-DD` from parts rather than asking a locale for it.
+ *
+ * `Intl.DateTimeFormat("en-CA", { year, month: "2-digit", day: "2-digit" })`
+ * happens to emit `2026-04-15` on current ICU, and the obvious implementation
+ * leans on that. ECMA-402 does not promise it: field order and separator come
+ * from CLDR locale data, which is explicitly allowed to change, and en-CA's
+ * short-date pattern **did** change in ICU 72 — an implementation is free to
+ * return `15/04/2026` and still be conformant.
+ *
+ * That matters more here than the usual "don't parse localised output"
+ * warning, because `formatUserDate` is reached from `.svelte` components: it
+ * runs against the *viewer's browser* ICU, not the pinned server one. A unit
+ * test could not catch the divergence either, since vitest shares this
+ * runtime. So the digits are read out of `formatToParts` — which is specified
+ * per-field and therefore stable — and joined here.
+ *
+ * The locale still decides the weekday's *name*, which is a rendering choice
+ * and not part of the ISO promise. Widths are re-padded defensively so the
+ * result is a fixed shape whatever an implementation does with a year < 1000.
+ */
+function isoDate(date: Date, timezone: string, weekday: boolean): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    ...(weekday ? { weekday: "short" as const } : {}),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  const ymd = [
+    get("year").padStart(4, "0"),
+    get("month").padStart(2, "0"),
+    get("day").padStart(2, "0"),
+  ].join("-");
+  const dayName = get("weekday");
+  return dayName ? `${dayName}, ${ymd}` : ymd;
+}
+
+export interface UserDateOptions {
+  /** Prefix an abbreviated weekday ("Wed"). */
+  weekday?: boolean;
+  /** Include the year. Ignored for `YYYY-MM-DD`, which always carries one. */
+  year?: boolean;
+}
+
+/**
+ * Render a date in the user's timezone and preferred date format. This is
+ * the canonical date formatter — the counterpart to formatUserTime(), and
+ * the only place the user's `preferences.dateFormat` is read.
+ *
+ * The split of responsibilities matters and is not negotiable per call
+ * site: **the preference owns field order and numeric-vs-named month; the
+ * call site owns which fields appear**. A day-group heading wants a weekday
+ * and no year, a clinician-facing report wants both — but neither gets to
+ * decide whether the day precedes the month, because that is the setting.
+ *
+ * `YYYY-MM-DD` is the one value whose label is literally an all-numeric
+ * pattern, so it forces numeric month/day and a year: an ISO date with a
+ * named month or no year is not an ISO date. It is also the one value a
+ * locale cannot be trusted to produce, so it is assembled by `isoDate`.
+ *
+ * NOT for date *keys*. Anything compared, grouped or round-tripped needs a
+ * stable `YYYY-MM-DD` and must keep its own hardcoded `en-CA` formatter —
+ * see the comment on `formatDateKey` in `(app)/log/+page.svelte` and on the
+ * date cell in `server/export-csv.ts`.
+ */
+export function formatUserDate(
+  date: Date,
+  timezone: string,
+  dateFormat: DateFormat = "DD/MM/YYYY",
+  { weekday = false, year = true }: UserDateOptions = {},
+): string {
+  if (dateFormat === "YYYY-MM-DD") return isoDate(date, timezone, weekday);
+
+  return new Intl.DateTimeFormat(DATE_FORMAT_LOCALES[dateFormat], {
+    timeZone: timezone,
+    ...(weekday ? { weekday: "short" as const } : {}),
+    ...(year ? { year: "numeric" as const } : {}),
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
 /**
  * Parse a datetime-local input value (e.g. "2026-04-15T18:20") as a Date
  * in the given IANA timezone. datetime-local has no timezone info, so we

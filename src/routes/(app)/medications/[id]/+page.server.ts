@@ -48,6 +48,11 @@ function parseSchedules(raw: unknown) {
 
 export const actions: Actions = {
   update: async ({ request, locals, params }) => {
+    // Form actions run BEFORE layout load functions, so the (app) group's
+    // auth guard has not executed at this point. Without this check an
+    // anonymous POST reaches `locals.user!.id` and 500s.
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const parsed = medicationSchema.safeParse(formData);
 
@@ -76,14 +81,18 @@ export const actions: Actions = {
     redirect(302, "/medications");
   },
   archive: async ({ locals, params }) => {
-    await archiveMedication(locals.user!.id, params.id);
+    if (!locals.user) error(401, "Unauthorized");
+    await archiveMedication(locals.user.id, params.id);
     redirect(302, "/medications");
   },
   unarchive: async ({ locals, params }) => {
-    await unarchiveMedication(locals.user!.id, params.id);
+    if (!locals.user) error(401, "Unauthorized");
+    await unarchiveMedication(locals.user.id, params.id);
     redirect(302, "/medications");
   },
   refill: async ({ request, locals, params }) => {
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const parsed = refillSchema.safeParse(formData);
     if (!parsed.success) {
@@ -108,6 +117,8 @@ export const actions: Actions = {
     }
   },
   adjust: async ({ request, locals, params }) => {
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const parsed = adjustSchema.safeParse(formData);
     if (!parsed.success) {

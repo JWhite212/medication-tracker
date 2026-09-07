@@ -67,8 +67,10 @@
 
 /*
  * The scheme fallback for everyone the SSR theme block does not reach:
- * anonymous visitors on `/` and `/auth/*`, `src/routes/+error.svelte`, and
- * any (app) page whose stored theme is `system`.
+ * anonymous visitors on `/` and `/auth/*`, and `src/routes/+error.svelte`
+ * (which renders outside the `(app)` group). A `system` user inside `(app)`
+ * is NOT a consumer of this fallback — `buildThemeStyle` already emits the
+ * SSR block's own two `prefers-color-scheme` media-query arms for that case.
  *
  * LAYERED, and layered in `theme` specifically. Tailwind emits
  * `@layer theme, base, components, utilities;` so `theme` is the LOWEST

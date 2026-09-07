@@ -120,7 +120,7 @@ export const APPEARANCE_ENTRIES = [
     group: "colour",
     label: "Theme",
     description:
-      "System follows your device's light or dark setting. Auth pages and the landing page always follow your device.",
+      "System follows your device's light or dark setting. Auth pages, the landing page, and error pages always follow your device.",
     control: "select",
     options: [
       { value: "dark", label: "Dark" },

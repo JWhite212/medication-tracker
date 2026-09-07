@@ -51,7 +51,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   // 86,400,000 once a range straddles a DST transition, which made the SAME
   // request pass or fail depending only on the caller's profile timezone.
   const spanDays = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) - 1;
-  if (spanDays > 366) {
+  if (spanDays >= 366) {
     error(400, "Date range must not exceed 1 year");
   }
 

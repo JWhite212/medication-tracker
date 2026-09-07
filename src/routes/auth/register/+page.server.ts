@@ -12,6 +12,7 @@ import { sendVerificationEmail } from "$lib/server/email";
 import { eq } from "drizzle-orm";
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
+import { logWarn } from "$lib/server/log";
 
 async function isPasswordBreached(password: string): Promise<boolean> {
   const encoder = new TextEncoder();
@@ -106,14 +107,16 @@ export const actions: Actions = {
       const result = await sendVerificationEmail(email, rawToken);
       if (!result.ok) {
         // Log the reason but never the token. Registration continues.
-        console.warn(`verification email skipped (${result.reason}): ${result.message}`);
+        logWarn("verification email skipped", {
+          scope: "auth.register",
+          reason: result.reason,
+          detail: result.message,
+        });
       }
     } catch (err) {
       // Token persistence failure or unexpected throw — still
       // non-blocking, but worth a server-side breadcrumb.
-      console.warn(
-        `verification email path threw: ${err instanceof Error ? err.message : "non-Error"}`,
-      );
+      logWarn("verification email path threw", { scope: "auth.register" }, err);
     }
 
     const session = await lucia.createSession(userId, {});

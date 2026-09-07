@@ -1,4 +1,5 @@
 import { env } from "$env/dynamic/private";
+import { logError, logWarn } from "$lib/server/log";
 
 /**
  * Dead-man switch for the reminder tick.
@@ -105,12 +106,15 @@ export async function pingHeartbeat(options: PingHeartbeatOptions = {}): Promise
     // typo would be a worse outcome than the misconfiguration itself,
     // and this particular mistake is self-correcting: a heartbeat that
     // never fires is precisely what the receiving end alerts on.
-    console.error("[heartbeat] HEARTBEAT_URL is not a valid URL — no ping will be sent.");
+    logError("HEARTBEAT_URL is not a valid URL — no ping will be sent", { scope: "heartbeat" });
     return { status: "invalid-url", reason: "unparseable" };
   }
 
   if (url.protocol !== "https:") {
-    console.error(`[heartbeat] HEARTBEAT_URL must use https, got ${url.protocol} — not pinging.`);
+    logError("HEARTBEAT_URL must use https — not pinging", {
+      scope: "heartbeat",
+      protocol: url.protocol,
+    });
     return { status: "invalid-url", reason: "not-https" };
   }
 
@@ -120,9 +124,10 @@ export async function pingHeartbeat(options: PingHeartbeatOptions = {}): Promise
   // maxDuration, and the platform would record that success as a failed
   // request.
   if (budgetMs !== undefined && budgetMs < MIN_PING_BUDGET_MS) {
-    console.warn(
-      `[heartbeat] skipped — only ${Math.max(0, Math.round(budgetMs))}ms of budget left`,
-    );
+    logWarn("heartbeat skipped — insufficient budget", {
+      scope: "heartbeat",
+      budgetMsLeft: Math.max(0, Math.round(budgetMs)),
+    });
     return { status: "skipped", reason: "insufficient-budget" };
   }
 
@@ -139,7 +144,10 @@ export async function pingHeartbeat(options: PingHeartbeatOptions = {}): Promise
     });
 
     if (!response.ok) {
-      console.warn(`[heartbeat] ping returned HTTP ${response.status}`);
+      logWarn("heartbeat ping returned a non-OK status", {
+        scope: "heartbeat",
+        status: response.status,
+      });
       return { status: "failed", reason: `http-${response.status}` };
     }
 
@@ -148,7 +156,7 @@ export async function pingHeartbeat(options: PingHeartbeatOptions = {}): Promise
     // Covers the timeout abort and any transport error. Swallowed for
     // the same reason as above: the tick's job is medication reminders,
     // and it has already done it by the time this runs.
-    console.warn("[heartbeat] ping failed", err);
+    logWarn("heartbeat ping failed", { scope: "heartbeat" }, err);
     return { status: "failed", reason: errorName(err) };
   }
 }

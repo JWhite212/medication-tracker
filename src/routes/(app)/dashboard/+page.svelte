@@ -1,5 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { showToast } from "$components/ui/Toast.svelte";
+  import { actionErrorMessage } from "$lib/utils/form-errors";
   import SummaryStrip from "$components/SummaryStrip.svelte";
   import MyDayTimeline from "$components/MyDayTimeline.svelte";
   import QuickLogBar from "$components/QuickLogBar.svelte";
@@ -91,7 +93,20 @@
               <span class="text-warning text-xs font-medium">
                 {formatDueIn(entry.minutesUntilDue * 60_000)}
               </span>
-              <form method="POST" action="?/skipDose" use:enhance>
+              <form
+                method="POST"
+                action="?/skipDose"
+                use:enhance={() =>
+                  async ({ result, update }) => {
+                    // This form had no callback at all, so skipping a
+                    // medication deleted in another tab produced no toast, no
+                    // error and no change — the row simply stayed put.
+                    if (result.type === "failure" || result.type === "error") {
+                      showToast(actionErrorMessage(result), "error");
+                    }
+                    await update();
+                  }}
+              >
                 <input type="hidden" name="medicationId" value={entry.medicationId} />
                 <button
                   type="submit"

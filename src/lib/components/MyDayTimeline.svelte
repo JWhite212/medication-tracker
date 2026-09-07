@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { showToast } from "$components/ui/Toast.svelte";
+  import { actionErrorMessage } from "$lib/utils/form-errors";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { getMedicationBackground } from "$lib/utils/medication-style";
   import { groupSlotsByTimeOfDay } from "$lib/utils/schedule";
@@ -128,6 +129,8 @@
                       return async ({ result, update }) => {
                         if (result.type === "success") {
                           showToast(`${slot.medicationName} logged`, "success");
+                        } else if (result.type === "failure" || result.type === "error") {
+                          showToast(actionErrorMessage(result), "error");
                         }
                         await update();
                       };

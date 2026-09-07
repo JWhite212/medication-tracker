@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { getTableName } from "drizzle-orm";
 
 // Two query results: the schedule/medication outer query, and the
 // last-taken-per-medication aggregate. Tests push rows into these
@@ -25,6 +26,14 @@ type UpdateCapture = {
   lastError: string | null;
 };
 const updateCaptures: UpdateCapture[] = [];
+
+// Writes to `medications` made by the low-inventory sweep — closing a
+// recovered episode and opening a new one. Kept apart from
+// `updateCaptures`, which means "a reminder row was completed".
+const medicationUpdates: Array<{ table: string; payload?: Record<string, unknown> }> = [];
+// The instant the fake hands back when the episode compare-and-set reads
+// its own write. Arbitrary; the real value is pinned on PGlite.
+const EPISODE_AT = new Date("2026-09-01T00:00:00.000Z");
 
 // The WHERE predicate handed to each select, indexed by call order. The mock
 // does not evaluate predicates — it returns whatever rows a test pushed — so
@@ -81,12 +90,37 @@ vi.mock("$lib/server/db", () => ({
       chain.returning = () => Promise.resolve(result);
       return chain;
     },
-    update: () => {
+    // Dispatches on the TABLE, because two different writes reach here.
+    // `updateCaptures` means "a reminder was completed", and it is what the
+    // "claims nothing" cases assert is empty — so the low-inventory sweep's
+    // writes to `medications` (closing a recovered episode, opening a new
+    // one) must not land in it, or those assertions would go red for a
+    // sweep that correctly claimed nothing.
+    update: (table: unknown) => {
+      const tableName = getTableName(table as Parameters<typeof getTableName>[0]);
+      const chain: Record<string, unknown> = {};
+
+      if (tableName !== "reminder_events") {
+        medicationUpdates.push({ table: tableName });
+        chain.set = (payload: Record<string, unknown>) => {
+          medicationUpdates[medicationUpdates.length - 1].payload = payload;
+          return chain;
+        };
+        chain.where = () => chain;
+        // The episode compare-and-set reads its own written value back.
+        // `sql\`now()\`` is opaque to this fake, so hand back a fixed
+        // instant — the tests here assert on claims and channels, and the
+        // episode's actual value is pinned on PGlite instead.
+        chain.returning = () => Promise.resolve([{ at: EPISODE_AT }]);
+        chain.then = (onFulfilled: (v: unknown) => unknown) =>
+          Promise.resolve([]).then(onFulfilled);
+        return chain;
+      }
+
       // Capture the payload that completeReminder writes. Drizzle
       // builds .update(table).set({...}).where(...); the .set call
       // receives the field map.
       let captured: Partial<UpdateCapture> = { id: "evt" };
-      const chain: Record<string, unknown> = {};
       chain.set = (payload: Record<string, unknown>) => {
         captured = {
           ...captured,
@@ -193,6 +227,7 @@ beforeEach(() => {
   pushResults.length = 0;
   claimResults.length = 0;
   updateCaptures.length = 0;
+  medicationUpdates.length = 0;
   whereArgsByCall.length = 0;
   selectCallIndex = 0;
   pushSubscribersByUser = { u1: true };

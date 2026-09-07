@@ -86,6 +86,25 @@ export const medications = pgTable(
     scheduleIntervalHours: numeric("schedule_interval_hours"),
     inventoryCount: integer("inventory_count"),
     inventoryAlertThreshold: integer("inventory_alert_threshold"),
+    // Identity of the CURRENT open low-inventory episode, and the only
+    // thing that re-arms a low-stock alert.
+    //
+    // NULL means no open episode — stock is healthy, inventory tracking is
+    // off, or the medication has never alerted. The low-inventory sweep sets
+    // it on the tick that first alerts and clears it the moment the count
+    // recovers strictly above the threshold. It supplies the dedupe key's
+    // episode component and nothing else: "have we already sent?" is still
+    // answered solely by `reminder_events`.
+    //
+    // It exists because the dedupe key used to embed `inventoryCount`, which
+    // made every distinct count its own alert — a threshold of 10 sent
+    // eleven — and then suppressed the SAME count for 90 days, so a user who
+    // refilled and ran low again heard nothing. A column rather than a
+    // ledger anchor because three writers of `inventoryCount`
+    // (`updateMedicationWithSchedules`, `createMedicationWithSchedules` and
+    // `import/apply.ts`) append no inventory event at all, so a user who
+    // "refills" by typing a new number into the edit form must still re-arm.
+    lowInventoryEpisodeAt: timestamp("low_inventory_episode_at", { withTimezone: true }),
     // Per-medication notification overrides.
     //
     // NULL means "inherit the account-wide setting on user_preferences".

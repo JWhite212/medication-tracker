@@ -162,10 +162,45 @@ export function buildOverdueDedupeKey(
   return nagIndex > 0 ? `${base}:n${nagIndex}` : base;
 }
 
+/**
+ * How often a still-low medication may nudge, and how many times.
+ *
+ * Deliberately a constant here and NOT the per-medication
+ * `notifyRepeatEveryMinutes` / `notifyMaxRepeats` columns: those pace an
+ * OVERDUE DOSE, which is a thing that happens at a minute-resolution slot,
+ * and a medication set to repeat every 30 minutes would nag about its stock
+ * every 30 minutes. Low inventory is a state that moves in days.
+ *
+ * One a day, capped at two, so an episode is at most three alerts total and
+ * then silent until the count recovers. The cap is chosen, not emergent —
+ * the shipped behaviour sent `threshold + 1` alerts, a number nobody picked.
+ */
+export const LOW_INVENTORY_NAG_POLICY: NagPolicy = {
+  offsetMinutes: 0,
+  repeatEveryMinutes: 24 * 60,
+  maxRepeats: 2,
+};
+
+/**
+ * The dedupe key for a low-inventory alert.
+ *
+ * Keyed on the EPISODE, not the count. The count used to be in the key,
+ * which made the threshold decide the alert volume (a threshold of 10 sent
+ * eleven alerts on one descent) and then suppressed each count for the
+ * 90-day life of its `reminder_events` row — so a user who refilled and ran
+ * low again was met with silence.
+ *
+ * `nagIndex` follows `buildOverdueDedupeKey`'s convention exactly: index 0
+ * appends nothing, so the first alert of an episode has the plainest
+ * possible key. The `:low_inventory:` marker keeps its trailing colon
+ * because the namespace-collision tests match on it.
+ */
 export function buildLowInventoryDedupeKey(
   userId: string,
   medicationId: string,
-  inventoryCount: number,
+  episodeAt: Date,
+  nagIndex = 0,
 ): string {
-  return `${userId}:${medicationId}:low_inventory:${inventoryCount}`;
+  const base = `${userId}:${medicationId}:low_inventory:${episodeAt.toISOString()}`;
+  return nagIndex > 0 ? `${base}:n${nagIndex}` : base;
 }

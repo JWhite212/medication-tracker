@@ -5,6 +5,7 @@ import {
   buildOverdueDedupeKey,
   buildLowInventoryDedupeKey,
   computeNagIndex,
+  LOW_INVENTORY_NAG_POLICY,
   NO_REPEAT,
   type OverdueRow,
   type NagPolicy,
@@ -72,16 +73,84 @@ describe("buildOverdueDedupeKey", () => {
   });
 });
 
+// This describe used to open with "changes only when the count changes",
+// which was the defect written down as a requirement: the count in the key
+// made the THRESHOLD decide the alert volume (a threshold of 10 sent eleven
+// alerts on one descent), and then suppressed each individual count for the
+// 90-day life of its reminder_events row — so a user who refilled and ran
+// low again heard nothing at all. The key is now scoped to the episode.
 describe("buildLowInventoryDedupeKey", () => {
-  it("changes only when the count changes", () => {
-    expect(buildLowInventoryDedupeKey("u", "m", 5)).toBe(buildLowInventoryDedupeKey("u", "m", 5));
-    expect(buildLowInventoryDedupeKey("u", "m", 5)).not.toBe(
-      buildLowInventoryDedupeKey("u", "m", 4),
+  const episode = new Date("2026-05-01T08:00:00.000Z");
+  const laterEpisode = new Date("2026-06-01T08:00:00.000Z");
+
+  it("changes only when the episode changes", () => {
+    expect(buildLowInventoryDedupeKey("u", "m", episode)).toBe(
+      buildLowInventoryDedupeKey("u", "m", episode),
+    );
+    expect(buildLowInventoryDedupeKey("u", "m", episode)).not.toBe(
+      buildLowInventoryDedupeKey("u", "m", laterEpisode),
     );
   });
 
+  it("is stable while the count moves inside one episode", () => {
+    // The property the old key could not have: the count is no longer an
+    // input, so running 10 → 9 → 8 cannot mint three keys.
+    const key = buildLowInventoryDedupeKey("u", "m", episode);
+    expect(buildLowInventoryDedupeKey("u", "m", episode)).toBe(key);
+  });
+
+  it("encodes the episode as ISO-8601", () => {
+    expect(buildLowInventoryDedupeKey("u", "m", episode)).toContain("2026-05-01T08:00:00.000Z");
+  });
+
+  it("appends nothing for the first alert of an episode", () => {
+    // Same convention as buildOverdueDedupeKey: index 0 is the bare key.
+    expect(buildLowInventoryDedupeKey("u", "m", episode, 0)).toBe(
+      buildLowInventoryDedupeKey("u", "m", episode),
+    );
+  });
+
+  it("distinguishes each bounded nudge within one episode", () => {
+    const first = buildLowInventoryDedupeKey("u", "m", episode, 0);
+    const second = buildLowInventoryDedupeKey("u", "m", episode, 1);
+    const third = buildLowInventoryDedupeKey("u", "m", episode, 2);
+    expect(new Set([first, second, third]).size).toBe(3);
+    expect(second).toContain(":n1");
+  });
+
   it("includes the low_inventory marker so it cannot collide with overdue keys", () => {
-    expect(buildLowInventoryDedupeKey("u", "m", 5)).toContain(":low_inventory:");
+    expect(buildLowInventoryDedupeKey("u", "m", episode)).toContain(":low_inventory:");
+  });
+});
+
+describe("LOW_INVENTORY_NAG_POLICY", () => {
+  it("bounds an episode to three alerts", () => {
+    // Chosen, not emergent. The shipped behaviour sent `threshold + 1`
+    // alerts, a number nobody picked.
+    expect(LOW_INVENTORY_NAG_POLICY.maxRepeats).toBe(2);
+  });
+
+  it("paces the nudges in days, not the minutes an overdue dose uses", () => {
+    // The per-medication notifyRepeatEveryMinutes is deliberately NOT used
+    // here: a medication set to repeat every 30 minutes would otherwise nag
+    // about its stock every 30 minutes.
+    expect(LOW_INVENTORY_NAG_POLICY.repeatEveryMinutes).toBe(24 * 60);
+  });
+
+  it("fires the first alert immediately and then one a day, capped", () => {
+    const episode = new Date("2026-05-01T08:00:00.000Z");
+    const at = (hours: number) =>
+      computeNagIndex(
+        episode,
+        LOW_INVENTORY_NAG_POLICY,
+        new Date(episode.getTime() + hours * 3_600_000),
+      );
+    expect(at(0)).toBe(0);
+    expect(at(23)).toBe(0);
+    expect(at(25)).toBe(1);
+    expect(at(49)).toBe(2);
+    // ...and then silent for the rest of the episode, however long it runs.
+    expect(at(24 * 30)).toBe(2);
   });
 });
 

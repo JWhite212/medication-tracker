@@ -168,3 +168,45 @@ describe("appearance page SSR (no-JS feedback from the form prop)", () => {
     expect(rateLimitedBody).toContain("Too many changes. Try again in 30 seconds.");
   });
 });
+
+describe("appearance page SSR (date format samples)", () => {
+  // The Date Format control has to show what each option actually renders,
+  // or it is a menu of three opaque strings. This has been lost three times
+  // -- #130 reverted by #132, re-landed by #135, then dropped again when
+  // #136's merge repair took the rewritten page wholesale -- so it is
+  // pinned here rather than left to survive the next conflict on its own.
+  it("labels each date option with a live sample of its own format", () => {
+    expect(body).toContain("DD/MM/YYYY — 15 Apr 2026");
+    expect(body).toContain("MM/DD/YYYY — Apr 15, 2026");
+    expect(body).toContain("YYYY-MM-DD — 2026-04-15");
+  });
+
+  it("generates the samples with the formatter the option configures", async () => {
+    // Not a restatement of the assertion above: this proves the label is
+    // produced BY formatUserDate, so a change to the formatter moves the
+    // label with it. A hardcoded label would pass the test above forever.
+    const { formatUserDate } = await import("../../src/lib/utils/time");
+    const { entryFor } = await import("../../src/lib/appearance/registry");
+    const sample = new Date(Date.UTC(2026, 3, 15));
+
+    for (const option of entryFor("dateFormat").options) {
+      expect(body).toContain(`${option.label} — ${formatUserDate(sample, "UTC", option.value)}`);
+    }
+  });
+
+  it("leaves the other selects' labels alone", () => {
+    // Only dateFormat gets a sample; appending one to every select would
+    // read as "24h — 24h".
+    expect(body).toContain(">24-hour (14:30)<");
+    expect(body).toContain(">Compact<");
+    expect(body).not.toMatch(/24-hour \(14:30\) —/);
+  });
+
+  it("keeps the stored enum as the option's value, not the rendered sample", () => {
+    // The column, both API-door zod schemas, the backup round trip and the
+    // Mac client all key off the bare enum. Formatting the label must not
+    // leak into what the form posts.
+    expect(body).toMatch(/<option[^>]*value="YYYY-MM-DD"/);
+    expect(body).not.toMatch(/<option[^>]*value="[^"]*—/);
+  });
+});

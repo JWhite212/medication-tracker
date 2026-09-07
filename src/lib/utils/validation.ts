@@ -201,9 +201,24 @@ export const doseLogSchema = z.object({
   sideEffects: sideEffectsField,
 });
 
+/**
+ * The shape a `<input type="datetime-local">` submits: `YYYY-MM-DDTHH:mm`,
+ * optionally with seconds. Browsers add the seconds field only when the
+ * control has a sub-minute `step`, so both forms have to be accepted.
+ *
+ * A door check, not a calendar check — `2026-02-31T10:00` matches and then
+ * resolves to 3 March, which is what `Date` does with it everywhere else.
+ * The point is that the value REACHES `parseDateTimeLocal` as a wall clock
+ * at all: `z.string().min(1)` let `takenAt=x` through, and the parser threw
+ * on it, so a hand-edited form field returned a 500 instead of a field
+ * error. `z.string().datetime()` is the wrong tool here — it demands a
+ * timezone offset, which is exactly what datetime-local does not carry.
+ */
+const DATETIME_LOCAL_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
+
 export const doseEditSchema = z.object({
   doseId: z.string().min(1),
-  takenAt: z.string().min(1),
+  takenAt: z.string().regex(DATETIME_LOCAL_RE, "Enter a valid date and time"),
   quantity: z.coerce.number().int().min(1).max(10),
   notes: z.string().max(500).optional(),
   sideEffects: sideEffectsField,

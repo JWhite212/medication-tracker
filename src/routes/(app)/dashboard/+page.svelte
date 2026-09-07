@@ -125,7 +125,11 @@
 
 <Modal open={editingDose !== null} onclose={() => (editingDose = null)}>
   {#if editingDose}
-    <DoseEditForm dose={editingDose} onclose={() => (editingDose = null)} />
+    <DoseEditForm
+      dose={editingDose}
+      timezone={data.timezone}
+      onclose={() => (editingDose = null)}
+    />
   {/if}
 </Modal>
 

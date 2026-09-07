@@ -7,8 +7,10 @@ import {
   startOfDay,
   endOfDay,
   parseDateTimeLocal,
+  formatDateTimeLocal,
 } from "$lib/utils/time";
 import { computeScheduleSlots } from "$lib/utils/schedule";
+import { doseEditSchema } from "$lib/utils/validation";
 import { computeOverdueSlot, type OverdueRow } from "$lib/server/reminders/domain";
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
@@ -559,5 +561,65 @@ describe("day-of-week filters read the requested date, not the resolved instant"
       "2026-03-28, 20:00",
     ]);
     expect(slotsFor([0])).toEqual([]);
+  });
+});
+
+describe("formatDateTimeLocal — the inverse of parseDateTimeLocal", () => {
+  // The dose-edit modal renders with this and the server parses back with
+  // parseDateTimeLocal, so a round-trip that moves the instant is a silent
+  // rewrite of stored history on a save the user thought was a no-op.
+  it.each([
+    ["America/New_York", "2026-06-15T12:30:00.000Z"],
+    ["Pacific/Auckland", "2026-06-15T12:30:00.000Z"],
+    ["Asia/Katmandu", "2026-06-15T12:30:00.000Z"],
+    ["Europe/London", "2026-10-25T00:30:00.000Z"],
+    ["America/Godthab", "2026-03-29T01:30:00.000Z"],
+  ])("%s round-trips %s unchanged", (timezone, iso) => {
+    const original = new Date(iso);
+    const rendered = formatDateTimeLocal(original, timezone);
+
+    expect(rendered).toBe(localOf(original, timezone).replace(", ", "T"));
+    expect(parseDateTimeLocal(rendered, timezone).toISOString()).toBe(iso);
+  });
+
+  it("renders the PROFILE zone, not the runtime's — the bug it replaces", () => {
+    // The retired helper offset by `new Date().getTimezoneOffset()`, so the
+    // value depended on the viewer's device rather than their settings.
+    const instant = new Date("2026-06-15T12:30:00.000Z");
+
+    expect(formatDateTimeLocal(instant, "America/New_York")).toBe("2026-06-15T08:30");
+    expect(formatDateTimeLocal(instant, "Pacific/Auckland")).toBe("2026-06-16T00:30");
+    expect(formatDateTimeLocal(instant, "Asia/Katmandu")).toBe("2026-06-15T18:15");
+  });
+
+  it("pads a year below 1000 to four digits", () => {
+    expect(formatDateTimeLocal(new Date("0999-04-15T12:00:00Z"), "UTC")).toBe("0999-04-15T12:00");
+  });
+});
+
+describe("doseEditSchema.takenAt — a shape check at the door", () => {
+  const base = { doseId: "dose-1", quantity: "1" };
+
+  it.each(["2026-04-15T18:20", "2026-04-15T18:20:30"])("accepts %s", (takenAt) => {
+    expect(doseEditSchema.safeParse({ ...base, takenAt }).success).toBe(true);
+  });
+
+  it.each(["x", "", "2026-04-15", "18:20", "2026-04-15 18:20", "2026-04-15T18:20:30.000Z"])(
+    "rejects %s rather than letting the parser throw a 500",
+    (takenAt) => {
+      expect(doseEditSchema.safeParse({ ...base, takenAt }).success).toBe(false);
+    },
+  );
+
+  it("every accepted value is one parseDateTimeLocal can resolve", () => {
+    // The two must not be able to drift apart: anything the door admits has
+    // to reach a Date, or the 500 comes straight back.
+    for (const takenAt of ["2026-04-15T18:20", "2026-03-08T02:30", "0999-04-15T00:00"]) {
+      const parsed = doseEditSchema.safeParse({ ...base, takenAt });
+      expect(parsed.success).toBe(true);
+      expect(
+        Number.isNaN(parseDateTimeLocal(parsed.data!.takenAt, "America/New_York").getTime()),
+      ).toBe(false);
+    }
   });
 });

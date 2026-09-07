@@ -41,7 +41,7 @@
 <aside class="border-glass-border bg-surface-raised flex h-screen w-64 flex-col border-r">
   <a
     href="/dashboard"
-    class="border-glass-border hover:bg-glass-hover flex items-center gap-3 border-b p-5 transition-colors"
+    class="border-glass-border hover:bg-surface-overlay flex items-center gap-3 border-b p-5 transition-colors"
   >
     <img src={appIcon} alt="" width="36" height="36" class="h-9 w-9 rounded-lg" />
     <span class="text-lg font-semibold">MedTracker</span>
@@ -53,7 +53,7 @@
         href={item.href}
         class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors {active
           ? 'bg-accent/15 text-accent-ink'
-          : 'text-text-secondary hover:bg-glass-hover hover:text-text-primary'}"
+          : 'text-text-secondary hover:bg-surface-overlay hover:text-text-primary'}"
         aria-current={active ? "page" : undefined}
         onclick={() => mobile && onclose?.()}
       >
@@ -67,7 +67,7 @@
   <div class="border-glass-border border-t p-4">
     <a
       href="/settings"
-      class="hover:bg-glass-hover flex items-center gap-3 rounded-lg p-1 transition-colors"
+      class="hover:bg-surface-overlay flex items-center gap-3 rounded-lg p-1 transition-colors"
       onclick={() => mobile && onclose?.()}
     >
       <div

@@ -50,7 +50,7 @@
       class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
       'interval'
         ? 'border-accent-ink bg-accent/15 text-accent-ink'
-        : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
+        : 'border-glass-border text-text-secondary hover:bg-surface-overlay'}"
     >
       Interval
     </button>
@@ -61,7 +61,7 @@
       class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
       'fixed_time'
         ? 'border-accent-ink bg-accent/15 text-accent-ink'
-        : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
+        : 'border-glass-border text-text-secondary hover:bg-surface-overlay'}"
     >
       Fixed time
     </button>
@@ -72,7 +72,7 @@
       class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
       'prn'
         ? 'border-accent-ink bg-accent/15 text-accent-ink'
-        : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
+        : 'border-glass-border text-text-secondary hover:bg-surface-overlay'}"
     >
       As needed (PRN)
     </button>
@@ -134,7 +134,7 @@
       <button
         type="button"
         onclick={addFixedTime}
-        class="border-glass-border text-text-secondary hover:bg-glass-hover mt-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
+        class="border-glass-border text-text-secondary hover:bg-surface-overlay mt-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
       >
         + Add time
       </button>
@@ -157,7 +157,7 @@
               value,
             )
               ? 'border-accent-ink bg-accent/15 text-accent-ink'
-              : 'border-glass-border text-text-secondary hover:bg-glass-hover'}"
+              : 'border-glass-border text-text-secondary hover:bg-surface-overlay'}"
           >
             {short}
           </button>

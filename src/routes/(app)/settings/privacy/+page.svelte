@@ -71,19 +71,19 @@
     <div class="flex flex-wrap gap-3">
       <a
         href="/api/export?format=pdf"
-        class="border-glass-border hover:bg-glass-hover rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
       >
         Dose history (PDF)
       </a>
       <a
         href="/api/export?format=csv"
-        class="border-glass-border hover:bg-glass-hover rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
       >
         Dose history (CSV)
       </a>
       <a
         href="/api/audit"
-        class="border-glass-border hover:bg-glass-hover rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
       >
         Audit log (CSV)
       </a>

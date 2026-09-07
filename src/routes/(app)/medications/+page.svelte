@@ -41,7 +41,7 @@
                 type="submit"
                 disabled={i === 0}
                 aria-label="Move {medication.name} up"
-                class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded-xs px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
+                class="text-text-muted hover:bg-surface-overlay hover:text-text-primary rounded-xs px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
               >
                 <span aria-hidden="true">&#9650;</span>
               </button>
@@ -53,7 +53,7 @@
                 type="submit"
                 disabled={i === data.medications.length - 1}
                 aria-label="Move {medication.name} down"
-                class="text-text-muted hover:bg-glass-hover hover:text-text-primary rounded-xs px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
+                class="text-text-muted hover:bg-surface-overlay hover:text-text-primary rounded-xs px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
               >
                 <span aria-hidden="true">&#9660;</span>
               </button>
@@ -78,7 +78,7 @@
         {#each data.archived as med (med.id)}
           <a
             href="/medications/{med.id}"
-            class="border-glass-border hover:bg-glass-hover flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors"
+            class="border-glass-border hover:bg-surface-overlay flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors"
           >
             <div class="h-3 w-3 rounded-full" style="background-color: {med.colour}"></div>
             <span class="text-sm">{med.name}</span>

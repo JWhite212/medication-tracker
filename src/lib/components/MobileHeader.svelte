@@ -11,7 +11,7 @@
   <button
     type="button"
     onclick={ontoggle}
-    class="text-text-secondary hover:bg-glass-hover hover:text-text-primary flex h-9 w-9 items-center justify-center rounded-lg transition-colors"
+    class="text-text-secondary hover:bg-surface-overlay hover:text-text-primary flex h-9 w-9 items-center justify-center rounded-lg transition-colors"
     aria-label="Toggle menu"
   >
     <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

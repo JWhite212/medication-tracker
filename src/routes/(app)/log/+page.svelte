@@ -258,7 +258,7 @@
         href="?page={data.page - 1}"
         rel="prev"
         aria-label="Go to previous page"
-        class="border-glass-border hover:bg-glass-hover rounded-lg border px-4 py-2 text-sm"
+        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2 text-sm"
         >Previous</a
       >
     {:else}<div></div>{/if}
@@ -268,7 +268,8 @@
         href="?page={data.page + 1}"
         rel="next"
         aria-label="Go to next page"
-        class="border-glass-border hover:bg-glass-hover rounded-lg border px-4 py-2 text-sm">Next</a
+        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2 text-sm"
+        >Next</a
       >
     {:else}<div></div>{/if}
   </nav>

@@ -129,7 +129,7 @@
         </a>
         <a
           href="/settings/data"
-          class="border-glass-border hover:bg-glass-hover rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+          class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
         >
           Back to Data
         </a>
@@ -366,7 +366,7 @@
           type="submit"
           formaction="?/preview"
           disabled={submitting}
-          class="border-glass-border hover:bg-glass-hover rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
+          class="border-glass-border hover:bg-surface-overlay rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
         >
           {preview ? "Preview again" : "Preview import"}
         </button>

@@ -1,4 +1,4 @@
-import { fail } from "@sveltejs/kit";
+import { error, fail } from "@sveltejs/kit";
 import { desc, eq, and, gte, lte, sql, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "$lib/server/db";
@@ -111,6 +111,11 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
 
 export const actions: Actions = {
   editDose: async ({ request, locals }) => {
+    // Form actions run BEFORE layout load functions, so the (app) group's
+    // auth guard has not executed at this point. Without this check an
+    // anonymous POST reaches `locals.user!.id` and 500s.
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const parsed = doseEditSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
@@ -126,6 +131,8 @@ export const actions: Actions = {
     return { success: true };
   },
   deleteDose: async ({ request, locals }) => {
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = await request.formData();
     const doseId = formData.get("doseId") as string;
     if (!doseId) return fail(400, { error: "Missing dose ID" });

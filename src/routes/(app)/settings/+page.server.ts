@@ -1,4 +1,4 @@
-import { fail } from "@sveltejs/kit";
+import { error, fail } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { users } from "$lib/server/db/schema";
@@ -12,6 +12,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
   default: async ({ request, locals }) => {
+    // Form actions run BEFORE layout load functions, so the (app) group's
+    // auth guard has not executed at this point. Without this check an
+    // anonymous POST reaches `locals.user!.id` and 500s.
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = Object.fromEntries(await request.formData());
     const parsed = settingsSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { errors: parsed.error.flatten().fieldErrors });

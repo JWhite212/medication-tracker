@@ -1,3 +1,4 @@
+import { error } from "@sveltejs/kit";
 import {
   getMedicationsWithStats,
   getArchivedMedications,
@@ -45,6 +46,8 @@ export const load: PageServerLoad = async ({ locals }) => {
     getRefillForecast(userId),
   ]);
 
+  // Sparkline day keys, joined against `date(... AT TIME ZONE ...)` above —
+  // a key, not a label, so it stays en-CA and ignores preferences.dateFormat.
   const fmtDate = new Intl.DateTimeFormat("en-CA", {
     timeZone: safeTz,
     year: "numeric",
@@ -84,6 +87,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 export const actions: Actions = {
   reorder: async ({ request, locals }) => {
+    // Form actions run BEFORE layout load functions, so the (app) group's
+    // auth guard has not executed at this point. Without this check an
+    // anonymous POST reaches `locals.user!.id` and 500s.
+    if (!locals.user) error(401, "Unauthorized");
+
     const formData = await request.formData();
     const medicationId = formData.get("medicationId") as string;
     const direction = formData.get("direction") as string;

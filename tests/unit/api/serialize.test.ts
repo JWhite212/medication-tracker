@@ -68,6 +68,43 @@ describe("serializers", () => {
     expect(d.sideEffects).toBe(sideEffects);
   });
 
+  it("emits exactly the ten documented dose-log fields, and no column added later", () => {
+    // Callers hand this rows straight from a bare `db.select()`, and
+    // structural typing lets a wider row through a narrower parameter — so
+    // a `{ ...d }` spread put every new `dose_logs` column onto the sync
+    // wire and into the JSON export silently. `inventoryApplied` is
+    // internal bookkeeping (how much stock the row removed) and means
+    // nothing to a client; it is passed here to prove it does not survive.
+    const d = serializeDoseLog({
+      id: "d1",
+      userId: "u1",
+      medicationId: "m1",
+      quantity: 1,
+      takenAt: new Date("2026-01-02T08:00:00Z"),
+      loggedAt: new Date("2026-01-02T08:05:00Z"),
+      notes: null,
+      sideEffects: null,
+      status: "taken",
+      updatedAt: new Date("2026-01-02T08:05:00Z"),
+      inventoryApplied: 1,
+    } as Parameters<typeof serializeDoseLog>[0]);
+
+    expect(Object.keys(d).sort()).toEqual(
+      [
+        "id",
+        "loggedAt",
+        "medicationId",
+        "notes",
+        "quantity",
+        "sideEffects",
+        "status",
+        "takenAt",
+        "updatedAt",
+        "userId",
+      ].sort(),
+    );
+  });
+
   it("serializes schedule dates and passes daysOfWeek through", () => {
     const daysOfWeek = [1, 3, 5];
     const s = serializeSchedule({

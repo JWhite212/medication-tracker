@@ -195,9 +195,24 @@ Notes worth keeping in mind:
   deprecated — read `medication_schedules` first. They remain populated
   for compatibility with read paths that haven't migrated yet.
 - `inventory_events` is the audit trail for `medications.inventory_count`.
-  Every change to `inventory_count` (dose taken, dose deleted, refill,
-  manual adjustment) writes a corresponding event in the same
-  transaction.
+  The dose paths (taken, deleted, quantity edited), `refillMedication` and
+  `adjustInventory` each write a corresponding event in the same
+  transaction as the count change.
+
+  **Not every writer does, though** — `createMedicationWithSchedules`,
+  `updateMedicationWithSchedules` and `import/apply.ts` set
+  `inventory_count` absolutely and append no event, so the ledger has
+  gaps where a user has edited the number on the medication form. Those
+  changes are still recorded in `audit_logs`. Closing that gap is
+  separate work; do not read the ledger as a complete reconstruction of
+  the count.
+
+- `dose_logs.inventory_applied` is how many doses a row actually removed
+  from `inventory_count`, which is **not** the same as its `quantity`:
+  `logDose` deducts with `GREATEST(0, …)` and cannot take more than there
+  is. Deleting a dose gives back exactly `inventory_applied`, so a delete
+  is the precise inverse of the log it undoes. NULL means the row predates
+  the column, and readers fall back to `quantity`.
 - `reminder_events.dedupe_key` carries a unique constraint, but
   claiming it is `ON CONFLICT DO UPDATE ... WHERE <retryable>`, not a
   plain insert-or-skip — see the sequence diagram above and

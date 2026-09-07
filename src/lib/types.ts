@@ -3,7 +3,15 @@ import type { users, medications, doseLogs, userPreferences } from "$lib/server/
 
 export type User = InferSelectModel<typeof users>;
 export type Medication = InferSelectModel<typeof medications>;
-export type DoseLog = InferSelectModel<typeof doseLogs>;
+/**
+ * A dose log as the CLIENT sees it.
+ *
+ * `inventoryApplied` is deliberately omitted: it is server-side bookkeeping
+ * for how much stock a row removed (see `doses.ts`), it is not on the
+ * `/api/v1` wire either, and including it here would oblige every page query
+ * that returns doses to select a column none of them render.
+ */
+export type DoseLog = Omit<InferSelectModel<typeof doseLogs>, "inventoryApplied">;
 
 export type SessionUser = Pick<
   User,

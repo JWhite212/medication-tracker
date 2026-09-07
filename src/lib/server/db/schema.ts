@@ -157,6 +157,21 @@ export const doseLogs = pgTable(
       .notNull()
       .references(() => medications.id, { onDelete: "cascade" }),
     quantity: integer("quantity").notNull().default(1),
+    // How many doses this row ACTUALLY removed from
+    // `medications.inventory_count`, after logDose's `GREATEST(0, …)` clamp.
+    //
+    // Distinct from `quantity`, which is what the user says they took:
+    // logging 3 against a stock of 1 has quantity 3 and inventoryApplied 1.
+    // `deleteDose` gives back exactly this, so a delete is the precise
+    // inverse of the log it undoes. Without it the delete restored the full
+    // `quantity` while the log had only deducted the clamped amount, and
+    // undoing a dose MINTED stock that never existed.
+    //
+    // 0 when the medication was not tracking inventory. NULL only on rows
+    // written before this column existed — those fall back to `quantity`,
+    // i.e. exactly today's behaviour, which is also the guarantee if the
+    // migration's backfill is ever skipped by a `drizzle-kit push`.
+    inventoryApplied: integer("inventory_applied"),
     takenAt: timestamp("taken_at", { withTimezone: true }).notNull(),
     loggedAt: timestamp("logged_at", { withTimezone: true }).notNull().defaultNow(),
     notes: text("notes"),

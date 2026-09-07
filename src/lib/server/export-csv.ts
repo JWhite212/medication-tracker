@@ -57,6 +57,13 @@ export async function generateCsvReport(
 
   const rows = doses.map((dose) => {
     const dt = new Date(dose.takenAt);
+    // Deliberately NOT preferences.dateFormat. The importer re-reads this
+    // column as strict YYYY-MM-DD (`import/csv.ts` — "date must be a real
+    // YYYY-MM-DD"), so a user on MM/DD/YYYY would export a file their own
+    // account then refuses to import. The time cell opposite is preference-
+    // driven only because `parseClockTime` was written to read both clocks
+    // back; nothing equivalent exists for dates, and adding it would make
+    // 01/02/2026 ambiguous on the wire.
     const date = new Intl.DateTimeFormat("en-CA", {
       timeZone: timezone,
     }).format(dt);

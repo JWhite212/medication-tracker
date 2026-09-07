@@ -2,6 +2,12 @@
   import { enhance } from "$app/forms";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import MedicationForm from "$lib/components/MedicationForm.svelte";
+  import {
+    formatUserDate,
+    formatUserTime,
+    type DateFormat,
+    type TimeFormat,
+  } from "$lib/utils/time";
 
   let { data, form } = $props();
 
@@ -14,15 +20,16 @@
     correction: "Correction",
   };
 
+  // Date and time are formatted separately so each follows its own
+  // preference. The single Intl call this replaced passed no timeZone at
+  // all, so inventory history rendered in the *browser's* zone while every
+  // other timestamp in the app uses the profile zone — the two disagreed
+  // for any user travelling or working away from home.
   function formatEventTime(iso: Date | string): string {
     const d = typeof iso === "string" ? new Date(iso) : iso;
-    return new Intl.DateTimeFormat("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(d);
+    const date = formatUserDate(d, data.user.timezone, data.preferences.dateFormat as DateFormat);
+    const time = formatUserTime(d, data.user.timezone, data.preferences.timeFormat as TimeFormat);
+    return `${date}, ${time}`;
   }
 </script>
 

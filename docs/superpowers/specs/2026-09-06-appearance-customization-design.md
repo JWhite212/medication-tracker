@@ -296,9 +296,11 @@ register (`2026-07-25-macos-app-design.md:338`) had already resolved the same qu
 so the two platforms no longer disagree about whether the setting is real.
 
 **The trap is that the stored values are not the rendered shapes.** The enum is
-`DD/MM/YYYY | MM/DD/YYYY | YYYY-MM-DD`, but no human-facing surface rendered an
-all-numeric date — they rendered `15 Apr 2026`, `Wed 15 Apr`, `Wed, 15 Apr 2026`, all
-with abbreviated month names. Applying the enum as a literal pattern would therefore
+`DD/MM/YYYY | MM/DD/YYYY | YYYY-MM-DD`, but every surface that rendered a date as
+_prose_ used an abbreviated month name — `15 Apr 2026`, `Wed 15 Apr`, `Wed, 15 Apr 2026`.
+(The one exception proves the point rather than undermining it: the session-expiry line
+used a bare `toLocaleDateString()`, which is all-numeric _and_ dependent on the browser's
+locale rather than the user's setting — it was one of the two latent bugs below.) Applying the enum as a literal pattern would therefore
 have changed what **every** account sees, including the overwhelming majority sitting on
 the `DD/MM/YYYY` default who never opened the page — a silent app-wide regression
 delivered as a bug fix, and a loss of the weekday the Log headings carry deliberately.
@@ -327,9 +329,14 @@ Settings → Security. Two of them — the event history and the session-expiry 
 also quietly wrong beforehand: the event history passed no `timeZone` at all, so it
 rendered in the _browser's_ zone while the rest of the app used the profile zone, and the
 security line used a bare `toLocaleDateString()`.
-Routing both through the canonical formatter fixes that as a side effect. One accepted
-cosmetic change: the event history's day loses its leading zero (`05 Apr` → `5 Apr`),
-because unifying on one formatter is worth more than a per-site padding knob.
+Routing both through the canonical formatter fixes that as a side effect. It also changes
+two renderings, both accepted rather than incidental. The event history's day loses its
+leading zero (`05 Apr` → `5 Apr`), because unifying on one formatter is worth more than a
+per-site padding knob. Less obviously, its **clock** changes too: the old single `Intl`
+call hardcoded `en-GB` with `hour`/`minute`, which renders 24-hour, so `18:20` becomes
+`6:20 pm` for every account on the `12h` default. That is the setting doing what it says —
+the site had simply been ignoring `timeFormat` — but it is a visible change on a surface
+nobody asked to change, so it belongs in this list and not in a footnote.
 
 **Everything else is a key and must not follow the preference:** the day keys in
 `analytics.ts`, `schedule.ts`, `log/+page.svelte` and `medications/+page.server.ts`, and
@@ -337,8 +344,14 @@ the CSV date cell. That last one is the sharp edge — `import/csv.ts` re-reads 
 strict `YYYY-MM-DD`, so a user on `MM/DD/YYYY` would export a file their own account
 then refuses to import. The time cell beside it _is_ preference-driven only because
 `parseClockTime` was written to read both clocks back; there is no date equivalent, and
-adding one would make `01/02/2026` ambiguous on the wire. The exempt sites carry
-comments saying so.
+adding one would make `01/02/2026` ambiguous on the wire. Every exempt site carries a
+comment saying so — `analytics.ts` and `schedule.ts` included, which for a while the
+claim covered without it being true.
+
+Being exempt from the _preference_ is not the same as being free to borrow a locale.
+Keys go through `isoDayKey` for the same reason labels do: `Intl` left the year unpadded,
+so a dose dated before year 1000 wrote a CSV cell the importer rejects, and the column
+sat one CLDR change away from reordering entirely.
 
 **Not changed:** the column, its default, all three zod schemas, `serializePreferences`,
 the backup round trip and `docs/api-v1-contract.md`. Only the `<select>`'s labels move,

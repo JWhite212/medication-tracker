@@ -80,28 +80,55 @@ const DATE_FORMAT_LOCALES: Record<Exclude<DateFormat, "YYYY-MM-DD">, string> = {
  * runtime. So the digits are read out of `formatToParts` — which is specified
  * per-field and therefore stable — and joined here.
  *
- * The locale still decides the weekday's *name*, which is a rendering choice
- * and not part of the ISO promise. Widths are re-padded defensively so the
- * result is a fixed shape whatever an implementation does with a year < 1000.
+ * Widths are re-padded so the result is a fixed shape whatever an
+ * implementation does with a year below 1000 — `year: "numeric"` renders
+ * "999", not "0999".
+ *
+ * Exported because date **keys** need exactly this and for the same reason:
+ * `export-csv.ts` writes a column `import/csv.ts` re-reads as strict
+ * `YYYY-MM-DD`, so a locale that reordered the fields would produce a file
+ * the exporting account could not import back.
  */
-function isoDate(date: Date, timezone: string, weekday: boolean): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+export function isoDayKeyFormatter(timezone: string): (date: Date) => string {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
-    ...(weekday ? { weekday: "short" as const } : {}),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(date);
+  });
 
-  const get = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "";
+  return (date: Date) => {
+    const parts = fmt.formatToParts(date);
+    const get = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((part) => part.type === type)?.value ?? "";
 
-  const ymd = [
-    get("year").padStart(4, "0"),
-    get("month").padStart(2, "0"),
-    get("day").padStart(2, "0"),
-  ].join("-");
-  const dayName = get("weekday");
+    return [
+      get("year").padStart(4, "0"),
+      get("month").padStart(2, "0"),
+      get("day").padStart(2, "0"),
+    ].join("-");
+  };
+}
+
+/** One-off form of {@link isoDayKeyFormatter}. Prefer the factory in a loop. */
+export function isoDayKey(date: Date, timezone: string): string {
+  return isoDayKeyFormatter(timezone)(date);
+}
+
+/**
+ * The label form: `isoDayKey` plus the locale's weekday name when asked.
+ *
+ * The weekday is a rendering choice and not part of the ISO promise, so it is
+ * the one field here a locale still decides.
+ */
+function isoDate(date: Date, timezone: string, weekday: boolean): string {
+  const ymd = isoDayKey(date, timezone);
+  if (!weekday) return ymd;
+
+  const dayName = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, weekday: "short" })
+    .formatToParts(date)
+    .find((part) => part.type === "weekday")?.value;
+
   return dayName ? `${dayName}, ${ymd}` : ymd;
 }
 

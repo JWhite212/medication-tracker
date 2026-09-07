@@ -5,7 +5,7 @@
   import EmptyState from "$components/EmptyState.svelte";
   import { onDestroy } from "svelte";
   import type { DoseLogWithMedication } from "$lib/types";
-  import { formatUserDate, type DateFormat } from "$lib/utils/time";
+  import { formatUserDate, isoDayKey, type DateFormat } from "$lib/utils/time";
   import emptyDoseHistory from "$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.webp";
 
   let { data } = $props();
@@ -82,12 +82,7 @@
   // (YYYY-MM-DD) and must never follow preferences.dateFormat — reordering
   // it would silently break the Today/Yesterday match and the grouping.
   function formatDateKey(date: Date, tz: string): string {
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(date);
+    return isoDayKey(date, tz);
   }
 
   function formatDateLabel(

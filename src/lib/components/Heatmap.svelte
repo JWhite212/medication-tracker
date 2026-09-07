@@ -1,5 +1,18 @@
 <script lang="ts">
-  let { data, days = 90 }: { data: { date: string; count: number }[]; days?: number } = $props();
+  import { buildHeatmapDays } from "$lib/utils/heatmap";
+  import { formatUserDate, type DateFormat } from "$lib/utils/time";
+
+  let {
+    data,
+    days = 90,
+    timezone,
+    dateFormat = "DD/MM/YYYY",
+  }: {
+    data: { date: string; count: number }[];
+    days?: number;
+    timezone: string;
+    dateFormat?: DateFormat;
+  } = $props();
 
   const DAYS = $derived(days);
 
@@ -7,24 +20,29 @@
   const maxCount = $derived(data.reduce((m, d) => (d.count > m ? d.count : m), 1));
 
   const weeks = $derived.by(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startDay = new Date(today.getTime() - (DAYS - 1) * 86400000);
     const cols: { date: string; count: number; row: number }[][] = [];
     let currentCol: { date: string; count: number; row: number }[] = [];
-    for (let i = 0; i < DAYS; i++) {
-      const d = new Date(startDay.getTime() + i * 86400000);
-      const dateStr = d.toISOString().split("T")[0];
-      const row = d.getDay();
+    buildHeatmapDays(DAYS, timezone).forEach(({ date, row }, i) => {
       if (i > 0 && row === 0) {
         cols.push(currentCol);
         currentCol = [];
       }
-      currentCol.push({ date: dateStr, count: lookup.get(dateStr) ?? 0, row });
-    }
+      currentCol.push({ date, count: lookup.get(date) ?? 0, row });
+    });
     if (currentCol.length > 0) cols.push(currentCol);
     return cols;
   });
+
+  // `cell.date` is a KEY — it matches the server's `AT TIME ZONE` grouping and
+  // must stay ISO. The tooltip and aria-label are LABELS, so they go through
+  // the user's preference like every other rendered date. Formatting in "UTC"
+  // is correct here and not a shortcut: the key is already a civil date in the
+  // user's zone, so re-applying an offset would shift it a day.
+  function cellLabel(date: string, count: number): string {
+    const [y, m, d] = date.split("-").map(Number);
+    const shown = formatUserDate(new Date(Date.UTC(y, m - 1, d)), "UTC", dateFormat);
+    return `${shown}: ${count} dose${count !== 1 ? "s" : ""}`;
+  }
 
   let wrapper = $state<HTMLDivElement | null>(null);
   let tooltip = $state<{ text: string; x: number; y: number } | null>(null);
@@ -43,7 +61,7 @@
     const cellRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const wrapperRect = wrapper.getBoundingClientRect();
     tooltip = {
-      text: `${date}: ${count} dose${count !== 1 ? "s" : ""}`,
+      text: cellLabel(date, count),
       x: cellRect.left - wrapperRect.left,
       y: cellRect.top - wrapperRect.top - 28,
     };
@@ -67,7 +85,7 @@
               )}"
               style="animation-delay: {weekIdx * 15}ms"
               role="img"
-              aria-label="{cell.date}: {cell.count} doses logged"
+              aria-label="{cellLabel(cell.date, cell.count)} logged"
               onmouseenter={(e) => showTooltip(e, cell.date, cell.count)}
               onmouseleave={hideTooltip}
             ></div>

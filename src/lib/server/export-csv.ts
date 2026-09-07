@@ -1,7 +1,7 @@
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
-import { formatUserTime, type TimeFormat } from "$lib/utils/time";
+import { formatUserTime, isoDayKey, type TimeFormat } from "$lib/utils/time";
 
 /**
  * Escape a single CSV cell.
@@ -64,9 +64,13 @@ export async function generateCsvReport(
     // driven only because `parseClockTime` was written to read both clocks
     // back; nothing equivalent exists for dates, and adding it would make
     // 01/02/2026 ambiguous on the wire.
-    const date = new Intl.DateTimeFormat("en-CA", {
-      timeZone: timezone,
-    }).format(dt);
+    //
+    // `isoDayKey` rather than a bare en-CA format call: the round trip needs
+    // the shape guaranteed, not merely likely. Asking a locale for the whole
+    // string left the year unpadded, so a dose dated before year 1000 wrote a
+    // cell the importer rejects — and left the column one CLDR change away
+    // from reordering entirely.
+    const date = isoDayKey(dt, timezone);
     const time = formatUserTime(dt, timezone, timeFormat);
     const sideEffects = dose.sideEffects?.map((e) => `${e.name} (${e.severity})`).join("; ") ?? "";
 

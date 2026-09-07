@@ -310,44 +310,27 @@ function readAppCss(): string {
 
 const CSS = readAppCss();
 
-/** The light arm's body — everything inside `@media (prefers-color-scheme: light)`. */
-const LIGHT_ARM = blockBody(CSS, /@media \(prefers-color-scheme: light\)\s*\{/, "the light arm");
-
-/**
- * The dark `prefers-contrast` block. Searched in the stylesheet with the
- * light arm REMOVED, so this cannot accidentally match the light one if the
- * two are ever reordered.
- */
-const CSS_DARK_ONLY = CSS.replace(LIGHT_ARM, "");
-
 const DARK = parseDeclarations(blockBody(CSS, /@theme\s*\{/, "the @theme block"));
-
-/**
- * The light palette as the BROWSER resolves it: the light arm overrides
- * @theme, it does not replace it. Asserting the arm alone would silently
- * exempt every token it does not redeclare.
- */
-const LIGHT = {
-  ...DARK,
-  ...parseDeclarations(blockBody(LIGHT_ARM, /:root\s*\{/, "the light :root")),
-};
 
 const HC_DARK = parseDeclarations(
   blockBody(
-    blockBody(CSS_DARK_ONLY, /@media \(prefers-contrast: more\)\s*\{/, "the dark contrast block"),
+    blockBody(CSS, /@media \(prefers-contrast: more\)\s*\{/, "the dark contrast block"),
     /:root\s*\{/,
     "the dark contrast :root",
   ),
 );
+```
 
-const HC_LIGHT = parseDeclarations(
-  blockBody(
-    blockBody(LIGHT_ARM, /@media \(prefers-contrast: more\)\s*\{/, "the light contrast block"),
-    /:root\s*\{/,
-    "the light contrast :root",
-  ),
-);
+**Define ONLY the dark-side constants in this task.** The light arm does not exist in
+`src/app.css` until Task 3, and `blockBody` throws when its opener does not match — so
+declaring `LIGHT_ARM` / `LIGHT` / `HC_LIGHT` here would throw at module load and take the
+whole file down with it, destroying this task's "still green, pure refactor" property.
+Task 3 adds them.
 
+Widen the `$lib/utils/contrast` import to include `READABLE_LIGHT`, which the scheme table
+in Step 3 needs.
+
+```ts
 /**
  * `rgba(R,G,B,A)` -> the alpha and the colour it composites toward.
  *
@@ -449,7 +432,40 @@ git commit -m "test(theme): parameterise the token assertions by scheme"
 
 - [ ] **Step 1: Add the light scheme to the test first**
 
-Add to `SCHEMES` in `tests/unit/theme-tokens.test.ts`:
+First add the light-side constants Task 2 deliberately left out — they throw until the
+light arm exists, which is what makes Step 2's failure the right one. Place them beside
+`DARK` / `HC_DARK`, and **repoint `HC_DARK` at `CSS_DARK_ONLY`** so it cannot start
+matching the light contrast block if the two are ever reordered:
+
+```ts
+/** The light arm's body — everything inside `@media (prefers-color-scheme: light)`. */
+const LIGHT_ARM = blockBody(CSS, /@media \(prefers-color-scheme: light\)\s*\{/, "the light arm");
+
+/** The stylesheet with the light arm removed, so `HC_DARK` cannot match the light one. */
+const CSS_DARK_ONLY = CSS.replace(LIGHT_ARM, "");
+
+/**
+ * The light palette as the BROWSER resolves it: the light arm overrides
+ * @theme, it does not replace it. Asserting the arm alone would silently
+ * exempt every token it does not redeclare.
+ */
+const LIGHT = {
+  ...DARK,
+  ...parseDeclarations(blockBody(LIGHT_ARM, /:root\s*\{/, "the light :root")),
+};
+
+const HC_LIGHT = parseDeclarations(
+  blockBody(
+    blockBody(LIGHT_ARM, /@media \(prefers-contrast: more\)\s*\{/, "the light contrast block"),
+    /:root\s*\{/,
+    "the light contrast :root",
+  ),
+);
+```
+
+Widen the `$lib/utils/contrast` import to add `INK_BACKDROP_LIGHT` and `READABLE_DARK`.
+
+Then add to `SCHEMES`:
 
 ```ts
   {
@@ -947,6 +963,15 @@ export const LIGHT_TOKENS: Record<string, string> = {
   "--color-heatmap-4": "#0c6455",
 };
 
+/**
+ * Four tokens, where `app.css`'s block overrides five.
+ *
+ * `--color-accent` is deliberately absent from both HC tables. Inside (app)
+ * the layout sets it inline on the wrapper from the user's stored hex, and
+ * an inline style beats this block — so a high-contrast override here would
+ * be dead code. The app.css copy keeps it because that copy is what serves
+ * the logged-out routes, where nothing is set inline.
+ */
 export const HC_DARK_TOKENS: Record<string, string> = {
   "--color-text-muted": "#ababba",
   "--color-text-secondary": "#d4d4e0",

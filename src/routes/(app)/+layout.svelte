@@ -3,7 +3,7 @@
   import MobileHeader from "$components/MobileHeader.svelte";
   import Toast from "$components/ui/Toast.svelte";
   import { readableForeground } from "$lib/utils/contrast";
-  import { buildThemeStyle, type ThemeName } from "$lib/appearance/theme-css";
+  import { buildThemeStyle } from "$lib/appearance/theme-css";
 
   let { data, children } = $props();
   let sidebarOpen = $state(false);
@@ -20,7 +20,7 @@
   // subtree, which is the exact trap spec decision 4 was written to avoid.
   const accentColor = $derived(data.preferences.accentColor);
   const accentFgColor = $derived(readableForeground(accentColor).color);
-  const themeStyle = $derived(buildThemeStyle(data.preferences.theme as ThemeName, accentColor));
+  const themeStyle = $derived(buildThemeStyle(data.preferences.theme, accentColor));
 </script>
 
 <svelte:head>

@@ -65,16 +65,126 @@
   --radius-xl: 1.5rem;
 }
 
-@layer base {
+/*
+ * The scheme fallback for everyone the SSR theme block does not reach:
+ * anonymous visitors on `/` and `/auth/*`, `src/routes/+error.svelte`, and
+ * any (app) page whose stored theme is `system`.
+ *
+ * LAYERED, and layered in `theme` specifically. Tailwind emits
+ * `@layer theme, base, components, utilities;` so `theme` is the LOWEST
+ * layer — which is exactly what lets the unlayered `:root:root` SSR block
+ * beat this unconditionally (spec decision 3). Within one layer, source
+ * order decides, so the light arm wins over the dark arm above it whenever
+ * its media query matches.
+ *
+ * `color-scheme` lives HERE and not in `@layer base` for that same reason.
+ * It sat in `@layer base` until 1c, and `base` outranks `theme` — so a
+ * layered light arm could not have overridden it, and every light-mode user
+ * would have kept dark native checkboxes, radios, scrollbars and the
+ * date-picker glyph. Most visibly on /settings/appearance itself, whose
+ * <select>s carry no `appearance: none`.
+ *
+ * The `prefers-contrast` arms live here too (spec decision 5). They used to
+ * be unlayered, which made them beat any layered theme rule — on a light
+ * page the dark high-contrast values measure 1.29:1, worse than the 2.53:1
+ * the spec already calls unacceptable.
+ */
+@layer theme {
   :root {
-    /* Makes native checkboxes, radios, scrollbars and the date-picker glyph
-       render dark. There are 14 native checkbox/radio inputs in the app with
-       no appearance:none and no accent-color, so today they paint as bright
-       white widgets on a near-black page. This does NOT restyle a closed
-       <select> — that needs appearance:none plus a drawn chevron. */
     color-scheme: dark;
   }
 
+  /* High contrast: system preference.
+   *
+   * Every line here must deliver MORE contrast than the @theme value it
+   * shadows, and these were all written against the pre-AA base — after that
+   * base was raised they had quietly become downgrades (text-muted measured
+   * 4.02:1, below both AA and the 4.53:1 it was overriding). Asking for more
+   * contrast must never give you less. theme-tokens.test.ts parses this block
+   * and compares each override against the token it replaces.
+   *
+   * --color-accent reaches the logged-out routes only: inside (app) the
+   * layout sets it inline from the user's stored hex and an inline style
+   * beats a media query. Raising it is still right for /, /auth/* and the
+   * like.
+   *
+   * --color-glass-border stays even though control boundaries moved to
+   * --color-border-strong: it is now a decorative hairline, several buttons
+   * still carry it, and 0.12 -> 0.24 is an increase in both readings.
+   */
+  @media (prefers-contrast: more) {
+    :root {
+      --color-text-muted: #ababba;
+      --color-text-secondary: #d4d4e0;
+      --color-glass-border: rgba(255, 255, 255, 0.24);
+      --color-border-strong: rgba(255, 255, 255, 0.5);
+      --color-accent: #3730a3;
+    }
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+
+      /* Three tokens cannot be mirrored and are flipped, not re-valued.
+         glass stays a LIGHTENER (page -> card); glass-border and
+         border-strong flip to dark-alpha. glass-hover does NOT flip — see
+         its own comment below. */
+      --color-glass: rgba(255, 255, 255, 0.72);
+      --color-glass-border: rgba(0, 0, 0, 0.14);
+      /* Hover reads DARKER than the card by carrying LESS white, not by
+         flipping to black-alpha. `bg-glass` and `hover:bg-glass-hover` are
+         two backgrounds on the SAME element over the same page — they do
+         not stack — so both composite over --color-surface, and the darker
+         of the two is simply the lower alpha. Flipping to black made a
+         hovered card #e3e5eb against a #eef0f6 page (darker than the
+         background it sits on) and dropped the hovered refill chips to
+         4.15:1. */
+      --color-glass-hover: rgba(255, 255, 255, 0.4);
+      /* 3.32:1 on the worst surface; 0.42 measures 2.93 and fails 1.4.11. */
+      --color-border-strong: rgba(0, 0, 0, 0.46);
+      --color-surface: #eef0f6;
+      --color-surface-raised: #ffffff;
+      /* Inverts direction: four of its five uses are recessed tracks and
+         chips, which must go DARKER on a light page, not lighter. */
+      --color-surface-overlay: #e2e5ee;
+      --color-text-primary: #14141c;
+      --color-text-secondary: #4c4c63;
+      --color-text-muted: #5c5c72;
+      --color-accent: #4f46e5;
+      --color-accent-hover: #4338ca;
+      /* Light fills take a WHITE foreground where dark fills take #111111. */
+      --color-accent-fg: #ffffff;
+      --color-accent-ink: #4f46e5;
+      --color-success: #036b4e;
+      --color-success-fg: #ffffff;
+      --color-warning: #7f5300;
+      --color-warning-fg: #ffffff;
+      --color-danger: #b41f17;
+      --color-danger-fg: #ffffff;
+      /* On light the fill is already 5.30:1 as text, so ink == fill. */
+      --color-danger-ink: #b41f17;
+      --color-info: #3a44c4;
+      --color-heatmap-0: #e4e7ee;
+      --color-heatmap-1: #8fd0c1;
+      --color-heatmap-2: #4fb3a0;
+      --color-heatmap-3: #22907c;
+      --color-heatmap-4: #0c6455;
+    }
+
+    @media (prefers-contrast: more) {
+      :root {
+        --color-text-muted: #43435a;
+        --color-text-secondary: #3a3a4d;
+        --color-glass-border: rgba(0, 0, 0, 0.26);
+        --color-border-strong: rgba(0, 0, 0, 0.66);
+        --color-accent: #3730a3;
+      }
+    }
+  }
+}
+
+@layer base {
   body {
     @apply bg-surface text-text-primary font-sans antialiased;
   }
@@ -181,31 +291,4 @@
 [data-reduced-motion="true"] *::after {
   animation-duration: 0.01ms !important;
   transition-duration: 0.01ms !important;
-}
-
-/* High contrast: system preference.
- *
- * Every line here must deliver MORE contrast than the @theme value it
- * shadows, and these were all written against the pre-AA base — after that
- * base was raised they had quietly become downgrades (text-muted measured
- * 4.02:1, below both AA and the 4.53:1 it was overriding). Asking for more
- * contrast must never give you less. theme-tokens.test.ts parses this block
- * and compares each override against the token it replaces.
- *
- * --color-accent reaches the logged-out routes only: inside (app) the layout
- * sets it inline from the user's stored hex and an inline style beats a media
- * query. Raising it is still right for /, /auth/* and the like.
- *
- * --color-glass-border stays even though control boundaries moved to
- * --color-border-strong: it is now a decorative hairline, several buttons
- * still carry it, and 0.12 -> 0.24 is an increase in both readings.
- */
-@media (prefers-contrast: more) {
-  :root {
-    --color-text-muted: #ababba;
-    --color-text-secondary: #d4d4e0;
-    --color-glass-border: rgba(255, 255, 255, 0.24);
-    --color-border-strong: rgba(255, 255, 255, 0.5);
-    --color-accent: #3730a3;
-  }
 }

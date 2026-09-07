@@ -12,7 +12,7 @@ import {
   MedicationNotFoundError,
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
-import { parseDateTimeLocal, startOfDay, endOfDay, computeTimingStatus } from "$lib/utils/time";
+import { resolveEditedInstant, startOfDay, endOfDay, computeTimingStatus } from "$lib/utils/time";
 import { computeScheduleSlots, timingStatusFromSlots } from "$lib/utils/schedule";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import { parseIntervalHours } from "$lib/utils/schedule-rate";
@@ -164,9 +164,9 @@ export const actions: Actions = {
     const parsed = doseEditSchema.safeParse(formData);
     if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
 
-    const { doseId, takenAt, quantity, notes, sideEffects } = parsed.data;
+    const { doseId, takenAt, originalTakenAt, quantity, notes, sideEffects } = parsed.data;
     const updated = await updateDose(locals.user!.id, doseId, {
-      takenAt: parseDateTimeLocal(takenAt, locals.user!.timezone),
+      takenAt: resolveEditedInstant(takenAt, originalTakenAt, locals.user!.timezone),
       quantity,
       notes,
       sideEffects: sideEffects ?? null,

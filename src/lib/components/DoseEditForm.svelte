@@ -39,6 +39,10 @@
   class="space-y-4"
 >
   <input type="hidden" name="doseId" value={dose.id} />
+  <!-- The instant this form rendered. On a fall-back day two different
+       instants render as the same wall clock, so without this a Save that
+       changed nothing would rewrite takenAt an hour earlier. -->
+  <input type="hidden" name="originalTakenAt" value={new Date(dose.takenAt).toISOString()} />
 
   <div class="mb-2 flex items-center gap-3">
     <div class="h-4 w-4 rounded-full" style="background-color: {dose.medication.colour}"></div>

@@ -63,6 +63,7 @@
   // `data` never changes and nothing else puts the control back.
   let values = $state({
     accentColor: data.preferences.accentColor,
+    theme: data.preferences.theme,
     dateFormat: data.preferences.dateFormat,
     timeFormat: data.preferences.timeFormat,
     uiDensity: data.preferences.uiDensity,

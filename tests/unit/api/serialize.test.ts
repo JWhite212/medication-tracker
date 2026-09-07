@@ -159,6 +159,7 @@ describe("serializers", () => {
     const p = serializePreferences({
       userId: "u1",
       accentColor: "#6366f1",
+      theme: "dark",
       dateFormat: "DD/MM/YYYY",
       timeFormat: "12h",
       uiDensity: "comfortable",

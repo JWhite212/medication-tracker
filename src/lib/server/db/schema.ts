@@ -218,6 +218,15 @@ export const userPreferences = pgTable("user_preferences", {
   // 4.47:1 with white; #4f46e5 is 6.29:1. Migration 0017 backfills the rows
   // that never customised it.
   accentColor: text("accent_color").notNull().default("#4f46e5"),
+  // Defaults to 'dark', not 'system'. The app was dark by construction
+  // before 1c, so every existing row belongs to someone who never chose
+  // anything — defaulting to 'system' would repaint the app for every user
+  // on a light OS, which is a visible change delivered as a feature.
+  // Production applies schema with `drizzle-kit push` (scripts/vercel-build.mjs),
+  // so no backfill in the migration body ever runs in prod: this DEFAULT is
+  // the only mechanism that reaches existing rows, and NOT NULL is what
+  // makes it apply to them.
+  theme: text("theme").notNull().default("dark"),
   dateFormat: text("date_format").notNull().default("DD/MM/YYYY"),
   timeFormat: text("time_format").notNull().default("12h"),
   uiDensity: text("ui_density").notNull().default("comfortable"),

@@ -95,6 +95,7 @@ const hexColour = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex col
  */
 export const appearanceFieldSchemas = {
   accentColor: z.strictObject({ accentColor: hexColour }),
+  theme: z.strictObject({ theme: z.enum(optionValues("theme")) }),
   dateFormat: z.strictObject({ dateFormat: z.enum(optionValues("dateFormat")) }),
   timeFormat: z.strictObject({ timeFormat: z.enum(optionValues("timeFormat")) }),
   uiDensity: z.strictObject({ uiDensity: z.enum(optionValues("uiDensity")) }),
@@ -106,6 +107,7 @@ export const appearanceFieldSchemas = {
 /** ARITY 2 — /api/v1 `update_preferences`: all optional, JSON-native types. */
 export const appearancePayloadShape = {
   accentColor: hexColour.optional(),
+  theme: z.enum(optionValues("theme")).optional(),
   dateFormat: z.enum(optionValues("dateFormat")).optional(),
   timeFormat: z.enum(optionValues("timeFormat")).optional(),
   uiDensity: z.enum(optionValues("uiDensity")).optional(),
@@ -120,6 +122,7 @@ export const appearancePayloadShape = {
  */
 export const appearanceImportShape = {
   accentColor: hexColour.optional(),
+  theme: z.enum(optionValues("theme")).optional(),
   dateFormat: z.enum(optionValues("dateFormat")).optional(),
   timeFormat: z.enum(optionValues("timeFormat")).optional(),
   uiDensity: z.enum(optionValues("uiDensity")).optional(),

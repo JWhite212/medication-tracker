@@ -27,6 +27,7 @@ import Page from "../../src/routes/(app)/settings/appearance/+page.svelte";
 const preferences = {
   userId: "u1",
   accentColor: "#f59e0b",
+  theme: "light",
   dateFormat: "YYYY-MM-DD",
   timeFormat: "24h",
   uiDensity: "compact",
@@ -87,20 +88,28 @@ const { body: rateLimitedBody } = render(Page, {
 
 describe("appearance page SSR (no-JS path)", () => {
   it("emits one form per control, each targeting its own named action", () => {
-    for (const key of ["accentColor", "dateFormat", "timeFormat", "uiDensity", "reducedMotion"]) {
+    for (const key of [
+      "accentColor",
+      "theme",
+      "dateFormat",
+      "timeFormat",
+      "uiDensity",
+      "reducedMotion",
+    ]) {
       expect(body, `missing form for ${key}`).toContain(`action="?/${key}"`);
     }
-    expect(body.match(/<form/g) ?? []).toHaveLength(5);
+    expect(body.match(/<form/g) ?? []).toHaveLength(6);
     expect(body).not.toContain('action="?/default"');
   });
 
   it("marks the stored option selected on every select — the no-JS POST sends the stored value", () => {
     // bind:value must SSR `selected` onto the right option. If it does not,
     // a no-JS save silently posts the first option instead of the stored one.
+    expect(body).toMatch(/<option[^>]*value="light"[^>]*selected/);
     expect(body).toMatch(/<option[^>]*value="YYYY-MM-DD"[^>]*selected/);
     expect(body).toMatch(/<option[^>]*value="24h"[^>]*selected/);
     expect(body).toMatch(/<option[^>]*value="compact"[^>]*selected/);
-    expect(body.match(/selected/g) ?? []).toHaveLength(3);
+    expect(body.match(/selected/g) ?? []).toHaveLength(4);
   });
 
   it("checks the stored accent radio", () => {
@@ -128,7 +137,7 @@ describe("appearance page SSR (no-JS path)", () => {
   it("ships the no-JS save buttons in the SSR'd HTML", () => {
     // $effect does not run during SSR, so `hydrated` is false and the
     // buttons must be present for a browser with no JS.
-    expect(body.match(/type="submit"/g) ?? []).toHaveLength(5);
+    expect(body.match(/type="submit"/g) ?? []).toHaveLength(6);
   });
 
   it("gives the accent group a real label and drops the orphaned one", () => {

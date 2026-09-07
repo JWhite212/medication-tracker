@@ -110,6 +110,20 @@ export const APPEARANCE_ENTRIES = [
     },
   },
   {
+    key: "theme",
+    group: "colour",
+    label: "Theme",
+    description:
+      "System follows your device's light or dark setting. Auth pages and the landing page always follow your device.",
+    control: "select",
+    options: [
+      { value: "dark", label: "Dark" },
+      { value: "light", label: "Light" },
+      { value: "system", label: "System" },
+    ],
+    dom: { kind: "none" },
+  },
+  {
     key: "dateFormat",
     group: "formatting",
     label: "Date Format",
@@ -156,7 +170,7 @@ export const APPEARANCE_ENTRIES = [
 
 export type AppearanceEntries = typeof APPEARANCE_ENTRIES;
 
-/** "accentColor" | "dateFormat" | "timeFormat" | "uiDensity" | "reducedMotion" */
+/** "accentColor" | "theme" | "dateFormat" | "timeFormat" | "uiDensity" | "reducedMotion" */
 export type AppearanceKey = AppearanceEntries[number]["key"];
 
 export const APPEARANCE_KEYS = APPEARANCE_ENTRIES.map((e) => e.key) as readonly AppearanceKey[];

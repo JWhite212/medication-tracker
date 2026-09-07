@@ -134,6 +134,7 @@ function buildExportJson(): string {
     preferences: s.serializePreferences({
       userId: USER_ID,
       accentColor: "#4f46e5",
+      theme: "dark",
       dateFormat: "DD/MM/YYYY",
       timeFormat: "24h",
       uiDensity: "compact",
@@ -279,6 +280,7 @@ describe("JSON backup round trip", () => {
     // silently dropped one -- this case can't fall into that trap.)
     const appearance = {
       accentColor: "#f97316",
+      theme: "light" as const,
       dateFormat: "YYYY-MM-DD" as const,
       timeFormat: "24h" as const,
       uiDensity: "compact" as const,

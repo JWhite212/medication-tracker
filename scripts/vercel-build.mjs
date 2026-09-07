@@ -29,6 +29,7 @@
 // otherwise `build`.
 import { spawnSync } from "node:child_process";
 import process from "node:process";
+import { buildEnvProblems } from "../src/lib/server/env-contract.js";
 
 /**
  * drizzle-kit push EXITS 0 WHEN IT FAILS. Verified against a branch of the
@@ -62,6 +63,35 @@ function runCaptured(cmd, args) {
   if (stdout) process.stdout.write(stdout);
   if (stderr) process.stderr.write(stderr);
   return { status: r.status ?? 1, output: stdout + stderr };
+}
+
+// FIRST, before the schema push — a deploy that cannot boot should not get as
+// far as touching the production database.
+//
+// `src/lib/server/env.ts` throws on exactly these conditions at server boot,
+// which on Vercel means every request dies inside the serverless function and
+// the platform serves FUNCTION_INVOCATION_FAILED. Nothing about that failure
+// is visible from the deploy — the build goes green, the deploy is promoted,
+// and the first signal is a 500 on every route including /favicon.ico. That is
+// how ENCRYPTION_KEY becoming boot-required took production down on
+// 2026-09-07 (docs/RUNBOOK.md); the variable was documented as required in
+// docs/DEPLOYMENT.md the whole time and nothing checked.
+//
+// Vercel exposes project environment variables to the build, so the values the
+// server will read at runtime are readable here.
+const envProblems = buildEnvProblems(process.env);
+if (envProblems.length > 0) {
+  console.error(
+    `\n[vercel-build] This deploy cannot boot in the "${process.env.VERCEL_ENV}" ` +
+      `environment:\n\n` +
+      envProblems.map((p) => `  - ${p}`).join("\n") +
+      `\n\nSet the missing values in Vercel → Project → Settings → Environment ` +
+      `Variables, for the "${process.env.VERCEL_ENV}" environment, then redeploy. ` +
+      `docs/DEPLOYMENT.md has the full table.\n\n` +
+      `Failing the build instead: shipping this would return 500 on every ` +
+      `route, not just the feature that needs the variable.`,
+  );
+  process.exit(1);
 }
 
 const isProduction = process.env.VERCEL_ENV === "production";

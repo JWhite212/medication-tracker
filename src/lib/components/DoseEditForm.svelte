@@ -2,18 +2,20 @@
   import { enhance } from "$app/forms";
   import { showToast } from "$components/ui/Toast.svelte";
   import SideEffectPicker from "$components/SideEffectPicker.svelte";
+  import { formatDateTimeLocal } from "$lib/utils/time";
   import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 
-  let { dose, onclose }: { dose: DoseLogWithMedication; onclose: () => void } = $props();
+  // `timezone` is the user's PROFILE zone and is not optional: the server
+  // parses this field back with `parseDateTimeLocal(takenAt, user.timezone)`,
+  // so rendering it in the browser's zone instead silently shifted the
+  // timestamp on every save for anyone whose device zone differs.
+  let {
+    dose,
+    timezone,
+    onclose,
+  }: { dose: DoseLogWithMedication; timezone: string; onclose: () => void } = $props();
   let loading = $state(false);
   let sideEffects = $state<SideEffect[]>(dose.sideEffects ?? []);
-
-  // Format date for datetime-local input (YYYY-MM-DDTHH:mm)
-  function toDateTimeLocal(date: Date): string {
-    const d = new Date(date);
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-    return d.toISOString().slice(0, 16);
-  }
 </script>
 
 <form
@@ -52,7 +54,7 @@
       id="takenAt"
       name="takenAt"
       type="datetime-local"
-      value={toDateTimeLocal(new Date(dose.takenAt))}
+      value={formatDateTimeLocal(new Date(dose.takenAt), timezone)}
       class="border-border-strong bg-surface text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     />
   </div>

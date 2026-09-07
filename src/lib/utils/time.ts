@@ -375,6 +375,42 @@ export function formatUserDate(
 }
 
 /**
+ * Render an instant as a datetime-local input value (`YYYY-MM-DDTHH:mm`) in
+ * the given IANA timezone — the exact inverse of {@link parseDateTimeLocal},
+ * and the reason it exists.
+ *
+ * The dose-edit form used to build this with
+ * `d.setMinutes(d.getMinutes() - d.getTimezoneOffset())`, which is the
+ * BROWSER's offset, while the server parsed the value back in the user's
+ * PROFILE timezone. Opening the modal and pressing Save without touching
+ * anything therefore moved the timestamp by the difference — every day of
+ * the year, not just on a transition — for anyone travelling or running a
+ * device set to a different region.
+ *
+ * Assembled from `formatToParts` rather than a locale's rendering, for the
+ * same reason `isoDayKey` is: this is a machine-read key, and field order
+ * and separator are CLDR data that is allowed to change.
+ */
+export function formatDateTimeLocal(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return (
+    `${get("year").padStart(4, "0")}-${get("month")}-${get("day")}` +
+    `T${get("hour")}:${get("minute")}`
+  );
+}
+
+/**
  * Parse a datetime-local input value (e.g. "2026-04-15T18:20") as a Date in
  * the given IANA timezone. datetime-local carries no zone, so the wall clock
  * it names has to be resolved — which is `wallClockToInstant`'s whole job.

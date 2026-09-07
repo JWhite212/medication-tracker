@@ -359,7 +359,7 @@ export const reorderPayload = z.object({ medId1: z.string(), medId2: z.string() 
 
 export const updatePreferencesPayload = z.object({
   // Both halves are derived, so no preference is restated at this door and
-  // none can be left behind: the five appearance options come from the
+  // none can be left behind: the six appearance options come from the
   // registry-derived shape, the other seven from the preference substrate.
   // Between them the two `satisfies` clauses cover every mutable column.
   ...appearancePayloadShape,

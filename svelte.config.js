@@ -32,6 +32,12 @@ const config = {
         // DENY is what actually covers those, which is why both exist.
         "frame-ancestors": ["none"],
         "script-src": ["self"],
+        // LOAD-BEARING: the theme <style> block is emitted inline from
+        // (app)/+layout.svelte. SvelteKit's style_needs_csp() returns early
+        // when a directive already contains 'unsafe-inline', so Kit adds
+        // neither nonce nor hash here. Rebuilt with ['self'] the element is
+        // still inserted but NOT applied — the page silently reverts to the
+        // compiled dark default and only a console message says so.
         "style-src": ["self", "unsafe-inline"],
         "img-src": ["self", "data:", "https:"],
         "connect-src": ["self"],

@@ -105,7 +105,7 @@ describe("preference door conformance", () => {
 // spread `$lib/preferences/schema`, so an accidental divergence there is now
 // unrepresentable rather than merely detectable. That makes what follows a
 // backstop, not the primary guard -- it still earns its place because it
-// covers the five appearance keys on the same terms, and because a
+// covers the six appearance keys on the same terms, and because a
 // deliberate per-door override is one line away by design.
 
 /** Peel `.optional()` / `.nullable()` / `.default()` down to the real type. */

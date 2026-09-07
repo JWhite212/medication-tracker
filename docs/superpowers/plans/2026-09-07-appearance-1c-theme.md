@@ -1087,6 +1087,12 @@ export const HC_LIGHT_TOKENS: Record<string, string> = {
  */
 const STRICT_HEX = /^#[0-9a-f]{6}$/i;
 const FALLBACK_ACCENT = "#4f46e5";
+/** The column default, so an unreadable value renders what that user saw before. */
+const FALLBACK_THEME: ThemeName = "dark";
+
+function isThemeName(v: string): v is ThemeName {
+  return v === "light" || v === "dark" || v === "system";
+}
 
 const SCHEMES = {
   dark: {
@@ -1138,10 +1144,19 @@ function arm(scheme: keyof typeof SCHEMES, accent: string, indent: string): stri
  * Only the whole-element `{@html}` form works — `<style>{@html css}</style>`
  * emits the literal text `{@html css}` into the stylesheet. Measured.
  */
-export function buildThemeStyle(theme: ThemeName, accentColor: string): string {
+export function buildThemeStyle(theme: string, accentColor: string): string {
+  // Both inputs are validated HERE, not trusted from the caller, and for the
+  // same reason: `user_preferences.theme` and `.accent_color` are both bare
+  // `text()` columns with no CHECK, so a direct write, a restored backup, or
+  // a future door added without the enum can hold anything. The parameter is
+  // `string` rather than `ThemeName` on purpose — an `as ThemeName` at the
+  // call site would move the lie rather than remove it. Getting this wrong is
+  // not a degraded colour: `SCHEMES[theme]` would be undefined and the next
+  // line would throw, inside the (app) layout, on every authenticated page.
+  const scheme: ThemeName = isThemeName(theme) ? theme : FALLBACK_THEME;
   const accent = STRICT_HEX.test(accentColor) ? accentColor : FALLBACK_ACCENT;
   const css =
-    theme === "system"
+    scheme === "system"
       ? [
           "@media (prefers-color-scheme: dark) {",
           arm("dark", accent, "  "),
@@ -1150,7 +1165,7 @@ export function buildThemeStyle(theme: ThemeName, accentColor: string): string {
           arm("light", accent, "  "),
           "}",
         ].join("\n")
-      : arm(theme, accent, "");
+      : arm(scheme, accent, "");
   return `<style id="theme-tokens">\n${css}\n</` + `style>`;
 }
 ```
@@ -1201,7 +1216,7 @@ In `src/routes/(app)/+layout.svelte`, change the import at line 5 and the deriva
 
 ```ts
 import { readableForeground } from "$lib/utils/contrast";
-import { buildThemeStyle, type ThemeName } from "$lib/appearance/theme-css";
+import { buildThemeStyle } from "$lib/appearance/theme-css";
 ```
 
 ```ts
@@ -1212,7 +1227,7 @@ import { buildThemeStyle, type ThemeName } from "$lib/appearance/theme-css";
 // subtree, which is the exact trap spec decision 4 was written to avoid.
 const accentColor = $derived(data.preferences.accentColor);
 const accentFgColor = $derived(readableForeground(accentColor).color);
-const themeStyle = $derived(buildThemeStyle(data.preferences.theme as ThemeName, accentColor));
+const themeStyle = $derived(buildThemeStyle(data.preferences.theme, accentColor));
 ```
 
 Replace the `<svelte:head>` block:

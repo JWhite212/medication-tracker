@@ -10,6 +10,7 @@ import {
   formatDateTimeLocal,
   parseDayRangeParam,
   isCalendarDay,
+  inclusiveDayCount,
 } from "$lib/utils/time";
 import { computeScheduleSlots } from "$lib/utils/schedule";
 import { doseEditSchema } from "$lib/utils/validation";
@@ -734,5 +735,63 @@ describe("parseDayRangeParam — a bare day key is a civil day, not a UTC midnig
 
   it.each([null, undefined, ""])("returns null for an absent param (%s)", (value) => {
     expect(parseDayRangeParam(value, "Europe/London", "start")).toBeNull();
+  });
+});
+
+describe("inclusiveDayCount — civil dates, not elapsed milliseconds", () => {
+  it.each([
+    ["2026-04-15", "2026-04-15", 1],
+    ["2026-04-15", "2026-04-16", 2],
+    ["2026-01-01", "2026-12-31", 365],
+    ["2028-01-01", "2028-12-31", 366],
+    ["2026-12-31", "2027-01-01", 2],
+  ])("%s .. %s counts %i", (from, to, expected) => {
+    expect(inclusiveDayCount(from, to)).toBe(expected);
+  });
+
+  it("counts a date the zone SKIPPED, because it counts keys", () => {
+    // Pacific/Apia crossed the date line in 2011 and 2011-12-30 never
+    // happened there. The range names 368 calendar dates; the elapsed time
+    // between the two local midnights is only 367 days, so any count derived
+    // from instants reads one short — which is exactly how a 368-day range
+    // slipped under a 366-day cap.
+    expect(inclusiveDayCount("2010-12-31", "2012-01-02")).toBe(368);
+  });
+
+  it("is unaffected by DST, which an instant-based count is not", () => {
+    // October 2026 in London contains a 25-hour day.
+    expect(inclusiveDayCount("2026-10-01", "2026-10-31")).toBe(31);
+  });
+
+  it("counts across a century and a leap day", () => {
+    expect(inclusiveDayCount("0999-12-31", "1000-01-01")).toBe(2);
+    expect(inclusiveDayCount("2028-02-28", "2028-03-01")).toBe(3);
+  });
+});
+
+describe("doseEditSchema.takenAt — every time field is bounded", () => {
+  const base = { doseId: "d1", quantity: "1" };
+  const ok = (takenAt: string) => doseEditSchema.safeParse({ ...base, takenAt }).success;
+
+  it.each(["2026-04-15T10:00:59", "2026-04-15T23:59:59", "2026-04-15T00:00:00"])(
+    "accepts %s",
+    (takenAt) => expect(ok(takenAt)).toBe(true),
+  );
+
+  it.each(["2026-04-15T10:00:60", "2026-04-15T10:00:99", "2026-04-15T24:00:00"])(
+    "rejects %s rather than rolling it forward",
+    (takenAt) => {
+      // `10:00:99` matched the shape and `Date` normalised it to 10:01:39 —
+      // a dose stored at a time the user never entered.
+      expect(ok(takenAt)).toBe(false);
+    },
+  );
+
+  it("every accepted value round-trips to the wall clock it names", () => {
+    for (const takenAt of ["2026-04-15T10:00:59", "2026-04-15T23:59:59"]) {
+      expect(formatDateTimeLocal(parseDateTimeLocal(takenAt, "UTC"), "UTC")).toBe(
+        takenAt.slice(0, 16),
+      );
+    }
   });
 });

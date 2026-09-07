@@ -213,15 +213,17 @@ export const doseLogSchema = z.object({
  * check `takenAt=x` passed, the parser threw on it, and a hand-edited form
  * field returned a 500 where it should have returned a field error.
  */
-const DATETIME_LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(:\d{2})?$/;
+const DATETIME_LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
 
 /**
  * Shape AND calendar, because shape alone is not enough on a write path.
  *
  * `2026-02-31T10:00` matches the pattern, and `Date` NORMALISES it to 3 March
  * rather than rejecting it — so a shape-only check would silently store a
- * dose on a day the user did not name. Time-of-day is bounded here too: `25`
- * and `08:60` both match the digits and both roll into the next day or hour.
+ * dose on a day the user did not name. EVERY time field is bounded for the
+ * same reason: `25`, `08:60` and `10:00:99` all match the digits, and all
+ * three roll forward rather than failing. Seconds were the one field this
+ * originally missed, so `10:00:99` was persisted as `10:01:39`.
  *
  * This is the same round-trip `import/csv.ts` has always done on its date
  * cell, and it now shares that implementation (`isCalendarDay` in
@@ -231,8 +233,9 @@ function isDateTimeLocal(value: string): boolean {
   const match = DATETIME_LOCAL_RE.exec(value);
   if (!match) return false;
 
-  const [, year, month, day, hour, minute] = match;
+  const [, year, month, day, hour, minute, second] = match;
   if (Number(hour) > 23 || Number(minute) > 59) return false;
+  if (second !== undefined && Number(second) > 59) return false;
 
   return isCalendarDay(Number(year), Number(month), Number(day));
 }

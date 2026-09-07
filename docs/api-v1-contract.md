@@ -346,7 +346,7 @@ overrides date fields to ISO strings:
 {
   userId: string;
   accentColor: string;
-  theme: string;
+  theme: "dark" | "light" | "system";
   dateFormat: "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD";
   timeFormat: "12h" | "24h";
   uiDensity: "comfortable" | "compact";

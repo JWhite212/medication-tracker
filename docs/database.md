@@ -113,8 +113,8 @@ create/update/delete on user, medication, and dose_log entities.
 
 ### `user_preferences`
 
-One row per user (`user_id` PK). Settings such as theme
-(`"dark" | "light" | "system"`, default `"dark"`), accent colour,
+One row per user (`user_id` PK). Settings such as accent colour,
+theme (`"dark" | "light" | "system"`, default `"dark"`),
 date/time format, UI density, reduced motion, per-channel reminder
 toggles (overdue and low-inventory, each split email/push), dose log
 page size, heatmap period, and export format. All have non-null

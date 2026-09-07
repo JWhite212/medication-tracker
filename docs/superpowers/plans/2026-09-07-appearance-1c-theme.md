@@ -869,8 +869,13 @@ describe("buildThemeStyle", () => {
 
   it("derives a different ink per scheme from the same accent", () => {
     const css = buildThemeStyle("system", "#f59e0b");
-    expect(css).toContain("#8c5d0e"); // darkened for light
-    expect(css).not.toContain("--color-accent-ink: #f59e0b");
+    // Amber already clears 4.5:1 on the DARK backdrop (5.84:1), so the dark
+    // arm echoes the accent unchanged — 3 of the 10 presets do. On light it
+    // is 1.71:1 raw and must darken. The property under test is that the two
+    // arms disagree, which is the whole reason the ink cannot stay inline on
+    // the wrapper: one inline value cannot serve both schemes.
+    expect(css).toContain("--color-accent-ink: #f59e0b;");
+    expect(css).toContain("--color-accent-ink: #8c5d0e;");
   });
 });
 

@@ -135,7 +135,7 @@ export async function seedE2EUser(): Promise<{ userId: string; email: string }> 
 
   await db.insert(userPreferences).values({
     userId,
-    accentColor: "#6366f1",
+    accentColor: "#4f46e5",
     timeFormat: "12h",
     dateFormat: "DD/MM/YYYY",
     uiDensity: "comfortable",

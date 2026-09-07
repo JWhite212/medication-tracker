@@ -19,7 +19,7 @@ export default defineConfig({
     {
       name: "anon",
       // Tests that drive auth flows themselves (login, register).
-      testMatch: /(auth|smoke|accessibility)\.test\.ts$/,
+      testMatch: /(auth|smoke|accessibility|theme)\.test\.ts$/,
     },
     {
       name: "authed",

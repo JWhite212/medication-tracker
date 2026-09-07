@@ -8,7 +8,9 @@ import {
   readableForeground,
   readableInk,
   INK_BACKDROP,
+  INK_BACKDROP_LIGHT,
   READABLE_LIGHT,
+  READABLE_DARK,
 } from "$lib/utils/contrast";
 import { entryFor } from "$lib/appearance/registry";
 
@@ -48,11 +50,35 @@ const CSS = readAppCss();
 
 const DARK = parseDeclarations(blockBody(CSS, /@theme\s*\{/, "the @theme block"));
 
+/** The light arm's body — everything inside `@media (prefers-color-scheme: light)`. */
+const LIGHT_ARM = blockBody(CSS, /@media \(prefers-color-scheme: light\)\s*\{/, "the light arm");
+
+/** The stylesheet with the light arm removed, so `HC_DARK` cannot match the light one. */
+const CSS_DARK_ONLY = CSS.replace(LIGHT_ARM, "");
+
 const HC_DARK = parseDeclarations(
   blockBody(
-    blockBody(CSS, /@media \(prefers-contrast: more\)\s*\{/, "the dark contrast block"),
+    blockBody(CSS_DARK_ONLY, /@media \(prefers-contrast: more\)\s*\{/, "the dark contrast block"),
     /:root\s*\{/,
     "the dark contrast :root",
+  ),
+);
+
+/**
+ * The light palette as the BROWSER resolves it: the light arm overrides
+ * @theme, it does not replace it. Asserting the arm alone would silently
+ * exempt every token it does not redeclare.
+ */
+const LIGHT = {
+  ...DARK,
+  ...parseDeclarations(blockBody(LIGHT_ARM, /:root\s*\{/, "the light :root")),
+};
+
+const HC_LIGHT = parseDeclarations(
+  blockBody(
+    blockBody(LIGHT_ARM, /@media \(prefers-contrast: more\)\s*\{/, "the light contrast block"),
+    /:root\s*\{/,
+    "the light contrast :root",
   ),
 );
 
@@ -114,9 +140,8 @@ function surfaces(T: Record<string, string>): Record<string, string> {
 const ALLOWED_BELOW_THRESHOLD: { token: string; surface: string; why: string }[] = [];
 
 /**
- * One entry per `prefers-color-scheme`. Only "dark" exists until Task 3 adds
- * the light palette to app.css — a one-entry table reproduces today's
- * behaviour exactly, so this file stays a pure refactor.
+ * One entry per `prefers-color-scheme`. Both "dark" and "light" exist now
+ * that Task 3 has added the light palette to app.css.
  */
 const SCHEMES = [
   {
@@ -128,6 +153,16 @@ const SCHEMES = [
     /** Dark solves the ink against the LIGHTEST surface; light, the darkest. */
     pickInkBackdrop: (a: string, b: string) =>
       contrastRatio(b, "#ffffff") < contrastRatio(a, "#ffffff") ? b : a,
+  },
+  {
+    name: "light",
+    T: LIGHT,
+    HC: HC_LIGHT,
+    inkBackdrop: INK_BACKDROP_LIGHT,
+    inkOverlay: READABLE_DARK,
+    /** Light solves the ink against the DARKEST surface — the operator inverts. */
+    pickInkBackdrop: (a: string, b: string) =>
+      contrastRatio(b, "#000000") < contrastRatio(a, "#000000") ? b : a,
   },
 ] as const;
 

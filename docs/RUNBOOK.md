@@ -117,15 +117,16 @@ bleeding, then fix forward at your own pace.
 
 Ordered by how often they have actually happened.
 
-| Symptom                                                                             | Likely cause                                                                                                                                                                                                                                      | Fix                                                                             |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Every authenticated page 500s right after a deploy; `/` and `/auth/login` still 200 | The database is missing a column `schema.ts` declares. Drizzle emits explicit column lists, so one missing column breaks every query on that table — and `(app)/+layout.server.ts` loads preferences, so it takes down login and registration too | See [4a](#4a-a-deploy-shipped-code-the-database-cannot-satisfy) below           |
-| No reminders at all, cron returns 500                                               | `CRON_SECRET` unset in Vercel **Production** specifically                                                                                                                                                                                         | Set it in Production scope, redeploy                                            |
-| Reminders arrive for some meds, never the later ones                                | Cron hit the function time limit mid-loop; the loop is sequential and ordered                                                                                                                                                                     | Confirm `maxDuration` is still set on the cron route; check for a slow provider |
-| Cron works when triggered manually, not on schedule                                 | Vercel Hobby allows one cron run per day; the 30-min cadence comes from the `reminder-tick` GitHub Action                                                                                                                                         | Check the Action is enabled and its secret matches                              |
-| Push silent, email fine                                                             | VAPID key rotated, or subscription expired (410)                                                                                                                                                                                                  | 410s self-prune on the next tick; otherwise re-subscribe in Settings            |
-| First request after idle very slow                                                  | Neon compute auto-suspended                                                                                                                                                                                                                       | Expected on the free tier; ~500ms–2s                                            |
-| `too many connections`                                                              | Using the unpooled Neon host                                                                                                                                                                                                                      | Use the `-pooler` host in `DATABASE_URL`                                        |
+| Symptom                                                                                   | Likely cause                                                                                                                                                                                                                                      | Fix                                                                             |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Every authenticated page 500s right after a deploy; `/` and `/auth/login` still 200       | The database is missing a column `schema.ts` declares. Drizzle emits explicit column lists, so one missing column breaks every query on that table — and `(app)/+layout.server.ts` loads preferences, so it takes down login and registration too | See [4a](#4a-a-deploy-shipped-code-the-database-cannot-satisfy) below           |
+| **Every** route 500s, including `/favicon.ico`; Vercel shows `FUNCTION_INVOCATION_FAILED` | A variable the boot contract requires is unset in that Vercel environment. `env.ts` throws at module load, so the function dies before routing — which is why static-looking paths fail too                                                       | See [4b](#4b-a-deploy-cannot-boot) below                                        |
+| No reminders at all, cron returns 500                                                     | `CRON_SECRET` unset in Vercel **Production** specifically                                                                                                                                                                                         | Set it in Production scope, redeploy                                            |
+| Reminders arrive for some meds, never the later ones                                      | Cron hit the function time limit mid-loop; the loop is sequential and ordered                                                                                                                                                                     | Confirm `maxDuration` is still set on the cron route; check for a slow provider |
+| Cron works when triggered manually, not on schedule                                       | Vercel Hobby allows one cron run per day; the 30-min cadence comes from the `reminder-tick` GitHub Action                                                                                                                                         | Check the Action is enabled and its secret matches                              |
+| Push silent, email fine                                                                   | VAPID key rotated, or subscription expired (410)                                                                                                                                                                                                  | 410s self-prune on the next tick; otherwise re-subscribe in Settings            |
+| First request after idle very slow                                                        | Neon compute auto-suspended                                                                                                                                                                                                                       | Expected on the free tier; ~500ms–2s                                            |
+| `too many connections`                                                                    | Using the unpooled Neon host                                                                                                                                                                                                                      | Use the `-pooler` host in `DATABASE_URL`                                        |
 
 ### 4a. A deploy shipped code the database cannot satisfy
 
@@ -170,6 +171,44 @@ change it:
   saying data-loss statements are pending, production has a column the code no
   longer declares. Drop it by hand, then redeploy. Never add `--force`: that
   hands unattended deploys permission to delete user data.
+
+### 4b. A deploy cannot boot
+
+Happened once: 2026-09-07. `ENCRYPTION_KEY` became boot-required in the same
+change that put the signed pre-auth claim on the password-login path. It was
+set locally and had never been set in the Vercel **production** environment, so
+the merge to main took the whole site down — `/dashboard`, `/api/health`,
+`/auth/login` and `/favicon.ico` all returning 500.
+
+**How to recognise it in one look:** the failure is total and indiscriminate.
+The database-schema failure in 4a spares `/` and `/auth/login`; this one spares
+nothing, because `hooks.server.ts` imports `$lib/server/env` at module scope and
+the throw happens before SvelteKit routes anything. The Vercel log line names
+the variable.
+
+**Fix:** set the variable in Vercel → Settings → Environment Variables for the
+environment named in the log, then redeploy. Do not reach for a revert first —
+the boot check is usually reporting a real dependency rather than creating one.
+On 2026-09-07 removing the check would have left login 500ing anyway, because
+`signPreAuthToken` needs the same key.
+
+**Before generating a replacement secret, check whether it ever had a value.**
+`ENCRYPTION_KEY` is destructive to rotate — it is the AES key for
+`users.totp_secret`, so a new value permanently locks out every enrolled 2FA
+user. §10 of `DEPLOYMENT.md` has the re-encryption procedure. If the variable
+was never set, no ciphertext can exist and a fresh value is free.
+
+**Prevention, since 2026-09-07:** `scripts/vercel-build.mjs` evaluates the same
+contract against `process.env` before it builds, and fails the build instead.
+The contract has exactly one statement — `src/lib/server/env-contract.js` — read
+by both the boot check and the build check, so a variable cannot become required
+in one and unchecked in the other. That single-owner property is what the
+failure was: `DEPLOYMENT.md` had listed `ENCRYPTION_KEY` as required in
+production the entire time, and prose is not a check.
+
+The build check runs for `production` and `preview` only, mirroring exactly when
+`env.ts` is strict (`dev === false`). `vercel dev` and local builds are
+deliberately exempt.
 
 ## 5. Escalation and communication
 

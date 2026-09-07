@@ -3,7 +3,7 @@ import { generateReport } from "$lib/server/export-pdf";
 import { generateCsvReport } from "$lib/server/export-csv";
 import { getOrCreatePreferences } from "$lib/server/preferences";
 import { checkRateLimit } from "$lib/server/auth/rate-limit";
-import type { DateFormat } from "$lib/utils/time";
+import { parseDayRangeParam, type DateFormat } from "$lib/utils/time";
 import type { RequestHandler } from "./$types";
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -31,12 +31,20 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
-  const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 86400000);
-  const toDate = to ? new Date(to) : new Date();
 
-  if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+  // Bare YYYY-MM-DD params are civil days in the USER'S timezone, not UTC
+  // midnights — see parseDayRangeParam. The `to` bound it returns is
+  // exclusive, so the whole requested end day is inside the range; the
+  // queries below compare with `lt`.
+  const tz = locals.user.timezone;
+  const parsedFrom = parseDayRangeParam(from, tz, "start");
+  const parsedTo = parseDayRangeParam(to, tz, "end");
+  if ((from && !parsedFrom) || (to && !parsedTo)) {
     error(400, "Invalid date format");
   }
+
+  const fromDate = parsedFrom ?? new Date(Date.now() - 30 * 86400000);
+  const toDate = parsedTo ?? new Date();
   if (fromDate >= toDate) {
     error(400, "'from' must be before 'to'");
   }

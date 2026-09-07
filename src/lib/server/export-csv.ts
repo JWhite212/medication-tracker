@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, gte, lt, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { formatUserTime, isoDayKey, type TimeFormat } from "$lib/utils/time";
@@ -41,7 +41,7 @@ export async function generateCsvReport(
     })
     .from(doseLogs)
     .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
-    .where(and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, from), lte(doseLogs.takenAt, to)))
+    .where(and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, from), lt(doseLogs.takenAt, to)))
     .orderBy(desc(doseLogs.takenAt));
 
   const header = [

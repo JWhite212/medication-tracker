@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, gte, lt, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { auditLogs } from "$lib/server/db/schema";
 import type { AuditRowForExport } from "./audit-csv";
@@ -31,7 +31,7 @@ export async function getAuditLogForExport(
       and(
         eq(auditLogs.userId, userId),
         gte(auditLogs.createdAt, from),
-        lte(auditLogs.createdAt, to),
+        lt(auditLogs.createdAt, to),
       ),
     )
     .orderBy(desc(auditLogs.createdAt));

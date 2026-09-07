@@ -8,6 +8,7 @@ import {
   endOfDay,
   parseDateTimeLocal,
   formatDateTimeLocal,
+  parseDayRangeParam,
 } from "$lib/utils/time";
 import { computeScheduleSlots } from "$lib/utils/schedule";
 import { doseEditSchema } from "$lib/utils/validation";
@@ -621,5 +622,51 @@ describe("doseEditSchema.takenAt — a shape check at the door", () => {
         Number.isNaN(parseDateTimeLocal(parsed.data!.takenAt, "America/New_York").getTime()),
       ).toBe(false);
     }
+  });
+});
+
+describe("parseDayRangeParam — a bare day key is a civil day, not a UTC midnight", () => {
+  it("reads the start edge in the user's zone", () => {
+    expect(parseDayRangeParam("2026-04-15", "Europe/London", "start")?.toISOString()).toBe(
+      "2026-04-14T23:00:00.000Z",
+    );
+    expect(parseDayRangeParam("2026-04-15", "Pacific/Auckland", "start")?.toISOString()).toBe(
+      "2026-04-14T12:00:00.000Z",
+    );
+  });
+
+  it("returns an EXCLUSIVE end so the whole requested day is in range", () => {
+    // `new Date("2026-04-15")` is 00:00Z, which bounded the query BEFORE the
+    // day it names — east of UTC the entire end day was excluded.
+    const end = parseDayRangeParam("2026-04-15", "Europe/London", "end");
+    expect(end?.toISOString()).toBe("2026-04-15T23:00:00.000Z");
+
+    // The last local instant of 15 April is inside; the first of the 16th is not.
+    const lastMoment = new Date(end!.getTime() - 1);
+    expect(isoDayKey(lastMoment, "Europe/London")).toBe("2026-04-15");
+    expect(isoDayKey(end!, "Europe/London")).toBe("2026-04-16");
+  });
+
+  it("spans a 25-hour civil day without clipping it", () => {
+    const start = parseDayRangeParam("2026-10-25", "Europe/London", "start")!;
+    const end = parseDayRangeParam("2026-10-25", "Europe/London", "end")!;
+    expect(end.getTime() - start.getTime()).toBe(25 * 3_600_000);
+  });
+
+  it("passes a full ISO timestamp straight through", () => {
+    expect(
+      parseDayRangeParam("2026-04-15T10:30:00Z", "Europe/London", "start")?.toISOString(),
+    ).toBe("2026-04-15T10:30:00.000Z");
+  });
+
+  it.each(["x", "not-a-date", "2026-13-99T99:99", "%"])(
+    "returns null for %s rather than an Invalid Date",
+    (value) => {
+      expect(parseDayRangeParam(value, "Europe/London", "start")).toBeNull();
+    },
+  );
+
+  it.each([null, undefined, ""])("returns null for an absent param (%s)", (value) => {
+    expect(parseDayRangeParam(value, "Europe/London", "start")).toBeNull();
   });
 });

@@ -374,6 +374,54 @@ export function formatUserDate(
   }).format(date);
 }
 
+const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * A `?from=` / `?to=` query param as an instant, reading a bare `YYYY-MM-DD`
+ * as a civil day in the USER'S timezone.
+ *
+ * Four doors spelled this as `new Date(dateOnlyString)`, which the spec
+ * parses as UTC midnight — beside SQL that groups on
+ * `AT TIME ZONE <profile tz>`. Two consequences, both wrong every day rather
+ * than twice a year:
+ *
+ *   * `to=2026-04-15` bounded the query at 00:00Z on the 15th, so for a
+ *     user east of UTC the entire end day was excluded. Asking for "up to
+ *     15 April" returned nothing from 15 April.
+ *   * `from=2026-04-15` started at 00:00Z, which for a user west of UTC is
+ *     still the 14th locally, so the range quietly included part of the day
+ *     before the one requested.
+ *
+ * The `end` edge returns the EXCLUSIVE start of the next civil day, so
+ * callers compare with `lt` rather than `lte` and the whole requested day is
+ * inside the range whatever its length. Returning "23:59:59.999" instead
+ * would re-introduce a sub-second hole for no benefit.
+ *
+ * A value that is not a bare day key falls through to `new Date`, so the
+ * full-ISO form the API doors also accept keeps working; anything
+ * unparseable comes back as null rather than an `Invalid Date`. That last
+ * part is not cosmetic — Drizzle calls `toISOString()` on whatever it is
+ * given, so an `Invalid Date` reached the driver and threw a `RangeError`
+ * from inside a `load`, which SvelteKit renders as a 500. `/log?from=x` was
+ * a 500 on a page where page, status, q and withSideEffects were all
+ * validated and only the dates were not.
+ */
+export function parseDayRangeParam(
+  value: string | null | undefined,
+  timezone: string,
+  edge: "start" | "end",
+): Date | null {
+  if (!value) return null;
+
+  if (DAY_KEY_RE.test(value)) {
+    const dayKey = edge === "end" ? shiftDayKey(value, 1) : value;
+    return wallClockToInstant(dayKey, "00:00", timezone);
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 /**
  * Render an instant as a datetime-local input value (`YYYY-MM-DDTHH:mm`) in
  * the given IANA timezone — the exact inverse of {@link parseDateTimeLocal},

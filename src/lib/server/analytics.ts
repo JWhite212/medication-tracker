@@ -1,7 +1,7 @@
 import { eq, and, gte, lte, sql, desc, inArray } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
-import { startOfDay } from "$lib/utils/time";
+import { startOfDay, isoDayKey, isoDayKeyFormatter } from "$lib/utils/time";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import type { DoseLogStatus } from "$lib/server/db/schema";
@@ -137,7 +137,10 @@ export function calculateTrend(
 
 export function calculateStreak(sortedDates: string[], timezone: string = "UTC"): number {
   if (sortedDates.length === 0) return 0;
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  // A KEY, compared against sortedDates (which come from SQL `date(...)`) —
+  // isoDayKey, never preferences.dateFormat. A locale that reordered the
+  // fields would make the equality below never match, zeroing every streak.
+  const today = isoDayKey(new Date(), timezone);
   if (sortedDates[0] !== today) return 0;
   let streak = 1;
   for (let i = 1; i < sortedDates.length; i++) {
@@ -437,12 +440,9 @@ export async function getDailyAdherenceSeries(
   const span = Math.max(1, Math.round((toDate.getTime() - fromDate.getTime()) / 86400000));
 
   const tz = validTimezones.has(timezone) ? timezone : "UTC";
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  // Day KEYS for the series, matched against the SQL `AT TIME ZONE`
+  // grouping — isoDayKey, never preferences.dateFormat.
+  const formatter = isoDayKeyFormatter(tz);
 
   const countByDate = new Map<string, number>();
   for (const row of dailyCounts) {
@@ -452,7 +452,7 @@ export async function getDailyAdherenceSeries(
   const series: DailyAdherencePoint[] = [];
   for (let i = 0; i < span; i++) {
     const day = new Date(fromDate.getTime() + i * 86400000);
-    const dateKey = formatter.format(day);
+    const dateKey = formatter(day);
     const doseCount = countByDate.get(dateKey) ?? 0;
     // Sum expected only across meds active on this specific day.
     const expectedPerDay = expectedByMed.reduce(

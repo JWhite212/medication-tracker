@@ -8,6 +8,7 @@
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
   import MedicationFilterSelect from "$lib/components/MedicationFilterSelect.svelte";
   import { goto } from "$app/navigation";
+  import type { DateFormat } from "$lib/utils/time";
 
   let { data } = $props();
 
@@ -164,7 +165,12 @@
 
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Activity (last {periodLabel(data.period)})</h2>
-    <Heatmap data={data.dailyCounts} days={data.period} />
+    <Heatmap
+      data={data.dailyCounts}
+      days={data.period}
+      timezone={data.user.timezone}
+      dateFormat={data.preferences.dateFormat as DateFormat}
+    />
   </GlassCard>
 
   <GlassCard>

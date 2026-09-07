@@ -1,6 +1,6 @@
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
-import { classifyDueStatus } from "./time";
+import { classifyDueStatus, isoDayKey } from "./time";
 import { parseIntervalHours } from "$lib/utils/schedule-rate";
 
 export type ScheduleSlotStatus = "taken" | "skipped" | "upcoming" | "overdue";
@@ -48,13 +48,12 @@ function getLocalHour(date: Date, timezone: string): number {
   return Number(parts.find((p) => p.type === "hour")?.value ?? 0);
 }
 
+/**
+ * A day KEY, not a label: callers compare it and use it to index slots, so it
+ * goes through `isoDayKey` and never follows `preferences.dateFormat`.
+ */
 export function getLocalDateString(date: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
+  return isoDayKey(date, timezone);
 }
 
 function getLocalDatesInRange(start: Date, end: Date, timezone: string): string[] {
@@ -80,6 +79,8 @@ export function localTimeOnDateToUtc(dateStr: string, timeOfDay: string, timezon
   const naiveUtcMs = Date.UTC(y, m - 1, d, hh, mm);
   const naiveUtc = new Date(naiveUtcMs);
 
+  // Offset arithmetic on KEY fields, not a rendered date — hardcoded en-CA,
+  // never preferences.dateFormat.
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     hourCycle: "h23",

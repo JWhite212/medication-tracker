@@ -8,7 +8,7 @@ import { db } from "$lib/server/db";
 import { doseLogs } from "$lib/server/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { getRefillForecast } from "$lib/server/inventory";
-import { startOfDay } from "$lib/utils/time";
+import { startOfDay, isoDayKeyFormatter } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
 const SPARKLINE_DAYS = 14;
@@ -48,16 +48,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 
   // Sparkline day keys, joined against `date(... AT TIME ZONE ...)` above —
   // a key, not a label, so it stays en-CA and ignores preferences.dateFormat.
-  const fmtDate = new Intl.DateTimeFormat("en-CA", {
-    timeZone: safeTz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  const fmtDate = isoDayKeyFormatter(safeTz);
   const dayKeys: string[] = [];
   for (let i = 0; i < SPARKLINE_DAYS; i++) {
     const d = new Date(sparklineFrom.getTime() + i * 86400000);
-    dayKeys.push(fmtDate.format(d));
+    dayKeys.push(fmtDate(d));
   }
 
   const seriesByMed = new Map<string, Map<string, number>>();

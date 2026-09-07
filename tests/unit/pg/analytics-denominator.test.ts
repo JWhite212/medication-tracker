@@ -199,3 +199,158 @@ describe("lifecycle clamping still holds", () => {
     expect(stats.every((s) => s.expectedTotal === 0)).toBe(true);
   });
 });
+
+/**
+ * The status breakdown aggregates PER MEDICATION.
+ *
+ * It used to pool every medication into scalars first and do the arithmetic
+ * once at the bottom, which let one medication's events settle another's
+ * debt. `expectedTotal` deliberately excludes a PRN medication while
+ * `takenEvents` deliberately includes it, so the pooled numerator and the
+ * pooled denominator ranged over different medication sets and the
+ * subtraction was meaningless.
+ *
+ * Every fixture below uses EXPLICIT_RANGE — exactly 30.000 days — so the
+ * effective-days clamp can never be the variable in an aggregation test.
+ */
+describe("the status breakdown aggregates per medication", () => {
+  /** A pure-PRN medication: expects nothing, but its doses are still logged. */
+  async function seedPrnMed(id: string, overrides = {}) {
+    await pgDb.seedMedication({
+      id,
+      name: `PRN ${id}`,
+      scheduleType: "as_needed",
+      startedAt: LONG_AGO,
+      ...overrides,
+    });
+    await pgDb.seedSchedule({ medicationId: id, scheduleKind: "prn", timeOfDay: null });
+  }
+
+  /**
+   * `count` doses, all inside EXPLICIT_RANGE (22 Jul – 21 Aug).
+   *
+   * Spread across 25 days and stacked by hour rather than laid out on
+   * consecutive days: an over-consumption fixture needs more doses than the
+   * window has days, and running off the end would silently drop the surplus
+   * that the test exists to observe.
+   */
+  async function seedDoses(
+    medicationId: string,
+    count: number,
+    status: "taken" | "skipped" = "taken",
+  ) {
+    for (let i = 0; i < count; i++) {
+      await pgDb.seedDose({
+        medicationId,
+        takenAt: new Date(Date.UTC(2026, 6, 23 + (i % 25), 6 + Math.floor(i / 25), 0, 0)),
+        status,
+      });
+    }
+  }
+
+  it("does not let a PRN medication's doses erase another medication's misses", async () => {
+    await seedDailyMed("sched");
+    await seedDoses("sched", 20);
+    await seedPrnMed("prn");
+    await seedDoses("prn", 15);
+
+    const breakdown = await getDoseStatusBreakdown("u1", 30, "UTC", EXPLICIT_RANGE);
+
+    expect(breakdown.expectedTotal).toBe(30);
+    expect(breakdown.missedEvents).toBe(10);
+    expect(breakdown.adherencePercent).toBe(66.7);
+    expect(breakdown.overusePercent).toBe(0);
+    // Load-bearing: forbids "fix it by filtering the PRN medication out of
+    // the input set". Those fifteen doses were really taken and the
+    // clinician PDF prints this number as "Taken events".
+    expect(breakdown.takenEvents).toBe(35);
+  });
+
+  it("does the same when the PRN medication has no schedule rows at all", async () => {
+    // Pre-backfill shape: the legacy `scheduleType` column is the only
+    // signal. A fix keyed on `scheduleKind` would pass the test above and
+    // leave every un-backfilled and JSON-imported account broken.
+    await seedDailyMed("sched");
+    await seedDoses("sched", 20);
+    await pgDb.seedMedication({
+      id: "prn",
+      name: "Legacy PRN",
+      scheduleType: "as_needed",
+      startedAt: LONG_AGO,
+    });
+    await seedDoses("prn", 15);
+
+    const breakdown = await getDoseStatusBreakdown("u1", 30, "UTC", EXPLICIT_RANGE);
+
+    expect(breakdown.expectedTotal).toBe(30);
+    expect(breakdown.missedEvents).toBe(10);
+    expect(breakdown.adherencePercent).toBe(66.7);
+    expect(breakdown.overusePercent).toBe(0);
+  });
+
+  it("does not let a PRN medication's SKIPPED doses erase another's misses", async () => {
+    // `resolved` pooled taken AND skipped, so skipping a PRN medication
+    // fifteen times settled a scheduled medication's debt just as taking it
+    // did. Reachable from the app, `/api/v1 skip_dose` and import.
+    await seedDailyMed("sched");
+    await seedDoses("sched", 20);
+    await seedPrnMed("prn");
+    await seedDoses("prn", 15, "skipped");
+
+    const breakdown = await getDoseStatusBreakdown("u1", 30, "UTC", EXPLICIT_RANGE);
+
+    expect(breakdown.skippedEvents).toBe(15);
+    expect(breakdown.missedEvents).toBe(10);
+  });
+
+  it("does not let one scheduled medication's overuse erase another's misses", async () => {
+    // No PRN anywhere. This is what proves the fix is not a PRN patch: the
+    // defect is the pooling, and two ordinary scheduled medications reach it.
+    await seedDailyMed("under");
+    await seedDoses("under", 5);
+    await seedDailyMed("over");
+    await seedDoses("over", 55);
+
+    const breakdown = await getDoseStatusBreakdown("u1", 30, "UTC", EXPLICIT_RANGE);
+
+    expect(breakdown.expectedTotal).toBe(60);
+    expect(breakdown.takenEvents).toBe(60);
+    // 25 of `under`'s doses were genuinely missed. Pooling reported none,
+    // because `over` had taken 25 more than it was expected to.
+    expect(breakdown.missedEvents).toBe(25);
+    // Credited per medication: min(5,30) + min(55,30) = 35 of 60.
+    expect(breakdown.adherencePercent).toBe(58.3);
+    // And the surplus is visible rather than absorbed: 25 of 60.
+    expect(breakdown.overusePercent).toBe(41.7);
+  });
+
+  it("still reports a single medication's genuine overuse", async () => {
+    // The trap on the other side: capping the numerator for adherence and
+    // reusing that capped value for overuse makes overuse permanently 0,
+    // and `export-pdf.ts`'s `> 0` gate then deletes the line entirely.
+    await seedDailyMed("m1");
+    await seedDoses("m1", 45);
+
+    const breakdown = await getDoseStatusBreakdown("u1", 30, "UTC", EXPLICIT_RANGE);
+
+    expect(breakdown.expectedTotal).toBe(30);
+    expect(breakdown.missedEvents).toBe(0);
+    expect(breakdown.adherencePercent).toBe(100);
+    expect(breakdown.overusePercent).toBe(50);
+  });
+
+  it("lets a medication that expects nothing perturb no ratio at all", async () => {
+    await seedPrnMed("prn");
+    await seedDoses("prn", 15);
+
+    const breakdown = await getDoseStatusBreakdown("u1", 30, "UTC", EXPLICIT_RANGE);
+
+    expect(breakdown.takenEvents).toBe(15);
+    expect(breakdown.expectedTotal).toBe(0);
+    expect(breakdown.missedEvents).toBe(0);
+    // Both ratios keep `calculateAdherence`/`calculateOveruse`'s existing
+    // "expected === 0 → 0" contract; nothing here changes it.
+    expect(breakdown.adherencePercent).toBe(0);
+    expect(breakdown.overusePercent).toBe(0);
+  });
+});

@@ -73,7 +73,7 @@ Light `prefers-contrast: more` arm — each must **beat** the light base it shad
 
 **Light `INK_BACKDROP` is `#e2e5ee`** — the _darkest_ light surface. The operator inverts: dark-on-light contrast is worst against the darkest backdrop, exactly mirroring the dark scheme's "lightest surface" rule.
 
-Ink derived per accent preset on light (darkening toward black, solved against `#e2e5ee`), all ≥4.5:1: `#4f46e5`→`#4f46e5`, `#7c3aed`→`#7c3aed`, `#ec4899`→`#b13673`, `#ef4444`→`#ba3535`, `#f59e0b`→`#8e5c06`, `#10b981`→`#0a7551`, `#06b6d4`→`#047183`, `#3b82f6`→`#2d64bd`, `#f97316`→`#a44c0f`, `#64748b`→`#59677c`.
+Ink derived per accent preset on light (darkening toward `READABLE_DARK` = `#111111`, solved against `#e2e5ee`), all ≥4.5:1: `#4f46e5`→`#4f46e5`, `#7c3aed`→`#7c3aed`, `#ec4899`→`#af3973`, `#ef4444`→`#b83737`, `#f59e0b`→`#8c5d0e`, `#10b981`→`#107453`, `#06b6d4`→`#0b7182`, `#3b82f6`→`#3065ba`, `#f97316`→`#a34f14`, `#64748b`→`#59677b`.
 
 ---
 
@@ -140,7 +140,7 @@ describe("readableInk darkens for a light scheme", () => {
       backdrop: INK_BACKDROP_LIGHT,
       overlay: READABLE_DARK,
     });
-    expect(ink).toBe("#8e5c06");
+    expect(ink).toBe("#8c5d0e");
     expect(contrastRatio(ink, INK_BACKDROP_LIGHT)).toBeGreaterThanOrEqual(4.5);
   });
 
@@ -856,7 +856,7 @@ describe("buildThemeStyle", () => {
 
   it("derives a different ink per scheme from the same accent", () => {
     const css = buildThemeStyle("system", "#f59e0b");
-    expect(css).toContain("#8e5c06"); // darkened for light
+    expect(css).toContain("#8c5d0e"); // darkened for light
     expect(css).not.toContain("--color-accent-ink: #f59e0b");
   });
 });

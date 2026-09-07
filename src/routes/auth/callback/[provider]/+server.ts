@@ -8,6 +8,7 @@ import { users, oauthAccounts } from "$lib/server/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { RequestHandler } from "./$types";
+import { signPreAuthToken } from "$lib/server/api/preauth";
 
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -161,7 +162,9 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       .where(eq(users.id, existingOAuth.userId))
       .limit(1);
     if (linkedUser?.twoFactorEnabled) {
-      cookies.set("pending_2fa", existingOAuth.userId, {
+      // Signed, for the same reason as the password door — see
+      // /auth/2fa. A raw id here would let the OAuth path be skipped too.
+      cookies.set("pending_2fa", signPreAuthToken(existingOAuth.userId), {
         path: "/",
         maxAge: 300,
         httpOnly: true,

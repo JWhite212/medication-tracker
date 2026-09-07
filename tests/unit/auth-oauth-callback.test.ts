@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "./helpers/fake-db";
 import { users, oauthAccounts } from "$lib/server/db/schema";
+import { verifyPreAuthToken } from "$lib/server/api/preauth";
 
 // Exercises the OAuth callback's post-verification branch: an existing
 // oauth_accounts link must route a 2FA-enabled user through the same
@@ -11,6 +12,9 @@ import { users, oauthAccounts } from "$lib/server/db/schema";
 const state = {};
 
 vi.mock("$app/environment", () => ({ dev: true }));
+
+// signPreAuthToken HMACs over this; the value only has to be present.
+vi.mock("$env/dynamic/private", () => ({ env: { ENCRYPTION_KEY: "test-encryption-key-123" } }));
 
 vi.mock("$lib/server/auth/oauth", () => ({
   getGoogle: () => null,
@@ -98,11 +102,16 @@ describe("GET /auth/callback/[provider] — existing linked account", () => {
     await expect(call(cookies)).rejects.toMatchObject({ status: 302, location: "/auth/2fa" });
 
     expect(createSession).not.toHaveBeenCalled();
-    expect(cookies.set).toHaveBeenCalledWith(
-      "pending_2fa",
-      "u1",
-      expect.objectContaining({ httpOnly: true, maxAge: 300, path: "/" }),
-    );
+    // The cookie carries a SIGNED claim, never the raw user id — a raw id
+    // is forgeable, and /auth/2fa would then mint a session for anyone
+    // holding a code. Verified rather than pattern-matched, so the
+    // assertion cannot pass on some other opaque string.
+    const [, value, options] = cookies.set.mock.calls.find(
+      (c) => c[0] === "pending_2fa",
+    ) as unknown as [string, string, Record<string, unknown>];
+    expect(value).not.toBe("u1");
+    expect(verifyPreAuthToken(value)).toMatchObject({ userId: "u1" });
+    expect(options).toMatchObject({ httpOnly: true, maxAge: 300, path: "/" });
   });
 
   it("still creates a session directly when the linked user has 2FA disabled", async () => {

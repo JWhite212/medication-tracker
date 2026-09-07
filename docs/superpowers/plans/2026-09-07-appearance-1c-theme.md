@@ -831,12 +831,27 @@ describe("the TS tables cannot drift from app.css", () => {
     ),
   );
 
+  // Tokens the app.css light arm declares that the static tables deliberately
+  // do NOT carry. Two different reasons, kept apart on purpose:
+  //
+  //   --color-accent, --color-accent-fg — the (app) layout sets these inline on
+  //     the wrapper from the user's stored hex and they are scheme-independent,
+  //     so a table entry would be dead code.
+  //   --color-accent-ink — emitted per scheme by arm() via readableInk, as a
+  //     function of the user's accent. No static table CAN hold it. Its emitted
+  //     values are pinned by the buildThemeStyle tests below instead.
+  //
+  // app.css declares all three, but only as logged-out-route fallbacks.
+  const TOKENS_NOT_IN_TABLES = ["--color-accent", "--color-accent-fg", "--color-accent-ink"];
+
   it("carries exactly the tokens the app.css light arm overrides", () => {
     // Not "the keys whose values differ" — that was the original wording and
     // it is wrong. --color-accent-hover holds the same value in both schemes
     // yet MUST be in the tables, because the light arm declares it and a
     // dark-choosing user on a light OS needs it re-asserted.
-    const expected = Object.keys(cssLight).filter((k) => k.startsWith("--")).sort();
+    const expected = Object.keys(cssLight)
+      .filter((k) => k.startsWith("--") && !TOKENS_NOT_IN_TABLES.includes(k))
+      .sort();
     expect(Object.keys(LIGHT_TOKENS).sort()).toEqual(expected);
     expect(Object.keys(DARK_TOKENS).sort()).toEqual(expected);
   });

@@ -36,7 +36,7 @@ Every value below was computed against the real WCAG maths and checked on the su
 | `--color-surface-raised`  | `#ffffff`                   |                                                                         |
 | `--color-surface-overlay` | `#e2e5ee`                   | inverts direction — recessed, so darker                                 |
 | `--color-glass`           | `rgba(255, 255, 255, 0.72)` | **still a lightener**: page → card                                      |
-| `--color-glass-hover`     | `rgba(0, 0, 0, 0.045)`      | **FLIPPED** — light cards hover darker                                  |
+| `--color-glass-hover`     | `rgba(255, 255, 255, 0.4)`  | **NOT** flipped — lower white alpha than `glass`; see Task 3            |
 | `--color-glass-border`    | `rgba(0, 0, 0, 0.14)`       | **FLIPPED** to dark-alpha                                               |
 | `--color-border-strong`   | `rgba(0, 0, 0, 0.46)`       | **FLIPPED**; 3.32:1, floor is 3:1 (0.44 gives 3.13, 0.42 fails at 2.93) |
 | `--color-text-primary`    | `#14141c`                   | worst 14.54:1                                                           |
@@ -536,13 +536,20 @@ Delete `color-scheme: dark;` and its comment from `@layer base { :root { … } }
       color-scheme: light;
 
       /* Three tokens cannot be mirrored and are flipped, not re-valued.
-         glass stays a LIGHTENER (page -> card); glass-hover flips sign
-         because a light card hovers darker; glass-border and border-strong
-         flip to dark-alpha. utils/medication-style.ts already hand-rolls
-         this hover inversion for medication pills. */
+         glass stays a LIGHTENER (page -> card); glass-border and
+         border-strong flip to dark-alpha. glass-hover does NOT flip — see
+         its own comment below. */
       --color-glass: rgba(255, 255, 255, 0.72);
       --color-glass-border: rgba(0, 0, 0, 0.14);
-      --color-glass-hover: rgba(0, 0, 0, 0.045);
+      /* Hover reads DARKER than the card by carrying LESS white, not by
+         flipping to black-alpha. `bg-glass` and `hover:bg-glass-hover` are
+         two backgrounds on the SAME element over the same page — they do
+         not stack — so both composite over --color-surface, and the darker
+         of the two is simply the lower alpha. Flipping to black made a
+         hovered card #e3e5eb against a #eef0f6 page (darker than the
+         background it sits on) and dropped the hovered refill chips to
+         4.15:1. */
+      --color-glass-hover: rgba(255, 255, 255, 0.4);
       /* 3.32:1 on the worst surface; 0.42 measures 2.93 and fails 1.4.11. */
       --color-border-strong: rgba(0, 0, 0, 0.46);
       --color-surface: #eef0f6;
@@ -939,7 +946,7 @@ export const DARK_TOKENS: Record<string, string> = {
 export const LIGHT_TOKENS: Record<string, string> = {
   "--color-glass": "rgba(255, 255, 255, 0.72)",
   "--color-glass-border": "rgba(0, 0, 0, 0.14)",
-  "--color-glass-hover": "rgba(0, 0, 0, 0.045)",
+  "--color-glass-hover": "rgba(255, 255, 255, 0.4)",
   "--color-border-strong": "rgba(0, 0, 0, 0.46)",
   "--color-surface": "#eef0f6",
   "--color-surface-raised": "#ffffff",

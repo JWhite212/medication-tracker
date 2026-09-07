@@ -725,7 +725,7 @@ describe("parseDayRangeParam — a bare day key is a civil day, not a UTC midnig
     ).toBe("2026-04-15T10:30:00.000Z");
   });
 
-it.each(["x", "not-a-date", "2026-13-99T99:99", "%"])(
+  it.each(["x", "not-a-date", "2026-13-99T99:99", "%"])(
     "returns null for %s rather than an Invalid Date",
     (value) => {
       expect(parseDayRangeParam(value, "Europe/London", "start")).toBeNull();

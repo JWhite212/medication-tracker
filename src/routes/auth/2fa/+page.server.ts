@@ -47,14 +47,24 @@ export const actions: Actions = {
     // Wrong codes are otherwise free to guess: the TOTP step counter only
     // advances on success, so cap verification attempts per ACCOUNT.
     //
-    // This key used to carry the client IP as well, and that was the right
-    // call at the time: while the cookie was forgeable, keying on the user
-    // id alone let anyone who knew a victim's id pre-exhaust their budget
-    // and lock them out. The cost was that the cap no longer bounded the
-    // thing it exists to bound — six digits at five tries per address, with
-    // addresses free, is not a cap at all. Signing the claim removes the
-    // lockout vector (minting one needs the password), so the limit can go
-    // back to being per-account, where it bites.
+    // This key used to carry the client IP as well, which stopped anyone who
+    // knew a victim's id from pre-exhausting their budget. That was the right
+    // call while the cookie was forgeable — but it also meant the cap did not
+    // bound the thing it exists to bound: six digits at five tries per
+    // address, with addresses free, is not a cap.
+    //
+    // The trade, stated honestly rather than waved away. Signing the claim
+    // NARROWS the lockout vector to someone who already holds the password;
+    // it does not remove it. Such an attacker can still burn this bucket and
+    // keep the real owner out of the 2FA step for the window. That is
+    // accepted, for three reasons: per-account throttling of authenticator
+    // attempts is the standing recommendation (NIST SP 800-63B §5.2.2); the
+    // alternative is a full account takeover by that same attacker, which is
+    // strictly worse than a delay; and `/api/v1/auth/2fa` has always keyed
+    // `2fa:${userId}` with no IP component, so this unifies the two doors
+    // rather than inventing an exposure. It is a 15-minute window that has to
+    // be actively re-triggered — `checkRateLimit` does not extend `resetAt`
+    // on a refused attempt — not a latching lock.
     const { allowed, retryAfterMs } = await checkRateLimit(
       `2fa:${claims.userId}`,
       5,

@@ -133,31 +133,45 @@ export function reauthMessage(reauth: { rateLimited?: boolean; retryAfterMs?: nu
     : "Incorrect password.";
 }
 
+/**
+ * Redeem a reauth token, exactly once.
+ *
+ * ONE conditional UPDATE, not a SELECT followed by an UPDATE. The two-step
+ * form read the row with `used_at IS NULL` and then stamped it by id, with
+ * no predicate and no lock on the write — so two requests interleaving
+ * between the read and the write both saw an unused token and both returned
+ * true. "Single-use" is the whole property that makes one password entry
+ * authorise one destructive action; under concurrency it authorised N.
+ *
+ * The compare-and-set is the pattern this repo already uses twice for
+ * exactly this shape — `verifyAndConsumeTOTPCode`'s replay guard and
+ * `claimReminderSlot`'s `setWhere` — and CLAUDE.md names it as the rule.
+ * This was the odd door out.
+ *
+ * Correctness here is decided by Postgres, so it is tested on PGlite: a
+ * fixture that captures predicates without evaluating them cannot tell a
+ * conditional UPDATE from an unconditional one.
+ */
 export async function requireRecentReauth(
   userId: string,
   purpose: ReauthPurpose,
   rawToken: string,
 ): Promise<boolean> {
-  const tokenHash = hashToken(rawToken);
   const now = new Date();
 
-  const [row] = await db
-    .select({ id: reauthTokens.id })
-    .from(reauthTokens)
+  const consumed = await db
+    .update(reauthTokens)
+    .set({ usedAt: now })
     .where(
       and(
         eq(reauthTokens.userId, userId),
         eq(reauthTokens.purpose, purpose),
-        eq(reauthTokens.tokenHash, tokenHash),
+        eq(reauthTokens.tokenHash, hashToken(rawToken)),
         gt(reauthTokens.expiresAt, now),
         isNull(reauthTokens.usedAt),
       ),
     )
-    .limit(1);
+    .returning({ id: reauthTokens.id });
 
-  if (!row) return false;
-
-  await db.update(reauthTokens).set({ usedAt: now }).where(eq(reauthTokens.id, row.id));
-
-  return true;
+  return consumed.length === 1;
 }

@@ -7,7 +7,7 @@ import { createHash } from "crypto";
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
 import { fakeDb } from "./helpers/fake-db";
-import { users, reauthTokens } from "$lib/server/db/schema";
+import { users } from "$lib/server/db/schema";
 
 // Same surface the hand-rolled mock exposed, so every assertion below reads
 // unchanged: the two writable fields seed a table, the two readable ones are
@@ -20,18 +20,10 @@ const state = {
     fakeDb.seed(users, hash !== null ? [{ passwordHash: hash }] : []);
   },
 
-  set selectMatchRowId(id: string | null) {
-    fakeDb.seed(reauthTokens, id ? [{ id }] : []);
-  },
-
   get inserted() {
     return fakeDb.attempted
       .filter((c) => c.op === "insert")
       .map((c) => c.payload as Record<string, unknown>);
-  },
-
-  get updateCalls() {
-    return fakeDb.attempted.filter((c) => c.op === "update").length;
   },
 };
 
@@ -51,7 +43,7 @@ vi.mock("$lib/server/auth/rate-limit", () => ({
   },
 }));
 
-const { confirmReauth, requireRecentReauth, REAUTH_MAX_ATTEMPTS, REAUTH_WINDOW_MS, reauthMessage } =
+const { confirmReauth, REAUTH_MAX_ATTEMPTS, REAUTH_WINDOW_MS, reauthMessage } =
   await import("../../src/lib/server/auth/reauth");
 
 beforeEach(() => {
@@ -61,7 +53,6 @@ beforeEach(() => {
   state.passwordHash = null;
   state.verifyResult = false;
   state.rateLimit = { allowed: true, retryAfterMs: 0 };
-  state.selectMatchRowId = null;
   rlCalls.length = 0;
   verifyPassword.mockClear();
 });
@@ -183,18 +174,9 @@ describe("confirmReauth — the attempt budget", () => {
   });
 });
 
-describe("requireRecentReauth", () => {
-  it("returns false when no matching row exists", async () => {
-    state.selectMatchRowId = null;
-    const ok = await requireRecentReauth("u1", "change_password", "any");
-    expect(ok).toBe(false);
-    expect(state.updateCalls).toBe(0);
-  });
-
-  it("returns true and stamps usedAt when a fresh, unused token matches", async () => {
-    state.selectMatchRowId = "row1";
-    const ok = await requireRecentReauth("u1", "change_password", "rawtok");
-    expect(ok).toBe(true);
-    expect(state.updateCalls).toBe(1);
-  });
-});
+// `requireRecentReauth` MOVED to tests/unit/pg/auth-reauth-redeem.test.ts.
+// It is now a single conditional UPDATE whose WHERE decides whether the
+// write happens at all, and `fake-db` captures predicates without evaluating
+// them — it cannot tell a guarded UPDATE from an unguarded one, which is the
+// entire property under test. Per CLAUDE.md's seam rule that belongs on
+// PGlite. `confirmReauth` stays here: it is composition, not SQL semantics.

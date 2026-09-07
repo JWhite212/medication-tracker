@@ -2,7 +2,8 @@
   import Sidebar from "$components/Sidebar.svelte";
   import MobileHeader from "$components/MobileHeader.svelte";
   import Toast from "$components/ui/Toast.svelte";
-  import { readableForeground, readableInk } from "$lib/utils/contrast";
+  import { readableForeground } from "$lib/utils/contrast";
+  import { buildThemeStyle, type ThemeName } from "$lib/appearance/theme-css";
 
   let { data, children } = $props();
   let sidebarOpen = $state(false);
@@ -12,25 +13,25 @@
   // to true), so registering a second script at the same scope from this
   // layout made the two evict each other on every load.
 
-  // These three travel together and are set inline, which beats every
-  // stylesheet rule — the @theme values are only the logged-out fallback.
-  // accent is the fill, accent-fg is what sits on top of it, and accent-ink
-  // is the same hue lightened until it reads as text on the lightest surface.
-  // A constant ink would leave 133 text/border/ring sites frozen at indigo
-  // for a user who picked amber.
+  // accent and accent-fg stay INLINE: both are scheme-independent (the fill
+  // is the user's stored hex, and the foreground is derived from the fill
+  // alone). accent-ink does NOT — it has to be re-derived per scheme, and an
+  // inline style on this wrapper would outrank the theme block for the whole
+  // subtree, which is the exact trap spec decision 4 was written to avoid.
   const accentColor = $derived(data.preferences.accentColor);
   const accentFgColor = $derived(readableForeground(accentColor).color);
-  const accentInkColor = $derived(readableInk(accentColor));
+  const themeStyle = $derived(buildThemeStyle(data.preferences.theme as ThemeName, accentColor));
 </script>
 
 <svelte:head>
   <meta name="robots" content="noindex, nofollow" />
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+  {@html themeStyle}
 </svelte:head>
 
 <div
   style:--color-accent={accentColor}
   style:--color-accent-fg={accentFgColor}
-  style:--color-accent-ink={accentInkColor}
   data-density={data.preferences.uiDensity}
   data-reduced-motion={data.preferences.reducedMotion ? "true" : "false"}
 >

@@ -477,3 +477,41 @@ describe.each(SCHEMES)("$name — the heatmap ramp is distinguishable step to st
     }
   });
 });
+
+// Important Finding 2: a hover affordance guards a property this file had
+// never asserted — that a hover state paints DIFFERENT pixels from the
+// resting state, not that it is legible (that is what the CHIPS/text-token
+// tests above already cover). Floor is deliberately modest (1.02, not the
+// 4.5/3 thresholds used elsewhere) — this is not a legibility check.
+//
+// This guards --color-surface-overlay, not --color-glass-hover. The 17
+// `hover:bg-glass-hover` sites split into two real patterns: PAIRED
+// elements also carry a resting `bg-glass`, and `bg-*`/`hover:bg-*` are two
+// STATES of the same element, not two stacked layers — resting shows
+// bg-glass (0.72 alpha), hover replaces it with glass-hover (0.4 alpha),
+// both composited over the same page (--color-surface), and the lower
+// alpha is simply the darker of the two (see app.css's own
+// --color-glass-hover comment). That pattern is correct and untouched.
+// HOVER-ONLY elements carry no resting background
+// of their own and sit directly on --color-surface-raised, so on THEM
+// `hover:bg-glass-hover` composites 40% white over an already-white
+// surface in light mode — a literal no-op (1.000:1, asserted below) — and
+// those 12 files were moved to `hover:bg-surface-overlay` instead (an
+// opaque, deliberately darker/lighter token, following the precedent at
+// MedicationFilterSelect.svelte:86). A test that asserted the property on
+// --color-glass-hover itself would fail here regardless of that site fix —
+// the token is unchanged and correctly so, since the PAIRED sites still
+// depend on today's value. Asserting it on the token those HOVER-ONLY sites
+// actually use is what makes this test true.
+describe.each(SCHEMES)("$name — the hover-only affordance is not a no-op", ({ T }) => {
+  it("--color-surface-overlay reads as a different pixel than --color-surface-raised", () => {
+    const raised = T["--color-surface-raised"];
+    const overlay = T["--color-surface-overlay"];
+    expect(overlay, "--color-surface-overlay is not defined").toBeDefined();
+    const ratio = contrastRatio(overlay, raised);
+    expect(
+      ratio,
+      `--color-surface-overlay (${overlay}) on --color-surface-raised (${raised}) is ${ratio.toFixed(3)}:1`,
+    ).toBeGreaterThanOrEqual(1.02);
+  });
+});

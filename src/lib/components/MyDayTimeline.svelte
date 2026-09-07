@@ -31,7 +31,7 @@
             {#each group.slots as slot (`${slot.medicationId}-${slot.expectedTime}`)}
               {@const expectedDate = new Date(slot.expectedTime)}
               <div
-                class="hover:bg-glass-hover flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors {slot.status ===
+                class="hover:bg-surface-overlay flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors {slot.status ===
                 'skipped'
                   ? 'opacity-60'
                   : ''}"

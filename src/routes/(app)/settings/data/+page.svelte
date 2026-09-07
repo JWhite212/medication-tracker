@@ -57,13 +57,13 @@
     <div class="border-glass-border mt-4 flex flex-wrap gap-3 border-t pt-4">
       <a
         href="/api/export"
-        class="border-glass-border hover:bg-glass-hover inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+        class="border-glass-border hover:bg-surface-overlay inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
       >
         Download Export
       </a>
       <a
         href="/api/export/full"
-        class="border-glass-border hover:bg-glass-hover inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+        class="border-glass-border hover:bg-surface-overlay inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
       >
         Download Full Backup (JSON)
       </a>
@@ -82,7 +82,7 @@
     </p>
     <a
       href="/settings/data/import"
-      class="border-glass-border hover:bg-glass-hover inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+      class="border-glass-border hover:bg-surface-overlay inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
     >
       Import Data
     </a>
@@ -127,7 +127,7 @@
   <div class="flex gap-3">
     <button
       type="button"
-      class="border-glass-border hover:bg-glass-hover flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
+      class="border-glass-border hover:bg-surface-overlay flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
       onclick={() => (showDeleteConfirm = false)}
     >
       Cancel

@@ -105,12 +105,12 @@
       <div class="mt-6 flex flex-col gap-3">
         <a
           href="/auth/callback/google"
-          class="border-glass-border hover:bg-glass-hover flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
+          class="border-glass-border hover:bg-surface-overlay flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
           >Continue with Google</a
         >
         <a
           href="/auth/callback/github"
-          class="border-glass-border hover:bg-glass-hover flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
+          class="border-glass-border hover:bg-surface-overlay flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
           >Continue with GitHub</a
         >
       </div>

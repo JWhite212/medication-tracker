@@ -92,7 +92,7 @@
     <button
       type="button"
       onclick={onclose}
-      class="border-glass-border hover:bg-glass-hover flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors"
+      class="border-glass-border hover:bg-surface-overlay flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors"
     >
       Cancel
     </button>

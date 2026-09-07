@@ -116,6 +116,203 @@ export function isoDayKey(date: Date, timezone: string): string {
 }
 
 /**
+ * Build a UTC instant from calendar fields, safe for years below 100.
+ *
+ * `Date.UTC(50, 0, 1)` is 1950, not year 50 — the two-digit-year mapping is
+ * specified behaviour, not a quirk to route around at the call site. Setting
+ * the year afterwards is the documented escape.
+ */
+function utcFromFields(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+): number {
+  const d = new Date(Date.UTC(2000, month - 1, day, hour, minute, second));
+  d.setUTCFullYear(year);
+  return d.getTime();
+}
+
+/**
+ * The zone's UTC offset, in milliseconds, at a given instant.
+ *
+ * Seconds are read as well as hours and minutes because historical offsets
+ * are not whole minutes: Europe/London's LMT is −75 seconds, and dropping
+ * the field would make a pre-1847 round-trip fail by over a minute.
+ */
+function zoneOffsetMsAt(instantMs: number, fmt: Intl.DateTimeFormat): number {
+  const parts = fmt.formatToParts(new Date(instantMs));
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+
+  return (
+    utcFromFields(
+      get("year"),
+      get("month"),
+      get("day"),
+      get("hour"),
+      get("minute"),
+      get("second"),
+    ) - instantMs
+  );
+}
+
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * THE one owner of wall-clock → instant conversion. Resolve "HH:mm on the
+ * local date `dayKey`, in `timezone`" to the UTC instant it names.
+ *
+ * Three call sites used to answer this question independently — the
+ * fixed-time schedule projection, the datetime-local parser that writes
+ * `dose_logs.takenAt`, and `startOfDay` — and all three were wrong. The
+ * first two shared one algorithm: sample the zone's offset at the wall
+ * clock *read as if it were UTC*, then subtract it. That sample is taken
+ * |offset| hours away from the answer, so whenever a transition falls in
+ * that gap the wrong offset is applied and the result is an hour out.
+ * `startOfDay` had a different bug and a worse one — see below.
+ *
+ * ## The algorithm: propose, then verify
+ *
+ * Probe the zone a day either side of the requested wall clock, and accept
+ * a candidate only if re-reading the offset AT that candidate returns the
+ * offset used to compute it. That round-trip is what makes the result
+ * *verified* rather than assumed, and it is why enumerating two candidates
+ * terminates where iterating to a fixed point does not.
+ *
+ * Iteration is not an option, and this is measured rather than feared: for
+ * a wall clock inside a spring-forward gap, re-sampling oscillates with
+ * period 2 forever (America/New_York 2026-03-08 02:30 → 03:30 → 01:30 →
+ * 03:30 → …). A `while (changed)` loop hangs; a fixed-count loop returns an
+ * answer that depends on whether someone wrote two passes or three, and
+ * those two straddle the gap by an hour.
+ *
+ * Probing ±24h rather than ±1h is deliberate: DST shifts are not all whole
+ * hours (Australia/Lord_Howe moves 30 minutes, Pacific/Chatham sits at
+ * +12:45), and zones have historically moved by far more.
+ *
+ * ## The two policies, chosen rather than emergent
+ *
+ * **Gap** — a wall clock that never happens. Resolve FORWARD, by the width
+ * of the gap. Never throw and never return null: a dose logged at 02:30 on
+ * a spring-forward day is a real dose, and the two callers that would have
+ * to handle a null are the reminder sweep and the dashboard's day window,
+ * where "no answer" means a silently skipped dose.
+ *
+ * **Overlap** — a wall clock that happens twice. Take the EARLIER instant,
+ * by name. It falls out of trying `offsetBefore` first, and it is asserted
+ * in tests so it cannot drift back to being emergent. The shipped code was
+ * *arbitrary* here: it picked the earlier instant in New York and the later
+ * one in London. Stability matters beyond tidiness — `buildOverdueDedupeKey`
+ * embeds the resolved slot's ISO string, so a wobbling choice would mint a
+ * fresh dedupe key and re-send a reminder the user already had.
+ *
+ * ## The invariant callers must respect
+ *
+ * **A returned instant does not carry a civil day.** Do not infer one from
+ * it — ask `isoDayKey` if you need one, or better, keep using the day key
+ * you already had.
+ *
+ * An earlier draft of this work justified forward resolution with "it never
+ * leaves the requested civil day". That guarantee is false, and not merely
+ * unmet — it is unsatisfiable. America/Godthab springs forward at 23:00
+ * local, so on 2026-03-28 all 60 minutes of the 23:00 band do not exist and
+ * a 23:30 dose *necessarily* rolls to 2026-03-29. That is pinned by name in
+ * tests/unit/dst-wall-clock.test.ts; do not restate the false version here
+ * or in CLAUDE.md.
+ *
+ * This is exactly why `expectedTimesForFixedTime` and `computeOverdueSlot`
+ * take their day-of-week from the requested day key and never from the
+ * instant this returns: a Saturday-only medication whose slot rolls into
+ * Sunday would otherwise vanish from both the timeline and the sweep.
+ *
+ * @param dayKey    local calendar date as `YYYY-MM-DD`
+ * @param timeOfDay local wall clock as `HH:mm` or `HH:mm:ss`
+ */
+export function wallClockToInstant(dayKey: string, timeOfDay: string, timezone: string): Date {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const [hour, minute, second] = timeOfDay.split(":").map(Number);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    throw new RangeError(`Invalid wall clock: "${dayKey}" "${timeOfDay}"`);
+  }
+
+  const wall = utcFromFields(year, month, day, hour, minute, second || 0);
+
+  // Offset arithmetic on KEY fields, not a rendered date — hardcoded en-CA
+  // with an explicit hourCycle, never preferences.dateFormat. `hour12: false`
+  // is not equivalent: it can render midnight as hour 24.
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
+  const offsetBefore = zoneOffsetMsAt(wall - MS_PER_DAY, fmt);
+  const candidate = wall - offsetBefore;
+  if (zoneOffsetMsAt(candidate, fmt) === offsetBefore) return new Date(candidate);
+
+  const offsetAfter = zoneOffsetMsAt(wall + MS_PER_DAY, fmt);
+  const alternate = wall - offsetAfter;
+  if (zoneOffsetMsAt(alternate, fmt) === offsetAfter) return new Date(alternate);
+
+  // Neither round-trips: the wall clock is in a gap. `candidate` is the one
+  // computed from the pre-transition offset, which lands past the gap —
+  // forward, per the policy above.
+  return new Date(candidate);
+}
+
+/**
+ * Shift a local calendar date key by whole days.
+ *
+ * Pure UTC calendar arithmetic, not 24-hour instant subtraction: `Date.UTC`
+ * rolls months and years over correctly and has no DST, so "the previous
+ * local date" stays exact across a transition, where subtracting 86,400,000
+ * milliseconds can land on the wrong day.
+ */
+export function shiftDayKey(dayKey: string, days: number): string {
+  const [year, month, day] = dayKey.split("-").map(Number);
+
+  // Land on the target date FIRST, then step. Rolling the day inside
+  // `utcFromFields` would do the arithmetic on the pivot year's calendar and
+  // then have `setUTCFullYear` overwrite the year the rollover just produced
+  // — `shiftDayKey("2026-12-31", 1)` came back as 2026-01-01.
+  const shifted = new Date(utcFromFields(year, month, day, 0, 0, 0) + days * MS_PER_DAY);
+
+  return [
+    String(shifted.getUTCFullYear()).padStart(4, "0"),
+    String(shifted.getUTCMonth() + 1).padStart(2, "0"),
+    String(shifted.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+/**
+ * Day of week (0 = Sunday) of a local calendar date key.
+ *
+ * Takes the key, never an instant. Reading the weekday off a resolved
+ * instant is the bug this exists to prevent: `wallClockToInstant` may
+ * legitimately return an instant on the following civil day, and a
+ * day-of-week filter fed that instant drops the dose entirely.
+ */
+export function dayOfWeekForDayKey(dayKey: string): number {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  return new Date(utcFromFields(year, month, day, 0, 0, 0)).getUTCDay();
+}
+
+/**
  * The label form: `isoDayKey` plus the locale's weekday name when asked.
  *
  * The weekday is a rendering choice and not part of the ISO promise, so it is
@@ -178,29 +375,20 @@ export function formatUserDate(
 }
 
 /**
- * Parse a datetime-local input value (e.g. "2026-04-15T18:20") as a Date
- * in the given IANA timezone. datetime-local has no timezone info, so we
- * figure out the UTC offset for that wall-clock time in the user's zone.
+ * Parse a datetime-local input value (e.g. "2026-04-15T18:20") as a Date in
+ * the given IANA timezone. datetime-local carries no zone, so the wall clock
+ * it names has to be resolved — which is `wallClockToInstant`'s whole job.
+ *
+ * This is the write path for `dose_logs.takenAt`, so its gap and overlap
+ * policies are the ones a user's stored history inherits.
  */
 export function parseDateTimeLocal(datetimeLocal: string, timezone: string): Date {
-  const asUtc = new Date(datetimeLocal + "Z");
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(asUtc);
+  const [dayKey, timeOfDay] = datetimeLocal.split("T");
+  if (!dayKey || !timeOfDay) {
+    throw new RangeError(`Invalid datetime-local value: "${datetimeLocal}"`);
+  }
 
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
-  const tzTime = new Date(
-    `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}Z`,
-  );
-  const offsetMs = tzTime.getTime() - asUtc.getTime();
-  return new Date(asUtc.getTime() - offsetMs);
+  return wallClockToInstant(dayKey, timeOfDay, timezone);
 }
 
 /**
@@ -272,30 +460,44 @@ export function classifyDueStatus(msUntilDue: number): "ok" | "due_soon" | "due_
   return "ok";
 }
 
+/**
+ * The instant at which `date`'s civil day begins in `timezone`.
+ *
+ * Two steps, each owned elsewhere: ask `isoDayKey` which civil day the
+ * instant falls on, then ask `wallClockToInstant` when midnight on that day
+ * happened. The previous implementation fused them into one anchor-and-
+ * correct expression and was wrong in two distinct ways.
+ *
+ * The serious one had nothing to do with DST. It anchored on
+ * `<dayKey>T12:00:00.000Z` and subtracted the local time-of-day read there —
+ * but at UTC+12 and beyond, noon UTC is ALREADY the next civil day locally,
+ * so the time-of-day read back was 00:00, the correction subtracted nothing,
+ * and the function returned *tomorrow's* midnight. Every day of the year,
+ * for all 18 zones at or east of UTC+12 (Auckland, Fiji, Kiritimati,
+ * Chatham, Tongatapu, Kamchatka…). Since `getTodaysDoses` filters on
+ * `takenAt >= dayStart`, a New Zealand user's dashboard listed no doses at
+ * all, permanently, and My Day projected tomorrow's slots. Its one test used
+ * "UTC" — the single zone that can expose neither failure.
+ *
+ * Local midnight does not always exist (America/Santiago, America/Havana and
+ * Africa/Cairo spring forward at 00:00), which is why the gap policy has to
+ * be forward: resolving backwards would put the day's start on the previous
+ * civil day and pull a whole extra day of doses into "today".
+ */
 export function startOfDay(date: Date, timezone: string): Date {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const dateStr = formatter.format(date);
-  // Binary search for the UTC instant that corresponds to local midnight
-  // Start with UTC midnight as an estimate, then adjust using the offset
-  const guess = new Date(`${dateStr}T12:00:00.000Z`);
-  const offsetParts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "numeric",
-    minute: "numeric",
-    second: "numeric",
-    hour12: false,
-  }).formatToParts(guess);
-  const lh = Number(offsetParts.find((p) => p.type === "hour")?.value ?? 0);
-  const lm = Number(offsetParts.find((p) => p.type === "minute")?.value ?? 0);
-  const ls = Number(offsetParts.find((p) => p.type === "second")?.value ?? 0);
-  const localMs = (lh * 3600 + lm * 60 + ls) * 1000;
-  return new Date(guess.getTime() - localMs);
+  return wallClockToInstant(isoDayKey(date, timezone), "00:00", timezone);
+}
+
+/**
+ * The instant at which `date`'s civil day ends in `timezone` — i.e. when the
+ * next one begins.
+ *
+ * Exists because `dayStart + 24h` is wrong twice a year in every DST zone: a
+ * civil day is 23, 24, 24.5 or 25 hours long. Measured on Europe/London
+ * 2026-10-25, a 25-hour day, the fixed offset ended the window at 23:00
+ * local and dropped every dose scheduled in the last hour — 23:00–23:59,
+ * the most common bedtime-medication slot.
+ */
+export function endOfDay(date: Date, timezone: string): Date {
+  return wallClockToInstant(shiftDayKey(isoDayKey(date, timezone), 1), "00:00", timezone);
 }

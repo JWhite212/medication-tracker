@@ -1,6 +1,6 @@
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
-import { classifyDueStatus, isoDayKey } from "./time";
+import { classifyDueStatus, isoDayKey, wallClockToInstant, dayOfWeekForDayKey } from "./time";
 import { parseIntervalHours } from "$lib/utils/schedule-rate";
 
 export type ScheduleSlotStatus = "taken" | "skipped" | "upcoming" | "overdue";
@@ -68,58 +68,6 @@ function getLocalDatesInRange(start: Date, end: Date, timezone: string): string[
   return [...dates].sort();
 }
 
-/**
- * Resolve "HH:mm on local date dateStr in timezone" to a UTC instant,
- * accounting for DST.
- */
-export function localTimeOnDateToUtc(dateStr: string, timeOfDay: string, timezone: string): Date {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const [hh, mm] = timeOfDay.split(":").map(Number);
-
-  const naiveUtcMs = Date.UTC(y, m - 1, d, hh, mm);
-  const naiveUtc = new Date(naiveUtcMs);
-
-  // Offset arithmetic on KEY fields, not a rendered date — hardcoded en-CA,
-  // never preferences.dateFormat.
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(naiveUtc);
-
-  const tzY = Number(parts.find((p) => p.type === "year")?.value);
-  const tzMo = Number(parts.find((p) => p.type === "month")?.value);
-  const tzD = Number(parts.find((p) => p.type === "day")?.value);
-  const tzH = Number(parts.find((p) => p.type === "hour")?.value);
-  const tzMi = Number(parts.find((p) => p.type === "minute")?.value);
-
-  const naiveAsTzMs = Date.UTC(tzY, tzMo - 1, tzD, tzH, tzMi);
-  const offsetMs = naiveAsTzMs - naiveUtcMs;
-
-  return new Date(naiveUtcMs - offsetMs);
-}
-
-export function getLocalDayOfWeek(date: Date, timezone: string): number {
-  const day = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    weekday: "short",
-  }).format(date);
-  const map: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-  };
-  return map[day] ?? 0;
-}
-
 function expectedTimesForInterval(
   intervalHours: number,
   anchor: Date,
@@ -165,12 +113,18 @@ function expectedTimesForFixedTime(
   const allowed = schedule.daysOfWeek;
 
   for (const dateStr of getLocalDatesInRange(dayStartUtc, dayEndUtc, timezone)) {
-    const utc = localTimeOnDateToUtc(dateStr, schedule.timeOfDay, timezone);
+    // Day-of-week comes from the requested date KEY, never from the resolved
+    // instant. On a transition that swallows the scheduled minute the instant
+    // can legitimately land on the next civil day (America/Godthab springs
+    // forward at 23:00 local), and reading the weekday off it would turn a
+    // Saturday-only medication into a Sunday one and drop the slot entirely.
+    if (allowed && allowed.length > 0) {
+      if (!allowed.includes(dayOfWeekForDayKey(dateStr))) continue;
+    }
+
+    const utc = wallClockToInstant(dateStr, schedule.timeOfDay, timezone);
     if (utc.getTime() < dayStartUtc.getTime() || utc.getTime() >= dayEndUtc.getTime()) {
       continue;
-    }
-    if (allowed && allowed.length > 0) {
-      if (!allowed.includes(getLocalDayOfWeek(utc, timezone))) continue;
     }
     out.push(utc);
   }

@@ -121,6 +121,11 @@ defaults so a new user works without a settings touch. These are the
 account-wide reminder defaults; `medications` carries the
 per-medication overrides described above.
 
+Writes go through `updatePreferences`, which reads its audit
+before-image inside the write (`WITH previous AS (SELECT … FOR
+UPDATE)`). A separate `SELECT` let two overlapping saves diff against
+the same row and lose an audit row.
+
 ### `rate_limits`
 
 Sliding-window counter keyed by string (e.g., `login:<ip>` or

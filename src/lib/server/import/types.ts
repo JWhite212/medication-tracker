@@ -11,7 +11,7 @@
 // JSON backup and a dose CSV disagree about is resolved by the parser,
 // not by the planner or the writer.
 import type { DoseLogStatus, InventoryEventType, ScheduleKind } from "$lib/server/db/schema";
-import type { SideEffect } from "$lib/types";
+import type { SideEffect, UserPreferences } from "$lib/types";
 
 export type ImportFormat = "backup-json" | "dose-csv";
 export type ImportMode = "merge" | "replace";
@@ -123,20 +123,7 @@ export type ImportProfile = {
   timezone: string;
 };
 
-export type ImportPreferences = {
-  accentColor?: string;
-  dateFormat?: string;
-  timeFormat?: string;
-  uiDensity?: string;
-  reducedMotion?: boolean;
-  overdueEmailReminders?: boolean;
-  overduePushReminders?: boolean;
-  lowInventoryEmailAlerts?: boolean;
-  lowInventoryPushAlerts?: boolean;
-  doseLogPageSize?: number;
-  heatmapPeriod?: number;
-  exportFormat?: string;
-};
+export type ImportPreferences = Partial<Omit<UserPreferences, "userId" | "updatedAt">>;
 
 export type ImportBundle = {
   format: ImportFormat;

@@ -1,7 +1,320 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { beforeNavigate } from "$app/navigation";
+  import { onDestroy } from "svelte";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
+  import { showToast } from "$lib/components/ui/Toast.svelte";
+  import { APPEARANCE_ENTRIES, actionFor, entryFor } from "$lib/appearance/registry";
+  import type { AppearanceKey } from "$lib/appearance/registry";
+  import { shouldSubmitField } from "$lib/appearance/save-guard";
+  import type { SubmitFunction } from "@sveltejs/kit";
+
+  let { data, form } = $props();
+
+  const presetColours = entryFor("accentColor").presets;
+
+  /**
+   * One settled control produces one POST. Long enough to swallow the
+   * per-option `change` events a closed <select> fires under arrow keys
+   * (arrowing three options down is three change events in Chrome), short
+   * enough that the blur flush is the rare path rather than the normal one.
+   */
+  const SAVE_DEBOUNCE_MS = 400;
+
+  // Local two-way state seeded from the server payload. `value={...}` is
+  // one-way in Svelte 5 -- settings/notifications:56-62 documents the same
+  // trap -- and this is also the revert target, because on a failure
+  // `data` never changes and nothing else puts the control back.
+  let values = $state({
+    accentColor: data.preferences.accentColor,
+    dateFormat: data.preferences.dateFormat,
+    timeFormat: data.preferences.timeFormat,
+    uiDensity: data.preferences.uiDensity,
+    reducedMotion: data.preferences.reducedMotion,
+  });
+
+  // Deliberately NOT $state: timers and in-flight bookkeeping are never
+  // rendered, and making them reactive would re-run the re-seed effect on
+  // every save. `acked` is the last value the SERVER confirmed.
+  const timers = new Map<AppearanceKey, ReturnType<typeof setTimeout>>();
+  const inFlight = new Set<AppearanceKey>();
+  const queued = new Set<AppearanceKey>();
+  // Populated declaratively via bind:this on each <form> (below), so a
+  // form is registered the moment it mounts -- not only after its first
+  // change event. A submit that never goes through queueSave (implicit
+  // submission, or a Save-button click in the window between use:enhance
+  // attaching and `hydrated` flipping) still finds its form here.
+  const formEls: Partial<Record<AppearanceKey, HTMLFormElement>> = {};
+  let acked: Record<string, unknown> = { ...data.preferences };
+
+  let status = $state<Record<string, "saving" | "saved" | "error" | undefined>>({});
+  let announcement = $state("");
+  // Alternates on every successful save so the announcement string is
+  // never identical twice in a row. Svelte's $state equality check means
+  // re-assigning the SAME string does not re-fire the source -- so a
+  // repeated save of the same key (toggle reduce-motion off, then back
+  // on) would leave the polite region silently unchanged on the second
+  // save. The status text next to each control is aria-hidden, so there
+  // is no fallback channel; this is the only thing a screen reader hears.
+  let announceParity = false;
+  // Set once, after hydration -- there is no onMount in this codebase, so
+  // an effect is the idiom (log/+page.svelte:16 has the same disable for
+  // the same reason: this can't be a $derived because it doesn't derive
+  // from anything, it just flips once when the client takes over).
+  // eslint-disable-next-line svelte/prefer-writable-derived
+  let hydrated = $state(false);
+  $effect(() => {
+    hydrated = true;
+  });
+
+  // Re-seed from the server whenever a load re-runs. A successful save
+  // calls invalidateAll, which re-runs the (app) layout load and returns
+  // EVERY preference -- so without the guard, saving the accent would
+  // stamp the server's stale density over a change made 200ms ago.
+  $effect(() => {
+    const prefs = data.preferences;
+    for (const entry of APPEARANCE_ENTRIES) {
+      acked[entry.key] = prefs[entry.key];
+      if (timers.has(entry.key) || inFlight.has(entry.key) || queued.has(entry.key)) continue;
+      values[entry.key] = prefs[entry.key] as never;
+    }
+  });
+
+  onDestroy(() => {
+    for (const timer of timers.values()) clearTimeout(timer);
+    timers.clear();
+  });
+
+  /**
+   * Flushes every debounced-but-not-yet-submitted save immediately. A
+   * mouse user mostly dodges losing a pending change by accident --
+   * clicking a link blurs the control first, which already flushes via
+   * onblur -- but nothing guarantees a blur happens before a navigation,
+   * so a keyboard user who changes a control and immediately hits
+   * browser Back (or a link, or closes the tab) within the debounce
+   * window would otherwise lose that change silently.
+   */
+  function flushAllPending() {
+    for (const key of [...timers.keys()]) flushSave(key);
+  }
+
+  // Covers SvelteKit-driven navigations: link clicks, goto(), and
+  // browser back/forward while the app stays mounted.
+  beforeNavigate(() => {
+    flushAllPending();
+  });
+
+  // Covers the case beforeNavigate cannot: a full page unload (closing
+  // the tab, typing a new URL, a hard reload) never goes through
+  // SvelteKit's router, so beforeNavigate does not fire for it. pagehide
+  // is the closest browser signal available. This is best-effort ONLY --
+  // the browser can tear the document (and its in-flight fetch) down
+  // before the request this triggers actually completes, so there is no
+  // guarantee the save lands, unlike the beforeNavigate path above.
+  $effect(() => {
+    window.addEventListener("pagehide", flushAllPending);
+    return () => window.removeEventListener("pagehide", flushAllPending);
+  });
+
+  function labelOf(key: AppearanceKey) {
+    return entryFor(key).label;
+  }
+
+  // `APPEARANCE_ENTRIES` is `as const satisfies`, so each element keeps its
+  // own literal type rather than widening to `AppearanceEntry` -- an entry
+  // whose source object omits `description` (dateFormat, timeFormat) has no
+  // such key at all, not even as `undefined`, so `entry.description` fails
+  // to compile inside the {#each} below. The `in` check narrows the union
+  // to the members that actually declare the key.
+  function descriptionOf(entry: (typeof APPEARANCE_ENTRIES)[number]): string | undefined {
+    return "description" in entry ? entry.description : undefined;
+  }
+
+  function queueSave(key: AppearanceKey) {
+    clearTimeout(timers.get(key));
+    timers.set(
+      key,
+      setTimeout(() => {
+        timers.delete(key);
+        submitField(key);
+      }, SAVE_DEBOUNCE_MS),
+    );
+  }
+
+  /** Tabbing away commits immediately rather than waiting out the debounce. */
+  function flushSave(key: AppearanceKey) {
+    const timer = timers.get(key);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    timers.delete(key);
+    submitField(key);
+  }
+
+  /**
+   * Flushes the accent save when focus actually leaves the swatch group --
+   * guarded on `relatedTarget`, because focusout also fires between two
+   * radios in the SAME group (the old one blurs before the new one
+   * focuses). An unguarded focusout would flush on every arrow step and
+   * defeat the debounce entirely.
+   */
+  function handleAccentGroupFocusOut(event: FocusEvent) {
+    const group = event.currentTarget as HTMLFieldSetElement;
+    if (!group.contains(event.relatedTarget as Node)) {
+      flushSave("accentColor");
+    }
+  }
+
+  function submitField(key: AppearanceKey) {
+    const formEl = formEls[key];
+    if (!formEl) return;
+    // Arrowing away and back lands on the value already stored: no POST,
+    // so a keyboard user cannot burn a rate-limit token standing still.
+    // Safe ONLY when nothing is in flight for this key -- `acked` is "the
+    // last value the SERVER confirmed", so mid-save it still holds the
+    // PRE-save value, and comparing a newer change against that stale
+    // value would wrongly read as "no change" and drop it. See
+    // shouldSubmitField's doc for the full failure mode this guards.
+    if (!shouldSubmitField(values[key], acked[key], inFlight.has(key))) return;
+    formEl.requestSubmit();
+  }
+
+  function save(key: AppearanceKey): SubmitFunction {
+    return ({ cancel }) => {
+      // Single-flight per key. Cancelling the NEWCOMER and queueing it is
+      // what actually serialises the two writes: controller.abort() stops
+      // us waiting for the response, it does not stop the server writing,
+      // so an aborted A -> B can still land after B -> A. Abort also skips
+      // this callback entirely, which would strand `inFlight`.
+      // The guard lives here rather than in submitField so it also covers
+      // Enter on a control and the pre-hydration Save button.
+      if (inFlight.has(key)) {
+        queued.add(key);
+        cancel();
+        return;
+      }
+
+      const previous = acked[key];
+      const attempted = values[key];
+      inFlight.add(key);
+      status[key] = "saving";
+
+      return async ({ result, update }) => {
+        inFlight.delete(key);
+        let rateLimited = false;
+        // Only meaningful when rateLimited ends up true; falls back to
+        // the normal debounce if the server didn't send one (or sent
+        // something bogus).
+        let retryDelayMs = SAVE_DEBOUNCE_MS;
+
+        if (result.type === "success") {
+          acked[key] = attempted;
+          status[key] = "saved";
+          announceParity = !announceParity;
+          // Trailing zero-width space forces a distinct string on every
+          // save (see the announceParity declaration above) without
+          // changing what a screen reader actually reads aloud.
+          announcement = `${labelOf(key)} saved${announceParity ? "​" : ""}`;
+        } else {
+          // `data` is unchanged on a failure, so the re-seed effect above
+          // does NOT run: this assignment is the only thing that puts the
+          // control back. Skip it if the user already chose something newer.
+          if (!queued.has(key)) values[key] = previous as never;
+          status[key] = "error";
+          if (result.type === "failure" && result.status === 429) {
+            rateLimited = true;
+            const serverDelay = result.data?.retryAfterMs;
+            if (
+              typeof serverDelay === "number" &&
+              Number.isFinite(serverDelay) &&
+              serverDelay > 0
+            ) {
+              retryDelayMs = serverDelay;
+            }
+          }
+          showToast(
+            result.type === "failure" && typeof result.data?.saveError === "string"
+              ? result.data.saveError
+              : `Could not save ${labelOf(key).toLowerCase()}.`,
+            "error",
+          );
+        }
+
+        try {
+          // reset:false is not optional: hydration strips the checked/value
+          // ATTRIBUTES while keeping the properties, so form.reset() blanks
+          // the control that was just saved.
+          await update({ reset: false });
+        } finally {
+          // `finally` (not a bare await) so a queued change is still
+          // replayed -- or, on a 429, still cleared -- even if update()
+          // itself rejects (a transient load failure on the (app) layout).
+          // Without this, `key` stays in `queued` for the rest of the
+          // session: permanently skipped by the re-seed guard and by the
+          // failure-revert above.
+          const hadQueued = queued.delete(key);
+          if (hadQueued) {
+            if (rateLimited) {
+              // The server just asked us to slow down; replaying the
+              // instant update() resolves would produce a second
+              // rejected POST -- and a second error toast -- for the one
+              // user intent that queued behind this save. Re-arm using
+              // the server's own retryAfterMs rather than the normal
+              // debounce: SAVE_DEBOUNCE_MS is far shorter than any
+              // plausible rate-limit window, so replaying on it would
+              // almost certainly 429 again and produce a second rejected
+              // POST of its own.
+              timers.set(
+                key,
+                setTimeout(() => {
+                  timers.delete(key);
+                  submitField(key);
+                }, retryDelayMs),
+              );
+            } else {
+              submitField(key);
+            }
+          }
+        }
+      };
+    };
+  }
+
+  function statusText(key: AppearanceKey) {
+    if (status[key] === "saving") return "Saving…";
+    if (status[key] === "saved") return "Saved";
+    if (status[key] === "error") return "Not saved";
+    return "";
+  }
+
+  /**
+   * No-JS feedback, derived from the `form` prop SvelteKit sets after
+   * every action submission -- success or failure alike. This is a
+   * SEPARATE channel from `statusText` / `announcement`: those are
+   * populated only inside the `use:enhance` callback in `save()` above,
+   * so for a user with no JavaScript -- or in the window before
+   * `hydrated` flips, which is the same window the `{#if !hydrated}` Save
+   * buttons below exist for -- they never fire. The existing per-control
+   * status <p> can't double as this channel either: it is deliberately
+   * aria-hidden, because the polite region already covers JS users.
+   *
+   * Every named action shares one `form` prop, so this is gated on the
+   * key the result actually belongs to -- otherwise saving one control
+   * would flash feedback under every other control on the page too.
+   */
+  function noJsFeedback(key: AppearanceKey): { text: string; ok: boolean } | undefined {
+    if (!form || form.key !== key) return undefined;
+    if (form.success) {
+      return { text: `${labelOf(key)} saved.`, ok: true };
+    }
+    if (typeof form.saveError === "string") {
+      return { text: form.saveError, ok: false };
+    }
+    if (form.errors) {
+      const messages = (form.errors as Record<string, string[] | undefined>)[key];
+      return { text: messages?.[0] ?? `Could not save ${labelOf(key).toLowerCase()}.`, ok: false };
+    }
+    return undefined;
   import { formatUserDate, type DateFormat } from "$lib/utils/time";
 
   let { data, form } = $props();
@@ -56,13 +369,49 @@
     <h1 class="text-2xl font-bold">Appearance</h1>
   </div>
 
-  {#if form?.success}
-    <p class="bg-success/10 text-success rounded-lg px-4 py-2 text-sm">
-      Appearance settings saved.
-    </p>
-  {/if}
+  <!-- Single polite region for every outcome, outside every form so a
+       control is not re-announced when its own result changes. Mirrors
+       settings/notifications:406-408. The Toast is NOT a polite channel
+       despite its container -- each item carries role="alert" -- so it
+       carries failures only. -->
+  <p role="status" class="sr-only">{announcement}</p>
 
   <GlassCard>
+    <div class="space-y-6">
+      <form
+        method="POST"
+        action={actionFor("accentColor")}
+        use:enhance={save("accentColor")}
+        bind:this={formEls.accentColor}
+      >
+        <fieldset class="m-0 border-0 p-0" onfocusout={handleAccentGroupFocusOut}>
+          <legend class="mb-2 block text-sm font-medium">{entryFor("accentColor").label}</legend>
+          <div class="flex flex-wrap gap-2">
+            {#each presetColours as colour (colour)}
+              <label class="cursor-pointer">
+                <input
+                  type="radio"
+                  name="accentColor"
+                  value={colour}
+                  bind:group={values.accentColor}
+                  onchange={() => queueSave("accentColor")}
+                  class="peer sr-only"
+                />
+                <span
+                  class="border-text-primary peer-focus-visible:ring-accent-ink block h-8 w-8 rounded-full border-2 border-transparent transition-transform peer-checked:scale-110 peer-checked:border-2 peer-focus-visible:ring-2 hover:scale-110"
+                  style="background-color: {colour}"
+                ></span>
+                <span class="sr-only"
+                  >{entryFor("accentColor").optionLabelTemplate.replace("{value}", colour)}</span
+                >
+              </label>
+            {/each}
+          </div>
+        </fieldset>
+        {#if !hydrated}
+          <button
+            type="submit"
+            class="bg-accent text-accent-fg mt-2 rounded-lg px-4 py-2 text-sm font-medium"
     <form method="POST" use:enhance class="space-y-6">
       <div>
         <label class="mb-2 block text-sm font-medium">Accent Colour</label>
@@ -111,52 +460,113 @@
           <option value="24h" selected={data.preferences.timeFormat === "24h"}
             >24-hour (14:30)</option
           >
-        </select>
-      </div>
+            Save accent colour
+          </button>
+          {@const feedback = noJsFeedback("accentColor")}
+          {#if feedback}
+            <p class="mt-1 text-xs {feedback.ok ? 'text-success' : 'text-danger-ink'}">
+              {feedback.text}
+            </p>
+          {/if}
+        {/if}
+        <p class="text-text-muted mt-1 h-4 text-xs" aria-hidden="true">
+          {statusText("accentColor")}
+        </p>
+      </form>
 
-      <div>
-        <label for="uiDensity" class="mb-1 block text-sm font-medium">
-          Display Density
-          <Tooltip
-            text="Compact mode reduces spacing throughout the app to show more content on screen."
-          />
-        </label>
-        <select
-          id="uiDensity"
-          name="uiDensity"
-          class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+      {#each APPEARANCE_ENTRIES.filter((e) => e.control === "select") as entry (entry.key)}
+        {@const desc = descriptionOf(entry)}
+        <form
+          method="POST"
+          action={actionFor(entry.key)}
+          use:enhance={save(entry.key)}
+          bind:this={formEls[entry.key]}
         >
-          <option value="comfortable" selected={data.preferences.uiDensity === "comfortable"}
-            >Comfortable</option
+          <label for={entry.key} class="mb-1 block text-sm font-medium">
+            {entry.label}
+            {#if desc}
+              <Tooltip text={desc} />
+            {/if}
+          </label>
+          <select
+            id={entry.key}
+            name={entry.key}
+            bind:value={values[entry.key]}
+            onchange={() => queueSave(entry.key)}
+            onblur={() => flushSave(entry.key)}
+            class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           >
-          <option value="compact" selected={data.preferences.uiDensity === "compact"}
-            >Compact</option
-          >
-        </select>
-      </div>
+            {#each entry.options as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
+          {#if !hydrated}
+            <button
+              type="submit"
+              class="bg-accent text-accent-fg mt-2 rounded-lg px-4 py-2 text-sm font-medium"
+            >
+              Save {entry.label.toLowerCase()}
+            </button>
+            {@const feedback = noJsFeedback(entry.key)}
+            {#if feedback}
+              <p class="mt-1 text-xs {feedback.ok ? 'text-success' : 'text-danger-ink'}">
+                {feedback.text}
+              </p>
+            {/if}
+          {/if}
+          <p class="text-text-muted mt-1 h-4 text-xs" aria-hidden="true">
+            {statusText(entry.key)}
+          </p>
+        </form>
+      {/each}
 
-      <div class="flex items-center gap-3">
-        <input
-          type="checkbox"
-          id="reducedMotion"
-          name="reducedMotion"
-          checked={data.preferences.reducedMotion}
-          class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
-        />
-        <label for="reducedMotion" class="text-sm font-medium">
-          Reduce motion
-          <Tooltip
-            text="Disables animations and transitions for accessibility or personal preference."
-          />
-        </label>
-      </div>
-
-      <button
-        type="submit"
-        class="bg-accent text-accent-fg rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
+      <form
+        method="POST"
+        action={actionFor("reducedMotion")}
+        use:enhance={save("reducedMotion")}
+        bind:this={formEls.reducedMotion}
       >
-        Save Changes
-      </button>
-    </form>
+        <div class="flex items-center gap-3">
+          <!-- The hidden "off" precedes the checkbox so the key is ALWAYS
+               present: an unchecked box submits nothing, and a required
+               arity cannot tell that apart from a mistyped field name.
+               Object.fromEntries keeps the last duplicate, so "on" wins
+               whenever the box is checked. Same pattern as
+               MedicationNotificationFields.svelte:44-59. -->
+          <input type="hidden" name="reducedMotion" value="off" />
+          <input
+            type="checkbox"
+            id="reducedMotion"
+            name="reducedMotion"
+            value="on"
+            bind:checked={values.reducedMotion}
+            onchange={() => queueSave("reducedMotion")}
+            onblur={() => flushSave("reducedMotion")}
+            class="border-border-strong bg-surface-raised text-accent-ink focus:ring-accent-ink h-4 w-4 rounded-xs"
+          />
+          <label for="reducedMotion" class="text-sm font-medium">
+            {entryFor("reducedMotion").label}
+            <Tooltip text={entryFor("reducedMotion").description} />
+          </label>
+        </div>
+        {#if !hydrated}
+          <button
+            type="submit"
+            class="bg-accent text-accent-fg mt-2 rounded-lg px-4 py-2 text-sm font-medium"
+          >
+            Save motion setting
+          </button>
+          {@const feedback = noJsFeedback("reducedMotion")}
+          {#if feedback}
+            <p class="mt-1 text-xs {feedback.ok ? 'text-success' : 'text-danger-ink'}">
+              {feedback.text}
+            </p>
+          {/if}
+        {/if}
+        <p class="text-text-muted mt-1 h-4 text-xs" aria-hidden="true">
+          {statusText("reducedMotion")}
+        </p>
+      </form>
+    </div>
   </GlassCard>
 </div>

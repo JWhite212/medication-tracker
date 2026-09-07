@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { login, SEEDED_EMAIL, SEEDED_PASSWORD } from "./helpers/auth";
+import { E2E_LIGHT_EMAIL, E2E_LIGHT_PASSWORD } from "../../scripts/seed-e2e";
 
 /**
  * The `:root:root` specificity fix exists for a divergence no unit test can
@@ -44,16 +45,19 @@ test.describe("theme resolution", () => {
   });
 
   test("an explicit light theme beats a dark OS preference", async ({ page }) => {
-    await login(page, SEEDED_EMAIL, SEEDED_PASSWORD);
-    await page.goto("/settings/appearance");
-    await page.selectOption("#theme", "light");
-    await expect(page.locator("#theme")).toHaveValue("light");
+    // Logs in as the DEDICATED light-mode user rather than flipping the shared
+    // row. playwright.config.ts sets no `workers: 1`, so mutating the seeded
+    // user's theme here would leave it on light for whatever ran next — most
+    // damagingly the dark-mode axe scan in accessibility.test.ts. It is also a
+    // better test: it does not depend on the appearance page's save path,
+    // which is a different unit's job to prove.
+    await login(page, E2E_LIGHT_EMAIL, E2E_LIGHT_PASSWORD);
 
     await page.emulateMedia({ colorScheme: "dark", contrast: "no-preference" });
     await page.goto("/dashboard");
 
-    // Asserted as a resolved token, not as an attribute: nothing in the app
-    // sets data-theme, so the computed value IS the observable.
+    // Asserted as a resolved token, not an attribute: nothing in the app sets
+    // data-theme, so the computed value IS the observable.
     expect(await token(page, "--color-surface")).toBe("#eef0f6");
   });
 });

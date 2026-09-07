@@ -857,10 +857,16 @@ describe("buildThemeStyle", () => {
   ])("refuses to interpolate a non-6-digit-hex accent: %s", (bad) => {
     const css = buildThemeStyle("dark", bad);
     expect(css).not.toContain(bad);
-    // Still exactly one element, and the ink is a real hex derived from the
-    // fallback rather than anything the caller supplied.
     expect(css.match(/<\/style>/g)).toHaveLength(1);
-    expect(css).toMatch(/--color-accent-ink: #[0-9a-f]{6};/);
+    // Pin the FALLBACK specifically, not just "some hex". The accent reaches
+    // the output only through readableInk, which has its own guard, so
+    // asserting a generic hex here would still pass with buildThemeStyle's
+    // guard deleted — the injection surface is closed three times over and a
+    // loose assertion cannot tell which layer closed it. #9792f0 is
+    // readableInk(#4f46e5) on the dark backdrop, i.e. the ink derived from
+    // FALLBACK_ACCENT. With the outer guard removed readableInk returns its
+    // overlay (#ffffff) instead, so this line fails and the mutation dies.
+    expect(css).toContain("--color-accent-ink: #9792f0;");
   });
 
   it("falls back rather than throwing on an empty accent", () => {

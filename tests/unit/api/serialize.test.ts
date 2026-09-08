@@ -68,6 +68,51 @@ describe("serializers", () => {
     expect(d.sideEffects).toBe(sideEffects);
   });
 
+  it("emits no medications column added after the wire was defined", () => {
+    // Same trap as the dose-log projection below: `serializeMedication` took
+    // rows from a bare `db.select()` and spread them, so
+    // `lowInventoryEpisodeAt` — the identity of an open low-stock episode,
+    // meaningful only to the reminder sweep — would have gone onto the
+    // /api/v1 wire, into every JSON backup and into the medications page's
+    // SSR payload.
+    const m = serializeMedication({
+      id: "m1",
+      userId: "u1",
+      name: "Med",
+      dosageAmount: "1",
+      dosageUnit: "mg",
+      form: "tablet",
+      category: "other",
+      colour: "#fff",
+      colourSecondary: null,
+      pattern: "solid",
+      notes: null,
+      scheduleType: "scheduled",
+      scheduleIntervalHours: null,
+      inventoryCount: 5,
+      inventoryAlertThreshold: 2,
+      sortOrder: 0,
+      isArchived: false,
+      archivedAt: null,
+      startedAt: new Date("2026-01-01T00:00:00Z"),
+      endedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+      notificationsEnabled: true,
+      notifyOverdueEmail: null,
+      notifyOverduePush: null,
+      notifyLowInventoryEmail: null,
+      notifyLowInventoryPush: null,
+      notifyOffsetMinutes: 0,
+      notifyRepeatEveryMinutes: null,
+      notifyMaxRepeats: 3,
+      lowInventoryEpisodeAt: new Date("2026-05-01T00:00:00Z"),
+    } as Parameters<typeof serializeMedication>[0]);
+
+    expect(Object.keys(m)).not.toContain("lowInventoryEpisodeAt");
+    expect(Object.keys(m)).toHaveLength(30);
+  });
+
   it("emits exactly the ten documented dose-log fields, and no column added later", () => {
     // Callers hand this rows straight from a bare `db.select()`, and
     // structural typing lets a wider row through a narrower parameter — so

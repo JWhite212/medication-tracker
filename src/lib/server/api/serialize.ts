@@ -62,13 +62,44 @@ export function serializeMedication(m: {
   notifyRepeatEveryMinutes: number | null;
   notifyMaxRepeats: number;
 }) {
+  // Projected field by field for the same reason as `serializeDoseLog`
+  // below: callers hand this rows from a bare `db.select()`, and structural
+  // typing lets a wider row through a narrower parameter, so a spread put
+  // every column ever added to `medications` onto the /api/v1 wire and into
+  // the JSON backup regardless of what this signature said.
+  // `lowInventoryEpisodeAt` is the current example — the identity of an open
+  // low-stock episode, meaningful only to the reminder sweep.
   return {
-    ...m,
+    id: m.id,
+    userId: m.userId,
+    name: m.name,
+    dosageAmount: m.dosageAmount,
+    dosageUnit: m.dosageUnit,
+    form: m.form,
+    category: m.category,
+    colour: m.colour,
+    colourSecondary: m.colourSecondary,
+    pattern: m.pattern,
+    notes: m.notes,
+    scheduleType: m.scheduleType,
+    scheduleIntervalHours: m.scheduleIntervalHours,
+    inventoryCount: m.inventoryCount,
+    inventoryAlertThreshold: m.inventoryAlertThreshold,
+    sortOrder: m.sortOrder,
+    isArchived: m.isArchived,
     archivedAt: iso(m.archivedAt),
     startedAt: iso(m.startedAt),
     endedAt: iso(m.endedAt),
     createdAt: iso(m.createdAt),
     updatedAt: iso(m.updatedAt),
+    notificationsEnabled: m.notificationsEnabled,
+    notifyOverdueEmail: m.notifyOverdueEmail,
+    notifyOverduePush: m.notifyOverduePush,
+    notifyLowInventoryEmail: m.notifyLowInventoryEmail,
+    notifyLowInventoryPush: m.notifyLowInventoryPush,
+    notifyOffsetMinutes: m.notifyOffsetMinutes,
+    notifyRepeatEveryMinutes: m.notifyRepeatEveryMinutes,
+    notifyMaxRepeats: m.notifyMaxRepeats,
   };
 }
 

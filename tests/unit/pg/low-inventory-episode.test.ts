@@ -37,7 +37,7 @@ vi.mock("$lib/server/push", () => ({
 }));
 
 import { pgDb } from "../helpers/pg-db";
-import { reminderEvents, medications } from "../../../src/lib/server/db/schema";
+import { reminderEvents, medications, users } from "../../../src/lib/server/db/schema";
 import { eq } from "drizzle-orm";
 
 const { checkLowInventoryMedications } = await import("../../../src/lib/server/reminders");
@@ -305,17 +305,37 @@ describe("the episode is not opened by a sweep that cannot deliver", () => {
     // burn it for a user who received nothing — and under an episode key a
     // burned episode is silent until the count RECOVERS, not merely until
     // it next moves. That is why the pre-claim push probe has to stay.
-    await pgDb.db
-      .update(medications)
-      .set({ notifyLowInventoryEmail: false, notifyLowInventoryPush: false })
-      .where(eq(medications.id, "m1"))
-      .execute()
-      .catch(() => undefined);
-    await seedTracked(3, { notifyLowInventoryEmail: false, notifyLowInventoryPush: false });
+    //
+    // The fixture has to be one the sweep's SQL ADMITS but the in-loop gate
+    // then rejects, or the test proves nothing about ordering. Muting both
+    // per-medication overrides fails the query's own
+    // `coalesce(notifyLowInventoryEmail, …) OR coalesce(notifyLowInventoryPush, …)`
+    // predicate, so the row never reaches the loop at all and the assertion
+    // holds against any implementation. Instead: opted IN to email, with an
+    // unverified address (and push off, `hasPushSubscriptions` already
+    // mocked false), so `emailWillFire` is false only at the gate.
+    await pgDb.db.update(users).set({ emailVerified: false }).where(eq(users.id, "u1"));
+    await seedTracked(3, { notifyLowInventoryEmail: true, notifyLowInventoryPush: false });
 
     await checkLowInventoryMedications();
 
     expect(await episodeAt()).toBeNull();
     expect(await claimedKeys()).toHaveLength(0);
+  });
+
+  it("opens the episode once a muted channel becomes deliverable", async () => {
+    // The other half: the medication above is not permanently barred — the
+    // episode is simply not burned while nothing can be sent.
+    await pgDb.db.update(users).set({ emailVerified: false }).where(eq(users.id, "u1"));
+    await seedTracked(3, { notifyLowInventoryEmail: true, notifyLowInventoryPush: false });
+    await checkLowInventoryMedications();
+    expect(await claimedKeys()).toHaveLength(0);
+
+    await pgDb.db.update(users).set({ emailVerified: true }).where(eq(users.id, "u1"));
+    advance(HOUR);
+    await checkLowInventoryMedications();
+
+    expect(await episodeAt()).not.toBeNull();
+    expect(await claimedKeys()).toHaveLength(1);
   });
 });

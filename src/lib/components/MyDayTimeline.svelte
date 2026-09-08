@@ -37,11 +37,23 @@
                   ? 'opacity-60'
                   : ''}"
               >
-                <!-- Status indicator -->
+                <!-- Status indicator.
+                     `role="img"` is required, not decoration. This marker is
+                     the ONLY thing that says whether a dose was taken,
+                     skipped, is overdue or is still to come — the row's
+                     visible text is just the name, the dose and the time. A
+                     bare <span> has the implicit `generic` role, which
+                     PROHIBITS naming, so the aria-label was discarded and a
+                     screen-reader user was told nothing at all. Caught on
+                     production by Lighthouse (`aria-prohibited-attr`, nine
+                     failing nodes on /dashboard). Pinned by
+                     tests/unit/my-day-timeline-ssr.test.ts, which also fails
+                     if a fifth status is added without one. -->
                 {#if slot.status === "taken"}
                   <span
                     class="bg-success/20 text-success flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
                     aria-label="Taken"
+                    role="img"
                   >
                     <svg
                       class="h-3 w-3"
@@ -59,6 +71,7 @@
                   <span
                     class="bg-warning/20 text-warning flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
                     aria-label="Skipped"
+                    role="img"
                   >
                     <svg
                       class="h-3 w-3"
@@ -77,6 +90,7 @@
                   <span
                     class="bg-warning/20 text-warning flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
                     aria-label="Overdue"
+                    role="img"
                   >
                     <svg
                       class="h-3 w-3"
@@ -95,6 +109,7 @@
                   <span
                     class="border-glass-border flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
                     aria-label="Upcoming"
+                    role="img"
                   >
                     <span class="bg-text-muted/40 h-2 w-2 rounded-full"></span>
                   </span>

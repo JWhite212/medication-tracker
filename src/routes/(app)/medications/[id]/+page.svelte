@@ -60,27 +60,33 @@
       {/if}
     </p>
 
-    {#if form?.refillOk}
-      <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-        Refill recorded. New count: {form.newCount}.
-      </p>
-    {:else if form?.refillError}
-      <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm">
-        {form.refillError}
-      </p>
-    {/if}
+    <!-- Persistent live regions: these forms use:enhance, so there is no
+         navigation and nothing else announces the outcome. -->
+    <div role="status">
+      {#if form?.refillOk}
+        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
+          Refill recorded. New count: {form.newCount}.
+        </p>
+      {:else if form?.refillError}
+        <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm">
+          {form.refillError}
+        </p>
+      {/if}
+    </div>
 
-    {#if form?.adjustOk}
-      <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-        Adjustment recorded. New count: {form.newCount} ({form.quantityChange > 0
-          ? "+"
-          : ""}{form.quantityChange}).
-      </p>
-    {:else if form?.adjustError}
-      <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm">
-        {form.adjustError}
-      </p>
-    {/if}
+    <div role="status">
+      {#if form?.adjustOk}
+        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
+          Adjustment recorded. New count: {form.newCount} ({form.quantityChange > 0
+            ? "+"
+            : ""}{form.quantityChange}).
+        </p>
+      {:else if form?.adjustError}
+        <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm">
+          {form.adjustError}
+        </p>
+      {/if}
+    </div>
 
     <form
       method="POST"

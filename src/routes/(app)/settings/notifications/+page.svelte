@@ -145,11 +145,13 @@
     <h1 class="text-2xl font-bold">Notifications</h1>
   </div>
 
-  {#if form?.success}
-    <p class="bg-success/10 text-success rounded-lg px-4 py-2 text-sm">
-      Notification settings saved.
-    </p>
-  {/if}
+  <div role="status">
+    {#if form?.success}
+      <p class="bg-success/10 text-success rounded-lg px-4 py-2 text-sm">
+        Notification settings saved.
+      </p>
+    {/if}
+  </div>
 
   {#if data.emailConfigured && (data.preferences.overdueEmailReminders || data.preferences.lowInventoryEmailAlerts) && !data.emailVerified}
     <!-- Verify-email hint kept in its own card so the resend form does

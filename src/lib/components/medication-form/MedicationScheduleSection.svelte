@@ -100,9 +100,15 @@
       min="0.5"
       max="72"
       step="0.5"
+      aria-invalid={errors["schedules"]?.[0] ? "true" : undefined}
+      aria-describedby={errors["schedules"]?.[0] ? "schedules-error" : undefined}
       class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     />
-    {#if errors["schedules"]?.[0]}<p class="text-danger-ink mt-1 text-sm">
+    {#if errors["schedules"]?.[0]}<p
+        id="schedules-error"
+        class="text-danger-ink mt-1 text-sm"
+        role="alert"
+      >
         {errors["schedules"][0]}
       </p>{/if}
   </div>
@@ -171,7 +177,11 @@
         {/each}
       </div>
     </div>
-    {#if errors["schedules"]?.[0]}<p class="text-danger-ink mt-1 text-sm">
+    {#if errors["schedules"]?.[0]}<p
+        id="schedules-error"
+        class="text-danger-ink mt-1 text-sm"
+        role="alert"
+      >
         {errors["schedules"][0]}
       </p>{/if}
   </div>

@@ -153,5 +153,7 @@
     </div>
   {/if}
 
-  {#if errors["colour"]?.[0]}<p class="text-danger-ink mt-1 text-sm">{errors["colour"][0]}</p>{/if}
+  {#if errors["colour"]?.[0]}<p id="colour-error" class="text-danger-ink mt-1 text-sm" role="alert">
+      {errors["colour"][0]}
+    </p>{/if}
 </fieldset>

@@ -95,15 +95,21 @@
     <p class="text-text-secondary mb-3 text-sm">
       Sign out every device except this one. Re-enter your password to confirm.
     </p>
-    {#if form?.revokeOk}
-      <p class="bg-success/10 text-success mb-3 rounded-lg px-4 py-2 text-sm">
-        Revoked {form.removed} session{form.removed === 1 ? "" : "s"}.
-      </p>
-    {:else if form?.revokeError}
-      <p class="bg-danger/10 text-danger-ink mb-3 rounded-lg px-4 py-2 text-sm">
-        {form.revokeError}
-      </p>
-    {/if}
+    <!-- The region is PERSISTENT and the message appears inside it. A live region
+         inserted at the same moment as its content is not reliably announced —
+         same shape as the one in settings/notifications. use:enhance means there
+         is no navigation, so without this the outcome is silent. -->
+    <div role="status">
+      {#if form?.revokeOk}
+        <p class="bg-success/10 text-success mb-3 rounded-lg px-4 py-2 text-sm">
+          Revoked {form.removed} session{form.removed === 1 ? "" : "s"}.
+        </p>
+      {:else if form?.revokeError}
+        <p class="bg-danger/10 text-danger-ink mb-3 rounded-lg px-4 py-2 text-sm">
+          {form.revokeError}
+        </p>
+      {/if}
+    </div>
     <form
       method="POST"
       action="?/revokeOtherSessions"
@@ -143,15 +149,17 @@
         <p class="text-text-secondary mb-2 text-sm">
           Removes every dose log permanently. Medications and schedules are kept.
         </p>
-        {#if form?.wipeDosesOk}
-          <p class="bg-success/10 text-success mb-2 rounded-lg px-4 py-2 text-sm">
-            Removed {form.removed} dose log entr{form.removed === 1 ? "y" : "ies"}.
-          </p>
-        {:else if form?.wipeDosesError}
-          <p class="bg-danger/10 text-danger-ink mb-2 rounded-lg px-4 py-2 text-sm">
-            {form.wipeDosesError}
-          </p>
-        {/if}
+        <div role="status">
+          {#if form?.wipeDosesOk}
+            <p class="bg-success/10 text-success mb-2 rounded-lg px-4 py-2 text-sm">
+              Removed {form.removed} dose log entr{form.removed === 1 ? "y" : "ies"}.
+            </p>
+          {:else if form?.wipeDosesError}
+            <p class="bg-danger/10 text-danger-ink mb-2 rounded-lg px-4 py-2 text-sm">
+              {form.wipeDosesError}
+            </p>
+          {/if}
+        </div>
         <form
           method="POST"
           action="?/wipeDoseHistory"
@@ -188,15 +196,17 @@
           Permanently removes medications you've archived, along with their dose history and
           schedules.
         </p>
-        {#if form?.wipeArchivedOk}
-          <p class="bg-success/10 text-success mb-2 rounded-lg px-4 py-2 text-sm">
-            Removed {form.removed} archived medication{form.removed === 1 ? "" : "s"}.
-          </p>
-        {:else if form?.wipeArchivedError}
-          <p class="bg-danger/10 text-danger-ink mb-2 rounded-lg px-4 py-2 text-sm">
-            {form.wipeArchivedError}
-          </p>
-        {/if}
+        <div role="status">
+          {#if form?.wipeArchivedOk}
+            <p class="bg-success/10 text-success mb-2 rounded-lg px-4 py-2 text-sm">
+              Removed {form.removed} archived medication{form.removed === 1 ? "" : "s"}.
+            </p>
+          {:else if form?.wipeArchivedError}
+            <p class="bg-danger/10 text-danger-ink mb-2 rounded-lg px-4 py-2 text-sm">
+              {form.wipeArchivedError}
+            </p>
+          {/if}
+        </div>
         <form
           method="POST"
           action="?/wipeArchivedMedications"

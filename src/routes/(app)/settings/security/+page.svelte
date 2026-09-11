@@ -26,11 +26,13 @@
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Change Password</h2>
 
-    {#if form?.passwordSuccess}
-      <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-        Password updated successfully.
-      </p>
-    {/if}
+    <div role="status">
+      {#if form?.passwordSuccess}
+        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
+          Password updated successfully.
+        </p>
+      {/if}
+    </div>
 
     <form method="POST" action="?/changePassword" use:enhance class="space-y-4">
       <Input
@@ -71,16 +73,20 @@
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Two-Factor Authentication</h2>
 
-    {#if form?.totpEnabled}
-      <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-        Two-factor authentication enabled successfully.
-      </p>
-    {/if}
-    {#if form?.totpDisabled}
-      <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-        Two-factor authentication disabled.
-      </p>
-    {/if}
+    <!-- The failure path below already had role="alert"; only the success paths
+         were silent, so enabling or disabling 2FA announced nothing at all. -->
+    <div role="status">
+      {#if form?.totpEnabled}
+        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
+          Two-factor authentication enabled successfully.
+        </p>
+      {/if}
+      {#if form?.totpDisabled}
+        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
+          Two-factor authentication disabled.
+        </p>
+      {/if}
+    </div>
     {#if form?.totpError}
       <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm" role="alert">
         {form.totpError}

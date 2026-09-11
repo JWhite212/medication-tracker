@@ -103,7 +103,7 @@
   </GlassCard>
 </div>
 
-<Modal open={showDeleteConfirm} onclose={() => (showDeleteConfirm = false)}>
+<Modal open={showDeleteConfirm} onclose={() => (showDeleteConfirm = false)} title="Delete Account">
   <h3 class="text-danger-ink mb-2 text-lg font-semibold">Delete Account</h3>
   <p class="text-text-secondary mb-4 text-sm">
     Type <strong>DELETE</strong> to confirm. All your medications, dose history, and settings will be

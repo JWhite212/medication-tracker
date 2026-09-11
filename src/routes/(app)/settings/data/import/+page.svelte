@@ -264,9 +264,18 @@
         </div>
       </GlassCard>
 
-      {#if form?.importError}
-        <p class="bg-danger/10 text-danger-ink rounded-lg px-4 py-3 text-sm">{form.importError}</p>
-      {/if}
+      <!-- The outcome of the page's primary action. use:enhance means no
+           navigation, so without a persistent live region neither the failure nor
+           the arrival of the preview below was announced at all. -->
+      <div role="status">
+        {#if form?.importError}
+          <p class="bg-danger/10 text-danger-ink rounded-lg px-4 py-3 text-sm">
+            {form.importError}
+          </p>
+        {:else if preview}
+          <p class="sr-only">Import preview ready. Review the summary below before importing.</p>
+        {/if}
+      </div>
 
       {#if preview}
         <GlassCard>

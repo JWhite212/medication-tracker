@@ -123,8 +123,17 @@
       loading = false;
       if (result.type === "failure") {
         tick().then(() => {
-          const firstInvalid = document.querySelector<HTMLElement>('[aria-invalid="true"]');
-          firstInvalid?.focus();
+          // aria-invalid is only emitted by fields that ARE a single control.
+          // Group-level failures (schedules, colour) have nowhere to put it, and
+          // querying for it alone meant those failures moved focus nowhere and
+          // announced nothing — the page looked like it had ignored the submit.
+          // Falling back to the first alert covers them; it needs tabindex to be
+          // focusable, since a <p> is not.
+          const invalid = document.querySelector<HTMLElement>('[aria-invalid="true"]');
+          const target = invalid ?? document.querySelector<HTMLElement>('[role="alert"]');
+          if (!target) return;
+          if (!invalid) target.setAttribute("tabindex", "-1");
+          target.focus();
         });
       }
     };

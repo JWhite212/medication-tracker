@@ -18,11 +18,13 @@
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Profile</h2>
 
-    {#if form?.success}
-      <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-        Settings saved successfully.
-      </p>
-    {/if}
+    <div role="status">
+      {#if form?.success}
+        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
+          Settings saved successfully.
+        </p>
+      {/if}
+    </div>
 
     <form method="POST" use:enhance class="space-y-4">
       <Input
@@ -46,7 +48,9 @@
           {/each}
         </select>
         {#if form?.errors?.timezone?.[0]}
-          <p class="text-danger-ink mt-1 text-sm">{form.errors.timezone[0]}</p>
+          <p id="timezone-error" class="text-danger-ink mt-1 text-sm" role="alert">
+            {form.errors.timezone[0]}
+          </p>
         {/if}
       </div>
 

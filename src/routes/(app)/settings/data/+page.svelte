@@ -20,9 +20,11 @@
     <h1 class="text-2xl font-bold">Data Management</h1>
   </div>
 
-  {#if form?.success}
-    <p class="bg-success/10 text-success rounded-lg px-4 py-2 text-sm">Settings saved.</p>
-  {/if}
+  <div role="status">
+    {#if form?.success}
+      <p class="bg-success/10 text-success rounded-lg px-4 py-2 text-sm">Settings saved.</p>
+    {/if}
+  </div>
 
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Export</h2>
@@ -109,9 +111,13 @@
     Type <strong>DELETE</strong> to confirm. All your medications, dose history, and settings will be
     permanently removed.
   </p>
-  {#if form?.deleteError}
-    <p class="bg-danger/10 text-danger-ink mb-3 rounded-lg px-4 py-2 text-sm">{form.deleteError}</p>
-  {/if}
+  <div role="status">
+    {#if form?.deleteError}
+      <p class="bg-danger/10 text-danger-ink mb-3 rounded-lg px-4 py-2 text-sm">
+        {form.deleteError}
+      </p>
+    {/if}
+  </div>
   <!-- Both relied on `placeholder` alone for a name. A placeholder disappears the
        moment you type, so it is not a label — and these gate account deletion. -->
   <input

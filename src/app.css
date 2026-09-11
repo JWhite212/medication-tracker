@@ -283,20 +283,43 @@
   animation: success-flash 0.6s ease-out;
 }
 
-/* Reduced motion: system preference */
+/* Reduced motion — two independent switches, identical payload. The OS setting
+   below, the app's own preference after it.
+
+   `animation-iteration-count` is the load-bearing one and its absence made this
+   block actively HARMFUL rather than merely incomplete. Tailwind's animate-pulse
+   and animate-spin are `infinite`, so squashing only the duration left them
+   running forever at 0.01ms per cycle — landing on a different phase every paint,
+   i.e. a per-frame strobe where there had been a calm 2s pulse. Turning reduced
+   motion ON was worse than leaving it off, for the dashboard's persistent
+   "due now" badge (QuickLogBar) and the two dose-logging spinners.
+
+   `animation-delay` matters for the opposite reason: animate-fade-in-up runs with
+   fill-mode `both`, so the analytics stat cards (staggered 0/80/160ms) sat at
+   opacity 0 through their delay and then snapped in. Zeroing it makes them simply
+   present. Heatmap.svelte carries its own scoped copy of that rule; it is
+   redundant now but kept, because the test pinning it documents a real Svelte
+   `:global()` scoping trap. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* Reduced motion: user preference */
 [data-reduced-motion="true"] *,
 [data-reduced-motion="true"] *::before,
 [data-reduced-motion="true"] *::after {
   animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  animation-delay: 0ms !important;
   transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
 }

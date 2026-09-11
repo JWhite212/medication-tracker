@@ -17,12 +17,16 @@
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
   <div>
-    <label for="inventoryCount" class="mb-1 block text-sm font-medium">
-      Inventory Count
+    <!-- The Tooltip sits beside the <label>, not inside it. A button within a
+         label contributes its own accessible name to the labelled control, so
+         this input used to compute as "Inventory Count More info". -->
+    <div class="mb-1 flex items-center text-sm font-medium">
+      <label for="inventoryCount">Inventory Count</label>
       <Tooltip
+        label="Inventory Count"
         text="Track how many doses you have left. Automatically decreases when you log a dose."
       />
-    </label>
+    </div>
     <input
       id="inventoryCount"
       name="inventoryCount"
@@ -36,10 +40,13 @@
       </p>{/if}
   </div>
   <div>
-    <label for="inventoryAlertThreshold" class="mb-1 block text-sm font-medium">
-      Low Stock Alert Threshold
-      <Tooltip text="You'll see a warning when your remaining inventory drops to this number." />
-    </label>
+    <div class="mb-1 flex items-center text-sm font-medium">
+      <label for="inventoryAlertThreshold">Low Stock Alert Threshold</label>
+      <Tooltip
+        label="Low Stock Alert Threshold"
+        text="You'll see a warning when your remaining inventory drops to this number."
+      />
+    </div>
     <input
       id="inventoryAlertThreshold"
       name="inventoryAlertThreshold"

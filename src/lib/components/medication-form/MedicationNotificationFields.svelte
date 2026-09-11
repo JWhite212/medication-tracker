@@ -35,10 +35,17 @@
   ]);
 </script>
 
-<fieldset class="border-glass-border rounded-lg border p-4">
+<!-- aria-labelledby scopes the group's name to the legend's TEXT. A fieldset is
+     named by its whole legend subtree, so the Tooltip button inside it would
+     otherwise fold its own name in and the group would announce as
+     "Notifications More info about Notifications". -->
+<fieldset class="border-glass-border rounded-lg border p-4" aria-labelledby="notificationsLegend">
   <legend class="px-2 text-sm font-medium">
-    Notifications
-    <Tooltip text="Overrides your account-wide notification settings for this medication only." />
+    <span id="notificationsLegend">Notifications</span>
+    <Tooltip
+      label="Notifications"
+      text="Overrides your account-wide notification settings for this medication only."
+    />
   </legend>
 
   <!-- An unchecked checkbox submits nothing, and an absent
@@ -82,12 +89,13 @@
 
     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
       <div>
-        <label for="notifyOffsetMinutes" class="mb-1 block text-sm font-medium">
-          Remind me after
+        <div class="mb-1 flex items-center text-sm font-medium">
+          <label for="notifyOffsetMinutes">Remind me after</label>
           <Tooltip
+            label="Remind me after"
             text="How long after the scheduled time to send the first reminder. Reminders can only be sent after a dose is due, never before."
           />
-        </label>
+        </div>
         <select
           id="notifyOffsetMinutes"
           name="notifyOffsetMinutes"
@@ -101,12 +109,13 @@
       </div>
 
       <div>
-        <label for="notifyRepeatEveryMinutes" class="mb-1 block text-sm font-medium">
-          Then repeat
+        <div class="mb-1 flex items-center text-sm font-medium">
+          <label for="notifyRepeatEveryMinutes">Then repeat</label>
           <Tooltip
+            label="Then repeat"
             text="Reminders repeat until you log or skip the dose. The shortest interval available is 30 minutes, because that is how often the reminder service runs."
           />
-        </label>
+        </div>
         <select
           id="notifyRepeatEveryMinutes"
           name="notifyRepeatEveryMinutes"

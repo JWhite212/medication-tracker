@@ -26,10 +26,12 @@
   );
 </script>
 
-<fieldset class="m-0 space-y-0 border-0 p-0">
+<!-- See MedicationNotificationFields for why the name is scoped to a span. -->
+<fieldset class="m-0 space-y-0 border-0 p-0" aria-labelledby="stylePickerLegend">
   <legend class="mb-2 block text-sm font-medium">
-    Colour & Pattern
+    <span id="stylePickerLegend">Colour & Pattern</span>
     <Tooltip
+      label="Colour & Pattern"
       text="Choose how this medication appears across the app — on cards, pills, and timeline entries."
     />
   </legend>

@@ -36,13 +36,17 @@
 </script>
 
 <div>
-  <label class="mb-1 block text-sm font-medium">
+  <!-- A <span>, not a <label>: this heads a group of toggle buttons rather than
+       labelling one control, matching "Times of day" and "Days of the week"
+       below. The buttons are grouped so the heading names them as a set. -->
+  <span class="mb-1 flex items-center text-sm font-medium">
     Schedule
     <Tooltip
+      label="Schedule"
       text="Interval: every N hours. Fixed time: at one or more specific times of day. As needed (PRN): only when required, no reminders."
     />
-  </label>
-  <div class="flex gap-2">
+  </span>
+  <div class="flex gap-2" role="group" aria-label="Schedule">
     <button
       type="button"
       onclick={() => (mode = "interval")}
@@ -81,12 +85,13 @@
 
 {#if mode === "interval"}
   <div>
-    <label for="intervalHours" class="mb-1 block text-sm font-medium">
-      Every N hours
+    <div class="mb-1 flex items-center text-sm font-medium">
+      <label for="intervalHours">Every N hours</label>
       <Tooltip
+        label="Every N hours"
         text="How many hours between doses. Used to calculate adherence and send overdue reminders."
       />
-    </label>
+    </div>
     <input
       id="intervalHours"
       type="number"
@@ -107,6 +112,7 @@
       <span class="mb-1 block text-sm font-medium">
         Times of day
         <Tooltip
+          label="Times of day"
           text="One slot per scheduled time. Add multiple rows for twice-daily, three-times-daily, etc."
         />
       </span>
@@ -144,6 +150,7 @@
       <span class="mb-1 block text-sm font-medium">
         Days of the week
         <Tooltip
+          label="Days of the week"
           text="Leave empty to apply every day. Select specific days (e.g. weekdays only) to restrict."
         />
       </span>

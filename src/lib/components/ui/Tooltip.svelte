@@ -33,6 +33,7 @@
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => (visible = false), 150);
   }
+  /** Dismiss the tooltip immediately for Escape and focus-out interactions. */
   function hideNow() {
     clearTimeout(hideTimer);
     visible = false;

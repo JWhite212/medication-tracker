@@ -13,6 +13,7 @@
   let dialogEl: HTMLDivElement | undefined = $state();
   let previouslyFocused = $state<HTMLElement | null>(null);
 
+  /** Return the dialog's enabled, visible focus targets in document order. */
   function focusableItems(): HTMLElement[] {
     return dialogEl ? collectFocusable(dialogEl) : [];
   }

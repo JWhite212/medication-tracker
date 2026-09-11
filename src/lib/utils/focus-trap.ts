@@ -76,3 +76,33 @@ export function nextTrapIndex(
   if (!shiftKey && activeIndex === count - 1) return 0;
   return null;
 }
+
+/**
+ * Handle one Tab keypress inside a modal container, keeping focus within it.
+ *
+ * Callers establish that the key is Tab and the dialog is open; this owns the
+ * rest. Shared by ui/Modal and the KeyboardShortcuts help overlay so the two
+ * cannot drift — they are the same problem and had two different amounts of it.
+ *
+ * `container` must itself be focusable (tabindex="-1") because of the empty
+ * case: with nothing tabbable inside, `nextTrapIndex` has no index to return,
+ * and simply doing nothing lets Tab walk out to the page behind an aria-modal
+ * dialog. Preventing the default and re-focusing the container keeps the
+ * invariant that focus never leaves an open modal.
+ */
+export function trapTab(container: HTMLElement, event: KeyboardEvent): void {
+  const items = collectFocusable(container);
+
+  if (items.length === 0) {
+    event.preventDefault();
+    container.focus();
+    return;
+  }
+
+  const active = document.activeElement as HTMLElement | null;
+  const target = nextTrapIndex(items.length, active ? items.indexOf(active) : -1, event.shiftKey);
+  if (target === null) return;
+
+  event.preventDefault();
+  items[target].focus();
+}

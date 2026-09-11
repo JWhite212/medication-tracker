@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import type { ActionResult } from "@sveltejs/kit";
   import { enhance } from "$app/forms";
+  import { actionErrorMessage } from "$lib/utils/form-errors";
   import MedicationCard from "$lib/components/MedicationCard.svelte";
   import EmptyState from "$components/EmptyState.svelte";
   import emptyMedications from "$lib/assets/397d3a76-85b0-43ee-a0c2-981053e4040c.webp";
@@ -17,8 +19,19 @@
    */
   function reorder(medication: { id: string; name: string }, direction: "up" | "down") {
     return () =>
-      async ({ update }: { update: () => Promise<void> }) => {
+      async ({ result, update }: { result: ActionResult; update: () => Promise<void> }) => {
         await update();
+        // An expired session (the action's own error(401)) and a throw out of
+        // swapSortOrder both land here. Announcing a position then would state a
+        // move that did not happen — and on an error result `update()` has
+        // already swapped the page for the error boundary, so the focus grab
+        // would reach into a destroyed DOM. Report it through the live region
+        // rather than returning silently, which CLAUDE.md calls out as its own
+        // failure mode.
+        if (result.type !== "success") {
+          announcement = actionErrorMessage(result, "Could not reorder medications.");
+          return;
+        }
         const index = data.medications.findIndex((m: { id: string }) => m.id === medication.id);
         announcement = `${medication.name} moved to position ${index + 1} of ${data.medications.length}`;
         await tick();

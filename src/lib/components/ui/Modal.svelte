@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
-  import { collectFocusable, nextTrapIndex } from "$lib/utils/focus-trap";
+  import { collectFocusable, trapTab } from "$lib/utils/focus-trap";
 
   let {
     open = false,
@@ -53,17 +53,7 @@
       return;
     }
     if (e.key !== "Tab" || !dialogEl) return;
-
-    const items = focusableItems();
-    const active = document.activeElement as HTMLElement | null;
-    // indexOf yields -1 when focus is outside the dialog, which is exactly the
-    // case nextTrapIndex needs to pull it back in.
-    const target = nextTrapIndex(items.length, active ? items.indexOf(active) : -1, e.shiftKey);
-
-    if (target !== null) {
-      e.preventDefault();
-      items[target].focus();
-    }
+    trapTab(dialogEl, e);
   }
 </script>
 

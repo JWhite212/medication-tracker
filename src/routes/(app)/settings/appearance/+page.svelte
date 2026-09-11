@@ -430,12 +430,12 @@
           use:enhance={save(entry.key)}
           bind:this={formEls[entry.key]}
         >
-          <label for={entry.key} class="mb-1 block text-sm font-medium">
-            {entry.label}
+          <div class="mb-1 flex items-center text-sm font-medium">
+            <label for={entry.key}>{entry.label}</label>
             {#if desc}
-              <Tooltip text={desc} />
+              <Tooltip label={entry.label} text={desc} />
             {/if}
-          </label>
+          </div>
           <select
             id={entry.key}
             name={entry.key}
@@ -494,8 +494,11 @@
           />
           <label for="reducedMotion" class="text-sm font-medium">
             {entryFor("reducedMotion").label}
-            <Tooltip text={entryFor("reducedMotion").description} />
           </label>
+          <Tooltip
+            label={entryFor("reducedMotion").label}
+            text={entryFor("reducedMotion").description}
+          />
         </div>
         {#if !hydrated}
           <button

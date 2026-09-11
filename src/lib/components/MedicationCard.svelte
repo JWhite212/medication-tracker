@@ -172,7 +172,7 @@
   <!-- Quick log button -->
   <button
     type="button"
-    class="bg-glass text-text-secondary hover:bg-accent hover:text-accent-fg absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-lg opacity-0 transition-all group-hover:opacity-100"
+    class="bg-glass text-text-secondary hover:bg-accent hover:text-accent-fg absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-lg opacity-0 transition-all group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
     aria-label="Quick log {medication.name}"
     disabled={logging}
     onclick={quickLog}

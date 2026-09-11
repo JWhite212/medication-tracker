@@ -36,12 +36,19 @@
     onchange(selected);
   }
 
+  let triggerEl: HTMLButtonElement | undefined = $state();
+
   function onPointerDown(e: PointerEvent) {
     if (open && container && !container.contains(e.target as Node)) open = false;
   }
 
   function onKeyDown(e: KeyboardEvent) {
-    if (e.key === "Escape") open = false;
+    if (e.key !== "Escape" || !open) return;
+    open = false;
+    // Escape used to unmount the popover while focus sat on a checkbox inside
+    // it, dropping focus to <body> — so the next Tab restarted from the top of
+    // the document. Dismissing a popover must return focus to what opened it.
+    triggerEl?.focus();
   }
 </script>
 
@@ -54,8 +61,8 @@
     0
       ? 'border-accent-ink/60'
       : ''}"
+    bind:this={triggerEl}
     aria-expanded={open}
-    aria-haspopup="true"
     onclick={() => (open = !open)}
   >
     <span class="max-w-40 truncate">{label}</span>

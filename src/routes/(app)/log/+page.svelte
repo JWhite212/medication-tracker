@@ -233,12 +233,17 @@
       />
     {/if}
   {:else}
-    <div role="list">
+    <div>
       {#each groupedDoses as group (group.dateKey)}
         <div class="bg-surface/80 sticky top-0 z-10 -mx-1 px-1 py-2 backdrop-blur-sm">
           <h3 class="text-text-secondary text-sm font-medium">{group.label}</h3>
         </div>
-        <div class="space-y-2 pb-4">
+        <!-- role="list" belongs on the element that DIRECTLY owns the listitems.
+             It used to sit on the outer wrapper, whose children were the sticky
+             date headings and these group divs — neither of which is a listitem,
+             so the headings were liable to be pruned from the accessibility tree
+             and the item count was wrong. One list per day group instead. -->
+        <div class="space-y-2 pb-4" role="list" aria-label={group.label}>
           {#each group.doses as dose (dose.id)}
             <TimelineEntry
               {dose}

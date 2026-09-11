@@ -97,7 +97,7 @@
             e.stopPropagation();
             onedit?.(dose);
           }}
-          class="text-text-muted hover:text-accent-ink text-xs"
+          class="text-text-muted hover:text-accent-ink inline-flex h-6 w-6 items-center justify-center text-xs"
           aria-label="Edit dose of {dose.medication.name} at {takenTime}"
         >
           ✎
@@ -121,7 +121,7 @@
         <button
           type="submit"
           onclick={(e) => e.stopPropagation()}
-          class="text-text-muted hover:text-danger-ink text-xs disabled:cursor-not-allowed disabled:opacity-50"
+          class="text-text-muted hover:text-danger-ink inline-flex h-6 w-6 items-center justify-center text-xs disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="Delete dose of {dose.medication.name} at {takenTime}"
           disabled={deleting}
         >

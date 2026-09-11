@@ -62,9 +62,11 @@
   <!-- Common effect chips -->
   <div class="flex flex-wrap gap-2">
     {#each commonEffects as name}
+      <!-- Selection was carried by border and background alone. -->
       <button
         type="button"
         onclick={() => toggle(name)}
+        aria-pressed={isSelected(name)}
         class="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors {isSelected(name)
           ? 'border-accent-ink bg-accent/15 text-accent-ink'
           : 'border-glass-border bg-glass text-text-secondary hover:bg-glass-hover'}"
@@ -114,10 +116,17 @@
           <span class="text-sm">{effect.name}</span>
           <div class="flex gap-1">
             {#each severityOptions as opt}
+              <!-- The only difference between selected and unselected here is
+                   background colour, and the three severities are themselves
+                   distinguished by colour — so without aria-pressed the current
+                   severity is unavailable to assistive tech and to anyone who
+                   cannot separate amber from red. -->
               <button
                 type="button"
                 onclick={() => setSeverity(effect.name, opt.value)}
-                class="rounded-xs px-2 py-0.5 text-xs font-medium transition-colors {effect.severity ===
+                aria-pressed={effect.severity === opt.value}
+                aria-label="{opt.label} severity for {effect.name}"
+                class="min-h-6 rounded-xs px-2 py-0.5 text-xs font-medium transition-colors {effect.severity ===
                 opt.value
                   ? opt.value === 'mild'
                     ? 'bg-text-secondary/30 text-text-primary'

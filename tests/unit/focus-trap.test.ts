@@ -2,8 +2,8 @@
 // element matching against a selector is plain DOM semantics and behaves the
 // same in jsdom as in a browser. Focus MOVEMENT is not — that is why the
 // component keeps no unit test and the pure parts were extracted instead.
-import { describe, it, expect } from "vitest";
-import { collectFocusable, nextTrapIndex } from "../../src/lib/utils/focus-trap";
+import { describe, it, expect, afterEach } from "vitest";
+import { collectFocusable, nextTrapIndex, trapTab } from "../../src/lib/utils/focus-trap";
 
 function fixture(html: string): HTMLElement {
   const host = document.createElement("div");
@@ -106,5 +106,85 @@ describe("nextTrapIndex", () => {
   it("wraps a single-element trap onto itself", () => {
     expect(nextTrapIndex(1, 0, false)).toBe(0);
     expect(nextTrapIndex(1, 0, true)).toBe(0);
+  });
+});
+
+describe("trapTab", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  // Attached to the document because .focus() only takes effect on a node that
+  // is in the tree — the detached fixtures above are enough for matching, but
+  // not for focus.
+  function attached(html: string): HTMLElement {
+    const host = document.createElement("div");
+    host.tabIndex = -1;
+    host.innerHTML = html;
+    document.body.appendChild(host);
+    return host;
+  }
+
+  const tabEvent = (shiftKey = false) =>
+    new KeyboardEvent("keydown", { key: "Tab", shiftKey, cancelable: true, bubbles: true });
+
+  // An aria-modal dialog must never hand focus to the page behind it. With
+  // nothing tabbable inside, nextTrapIndex has no index to return, so doing
+  // nothing let Tab walk straight out of the dialog.
+  it("holds focus on the container when nothing inside is tabbable", () => {
+    const host = attached(`<p>nothing focusable</p><input type="hidden" />`);
+    const event = tabEvent();
+
+    trapTab(host, event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(host);
+  });
+
+  it("wraps forward from the last control to the first", () => {
+    const host = attached(`<button data-id="a">a</button><button data-id="b">b</button>`);
+    host.querySelector<HTMLElement>('[data-id="b"]')!.focus();
+    const event = tabEvent();
+
+    trapTab(host, event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect((document.activeElement as HTMLElement).dataset.id).toBe("a");
+  });
+
+  it("wraps backward from the first control to the last", () => {
+    const host = attached(`<button data-id="a">a</button><button data-id="b">b</button>`);
+    host.querySelector<HTMLElement>('[data-id="a"]')!.focus();
+    const event = tabEvent(true);
+
+    trapTab(host, event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect((document.activeElement as HTMLElement).dataset.id).toBe("b");
+  });
+
+  it("pulls focus back in when it has escaped the container", () => {
+    const host = attached(`<button data-id="a">a</button><button data-id="b">b</button>`);
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    outside.focus();
+    const event = tabEvent();
+
+    trapTab(host, event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect((document.activeElement as HTMLElement).dataset.id).toBe("a");
+  });
+
+  it("lets the browser move focus in the middle of the range", () => {
+    const host = attached(
+      `<button data-id="a">a</button><button data-id="b">b</button><button data-id="c">c</button>`,
+    );
+    host.querySelector<HTMLElement>('[data-id="b"]')!.focus();
+    const event = tabEvent();
+
+    trapTab(host, event);
+
+    expect(event.defaultPrevented).toBe(false);
   });
 });

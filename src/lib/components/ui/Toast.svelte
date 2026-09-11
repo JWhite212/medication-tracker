@@ -56,17 +56,41 @@
    * WCAG 2.2.1: a five-second auto-dismiss is a time limit, and the Undo here is
    * the ONLY way back from a logged or deleted dose. Reaching it by keyboard
    * means tabbing past the whole page — comfortably more than five seconds — so
-   * hovering or focusing the stack holds it open until the pointer or focus
-   * leaves.
+   * hovering or focusing the stack holds it open.
+   *
+   * Pointer and focus are tracked separately because either one alone is reason
+   * to keep holding it. A single pause/resume pair let them overwrite each
+   * other: moving the pointer away while an Undo button was focused resumed
+   * every timer, and five seconds later the focused toast — and the only route
+   * back from a logged or deleted dose — vanished from under the keyboard. The
+   * inverse held too, focus leaving while the pointer still hovered.
+   *
+   * Resuming restarts the full interval rather than the remainder. That is
+   * deliberate: it errs towards giving the user more time, never less.
    */
-  function pauseDismissal() {
-    for (const timer of timers.values()) clearTimeout(timer);
-    timers.clear();
+  let pointerInside = false;
+  let focusInside = false;
+
+  /** Hold or restart dismissal to match the current pointer and focus state. */
+  function updateDismissal() {
+    if (pointerInside || focusInside) {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+      return;
+    }
+    for (const toast of toasts) scheduleDismiss(toast.id);
   }
 
-  /** Restart automatic dismissal after pointer and keyboard interaction ends. */
-  function resumeDismissal() {
-    for (const toast of toasts) scheduleDismiss(toast.id);
+  /** Record whether the pointer is currently over the toast stack. */
+  function setPointerInside(inside: boolean) {
+    pointerInside = inside;
+    updateDismissal();
+  }
+
+  /** Record whether focus is currently inside the toast stack. */
+  function setFocusInside(inside: boolean) {
+    focusInside = inside;
+    updateDismissal();
   }
 </script>
 
@@ -79,10 +103,16 @@
   role="status"
   aria-live="polite"
   aria-atomic="false"
-  onmouseenter={pauseDismissal}
-  onmouseleave={resumeDismissal}
-  onfocusin={pauseDismissal}
-  onfocusout={resumeDismissal}
+  onmouseenter={() => setPointerInside(true)}
+  onmouseleave={() => setPointerInside(false)}
+  onfocusin={() => setFocusInside(true)}
+  onfocusout={(e) => {
+    // focusout also fires moving BETWEEN controls inside the stack, so treat it
+    // as leaving only when focus lands outside the container. contains(null) is
+    // false, so focus lost to nothing still counts as leaving.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setFocusInside(false);
+  }}
 >
   {#each toasts as toast (toast.id)}
     <div

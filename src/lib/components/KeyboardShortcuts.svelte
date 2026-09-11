@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { goto } from "$app/navigation";
+  import { trapTab } from "$lib/utils/focus-trap";
 
   let { medications = [] }: { medications?: Array<{ id: string; name: string }> } = $props();
 
@@ -31,17 +32,34 @@
     // navigation instead of opening a browser window, and Cmd+1..9 (tab
     // switching) and Cmd+/ went the same way.
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    /**
+     * While the help overlay is open it is a modal, so Tab and Escape belong to
+     * it and must be handled BEFORE the isControlFocused() guard below.
+     *
+     * That guard exists to stop single-letter shortcuts firing at a focused
+     * control, but it also matches this dialog's own Close button — and, with no
+     * Tab trap, any background control Tab had escaped to. Once focus left the
+     * dialog, its keydown no longer bubbled through the backdrop's handler and
+     * the guard swallowed Escape here, so the overlay could not be closed at all.
+     */
+    if (showHelp) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        showHelp = false;
+        return;
+      }
+      if (e.key === "Tab" && helpEl) {
+        trapTab(helpEl, e);
+        return;
+      }
+    }
+
     if (isControlFocused()) return;
 
     if (e.key === "?") {
       e.preventDefault();
       showHelp = !showHelp;
-      return;
-    }
-
-    if (showHelp && e.key === "Escape") {
-      e.preventDefault();
-      showHelp = false;
       return;
     }
 
@@ -114,8 +132,11 @@
     aria-label="Keyboard shortcuts"
     tabindex="-1"
   >
+    <!-- tabindex="-1" satisfies trapTab's contract: with nothing tabbable inside
+         it re-focuses the container rather than letting Tab leave the dialog. -->
     <div
       bind:this={helpEl}
+      tabindex="-1"
       class="border-glass-border bg-surface-raised w-full max-w-sm rounded-xl border p-6 shadow-2xl"
     >
       <div class="mb-4 flex items-center justify-between">

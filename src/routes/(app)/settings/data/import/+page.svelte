@@ -148,6 +148,7 @@
         <input
           type="file"
           name="file"
+          aria-label="Choose a file to import"
           accept=".json,.csv,application/json,text/csv"
           required
           onchange={(event) => {
@@ -341,7 +342,10 @@
             {#each preview.unmatchedNames as name}
               <div class="border-glass-border flex items-center gap-3 rounded-lg border p-3">
                 <span class="flex-1 text-sm font-medium">{name}</span>
+                <!-- The name sits in a sibling <span>, which associates with
+                     nothing — one select per unmatched name, all unnamed. -->
                 <select
+                  aria-label="What to do with {name}"
                   value={mapping[name] ?? "skip"}
                   onchange={(event) =>
                     (mapping = { ...mapping, [name]: event.currentTarget.value })}

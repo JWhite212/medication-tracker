@@ -76,7 +76,7 @@
             <button
               type="button"
               class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-[var(--pill-hover)] hover:opacity-100"
-              aria-label="Decrease quantity"
+              aria-label="Decrease quantity for {med.name}"
               onclick={() => setQty(med.id, getQty(med.id) - 1)}>−</button
             >
 
@@ -84,9 +84,16 @@
             <span class="px-1 tabular-nums opacity-90">{getQty(med.id)}×</span>
           {/if}
 
-          <!-- Submit button: medication name + dosage -->
+          <!-- The quantity is in the accessible name because it is not in the
+               visible label: the +/- buttons mutate a count rendered beside the
+               button, so without this you could press + three times and activate
+               a control that still said only "Ibuprofen 200mg" while submitting
+               three doses. -->
           <button
             type="submit"
+            aria-label="Log {med.name} {med.dosageAmount}{med.dosageUnit}, quantity {getQty(
+              med.id,
+            )}"
             class="flex items-center gap-2 px-4 py-2 transition-all hover:bg-[var(--pill-hover)] active:scale-95"
           >
             <span>{med.name}</span>
@@ -97,7 +104,7 @@
           <button
             type="button"
             class="px-2 py-2 leading-none opacity-70 transition-[opacity,background-color] select-none hover:bg-[var(--pill-hover)] hover:opacity-100"
-            aria-label="Increase quantity"
+            aria-label="Increase quantity for {med.name}"
             onclick={() => setQty(med.id, getQty(med.id) + 1)}>+</button
           >
         </div>

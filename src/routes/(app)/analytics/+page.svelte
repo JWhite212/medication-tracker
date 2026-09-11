@@ -30,19 +30,23 @@
     return days === 365 ? "1 year" : `${days} days`;
   }
 
+  // keepFocus/noScroll for the same reason setMedFilter below has them: without
+  // them every range change drops focus to the top of the document and scrolls
+  // there, so a keyboard user loses their place on each press. These two were
+  // the outliers.
   function setPeriod(value: number) {
     const url = new URL(window.location.href);
     url.searchParams.set("period", String(value));
     url.searchParams.delete("from");
     url.searchParams.delete("to");
-    goto(url.toString(), { invalidateAll: true });
+    goto(url.toString(), { invalidateAll: true, keepFocus: true, noScroll: true });
   }
 
   function setDateRange(key: string, value: string) {
     const url = new URL(window.location.href);
     if (value) url.searchParams.set(key, value);
     else url.searchParams.delete(key);
-    goto(url.toString(), { invalidateAll: true });
+    goto(url.toString(), { invalidateAll: true, keepFocus: true, noScroll: true });
   }
 
   function setMedFilter(ids: string[]) {
@@ -73,11 +77,14 @@
     />
     <div class="border-glass-border bg-glass flex gap-1 rounded-lg border p-1 backdrop-blur-xl">
       {#each PERIODS as p}
+        <!-- Selected state was conveyed by background colour alone. aria-pressed
+             matches the schedule-mode toggles in MedicationScheduleSection. -->
         <button
           class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {data.period ===
           p.value
             ? 'bg-accent text-accent-fg'
             : 'text-text-secondary hover:text-text-primary'}"
+          aria-pressed={data.period === p.value}
           onclick={() => setPeriod(p.value)}
         >
           {p.label}
@@ -85,8 +92,10 @@
       {/each}
     </div>
     <div class="flex items-center gap-2">
+      <!-- Named to match the equivalent pair on /log, which already labels them. -->
       <input
         type="date"
+        aria-label="From date"
         value={data.from}
         onchange={(e) => setDateRange("from", e.currentTarget.value)}
         class="border-border-strong bg-surface-raised text-text-primary rounded-lg border px-3 py-1.5 text-sm"
@@ -94,6 +103,7 @@
       <span class="text-text-muted text-xs">to</span>
       <input
         type="date"
+        aria-label="To date"
         value={data.to}
         onchange={(e) => setDateRange("to", e.currentTarget.value)}
         class="border-border-strong bg-surface-raised text-text-primary rounded-lg border px-3 py-1.5 text-sm"
@@ -230,7 +240,13 @@
           {@const count = data.hourly.find((h: { hour: number }) => h.hour === hour)?.count ?? 0}
           {@const scheduled = data.scheduledHours.includes(hour)}
           <div class="flex h-full flex-1 flex-col items-center justify-end gap-1">
-            <div class="text-accent-ink flex h-3 items-end text-[10px] leading-none">
+            <!-- Decorative duplicate: the bar's own label already ends in
+                 ", scheduled time". Unhidden this announced as "black
+                 down-pointing triangle" once per scheduled hour. -->
+            <div
+              class="text-accent-ink flex h-3 items-end text-[10px] leading-none"
+              aria-hidden="true"
+            >
               {scheduled ? "▼" : ""}
             </div>
             <div

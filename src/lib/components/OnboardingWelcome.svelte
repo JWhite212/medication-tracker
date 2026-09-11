@@ -124,14 +124,22 @@
   <!-- Step indicators -->
   <div class="flex gap-2">
     {#each Array(totalSteps) as _, i}
+      <!-- The dot stays 8px tall; the BUTTON is 24x24 so it meets the minimum
+           target size (WCAG 2.5.8). aria-current carries the active step, which
+           was previously conveyed only by width and colour. -->
       <button
         type="button"
-        class="h-2 rounded-full transition-all {i === step
-          ? 'bg-accent w-6'
-          : 'bg-glass-border w-2'}"
+        class="flex h-6 min-w-6 items-center justify-center"
         aria-label="Go to step {i + 1}"
+        aria-current={i === step ? "step" : undefined}
         onclick={() => (step = i)}
-      ></button>
+      >
+        <span
+          class="h-2 rounded-full transition-all {i === step
+            ? 'bg-accent w-6'
+            : 'bg-glass-border w-2'}"
+        ></span>
+      </button>
     {/each}
   </div>
 </div>

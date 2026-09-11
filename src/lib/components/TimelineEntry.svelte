@@ -19,6 +19,11 @@
   } = $props();
 
   let deleting = $state(false);
+
+  // The log page renders one of these per dose — twenty on a default page — and
+  // both controls were named by a bare constant, so the button list read
+  // "Edit dose, Delete dose" twenty times over with no way to tell which row.
+  const takenTime = $derived(formatUserTime(new Date(dose.takenAt), timezone, timeFormat));
 </script>
 
 <div
@@ -84,7 +89,7 @@
             onedit?.(dose);
           }}
           class="text-text-muted hover:text-accent-ink text-xs"
-          aria-label="Edit dose"
+          aria-label="Edit dose of {dose.medication.name} at {takenTime}"
         >
           ✎
         </button>
@@ -108,7 +113,7 @@
           type="submit"
           onclick={(e) => e.stopPropagation()}
           class="text-text-muted hover:text-danger-ink text-xs disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label="Delete dose"
+          aria-label="Delete dose of {dose.medication.name} at {takenTime}"
           disabled={deleting}
         >
           {#if deleting}

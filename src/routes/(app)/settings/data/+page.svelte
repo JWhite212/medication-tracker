@@ -112,14 +112,19 @@
   {#if form?.deleteError}
     <p class="bg-danger/10 text-danger-ink mb-3 rounded-lg px-4 py-2 text-sm">{form.deleteError}</p>
   {/if}
+  <!-- Both relied on `placeholder` alone for a name. A placeholder disappears the
+       moment you type, so it is not a label — and these gate account deletion. -->
   <input
     type="text"
+    aria-label="Type DELETE to confirm"
     bind:value={deleteConfirmText}
     placeholder="Type DELETE"
     class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink mb-3 w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
   />
   <input
     type="password"
+    aria-label="Your password"
+    autocomplete="current-password"
     bind:value={deletePassword}
     placeholder="Enter your password"
     class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink mb-4 w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"

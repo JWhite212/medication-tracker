@@ -110,6 +110,7 @@
                 <input type="hidden" name="medicationId" value={entry.medicationId} />
                 <button
                   type="submit"
+                  aria-label="Skip {entry.medication.name}"
                   class="text-text-muted hover:bg-surface-overlay hover:text-text-primary rounded-xs px-2 py-1 text-xs transition-colors"
                 >
                   Skip

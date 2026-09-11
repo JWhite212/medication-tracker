@@ -200,13 +200,18 @@
     <h2 class="mb-4 text-lg font-semibold">Active Sessions</h2>
 
     <div class="space-y-3">
-      {#each data.sessions as session (session.id)}
+      <!-- The ordinal is visible as well as in the button's name. Expiry date is
+           the only other value on the row and it is NOT unique — two sessions
+           created on the same day collide — so without it the list offers nine
+           identical "Revoke" buttons for a security-sensitive action. Keeping it
+           visible also keeps the accessible name matching the visible label. -->
+      {#each data.sessions as session, i (session.id)}
         <div
           class="border-glass-border flex items-center justify-between rounded-lg border px-4 py-3"
         >
           <div>
             <div class="flex items-center gap-2">
-              <p class="text-sm font-medium">Session</p>
+              <p class="text-sm font-medium">Session {i + 1}</p>
               {#if session.id === data.currentSessionId}
                 <span
                   class="bg-accent/10 text-accent-ink rounded-full px-2 py-0.5 text-xs font-medium"
@@ -228,6 +233,7 @@
               <input type="hidden" name="sessionId" value={session.id} />
               <button
                 type="submit"
+                aria-label="Revoke session {i + 1}"
                 class="border-danger-ink/30 text-danger-ink hover:bg-danger/10 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
               >
                 Revoke

@@ -37,6 +37,7 @@
         label="Current Password"
         name="currentPassword"
         type="password"
+        autocomplete="current-password"
         required
         error={passwordErrors.currentPassword?.[0] ?? ""}
       />
@@ -44,6 +45,7 @@
         label="New Password"
         name="newPassword"
         type="password"
+        autocomplete="new-password"
         required
         error={passwordErrors.newPassword?.[0] ?? ""}
       />
@@ -51,6 +53,7 @@
         label="Confirm New Password"
         name="confirmPassword"
         type="password"
+        autocomplete="new-password"
         required
         error={passwordErrors.confirmPassword?.[0] ?? ""}
       />
@@ -105,7 +108,15 @@
           >
         </p>
         <form method="POST" action="?/verifyTwoFactor" use:enhance class="flex items-end gap-3">
-          <Input label="Verification Code" name="code" placeholder="000000" required />
+          <Input
+            label="Verification Code"
+            id="verifyTotpCode"
+            name="code"
+            placeholder="000000"
+            autocomplete="one-time-code"
+            inputmode="numeric"
+            required
+          />
           <button
             type="submit"
             class="bg-accent text-accent-fg rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
@@ -126,9 +137,28 @@
           </p>
         </div>
         <form method="POST" action="?/disableTwoFactor" use:enhance class="space-y-3">
-          <Input label="Confirm your password" name="currentPassword" type="password" required />
+          <!-- `id` is set explicitly because the Change Password form above mounts
+               its own `currentPassword` input unconditionally. Without a distinct
+               id, both <label for> attributes resolve to that first input and this
+               field is left with no accessible name at all. -->
+          <Input
+            label="Confirm your password"
+            id="disable2faPassword"
+            name="currentPassword"
+            type="password"
+            autocomplete="current-password"
+            required
+          />
           <div class="flex items-end gap-3">
-            <Input label="Authenticator code" name="code" placeholder="000000" required />
+            <Input
+              label="Authenticator code"
+              id="disable2faCode"
+              name="code"
+              placeholder="000000"
+              autocomplete="one-time-code"
+              inputmode="numeric"
+              required
+            />
             <button
               type="submit"
               class="border-danger-ink/30 text-danger-ink hover:bg-danger/10 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors"
@@ -145,7 +175,16 @@
         in.
       </p>
       <form method="POST" action="?/setupTwoFactor" use:enhance class="space-y-4">
-        <Input label="Confirm your password" name="currentPassword" type="password" required />
+        <!-- Same duplicate-id hazard as the disable form above: this arm also
+             co-renders with the unconditional Change Password form. -->
+        <Input
+          label="Confirm your password"
+          id="setup2faPassword"
+          name="currentPassword"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
         <button
           type="submit"
           class="bg-accent text-accent-fg rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"

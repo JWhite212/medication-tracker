@@ -138,7 +138,11 @@
   </div>
 {/if}
 
-<Modal open={editingDose !== null} onclose={() => (editingDose = null)}>
+<Modal
+  open={editingDose !== null}
+  onclose={() => (editingDose = null)}
+  title={editingDose ? `Edit dose of ${editingDose.medication.name}` : "Edit dose"}
+>
   {#if editingDose}
     <DoseEditForm
       dose={editingDose}

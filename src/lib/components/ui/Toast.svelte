@@ -40,6 +40,7 @@
   const DISMISS_MS = 5000;
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  /** Start or restart the automatic dismissal timer for a toast. */
   function scheduleDismiss(id: string) {
     clearTimeout(timers.get(id));
     timers.set(
@@ -63,6 +64,7 @@
     timers.clear();
   }
 
+  /** Restart automatic dismissal after pointer and keyboard interaction ends. */
   function resumeDismissal() {
     for (const toast of toasts) scheduleDismiss(toast.id);
   }

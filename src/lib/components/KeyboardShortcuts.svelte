@@ -24,6 +24,7 @@
     );
   }
 
+  /** Handle unmodified global shortcuts when focus is outside an interactive control. */
   function handleKeydown(e: KeyboardEvent) {
     // Without this, every shortcut below fires with a modifier held and calls
     // preventDefault: Cmd/Ctrl+N was swallowed and turned into an in-page

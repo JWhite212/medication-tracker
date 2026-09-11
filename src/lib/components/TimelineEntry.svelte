@@ -26,6 +26,12 @@
   const takenTime = $derived(formatUserTime(new Date(dose.takenAt), timezone, timeFormat));
 </script>
 
+<!-- Clicking the row is a redundant mouse shortcut for the ✎ button inside it,
+     which is a real <button> with its own accessible name and is reachable by
+     keyboard. A key handler here would be dead code: role="listitem" is not
+     focusable, so it can never receive one. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   class="group border-glass-border bg-glass hover:bg-glass-hover rounded-lg border p-4 backdrop-blur-xl transition-colors {onedit
     ? 'cursor-pointer'
@@ -78,8 +84,11 @@
       </span>
     </div>
 
+    <!-- group-focus-within matters as much as group-hover: opacity-0 keeps these
+         buttons focusable and in the accessibility tree, so a sighted keyboard
+         user was tabbing onto controls they could not see (WCAG 2.4.7). -->
     <div
-      class="flex items-center gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+      class="flex items-center gap-2 opacity-100 transition-opacity md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100"
     >
       {#if onedit}
         <button

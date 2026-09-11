@@ -1,19 +1,36 @@
 <script lang="ts">
+  import { tick } from "svelte";
+  import { goto } from "$app/navigation";
+
   let { medications = [] }: { medications?: Array<{ id: string; name: string }> } = $props();
 
   let showHelp = $state(false);
+  let helpEl: HTMLDivElement | undefined = $state();
 
-  function isInputFocused(): boolean {
-    const el = document.activeElement;
-    if (!el) return false;
-    const tag = el.tagName.toLowerCase();
-    if (tag === "input" || tag === "textarea" || tag === "select") return true;
-    if ((el as HTMLElement).contentEditable === "true") return true;
-    return false;
+  /**
+   * Any focused control, not just text entry.
+   *
+   * The old check exempted input/textarea/select only, so pressing "n" while a
+   * BUTTON had focus navigated away mid-task — and screen-reader users pass
+   * single letters through constantly in browse mode. Scoping the shortcuts to
+   * "nothing interactive is focused" is what WCAG 2.1.4 calls active-on-focus.
+   */
+  function isControlFocused(): boolean {
+    const el = document.activeElement as HTMLElement | null;
+    if (!el || el === document.body) return false;
+    if (el.isContentEditable) return true;
+    return !!el.closest(
+      'input, textarea, select, button, a[href], [role="button"], [tabindex]:not([tabindex="-1"])',
+    );
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (isInputFocused()) return;
+    // Without this, every shortcut below fires with a modifier held and calls
+    // preventDefault: Cmd/Ctrl+N was swallowed and turned into an in-page
+    // navigation instead of opening a browser window, and Cmd+1..9 (tab
+    // switching) and Cmd+/ went the same way.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (isControlFocused()) return;
 
     if (e.key === "?") {
       e.preventDefault();
@@ -29,7 +46,9 @@
 
     if (e.key === "n") {
       e.preventDefault();
-      window.location.href = "/medications/new";
+      // goto, not location.href: a full document reload discards the client
+      // router and costs a cold server render for an in-app navigation.
+      goto("/medications/new");
       return;
     }
 
@@ -47,12 +66,27 @@
       const idx = num - 1;
       if (idx < medications.length) {
         e.preventDefault();
-        const forms = document.querySelectorAll<HTMLFormElement>('form[action="?/logDose"]');
-        const form = forms[idx];
+        // Match on the medication id rather than the form's position in the DOM.
+        // The dashboard renders logDose forms in more than one section, so the
+        // Nth form is not reliably the Nth medication — positional coupling could
+        // log the wrong medication, which for a dosing control is the worst
+        // available failure.
+        const wanted = medications[idx].id;
+        const form = [
+          ...document.querySelectorAll<HTMLFormElement>('form[action="?/logDose"]'),
+        ].find(
+          (f) => f.querySelector<HTMLInputElement>('input[name="medicationId"]')?.value === wanted,
+        );
         if (form) form.requestSubmit();
       }
     }
   }
+
+  // The overlay is an aria-modal dialog; without this it opened behind the
+  // user's focus, exactly as ui/Modal did.
+  $effect(() => {
+    if (showHelp) tick().then(() => helpEl?.querySelector("button")?.focus());
+  });
 
   const shortcuts = [
     { keys: ["1-9"], description: "Quick-log medication by position" },
@@ -80,6 +114,7 @@
     tabindex="-1"
   >
     <div
+      bind:this={helpEl}
       class="border-glass-border bg-surface-raised w-full max-w-sm rounded-xl border p-6 shadow-2xl"
     >
       <div class="mb-4 flex items-center justify-between">

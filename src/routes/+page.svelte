@@ -3,6 +3,7 @@
   import heroImage from "$lib/assets/9910d8b5-01d3-4293-94a7-eca14d4e66f5.webp";
   import wordmark from "$lib/assets/medtracker-logo-lockup-vector.svg";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
+  import WalkthroughVideo from "$lib/components/walkthrough/WalkthroughVideo.svelte";
 </script>
 
 <svelte:head>
@@ -89,6 +90,18 @@
         />
       </div>
     </div>
+
+    <section class="mt-8 w-full max-w-5xl" aria-labelledby="walkthrough-heading">
+      <h2 id="walkthrough-heading" class="text-2xl font-bold tracking-tight sm:text-3xl">
+        See it in action
+      </h2>
+      <p class="text-text-secondary mx-auto mt-2 max-w-lg">
+        Forty seconds, ten features, from the first dose of the day to an overdue reminder.
+      </p>
+      <div class="mt-8">
+        <WalkthroughVideo />
+      </div>
+    </section>
 
     <div class="mt-16 grid max-w-3xl grid-cols-1 gap-6 text-center sm:grid-cols-3 sm:gap-8">
       <div>

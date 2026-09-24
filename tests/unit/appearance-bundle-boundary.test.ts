@@ -28,7 +28,7 @@ function walk(dir: string, out: string[] = []): string[] {
 function scriptSources(file: string): string[] {
   const text = readFileSync(file, "utf8");
   if (!file.endsWith(".svelte")) return [text];
-  return [...text.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
+  return [...text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s+[^>]*)?\s*>/gi)].map((m) => m[1]);
 }
 
 /**

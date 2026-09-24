@@ -22,7 +22,15 @@ function walk(dir: string, out: string[] = []): string[] {
  * other thing contains that other tag name literally, which otherwise opens a
  * match running to the next real closing tag and reports the file as an offender.
  */
-const stripComments = (text: string) => text.replace(/<!--[\s\S]*?-->/g, "");
+const stripComments = (text: string) => {
+  let prev: string;
+  let next = text;
+  do {
+    prev = next;
+    next = prev.replace(/<!--[\s\S]*?-->/g, "");
+  } while (next !== prev);
+  return next;
+};
 
 const files = walk(SRC).map((f) => ({
   rel: path.relative(ROOT, f),

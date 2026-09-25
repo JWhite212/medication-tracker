@@ -1,6 +1,7 @@
 <script lang="ts">
-  // SummaryStrip.svelte followed by RefillsCard.svelte, as they sit together at
-  // the top of the dashboard.
+  // Depicts the former dose-count summary strip followed by RefillsCard.svelte,
+  // as they sat together at the top of the dashboard before it was grouped by
+  // action. The scene has not been redrawn to match the current dashboard.
   import { MEDICATION_BY_ID } from "../demo-data";
   import { useMark } from "../marks";
 

@@ -4,7 +4,6 @@ import { db, dbTx } from "$lib/server/db";
 import { doseLogs, medications, medicationSchedules, syncTombstones } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
 import { recordInventoryEvent } from "./inventory-events";
-import { startOfDay } from "$lib/utils/time";
 import { dashboardWindow, projectFixedTimes, segmentsFor, slotActions } from "$lib/utils/schedule";
 import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 
@@ -79,22 +78,6 @@ const doseWithMedicationColumns = {
     pattern: medications.pattern,
   },
 };
-
-export async function getTodaysDoses(
-  userId: string,
-  timezone: string,
-): Promise<DoseLogWithMedication[]> {
-  const dayStart = startOfDay(new Date(), timezone);
-
-  const rows = await db
-    .select(doseWithMedicationColumns)
-    .from(doseLogs)
-    .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
-    .where(and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, dayStart)))
-    .orderBy(desc(doseLogs.takenAt));
-
-  return rows;
-}
 
 /**
  * Every dose with `from ≤ takenAt < to`, newest first, with the medication

@@ -234,7 +234,7 @@ export type DayGroupKey = "morning" | "afternoon" | "evening" | "night";
 export type SlotStatus = "taken" | "upcoming" | "overdue";
 export type DaySlot = { group: DayGroupKey; id: MedicationId; time: string; status: SlotStatus };
 
-// Emoji because MyDayTimeline.svelte uses them.
+// Emoji because the dashboard's former My Day timeline used them.
 export const DAY_GROUPS: ReadonlyArray<{ key: DayGroupKey; label: string; icon: string }> = [
   { key: "morning", label: "Morning", icon: "☀️" },
   { key: "afternoon", label: "Afternoon", icon: "🌤️" },

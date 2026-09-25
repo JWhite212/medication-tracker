@@ -1,12 +1,11 @@
 // @vitest-environment node
 //
-// Uses the pattern tests/unit/my-day-timeline-ssr.test.ts uses for its own status
-// markers, with the same assertions: the marker is the ONLY thing that says whether a
-// dose was taken, skipped, missed, is overdue, due now or still to come, so
-// its accessible name is load-bearing. An aria-label on a bare <span> is
-// prohibited (`generic` does not support naming) and is DISCARDED — confirmed
-// on production by Lighthouse (`aria-prohibited-attr`, nine failing nodes on
-// /dashboard). `node` is load-bearing: see tests/unit/error-page-ssr.test.ts.
+// The marker is the ONLY thing that says whether a dose was taken, skipped,
+// missed, is overdue, due now or still to come, so its accessible name is
+// load-bearing. An aria-label on a bare <span> is prohibited (`generic` does
+// not support naming) and is DISCARDED — confirmed on production by
+// Lighthouse (`aria-prohibited-attr`, nine failing nodes on /dashboard).
+// `node` is load-bearing: see tests/unit/error-page-ssr.test.ts.
 import { describe, it, expect } from "vitest";
 import { render } from "svelte/server";
 import StatusMarker from "$lib/components/dashboard/StatusMarker.svelte";

@@ -54,7 +54,6 @@ vi.mock("$lib/server/inventory-events", () => ({
   MedicationNotFoundError: FakeError,
 }));
 vi.mock("$lib/server/doses", () => ({
-  getTodaysDoses: never("getTodaysDoses"),
   getDosesInRange: never("getDosesInRange"),
   getLastDosePerMedication: never("getLastDosePerMedication"),
   logDose: never("logDose"),

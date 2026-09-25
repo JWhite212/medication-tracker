@@ -2,10 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   classifyHour,
   computeScheduleSlots,
+  dashboardWindow,
   groupSlotsByTimeOfDay,
+  projectFixedTimes,
+  segmentsFor,
+  singleDaySegments,
   timingStatusFromSlots,
 } from "$lib/utils/schedule";
-import type { ScheduleSlot, ScheduleSlotStatus } from "$lib/utils/schedule";
+import type { ScheduleSlot, ScheduleSlotStatus, Segments } from "$lib/utils/schedule";
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
 
@@ -714,5 +718,113 @@ describe("timingStatusFromSlots", () => {
 
   it("returns null for an empty slot list", () => {
     expect(timingStatusFromSlots([], now)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Projection over the dashboard's three segments. Instants are compared with
+// segment bounds, never re-keyed: a resolved instant does not carry a civil
+// day (see wallClockToInstant).
+// ---------------------------------------------------------------------------
+
+// Yesterday, today and tomorrow's first hour around 2026-04-16 in UTC — the
+// shape dashboardWindow produces, written out so these cases pin projection
+// alone and not the window arithmetic.
+const UTC_SEGMENTS: Segments = {
+  projectStart: new Date("2026-04-15T00:00:00Z"),
+  todayStart: new Date("2026-04-16T00:00:00Z"),
+  end: new Date("2026-04-17T00:00:00Z"),
+  projectEnd: new Date("2026-04-17T01:00:00Z"),
+};
+
+function isoList(dates: Date[]): string[] {
+  return dates.map((d) => d.toISOString());
+}
+
+describe("segmentsFor and singleDaySegments", () => {
+  it("segmentsFor takes the four projection bounds straight off the window", () => {
+    const window = dashboardWindow(new Date("2026-04-16T07:00:00Z"), "Europe/London");
+    expect(segmentsFor(window)).toEqual({
+      projectStart: window.projectStart,
+      todayStart: window.todayStart,
+      end: window.end,
+      projectEnd: window.projectEnd,
+    });
+    // Yesterday's LOCAL midnight (BST), not a UTC one.
+    expect(segmentsFor(window).projectStart.toISOString()).toBe("2026-04-14T23:00:00.000Z");
+  });
+
+  it("singleDaySegments leaves yesterday and tomorrow's first hour empty", () => {
+    const segments = singleDaySegments(
+      new Date("2026-04-16T00:00:00Z"),
+      new Date("2026-04-17T00:00:00Z"),
+    );
+    expect(isoList([segments.projectStart, segments.todayStart])).toEqual([
+      "2026-04-16T00:00:00.000Z",
+      "2026-04-16T00:00:00.000Z",
+    ]);
+    expect(isoList([segments.end, segments.projectEnd])).toEqual([
+      "2026-04-17T00:00:00.000Z",
+      "2026-04-17T00:00:00.000Z",
+    ]);
+  });
+});
+
+describe("projectFixedTimes", () => {
+  it("projects every fixed_time row over yesterday, today and tomorrow's first hour", () => {
+    const schedules = [
+      makeFixedTimeSchedule("med-1", "08:00", null, 0),
+      makeFixedTimeSchedule("med-1", "00:30", null, 1),
+      makeIntervalSchedule("med-1", "8"),
+      makePrnSchedule("med-1"),
+    ];
+    expect(isoList(projectFixedTimes(schedules, UTC_SEGMENTS, "UTC"))).toEqual([
+      "2026-04-15T00:30:00.000Z",
+      "2026-04-15T08:00:00.000Z",
+      "2026-04-16T00:30:00.000Z",
+      "2026-04-16T08:00:00.000Z",
+      // 00:30 tomorrow is inside the first hour; 08:00 tomorrow is not.
+      "2026-04-17T00:30:00.000Z",
+    ]);
+  });
+
+  it("deduplicates two rows naming the same wall clock", () => {
+    const schedules = [
+      makeFixedTimeSchedule("med-1", "08:00", null, 0),
+      makeFixedTimeSchedule("med-1", "08:00", [4], 1),
+    ];
+    expect(isoList(projectFixedTimes(schedules, UTC_SEGMENTS, "UTC"))).toEqual([
+      "2026-04-15T08:00:00.000Z",
+      "2026-04-16T08:00:00.000Z",
+    ]);
+  });
+
+  it("reads day-of-week off each day key", () => {
+    // 2026-04-15 is a Wednesday (3), 2026-04-16 a Thursday (4).
+    const schedules = [makeFixedTimeSchedule("med-1", "08:00", [4])];
+    expect(isoList(projectFixedTimes(schedules, UTC_SEGMENTS, "UTC"))).toEqual([
+      "2026-04-16T08:00:00.000Z",
+    ]);
+  });
+
+  it("is half-open: keeps an instant at projectStart, drops one at projectEnd", () => {
+    const segments = { ...UTC_SEGMENTS, projectEnd: new Date("2026-04-17T00:30:00Z") };
+    const schedules = [
+      makeFixedTimeSchedule("med-1", "00:00", null, 0),
+      makeFixedTimeSchedule("med-1", "00:30", null, 1),
+    ];
+    expect(isoList(projectFixedTimes(schedules, segments, "UTC"))).toEqual([
+      "2026-04-15T00:00:00.000Z",
+      "2026-04-15T00:30:00.000Z",
+      "2026-04-16T00:00:00.000Z",
+      "2026-04-16T00:30:00.000Z",
+      "2026-04-17T00:00:00.000Z",
+    ]);
+  });
+
+  it("projects nothing over an empty range", () => {
+    const instant = new Date("2026-04-16T00:00:00Z");
+    const schedules = [makeFixedTimeSchedule("med-1", "00:00")];
+    expect(projectFixedTimes(schedules, singleDaySegments(instant, instant), "UTC")).toEqual([]);
   });
 });

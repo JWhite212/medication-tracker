@@ -416,19 +416,32 @@ function segmentEndMs(segment: ProjectedSlot["segment"], segments: Segments): nu
 }
 
 /**
- * Match one medication's projected slots to its doses.
+ * Match one medication's projected slots to its doses: passes 0–2.
  *
  * Every pass spends from ONE capacity map. A taken dose covers
- * `max(1, quantity)` slots; a skipped or missed row covers exactly one.
+ * `max(1, quantity)` slots; a skipped or missed row covers exactly one. So
+ * a ×3 dose can resolve one slot in each pass, and never a fourth.
  *
  * - Pass 0 (taken only): a dose recorded at exactly a slot's instant claims
- *   that slot, with the smaller id winning a tie.
+ *   that slot, with the smaller id winning a tie. This is what makes "Took
+ *   it at 09:00" resolve 09:00 when 08:55 is also open.
  * - Reserved skip: a skip at one of these slots' instants is that slot's own
- *   Skip. It is a pass-1 candidate for that slot only.
+ *   Skip. It is a pass-1 candidate for that slot only and never part of
+ *   pass 2, so a real taken dose within the hour still beats it.
  * - Pass 1: the shipped ±MATCH_TOLERANCE_MS rule over the slots pass 0 left,
  *   ascending. Best by rank (taken 0, skipped/missed 1), then distance, then
- *   smaller id. A missed row goes to `missedByDoseId` and leaves the slot
- *   unresolved.
+ *   smaller id. The dose must also have been taken before the slot's
+ *   segment ends (see `segmentEndMs`). A missed row goes to
+ *   `missedByDoseId` and leaves the slot unresolved.
+ * - Pass 2: leftover capacity of taken and skipped doses (never missed rows,
+ *   never reserved skips) with `takenAt <= now`, replayed in (takenAt, id)
+ *   order so history is never re-attributed. Each dose walks backwards from
+ *   the last slot strictly before it, skips resolved slots and stops below
+ *   `pass2Bound`. A dose never resolves a slot after it.
+ *
+ * Status: a resolved slot takes the resolving dose's status. Anything else
+ * is overdue once `expectedTime <= now` and upcoming before that, including
+ * a slot holding only a missed row.
  */
 export function matchMedicationSlots(
   slots: ProjectedSlot[],
@@ -465,7 +478,8 @@ export function matchMedicationSlots(
     }
   }
 
-  // Pass 1 — the shipped ±1h rule over what pass 0 left, plus reserved skips.
+  // Pass 1 — the shipped ±1h rule over what pass 0 left, plus the segment
+  // limit and reserved skips.
   for (let i = 0; i < ordered.length; i++) {
     if (resolvedBy[i]) continue;
     const t = slotMs[i];
@@ -497,13 +511,40 @@ export function matchMedicationSlots(
     else resolvedBy[i] = best;
   }
 
+  // Pass 2 — late resolution.
+  const bound = opts.pass2Bound.getTime();
+  const late = doses
+    .filter(
+      (d) =>
+        d.status !== "missed" &&
+        !isReservedSkip(d) &&
+        hasCapacity(d) &&
+        d.takenAt.getTime() <= nowMs,
+    )
+    .sort(
+      (a, b) =>
+        a.takenAt.getTime() - b.takenAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+  for (const d of late) {
+    const at = d.takenAt.getTime();
+    for (let i = ordered.length - 1; i >= 0 && hasCapacity(d); i--) {
+      if (slotMs[i] >= at) continue; // never forward: only slots strictly before the dose
+      if (slotMs[i] < bound) break;
+      if (resolvedBy[i]) continue; // a slot holding only a missed row is still eligible
+      resolvedBy[i] = d;
+      spend(d);
+    }
+  }
+
   return ordered.map((slot, i) => {
     const by = resolvedBy[i];
-    let status: ScheduleSlotStatus;
-    if (by) status = by.status === "skipped" ? "skipped" : "taken";
-    // The shipped rule, kept until pass 2 lands: a missed row keeps its slot overdue.
-    else if (missedBy[i]) status = "overdue";
-    else status = slotMs[i] <= nowMs ? "overdue" : "upcoming";
+    const status: ScheduleSlotStatus = by
+      ? by.status === "skipped"
+        ? "skipped"
+        : "taken"
+      : slotMs[i] <= nowMs
+        ? "overdue"
+        : "upcoming";
     return { ...slot, status, resolvedByDoseId: by?.id ?? null, missedByDoseId: missedBy[i] };
   });
 }
@@ -537,6 +578,9 @@ export function computeScheduleSlots(
   const segments = opts.window
     ? segmentsFor(opts.window)
     : singleDaySegments(dayStartUtc, dayEndUtc);
+  // Pass 2 reaches back no further than what the dashboard can show:
+  // visibleStart with a window, or the start of the one-segment day
+  // without one.
   const pass2Bound = opts.window ? opts.window.visibleStart : dayStartUtc;
   const endMs = segments.end.getTime();
   const todayStartMs = segments.todayStart.getTime();

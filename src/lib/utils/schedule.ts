@@ -405,20 +405,19 @@ export interface MatchedSlot extends ProjectedSlot {
 }
 
 /**
- * Match one medication's doses to its projected slots.
+ * Match one medication's projected slots to its doses.
  *
- * Capacity-based: a single logged dose can satisfy several nearby slots, up
- * to the number of units actually taken. A `taken` dose has a capacity equal
- * to its quantity (so logging ×3 in one go covers up to three slots within
- * the tolerance); a `skipped` or `missed` row can only ever clear one slot.
+ * Every pass spends from ONE capacity map. A taken dose covers
+ * `max(1, quantity)` slots; a skipped or missed row covers exactly one.
  *
- * Slots are visited ascending. Each takes the best dose within
- * ±`MATCH_TOLERANCE_MS` that still has capacity: a real `taken` dose over a
- * `skipped`/`missed` one, then the nearest in time, then the smaller id, so
- * the output never depends on the order `doses` arrives in.
- *
- * A `missed` row goes to `missedByDoseId` and resolves nothing; anything
- * else goes to `resolvedByDoseId`.
+ * - Pass 0 (taken only): a dose recorded at exactly a slot's instant claims
+ *   that slot, with the smaller id winning a tie.
+ * - Reserved skip: a skip at one of these slots' instants is that slot's own
+ *   Skip. It is a pass-1 candidate for that slot only.
+ * - Pass 1: the shipped ±MATCH_TOLERANCE_MS rule over the slots pass 0 left,
+ *   ascending. Best by rank (taken 0, skipped/missed 1), then distance, then
+ *   smaller id. A missed row goes to `missedByDoseId` and leaves the slot
+ *   unresolved.
  */
 export function matchMedicationSlots(
   slots: ProjectedSlot[],
@@ -426,49 +425,73 @@ export function matchMedicationSlots(
   opts: { now: Date; segments: Segments; pass2Bound: Date },
 ): MatchedSlot[] {
   const nowMs = opts.now.getTime();
+  const ordered = [...slots].sort((a, b) => a.expectedTime.getTime() - b.expectedTime.getTime());
+  const slotMs = ordered.map((s) => s.expectedTime.getTime());
+  const slotInstants = new Set(slotMs);
+  const resolvedBy: (MatchDose | null)[] = ordered.map(() => null);
+  const missedBy: (string | null)[] = ordered.map(() => null);
+
   const remaining = new Map<string, number>();
   for (const d of doses) {
     remaining.set(d.id, d.status === "taken" ? Math.max(1, d.quantity) : 1);
   }
+  const hasCapacity = (d: MatchDose) => (remaining.get(d.id) ?? 0) > 0;
+  const spend = (d: MatchDose) => remaining.set(d.id, (remaining.get(d.id) ?? 0) - 1);
+  const isReservedSkip = (d: MatchDose) =>
+    d.status === "skipped" && slotInstants.has(d.takenAt.getTime());
 
-  const ordered = [...slots].sort((a, b) => a.expectedTime.getTime() - b.expectedTime.getTime());
-  return ordered.map((slot) => {
-    const expectedMs = slot.expectedTime.getTime();
+  // Pass 0 — exact claims, taken only.
+  for (let i = 0; i < ordered.length; i++) {
+    let best: MatchDose | undefined;
+    for (const d of doses) {
+      if (d.status !== "taken" || !hasCapacity(d)) continue;
+      if (d.takenAt.getTime() !== slotMs[i]) continue;
+      if (!best || d.id < best.id) best = d;
+    }
+    if (best) {
+      resolvedBy[i] = best;
+      spend(best);
+    }
+  }
 
-    let matched: MatchDose | undefined;
+  // Pass 1 — the shipped ±1h rule over what pass 0 left, plus reserved skips.
+  for (let i = 0; i < ordered.length; i++) {
+    if (resolvedBy[i]) continue;
+    const t = slotMs[i];
+    let best: MatchDose | undefined;
     let bestRank = Infinity;
     let bestDist = Infinity;
     for (const d of doses) {
-      if ((remaining.get(d.id) ?? 0) <= 0) continue;
-      const dist = Math.abs(d.takenAt.getTime() - expectedMs);
+      if (!hasCapacity(d)) continue;
+      const at = d.takenAt.getTime();
+      const dist = Math.abs(at - t);
       if (dist > MATCH_TOLERANCE_MS) continue;
+      if (isReservedSkip(d) && at !== t) continue;
       const rank = d.status === "taken" ? 0 : 1;
       const better =
         rank < bestRank ||
         (rank === bestRank && dist < bestDist) ||
-        (rank === bestRank && dist === bestDist && (!matched || d.id < matched.id));
+        (rank === bestRank && dist === bestDist && (!best || d.id < best.id));
       if (better) {
-        matched = d;
+        best = d;
         bestRank = rank;
         bestDist = dist;
       }
     }
-    if (matched) remaining.set(matched.id, (remaining.get(matched.id) ?? 0) - 1);
+    if (!best) continue;
+    spend(best);
+    if (best.status === "missed") missedBy[i] = best.id;
+    else resolvedBy[i] = best;
+  }
 
+  return ordered.map((slot, i) => {
+    const by = resolvedBy[i];
     let status: ScheduleSlotStatus;
-    if (matched?.status === "taken") status = "taken";
-    else if (matched?.status === "skipped") status = "skipped";
-    // A "missed" dose row hasn't actually been consumed, so the slot is
-    // still unfulfilled — render it as overdue, not green-check taken.
-    else if (matched?.status === "missed") status = "overdue";
-    else status = expectedMs <= nowMs ? "overdue" : "upcoming";
-
-    return {
-      ...slot,
-      status,
-      resolvedByDoseId: matched && matched.status !== "missed" ? matched.id : null,
-      missedByDoseId: matched?.status === "missed" ? matched.id : null,
-    };
+    if (by) status = by.status === "skipped" ? "skipped" : "taken";
+    // The shipped rule, kept until pass 2 lands: a missed row keeps its slot overdue.
+    else if (missedBy[i]) status = "overdue";
+    else status = slotMs[i] <= nowMs ? "overdue" : "upcoming";
+    return { ...slot, status, resolvedByDoseId: by?.id ?? null, missedByDoseId: missedBy[i] };
   });
 }
 

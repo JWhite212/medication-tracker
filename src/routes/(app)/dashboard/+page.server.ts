@@ -6,14 +6,22 @@ import {
   getTodaysDoses,
   getLastDosePerMedication,
   logDose,
+  logDoseForSlot,
   logSkippedDose,
   deleteDose,
   updateDose,
   MedicationNotFoundError,
+  SlotAlreadyTakenError,
+  SlotTargetChangedError,
 } from "$lib/server/doses";
-import { doseLogSchema, doseEditSchema } from "$lib/utils/validation";
+import { doseLogSchema, doseEditSchema, doseSkipSchema } from "$lib/utils/validation";
 import { resolveEditedInstant, startOfDay, endOfDay, computeTimingStatus } from "$lib/utils/time";
-import { computeScheduleSlots, timingStatusFromSlots } from "$lib/utils/schedule";
+import {
+  computeScheduleSlots,
+  timingStatusFromSlots,
+  checkSlotActionTime,
+  type SlotActionTimeProblem,
+} from "$lib/utils/schedule";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import { parseIntervalHours } from "$lib/utils/schedule-rate";
 import type { Actions, PageServerLoad } from "./$types";
@@ -99,12 +107,28 @@ export const load: PageServerLoad = async ({ locals }) => {
   };
 };
 
+// The refusals a dashboard dose write can meet. Each is a shape
+// `actionErrorMessage` already reads (`errors.form` / `errors.takenAt`), so
+// the client needs no new branch. 409 means "your page is stale": the client
+// re-runs the load before it lets the user try again.
+const TAKEN_AT_IN_FUTURE = "That time hasn't happened yet.";
+const SLOT_OFF_DASHBOARD = "This dose has moved off your dashboard. Refresh to see what's due now.";
+const SLOT_TARGET_CHANGED = "What's due has changed. Refresh to see what's due now.";
+const SLOT_ALREADY_TAKEN = "This dose is already logged as taken. Refresh to see it.";
+
+function slotTimeFailure(problem: SlotActionTimeProblem) {
+  return problem === "future"
+    ? fail(400, { errors: { takenAt: [TAKEN_AT_IN_FUTURE] } })
+    : fail(409, { errors: { form: [SLOT_OFF_DASHBOARD] } });
+}
+
 export const actions: Actions = {
   logDose: async ({ request, locals }) => {
     // Form actions run BEFORE layout load functions, so the (app) group's
     // auth guard has not executed at this point. Without this check an
-    // anonymous POST reaches `locals.user!.id` and 500s.
+    // anonymous POST reaches `locals.user.id` and 500s.
     if (!locals.user) error(401, "Unauthorized");
+    const user = locals.user;
 
     const formData = Object.fromEntries(await request.formData());
     const parsed = doseLogSchema.safeParse(formData);
@@ -113,19 +137,49 @@ export const actions: Actions = {
       return fail(400, { errors: parsed.error.flatten().fieldErrors });
     }
 
-    const { medicationId, quantity, takenAt, notes, sideEffects } = parsed.data;
+    const { medicationId, quantity, takenAt, forSlot, notes, sideEffects } = parsed.data;
+    // One clock for the whole request: the stale check below and Log now's
+    // recompute must judge the same instant.
+    const now = new Date();
+    const at = takenAt ? new Date(takenAt) : undefined;
+
+    if (at) {
+      const problem = checkSlotActionTime(at, now, user.timezone);
+      if (problem) return slotTimeFailure(problem);
+    }
+
+    let doseId: string;
     try {
-      await logDose(
-        locals.user!.id,
-        medicationId,
-        quantity,
-        takenAt ? new Date(takenAt) : undefined,
-        notes,
-        sideEffects,
-      );
+      if (forSlot) {
+        // Log now. `quantity` is not read: the server proves where ONE dose
+        // logged now lands, and it refuses (409) unless that is still the row
+        // the button sat on.
+        const row = await logDoseForSlot(
+          user.id,
+          medicationId,
+          new Date(forSlot),
+          now,
+          user.timezone,
+        );
+        doseId = row.id;
+      } else if (at) {
+        // "Took it at HH:MM": the slot's own instant. The guard makes a
+        // double tap one row and one decrement.
+        const row = await logDose(user.id, medicationId, quantity, at, notes, sideEffects, {
+          exactInstantGuard: true,
+        });
+        doseId = row.id;
+      } else {
+        // A chip: logged now, exactly as before this page had slots.
+        const row = await logDose(user.id, medicationId, quantity, undefined, notes, sideEffects);
+        doseId = row.id;
+      }
     } catch (err) {
       if (err instanceof MedicationNotFoundError) {
         return fail(404, { errors: { form: ["Medication not found"] } });
+      }
+      if (err instanceof SlotTargetChangedError) {
+        return fail(409, { errors: { form: [SLOT_TARGET_CHANGED] } });
       }
       throw err;
     }
@@ -142,7 +196,7 @@ export const actions: Actions = {
       // Telemetry failure must never break the user's dose log.
     }
 
-    return { success: true };
+    return { success: true, doseId };
   },
   deleteDose: async ({ request, locals }) => {
     if (!locals.user) error(401, "Unauthorized");
@@ -176,18 +230,43 @@ export const actions: Actions = {
   },
   skipDose: async ({ request, locals }) => {
     if (!locals.user) error(401, "Unauthorized");
+    const user = locals.user;
 
     const formData = Object.fromEntries(await request.formData());
-    const medicationId = String(formData.medicationId);
-    if (!medicationId) return fail(400);
+    // Through the schema, not `String(formData.medicationId)`: that turned a
+    // missing field into the id "undefined" and answered 404 where a
+    // malformed request deserves 400.
+    const parsed = doseSkipSchema.safeParse(formData);
+    if (!parsed.success) {
+      return fail(400, { errors: parsed.error.flatten().fieldErrors });
+    }
+
+    const { medicationId, takenAt } = parsed.data;
+    const now = new Date();
+    const at = takenAt ? new Date(takenAt) : undefined;
+
+    if (at) {
+      const problem = checkSlotActionTime(at, now, user.timezone);
+      if (problem) return slotTimeFailure(problem);
+    }
+
+    let doseId: string;
     try {
-      await logSkippedDose(locals.user!.id, medicationId);
+      // With an instant, this is the row's own Skip (its `skipAt`), so it is
+      // deduplicated and refused over a taken dose. Without one it is the
+      // legacy skip-at-now.
+      doseId = at
+        ? await logSkippedDose(user.id, medicationId, at, { exactInstantGuard: true })
+        : await logSkippedDose(user.id, medicationId);
     } catch (err) {
       if (err instanceof MedicationNotFoundError) {
         return fail(404, { error: "Medication not found" });
       }
+      if (err instanceof SlotAlreadyTakenError) {
+        return fail(409, { errors: { form: [SLOT_ALREADY_TAKEN] } });
+      }
       throw err;
     }
-    return { success: true };
+    return { success: true, doseId };
   },
 };

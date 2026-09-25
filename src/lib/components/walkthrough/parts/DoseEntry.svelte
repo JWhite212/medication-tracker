@@ -1,6 +1,8 @@
 <script lang="ts">
-  // TimelineEntry.svelte without its edit/delete buttons (the empty 56px box
-  // keeps their space so rows line up with the real page).
+  // TimelineEntry.svelte as a desktop pointer sees it before hovering: the
+  // edit and delete buttons are hidden, and the empty 68px box (two 32px
+  // targets and their 4px gap) keeps their space so rows line up with the
+  // real page.
   import { getMedicationBackground } from "$lib/utils/medication-style";
   import type { DemoMedication } from "../demo-data";
 
@@ -33,7 +35,7 @@
       <span class="text-text-secondary">{time}</span>
       <span class="text-accent-ink font-medium tabular-nums">{since}</span>
     </div>
-    <div class="flex w-14 shrink-0 gap-2"></div>
+    <div class="w-17 shrink-0"></div>
   </div>
   {#if sideEffect}
     <div class="mt-2 flex flex-wrap gap-1.5 pl-7">

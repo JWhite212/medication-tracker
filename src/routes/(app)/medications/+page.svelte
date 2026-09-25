@@ -108,7 +108,11 @@
               </button>
             </form>
           </div>
-          <div class="flex-1">
+          <!-- min-w-0 keeps the card shrinkable. Without it this flex item's
+               automatic minimum is the card's min-content width, so anything
+               unbreakable in the card (it was a long medication name) widened
+               it past a 320px screen and pushed the Log button off the edge. -->
+          <div class="min-w-0 flex-1">
             <MedicationCard {medication} />
           </div>
         </div>

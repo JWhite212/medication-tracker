@@ -53,9 +53,9 @@
    * Quick-log from the Medications list.
    *
    * This posts to the dashboard's action from a page that does not own it, so
-   * it cannot use `use:enhance` — the card is inside an `<a>` and there is no
-   * local form to progressively enhance. It stays a `fetch`, but it now does
-   * the two things `enhance` would have done for it and previously did not.
+   * there is no local form for `use:enhance` to progressively enhance. It
+   * stays a `fetch`, but it now does the two things `enhance` would have done
+   * for it and previously did not.
    *
    * It never checked `res.ok`. A dose logged against a medication deleted in
    * another tab returned 404 and the card showed a spinner, then nothing —
@@ -70,6 +70,11 @@
   async function quickLog(event: Event) {
     event.preventDefault();
     event.stopPropagation();
+    // The guard against a second log while the first is in flight lives here
+    // rather than in a native `disabled`. A disabled button cannot keep focus,
+    // so pressing it from the keyboard dropped focus to <body> and nothing put
+    // it back; `aria-disabled` says the same thing and leaves focus alone.
+    if (logging) return;
     logging = true;
     try {
       const form = new FormData();
@@ -100,11 +105,20 @@
      it. Absolutely positioned in the top-right corner it sat on the status
      chips, and because it was hidden until hover it was an invisible target
      on a touch screen. In the flow it takes its own column and the link
-     narrows to make room, so the two cannot overlap at any width. -->
+     narrows to make room, so the two cannot overlap at any width.
+
+     The link still answers a click anywhere on the card, not only on its
+     own narrower box: its ::after is stretched over this wrapper, which is
+     why the wrapper is `relative`. The button is positioned and above it in
+     z-order, so it keeps its own clicks. Without the overlay the strip
+     beside and below the button lit up on hover and then did nothing. -->
 <div
-  class="border-glass-border bg-glass hover:bg-glass-hover flex rounded-xl border backdrop-blur-xl transition-colors"
+  class="border-glass-border bg-glass hover:bg-glass-hover relative flex rounded-xl border backdrop-blur-xl transition-colors"
 >
-  <a href="/medications/{medication.id}" class="block min-w-0 flex-1 p-4 pr-3">
+  <a
+    href="/medications/{medication.id}"
+    class="block min-w-0 flex-1 p-4 pr-3 after:absolute after:inset-0 after:rounded-xl"
+  >
     <!-- The chips share the name's row while there is room and wrap beneath
          it when there is not: the swatch and name claim 12rem before the
          chips are allowed alongside, which at 320px they never are. -->
@@ -118,11 +132,17 @@
             medication.pattern,
           )}"
         ></div>
-        <div class="min-w-0 flex-1">
-          <!-- wrap-break-word: the name column is narrowest beside the log
-               button on a phone, and one long word would otherwise run out
-               of the link and under it. -->
-          <p class="font-medium wrap-break-word">{medication.name}</p>
+        <!-- A long word in the name, form or category has to break inside
+             this column rather than widen the card past a 320px screen.
+             wrap-anywhere does the breaking and, unlike wrap-break-word, also
+             lowers the column's min-content width, which is what a flex
+             item's automatic minimum is sized by; break-word could not, and
+             left the card overflowing at 320px while the page's wrapper
+             lacked min-w-0. Every flex item from that wrapper down to here
+             carries min-w-0 as well, so the card is sized by the row it sits
+             in rather than by its content. -->
+        <div class="min-w-0 flex-1 wrap-anywhere">
+          <p class="font-medium">{medication.name}</p>
           <p class="text-text-secondary text-sm">
             {medication.dosageAmount}{medication.dosageUnit} &middot; {medication.form}
             <span class="bg-glass ml-2 rounded-full px-2 py-0.5 text-xs">{medication.category}</span
@@ -206,12 +226,17 @@
        because it is the one control on the card a thumb is aimed at, and
        unconditionally rather than behind a pointer query: `pointer: coarse`
        describes only the primary pointer, so a touchscreen laptop would get
-       the small size. -->
+       the small size.
+       Its border-strong edge measures 3.12:1 on the dark card and 3.43:1 on
+       the light one, but 2.98:1 while the dark card is hovered. That is
+       accepted rather than fixed here: the visible "Log" text is what
+       identifies the control, so WCAG 1.4.11 does not require its edge to
+       reach 3:1, and raising border-strong is a palette-wide change. -->
   <button
     type="button"
-    class="border-border-strong text-accent-ink hover:bg-accent hover:text-accent-fg relative mt-4 mr-4 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center self-start rounded-lg border px-3 text-sm font-medium transition-colors"
+    class="border-border-strong text-accent-ink hover:bg-accent hover:text-accent-fg relative z-10 mt-4 mr-4 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center self-start rounded-lg border px-3 text-sm font-medium transition-colors"
     aria-label="Log a dose of {medication.name}"
-    disabled={logging}
+    aria-disabled={logging}
     onclick={quickLog}
   >
     <!-- The label only hides while the log is in flight, so the button keeps

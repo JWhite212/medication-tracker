@@ -10,7 +10,9 @@
 // are read off the Tailwind classes, because that is the only place they are
 // decided; nothing here lays the page out, so a class that exists but loses
 // the cascade would not be caught. The focus hand-off after a move and the
-// toast on a failed log are client behaviour and are not exercised here.
+// toast on a failed log are client behaviour and are not exercised here; the
+// Log button's in-flight state and the card's shrinkability are mounted in
+// medication-card-targets-dom.test.ts instead.
 import { describe, it, expect } from "vitest";
 import { render } from "svelte/server";
 import type { MedicationWithStats } from "$lib/types";
@@ -87,6 +89,37 @@ describe("the medication card's quick-log button", () => {
       .split(/\s+/);
     expect(classes).not.toContain("opacity-0");
     expect(classes.filter((t) => /opacity/.test(t) && !t.startsWith("disabled:"))).toEqual([]);
+
+    // The button being visible is not enough on its own: the "Log" span in
+    // it hides while a log is in flight, and the same class on the resting
+    // branch would leave an empty bordered box. So every element inside the
+    // button is checked as well, prefixed variants aside.
+    const inner = html.match(
+      /<button[^>]*aria-label="Log a dose of Paracetamol"[^>]*>([\s\S]*?)<\/button>/,
+    )![1];
+    const innerClasses = [...inner.matchAll(/class="([^"]*)"/g)].flatMap((m) => baseClasses(m[0]));
+    for (const hiding of ["opacity-0", "invisible", "hidden", "sr-only"]) {
+      expect(innerClasses).not.toContain(hiding);
+    }
+  });
+
+  it("leaves the whole card opening the medication, not only the link's own box", () => {
+    // Taking the button out of the <a> narrowed the link to its own column,
+    // so the strip beside and below the button highlighted on hover and did
+    // nothing on click. The link's ::after is stretched over the card
+    // instead, which needs the card positioned to contain it and the button
+    // positioned above it to keep its own clicks.
+    const link = html.match(/<a[^>]*href="\/medications\/m1"[^>]*>/)?.[0] ?? "";
+    const linkClasses = link.match(/class="([^"]*)"/)?.[1].split(/\s+/) ?? [];
+    expect(linkClasses).toEqual(expect.arrayContaining(["after:absolute", "after:inset-0"]));
+
+    const card = html.match(/<div[^>]*>/)![0];
+    expect(baseClasses(card)).toContain("relative");
+    expect(html.indexOf(card)).toBeLessThan(html.indexOf(link));
+
+    const button = baseClasses(buttonTag(html, LABEL));
+    expect(button).toContain("relative");
+    expect(button).toContain("z-10");
   });
 
   it("says Log in text, not with a bare plus glyph that reads as add", () => {

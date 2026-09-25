@@ -78,8 +78,7 @@
             >1</span
           >
           <p class="text-text-secondary">
-            <span class="text-text-primary font-medium">Quick Log</span> — one-tap dose logging for each
-            medication
+            <span class="text-text-primary font-medium">Due</span> — one tap to log what's due
           </p>
         </div>
         <div class="flex items-start gap-3">
@@ -88,8 +87,7 @@
             >2</span
           >
           <p class="text-text-secondary">
-            <span class="text-text-primary font-medium">Today's Timeline</span> — a live view of everything
-            you've taken
+            <span class="text-text-primary font-medium">Done today</span> — everything you've logged
           </p>
         </div>
         <div class="flex items-start gap-3">
@@ -98,8 +96,7 @@
             >3</span
           >
           <p class="text-text-secondary">
-            <span class="text-text-primary font-medium">Inventory Tracking</span> — know when it's time
-            to refill
+            <span class="text-text-primary font-medium">Refills</span> — know when to reorder
           </p>
         </div>
       </div>

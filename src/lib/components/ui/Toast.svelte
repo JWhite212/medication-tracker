@@ -123,8 +123,10 @@
     >
       <span class="text-sm">{toast.message}</span>
       {#if toast.undoAction}
+        <!-- min-h-11 px-3: Undo is the only one-tap route back from a logged
+             dose and must meet the 44px target every dose control does. -->
         <button
-          class="text-sm font-medium underline"
+          class="min-h-11 px-3 text-sm font-medium underline"
           onclick={() => {
             toast.undoAction?.();
             dismissToast(toast.id);

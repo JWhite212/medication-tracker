@@ -5,8 +5,9 @@
  * 1. Differential against production. The oracle is
  *    helpers/legacy-slot-matcher.ts, a verbatim copy of the matcher as it
  *    shipped before passes 0–2. It runs the way production ran it: over
- *    [todayStart, end) with doses >= todayStart. On the spec's domain,
- *    every resolution production made must survive unchanged. The only new
+ *    [todayStart, end) with doses >= todayStart. On the domain the two can
+ *    be compared over, every resolution production made must survive
+ *    unchanged. The only new
  *    resolutions allowed are late ones: pass 2, from a dose taken AFTER the
  *    slot.
  * 2. Stability across midnight and noon. With no new dose in between,
@@ -238,7 +239,7 @@ describe("slot matching — differential against the shipped matcher", () => {
       const span = end.getTime() - todayStart.getTime();
       const now = new Date(todayStart.getTime() + Math.floor(random() * span));
 
-      // The spec's domain:
+      // The domain the two matchers can be compared over:
       // - no dose in [todayStart − 1h, todayStart) or at/after `end`
       // - no dose on a slot instant (slots are whole minutes; every dose
       //   is 1–59 seconds past a minute)
@@ -340,7 +341,10 @@ function view(schedules: MedicationSchedule[], timezone: string, doses: MatchDos
   };
 }
 
-/** Visible exactly as the spec's Status section defines it. */
+/**
+ * Visible: any slot of today's before `end`, or an outstanding Earlier slot
+ * under twelve hours old.
+ */
 function isVisible(slot: MatchedSlot, window: DashboardWindow): boolean {
   const t = slot.expectedTime.getTime();
   if (t >= window.end.getTime()) return false;

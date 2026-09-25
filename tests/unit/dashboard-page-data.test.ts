@@ -606,7 +606,7 @@ describe("composeDashboardPageData — Done", () => {
   });
 
   it("covers lists the slots a dose resolved, minus its own minute", () => {
-    // The spec's live case: slots 08:55, 09:00, 11:00, with ×4 at 13:31 and
+    // A live case: slots 08:55, 09:00, 11:00, with ×4 at 13:31 and
     // ×3 at 21:48; now 22:00. Pass 1 finds nothing within an hour of either
     // dose. Pass 2 replays in time order: 13:31 walks back over 11:00,
     // 09:00 and 08:55 and stops at todayStart (= visibleStart) with a unit

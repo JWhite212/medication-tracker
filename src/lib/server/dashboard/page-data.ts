@@ -59,9 +59,10 @@ export type DashboardCompositionInputs = {
 
 /**
  * The earliest instant after `now` at which the page would change without a
- * write (spec "Freshness"), clamped to at least `now + 5s`. Status, rows and
- * buttons change only through the load, so the client reloads at this
- * instant rather than recomputing anything itself.
+ * write: a row changes group, a button appears or disappears, or an Earlier
+ * row expires. Clamped to at least `now + 5s`. Status, rows and buttons
+ * change only through the load, so the client reloads at this instant rather
+ * than recomputing anything itself.
  */
 export function computeNextRefreshAt(input: {
   now: Date;
@@ -221,7 +222,10 @@ function buildDoneRows(
     );
 }
 
-/** The header's kind and counts. First matching predicate wins, in the spec's table order. */
+/**
+ * The header's kind and counts. First match wins: as-needed-only, due,
+ * caught-up, all-done, none-today.
+ */
 function headerStatus(input: {
   anyTimed: boolean;
   earlier: DueCard[];

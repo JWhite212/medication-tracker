@@ -1,9 +1,9 @@
 /**
  * `slotActions` decides every dashboard button by simulating the write the
- * button makes and re-running the matcher. The placement cases are the ones
- * Section 4 of docs/superpowers/specs/2026-09-24-dashboard-due-now-design.md
- * lists; the seeded property at the end pins that pressing any offered
- * button changes its own row and no other.
+ * button makes and re-running the matcher. The placement cases cover where
+ * Log now, Took it at and Skip appear and where they do not; the seeded
+ * property at the end pins that pressing any offered button changes its own
+ * row and no other.
  *
  * Fixtures are UTC unless a test names a zone. 2026-04-16 is a Thursday.
  */
@@ -192,7 +192,7 @@ const commonCase = () =>
 /** One fixed 14:00 slot, nothing logged. */
 const dueAtTwo = (now: string) => setup({ now, schedules: [fixed("14:00")] });
 
-/** The live account from the spec: fixed 08:55, 09:00 and 11:00, nothing logged, at 09:30. */
+/** A live account: fixed 08:55, 09:00 and 11:00, nothing logged, at 09:30. */
 const liveMorning = () =>
   setup({
     now: "2026-04-16T09:30:00Z",
@@ -209,7 +209,7 @@ const lateNight = () => setup({ now: "2026-04-16T23:45:00Z", schedules: [fixed("
 const aheadWithEarlierOpen = () =>
   setup({ now: "2026-04-16T13:30:00Z", schedules: [fixed("13:00"), fixed("13:45", 1)] });
 
-/** Fixed 12:40 and 13:10 at 13:30, nothing logged: the spec's Took-it-at case. */
+/** Fixed 12:40 and 13:10 at 13:30, nothing logged: the worked Took-it-at case. */
 const twoPastInTheHour = () =>
   setup({ now: "2026-04-16T13:30:00Z", schedules: [fixed("12:40"), fixed("13:10", 1)] });
 
@@ -447,7 +447,7 @@ describe("slotActions — Log now placement", () => {
 
   it("goes where a dose logged now would land — 08:55, not the later 09:00", () => {
     // Pass 1 walks ascending, so a 09:30 dose resolves 08:55 first. The
-    // "latest outstanding" premise the spec rejected would have put the
+    // rejected "latest outstanding" rule would have put the
     // button on 09:00 and left that row overdue after the tap.
     expect(slotActions(liveMorning()).logNowTarget).toBe("2026-04-16T08:55:00.000Z");
   });
@@ -688,7 +688,7 @@ function describeFixture(i: SlotActionInput, tz: string): string {
   });
 }
 
-/** The spec's visibility rule, restated independently of the implementation. */
+/** The dashboard's visibility rule, restated independently of the implementation. */
 function isVisible(slot: MatchedSlot, w: DashboardWindow): boolean {
   const t = slot.expectedTime.getTime();
   if (t >= w.end.getTime()) return false;

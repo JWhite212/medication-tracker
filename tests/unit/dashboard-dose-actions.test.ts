@@ -6,11 +6,12 @@ import { actionErrorMessage } from "$lib/utils/form-errors";
 // -app sync). deleteDose() returns false and updateDose() returns null
 // in that case — the actions must surface a failure, not `success`.
 //
-// The log and skip actions follow the spec's action flow
-// (docs/superpowers/specs/2026-09-24-dashboard-due-now-design.md, "Action
-// flow"). The 401 guard is covered by app-action-auth-guard.test.ts, and
-// what the writes do to the database by pg/dose-slot-writes.test.ts. This
-// file pins what is left: routing, the clock and the error mapping.
+// The log and skip actions check the posted instant against the request's
+// clock, route to the right write (Log now, Took it at, Skip or a chip) and
+// map each refusal to a status the client acts on. The 401 guard is covered
+// by app-action-auth-guard.test.ts, and what the writes do to the database
+// by pg/dose-slot-writes.test.ts. This file pins what is left: routing, the
+// clock and the error mapping.
 const state = {
   deleteResult: true as boolean,
   updateResult: { id: "d1" } as object | null,

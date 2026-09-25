@@ -4,7 +4,7 @@
 // it is, and axe on the result. `node` is load-bearing — see
 // tests/unit/error-page-ssr.test.ts.
 //
-// The spec lists axe's button-name, label-in-name, list and target-size.
+// The card must pass axe's button-name, label-in-name, list and target-size.
 // Under JSDOM only some of those work AS AXE RULES, so the rest are asserted
 // directly:
 //   - axe has no "label-in-name" id; its WCAG 2.5.3 rule

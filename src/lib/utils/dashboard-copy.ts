@@ -2,8 +2,8 @@ import type { DashboardStatus, DueRow } from "$lib/types";
 import { formatDuration, formatUserTime, type TimeFormat } from "./time";
 
 /**
- * Every sentence the dashboard shows, as pure functions, so the spec's copy
- * is unit-testable without rendering a component.
+ * Every sentence the dashboard shows, as pure functions, so the copy is
+ * unit-testable without rendering a component.
  *
  * Two rules hold across all of it:
  * - Relative time comes from the SIGN of `serverNow − expectedTime`, never

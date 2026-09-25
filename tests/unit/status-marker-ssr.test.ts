@@ -37,7 +37,7 @@ const glyphOf = (html: string) =>
     .trim();
 
 describe("StatusMarker", () => {
-  it("covers exactly the states the spec defines, each with the spec's label", () => {
+  it("covers exactly the states in the label table, each with its label", () => {
     const labels = Object.fromEntries(
       STATUS_MARKER_STATES.map((s) => [s, STATUS_MARKER_LABELS[s]]),
     );
@@ -52,7 +52,7 @@ describe("StatusMarker", () => {
       expect(tag).toContain('role="img"');
     });
 
-    it(`draws the ${state} marker with the spec's recipe`, () => {
+    it(`draws the ${state} marker with its colour and ring classes from the table`, () => {
       const classes = classesOf(outerTag(renderMarker(state)));
       expect(classes).toEqual(
         expect.arrayContaining(["h-5", "w-5", "rounded-full", ...SPEC[state].classes]),

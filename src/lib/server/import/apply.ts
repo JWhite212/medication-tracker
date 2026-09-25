@@ -90,9 +90,10 @@ export async function applyImport(userId: string, plan: ImportPlan): Promise<Imp
         colourSecondary: source.colourSecondary,
         pattern: source.pattern,
         notes: source.notes,
-        // Deprecated but still load-bearing: `dailyRateFor` falls back to
-        // these when a medication has no schedule rows, and dropping them
-        // would silently change refill forecasts and the due badges.
+        // Deprecated but still load-bearing: `dailyRateFor` and
+        // `expectedPerDayFor` fall back to these when a medication has no
+        // schedule rows, and dropping them would silently change refill
+        // forecasts and the adherence denominator.
         scheduleType: source.scheduleType,
         scheduleIntervalHours: source.scheduleIntervalHours,
         inventoryCount: plan.sections.inventory ? source.inventoryCount : null,

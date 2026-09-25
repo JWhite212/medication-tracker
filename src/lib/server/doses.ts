@@ -1,10 +1,11 @@
 import { createId } from "@paralleldrive/cuid2";
 import { eq, and, gte, lt, asc, desc, sql, isNotNull, max } from "drizzle-orm";
 import { db, dbTx } from "$lib/server/db";
-import { doseLogs, medications, syncTombstones } from "$lib/server/db/schema";
+import { doseLogs, medications, medicationSchedules, syncTombstones } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
 import { recordInventoryEvent } from "./inventory-events";
 import { startOfDay } from "$lib/utils/time";
+import { dashboardWindow, projectFixedTimes, segmentsFor, slotActions } from "$lib/utils/schedule";
 import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 
 export class MedicationNotFoundError extends Error {
@@ -339,6 +340,124 @@ export async function logSkippedDose(
     });
     await logAudit(userId, "dose_log", id, "create", undefined, tx);
     return id;
+  });
+}
+
+/**
+ * Log now's write.
+ *
+ * The page rendered Log now on the row a dose logged at render time would
+ * resolve. By the time the tap arrives, that can be a different row: a slot
+ * came within the hour, midnight passed, the 12h expiry hid the row, or
+ * another device logged. So the server re-derives the target with the SAME
+ * pure functions the load used (`dashboardWindow`, `projectFixedTimes`,
+ * `slotActions`), from rows read inside this transaction, and writes only
+ * if the target is still `forSlot`.
+ *
+ * The medication row is locked first, so two Log-now posts for one
+ * medication serialise. The second reads the first one's dose, finds the
+ * one-hour cooldown active and throws SlotTargetChangedError instead of
+ * writing a second dose. PGlite is one backend and serialises transactions
+ * itself, so that lock is unexercisable in the suite.
+ * `tests/unit/pg/dose-slot-writes.test.ts` proves the recompute reads inside
+ * the transaction.
+ *
+ * Always ×1. A larger dose could resolve rows the simulation never proved,
+ * and Log now's contract is "this row".
+ */
+export async function logDoseForSlot(
+  userId: string,
+  medicationId: string,
+  forSlot: Date,
+  now: Date,
+  timezone: string,
+): Promise<typeof doseLogs.$inferSelect> {
+  const window = dashboardWindow(now, timezone);
+
+  return dbTx.transaction(async (tx) => {
+    const [med] = await tx
+      .select()
+      .from(medications)
+      .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
+      .limit(1)
+      .for("update");
+    if (!med) throw new MedicationNotFoundError(medicationId);
+
+    // The load lists active medications only (`getActiveMedications`), so an
+    // archived one has no Log-now target there and must have none here.
+    if (med.isArchived) {
+      throw new SlotTargetChangedError(`Medication ${medicationId} is archived`);
+    }
+
+    const schedules = await tx
+      .select()
+      .from(medicationSchedules)
+      .where(
+        and(
+          eq(medicationSchedules.medicationId, medicationId),
+          eq(medicationSchedules.userId, userId),
+        ),
+      )
+      .orderBy(asc(medicationSchedules.sortOrder));
+
+    // The load's bounds, so pass 1 reaches as far either side of the window
+    // here as it did when the button was drawn.
+    const doses = await tx
+      .select({
+        id: doseLogs.id,
+        takenAt: doseLogs.takenAt,
+        status: doseLogs.status,
+        quantity: doseLogs.quantity,
+      })
+      .from(doseLogs)
+      .where(
+        and(
+          eq(doseLogs.userId, userId),
+          eq(doseLogs.medicationId, medicationId),
+          gte(doseLogs.takenAt, window.doseFetchFrom),
+          lt(doseLogs.takenAt, window.doseFetchTo),
+        ),
+      );
+
+    // All-time and taken-only: `getLastDosePerMedication`'s `lastTakenAt`,
+    // the anchor the load projects interval rows from.
+    const [last] = await tx
+      .select({ at: max(doseLogs.takenAt) })
+      .from(doseLogs)
+      .where(
+        and(
+          eq(doseLogs.userId, userId),
+          eq(doseLogs.medicationId, medicationId),
+          eq(doseLogs.status, "taken"),
+        ),
+      );
+
+    const fixedInstants = projectFixedTimes(schedules, segmentsFor(window), timezone);
+    const { logNowTarget } = slotActions({
+      med,
+      schedules,
+      fixedInstants,
+      doses,
+      lastTakenAt: last?.at ?? null,
+      window,
+    });
+
+    if (logNowTarget !== forSlot.toISOString()) {
+      throw new SlotTargetChangedError(
+        `Log-now target for ${medicationId} is ${logNowTarget ?? "none"}, not ${forSlot.toISOString()}`,
+      );
+    }
+
+    return insertTakenDose(tx, {
+      userId,
+      medicationId,
+      quantity: 1,
+      takenAt: now,
+      loggedAt: now,
+      notes: null,
+      sideEffects: null,
+      previousCount: med.inventoryCount,
+    });
   });
 }
 

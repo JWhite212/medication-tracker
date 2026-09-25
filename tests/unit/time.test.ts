@@ -7,6 +7,9 @@ import {
   formatDueIn,
   formatDuration,
   computeTimingStatus,
+  isoDayKey,
+  isoDayKeyFormatter,
+  wallClockToInstant,
 } from "$lib/utils/time";
 
 describe("formatTimeSince", () => {
@@ -330,5 +333,75 @@ describe("formatDuration", () => {
     expect(formatDuration(2 * HOUR + 15 * MIN)).toBe(
       formatDuration(2 * HOUR + 15 * MIN, { style: "short", maxUnits: 2 }),
     );
+  });
+});
+
+describe("machine formatter memo", () => {
+  // Counts Intl.DateTimeFormat constructions by putting a subclass in its
+  // place. vi.spyOn cannot do this job: a spied constructor builds instances
+  // on the MOCK's prototype, which has no formatToParts, so the code under
+  // test would throw instead of being observed.
+  //
+  // The memo is module-level and outlives each case. So every counting case
+  // uses a zone that no other case in this file touches, and asserts an
+  // EXACT count. If the stand-in never reached time.ts, the count would be
+  // 0 and the case would fail loudly, not pass as "at most one".
+  let constructed = 0;
+
+  class CountingDateTimeFormat extends Intl.DateTimeFormat {
+    constructor(...args: ConstructorParameters<typeof Intl.DateTimeFormat>) {
+      super(...args);
+      constructed++;
+    }
+  }
+
+  beforeEach(() => {
+    constructed = 0;
+    vi.stubGlobal(
+      "Intl",
+      Object.assign(Object.create(Intl), { DateTimeFormat: CountingDateTimeFormat }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("builds one day-key formatter per timezone, however many keys are asked for", () => {
+    for (let day = 1; day <= 50; day++) {
+      isoDayKey(new Date(Date.UTC(2026, 0, day, 12)), "Asia/Tokyo");
+    }
+    isoDayKeyFormatter("Asia/Tokyo")(new Date("2026-04-15T17:20:00Z"));
+    expect(constructed).toBe(1);
+  });
+
+  it("builds one offset formatter per timezone for wallClockToInstant", () => {
+    for (let hour = 0; hour < 24; hour++) {
+      wallClockToInstant("2026-04-15", `${String(hour).padStart(2, "0")}:00`, "Asia/Seoul");
+    }
+    expect(constructed).toBe(1);
+  });
+
+  it("never answers for one zone with another zone's formatter", () => {
+    // Guards the memo KEY. A cache keyed without the timezone passes both
+    // counting cases above and fails here.
+    const instant = new Date("2026-04-15T17:20:00Z");
+    expect(isoDayKey(instant, "Australia/Perth")).toBe("2026-04-16");
+    expect(isoDayKey(instant, "America/Los_Angeles")).toBe("2026-04-15");
+    expect(isoDayKey(instant, "Australia/Perth")).toBe("2026-04-16");
+    expect(wallClockToInstant("2026-04-15", "08:00", "Australia/Perth").toISOString()).toBe(
+      "2026-04-15T00:00:00.000Z",
+    );
+    expect(wallClockToInstant("2026-04-15", "08:00", "America/Los_Angeles").toISOString()).toBe(
+      "2026-04-15T15:00:00.000Z",
+    );
+  });
+
+  it("still throws for a zone the runtime rejects, every time", () => {
+    // Behaviour identical to the unmemoised code. The constructor throws
+    // before anything is cached, so a bad zone is never remembered as good.
+    expect(() => isoDayKey(new Date(), "Not/A_Zone")).toThrow(RangeError);
+    expect(() => isoDayKey(new Date(), "Not/A_Zone")).toThrow(RangeError);
+    expect(() => wallClockToInstant("2026-04-15", "08:00", "Not/A_Zone")).toThrow(RangeError);
   });
 });

@@ -64,6 +64,58 @@ const DATE_FORMAT_LOCALES: Record<Exclude<DateFormat, "YYYY-MM-DD">, string> = {
 };
 
 /**
+ * The two machine-read formatter shapes, the day key and the offset probe,
+ * memoised per timezone.
+ *
+ * `isoDayKey` and `wallClockToInstant` used to construct a fresh
+ * `Intl.DateTimeFormat` on every call (~30µs each), and the dashboard's
+ * projection calls them for every medication on every day key. A formatter
+ * cannot change once built, so sharing one per (shape, zone) changes
+ * nothing observable. `tests/unit/dst-wall-clock.test.ts` holds that.
+ *
+ * Both shapes are en-CA with numeric, zero-padded fields, and both are read
+ * through `formatToParts`, never `format()`. They are KEYS, not labels, and
+ * never follow `preferences.dateFormat`. The offset shape pins
+ * `hourCycle: "h23"` because `hour12: false` is not equivalent: it can
+ * render midnight as hour 24.
+ *
+ * The map gains one entry per distinct zone string. A stored timezone is
+ * validated against `Intl.supportedValuesOf("timeZone")`, and a zone the
+ * runtime rejects throws from the constructor before anything is cached.
+ * The label formatters (`formatUserTime`, `formatUserDate`) take per-call
+ * options and are deliberately not memoised here.
+ */
+type MachineFormat = "dayKey" | "offset";
+
+const MACHINE_FORMAT_OPTIONS: Record<MachineFormat, Intl.DateTimeFormatOptions> = {
+  dayKey: { year: "numeric", month: "2-digit", day: "2-digit" },
+  offset: {
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  },
+};
+
+const machineFormats = new Map<string, Intl.DateTimeFormat>();
+
+function machineFormat(kind: MachineFormat, timezone: string): Intl.DateTimeFormat {
+  const key = `${kind}:${timezone}`;
+  let fmt = machineFormats.get(key);
+  if (fmt === undefined) {
+    fmt = new Intl.DateTimeFormat("en-CA", {
+      ...MACHINE_FORMAT_OPTIONS[kind],
+      timeZone: timezone,
+    });
+    machineFormats.set(key, fmt);
+  }
+  return fmt;
+}
+
+/**
  * Assemble `YYYY-MM-DD` from parts rather than asking a locale for it.
  *
  * `Intl.DateTimeFormat("en-CA", { year, month: "2-digit", day: "2-digit" })`
@@ -90,12 +142,7 @@ const DATE_FORMAT_LOCALES: Record<Exclude<DateFormat, "YYYY-MM-DD">, string> = {
  * the exporting account could not import back.
  */
 export function isoDayKeyFormatter(timezone: string): (date: Date) => string {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  const fmt = machineFormat("dayKey", timezone);
 
   return (date: Date) => {
     const parts = fmt.formatToParts(date);
@@ -110,7 +157,10 @@ export function isoDayKeyFormatter(timezone: string): (date: Date) => string {
   };
 }
 
-/** One-off form of {@link isoDayKeyFormatter}. Prefer the factory in a loop. */
+/**
+ * One-off form of {@link isoDayKeyFormatter}. Both forms share one memoised
+ * formatter per timezone, so either is cheap in a loop.
+ */
 export function isoDayKey(date: Date, timezone: string): string {
   return isoDayKeyFormatter(timezone)(date);
 }
@@ -264,19 +314,10 @@ export function wallClockToInstant(dayKey: string, timeOfDay: string, timezone: 
 
   const wall = utcFromFields(year, month, day, hour, minute, second || 0);
 
-  // Offset arithmetic on KEY fields, not a rendered date — hardcoded en-CA
-  // with an explicit hourCycle, never preferences.dateFormat. `hour12: false`
-  // is not equivalent: it can render midnight as hour 24.
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  // Offset arithmetic on KEY fields, not a rendered date. See
+  // MACHINE_FORMAT_OPTIONS for why the shape is en-CA with an explicit
+  // hourCycle, never preferences.dateFormat.
+  const fmt = machineFormat("offset", timezone);
 
   const offsetBefore = zoneOffsetMsAt(wall - MS_PER_DAY, fmt);
   const candidate = wall - offsetBefore;

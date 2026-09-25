@@ -32,7 +32,8 @@ class MedicationNotFoundError extends Error {}
 class SlotAlreadyTakenError extends Error {}
 class SlotTargetChangedError extends Error {}
 
-vi.mock("@vercel/analytics/server", () => ({ track: async () => {} }));
+const track = vi.fn(async (..._args: unknown[]) => {});
+vi.mock("@vercel/analytics/server", () => ({ track: (...args: unknown[]) => track(...args) }));
 vi.mock("$lib/server/medications", () => ({ getActiveMedications: async () => [] }));
 vi.mock("$lib/server/inventory", () => ({ getRefillForecast: async () => [] }));
 vi.mock("$lib/server/schedules", () => ({ getSchedulesForUser: async () => new Map() }));
@@ -85,6 +86,7 @@ beforeEach(() => {
   logDose.mockClear();
   logDoseForSlot.mockClear();
   logSkippedDose.mockClear();
+  track.mockClear();
   // Date only: each action reads `new Date()` once per request.
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
@@ -209,6 +211,24 @@ describe("dashboard logDose action", () => {
     );
   });
 
+  it("answers 409 with no analytics when Took it at's instant already holds a taken dose", async () => {
+    // Only a stale page offers this button there. Answering success would
+    // hand its toast an Undo for the other record.
+    logDose.mockRejectedValueOnce(new SlotAlreadyTakenError());
+
+    const res = await logDoseAction({
+      medicationId: "m1",
+      quantity: "1",
+      takenAt: "2026-04-16T14:00:00.000Z",
+    });
+
+    expect(res).toMatchObject({
+      status: 409,
+      data: { errors: { form: ["This dose is already logged as taken. Refresh to see it."] } },
+    });
+    expect(track).not.toHaveBeenCalled();
+  });
+
   it("refuses a takenAt after now with a 400 on the field, writing nothing", async () => {
     const res = await logDoseAction({
       medicationId: "m1",
@@ -313,6 +333,17 @@ describe("dashboard skipDose action", () => {
 
     expect(res).toMatchObject({ status: 409 });
     expect(toastFor(res)).toBe("This dose is already logged as taken. Refresh to see it.");
+  });
+
+  it("answers 409 when the instant already holds a skip — the page was stale", async () => {
+    logSkippedDose.mockRejectedValueOnce(new SlotTargetChangedError());
+
+    const res = await skipDoseAction({ medicationId: "m1", takenAt: "2026-04-16T14:00:00.000Z" });
+
+    expect(res).toMatchObject({
+      status: 409,
+      data: { errors: { form: ["What's due has changed. Refresh to see what's due now."] } },
+    });
   });
 
   it("keeps the existing 404 shape for a medication that is gone", async () => {

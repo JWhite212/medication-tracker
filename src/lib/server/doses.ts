@@ -15,12 +15,15 @@ export class MedicationNotFoundError extends Error {
 }
 
 /**
- * A skip was asked for at an instant that already holds a TAKEN dose.
+ * A guarded write was asked for at an instant that already holds a TAKEN
+ * dose.
  *
- * Only the guarded skip throws it — the dashboard's Skip, which posts the
- * slot's own instant. Taken beats skip in the matcher, so a skip written
- * there would record a decision the page could never show. The honest
- * answer is "refresh, it's already logged".
+ * Only the guarded writes throw it: the dashboard's "Took it at" and Skip,
+ * which post the slot's own instant. For Skip, taken beats skip in the
+ * matcher, so a skip written there would record a decision the page could
+ * never show. For "Took it at", the page that offered the button was stale,
+ * and the dose is already there. Either way the honest answer is "refresh,
+ * it's already logged".
  */
 export class SlotAlreadyTakenError extends Error {
   constructor(message = "A taken dose already exists at this instant") {
@@ -30,10 +33,13 @@ export class SlotAlreadyTakenError extends Error {
 }
 
 /**
- * Log now was posted for a row that is no longer where a dose logged now
- * would land. Causes: render-to-tap drift, a page left open across
- * midnight, the 12h expiry, a double tap, a second device.
- * `logDoseForSlot` throws it and writes nothing.
+ * The button that was tapped no longer names what the tap would do.
+ *
+ * `logDoseForSlot` throws it when Log now was posted for a row that is no
+ * longer where a dose logged now would land. Causes: render-to-tap drift, a
+ * page left open across midnight, the 12h expiry, a double tap, a second
+ * device. The guarded Skip throws it when the instant already holds a skip,
+ * which a fresh page never offers. Neither writes anything.
  */
 export class SlotTargetChangedError extends Error {
   constructor(message = "The Log-now target has changed") {
@@ -225,10 +231,15 @@ export async function logDose(
     const previousCount = med?.inventoryCount ?? null;
 
     if (guard) {
-      // "Took it at" names the slot's own instant to the millisecond, and a
-      // taken row already there IS this dose. Return it, with no second row
-      // and no second decrement. A SKIP there does not count: taken beats
-      // skip, and pass 0 then gives the slot to the taken dose.
+      // "Took it at" names the slot's own instant to the millisecond. A fresh
+      // page never offers it on an instant that already holds a taken dose,
+      // because pass 0 resolves that slot, so a taken row here means the page
+      // is stale: a double tap, a second device, or a row that arrived by
+      // import, `/api/v1` or an edit. Refuse, so a double tap still writes
+      // and decrements once, and the caller never reports someone else's row
+      // as this tap's (its Undo would delete that record). A SKIP there does
+      // not count: taken beats skip, and pass 0 then gives the slot to the
+      // taken dose.
       const [existing] = await tx
         .select()
         .from(doseLogs)
@@ -242,7 +253,11 @@ export async function logDose(
         )
         .orderBy(asc(doseLogs.id))
         .limit(1);
-      if (existing) return existing;
+      if (existing) {
+        throw new SlotAlreadyTakenError(
+          `Medication ${medicationId} already has a taken dose at ${at.toISOString()}`,
+        );
+      }
     }
 
     return insertTakenDose(tx, {
@@ -304,9 +319,14 @@ export async function logSkippedDose(
           `Medication ${medicationId} already has a taken dose at ${at.toISOString()}`,
         );
       }
-      // A second Skip for the same slot is the first one.
-      const existingSkip = atInstant.find((d) => d.status === "skipped");
-      if (existingSkip) return existingSkip.id;
+      // A fresh page never offers Skip on an instant that already holds a
+      // skip: that skip resolves the slot. So this is a stale page, and
+      // returning the existing id would hand its Undo someone else's row.
+      if (atInstant.some((d) => d.status === "skipped")) {
+        throw new SlotTargetChangedError(
+          `Medication ${medicationId} already has a skip at ${at.toISOString()}`,
+        );
+      }
     }
 
     const id = createId();
@@ -341,9 +361,9 @@ export async function logSkippedDose(
  * medication serialise. The second reads the first one's dose, finds the
  * one-hour cooldown active and throws SlotTargetChangedError instead of
  * writing a second dose. PGlite is one backend and serialises transactions
- * itself, so that lock is unexercisable in the suite.
- * `tests/unit/pg/dose-slot-writes.test.ts` proves the recompute reads inside
- * the transaction.
+ * itself, so the lock's effect is unexercisable in the suite.
+ * `tests/unit/pg/dose-slot-writes.test.ts` pins the lock by its SQL and
+ * proves the recompute reads inside the transaction.
  *
  * Always ×1. A larger dose could resolve rows the simulation never proved,
  * and Log now's contract is "this row".

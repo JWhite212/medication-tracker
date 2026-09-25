@@ -1,6 +1,14 @@
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
-import { classifyDueStatus, isoDayKey, wallClockToInstant, dayOfWeekForDayKey } from "./time";
+import {
+  classifyDueStatus,
+  isoDayKey,
+  wallClockToInstant,
+  dayOfWeekForDayKey,
+  startOfDay,
+  endOfDay,
+  shiftDayKey,
+} from "./time";
 import { parseIntervalHours } from "$lib/utils/schedule-rate";
 
 export type ScheduleSlotStatus = "taken" | "skipped" | "upcoming" | "overdue";
@@ -27,7 +35,95 @@ export interface TimeOfDayGroup {
   slots: ScheduleSlot[];
 }
 
-const MATCH_TOLERANCE_MS = 60 * 60 * 1000; // 1 hour
+/**
+ * How far either side of a slot a dose may sit and still count for it, and
+ * how far past today the dashboard projects. Tomorrow's first hour is
+ * matched so that today's view makes the same choice tomorrow's will.
+ */
+export const MATCH_TOLERANCE_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * How long an unresolved slot from before local midnight stays on the
+ * dashboard, in the "Earlier" group. `reminders/domain.ts` uses the same
+ * value for how long the cron keeps reminding about such a slot. It is one
+ * constant so that both surfaces fall silent at the same millisecond.
+ * Today's slots are not capped by it.
+ */
+export const CARRY_OVER_MS = 12 * 60 * 60 * 1000;
+
+/** Every bound the dashboard uses, computed once per request from one `now`. */
+export interface DashboardWindow {
+  now: Date;
+  /** The user's civil day, `YYYY-MM-DD`. */
+  todayKey: string;
+  todayStart: Date;
+  /** Exclusive: the start of the next civil day. */
+  end: Date;
+  /** Yesterday's local midnight. Walked by day key, never `todayStart − 24h`. */
+  projectStart: Date;
+  /** `end + MATCH_TOLERANCE_MS`. Tomorrow's first hour is matched, never shown. */
+  projectEnd: Date;
+  /** The earliest instant an Earlier row may have and still be shown. */
+  visibleStart: Date;
+  doseFetchFrom: Date;
+  /** Exclusive. */
+  doseFetchTo: Date;
+}
+
+/**
+ * THE owner of the dashboard's bounds. The load, the Log-now server check
+ * and `checkSlotActionTime` all call it, so none of them can disagree about
+ * where "today", "Earlier" or "tomorrow's first hour" begins.
+ *
+ * - `projectStart` walks the day KEY. `todayStart − 24h` is wrong twice a
+ *   year in every DST zone. On Europe/London 2026-10-26 it lands at 01:00
+ *   BST on the 25th and loses yesterday's first hour.
+ * - `visibleStart` is the first millisecond under 12 hours old: a slot at
+ *   exactly `now − 12h` is hidden, and one at `now − 12h + 1ms` is shown.
+ *   It is clamped into `[projectStart, todayStart]`, because the 12-hour
+ *   bound applies to Earlier rows only and today's rows stay visible until
+ *   midnight.
+ * - `doseFetchFrom` covers pass 1's one-hour reach before the first
+ *   projected slot. `doseFetchTo` covers its reach past the last slot in
+ *   tomorrow's first hour.
+ */
+export function dashboardWindow(now: Date, tz: string): DashboardWindow {
+  const todayKey = isoDayKey(now, tz);
+  const todayStart = startOfDay(now, tz);
+  const end = endOfDay(now, tz);
+  const projectStart = wallClockToInstant(shiftDayKey(todayKey, -1), "00:00", tz);
+  const visibleStartMs = Math.max(
+    projectStart.getTime(),
+    Math.min(todayStart.getTime(), now.getTime() - CARRY_OVER_MS + 1),
+  );
+
+  return {
+    now: new Date(now.getTime()),
+    todayKey,
+    todayStart,
+    end,
+    projectStart,
+    projectEnd: new Date(end.getTime() + MATCH_TOLERANCE_MS),
+    visibleStart: new Date(visibleStartMs),
+    doseFetchFrom: new Date(projectStart.getTime() - MATCH_TOLERANCE_MS),
+    doseFetchTo: new Date(end.getTime() + 2 * MATCH_TOLERANCE_MS),
+  };
+}
+
+export type SlotActionTimeProblem = "future" | "stale";
+
+/**
+ * Whether a client-sent `takenAt` (from Took it at or Skip) may still be
+ * written. 'future' means the instant is after now, and no dose row is ever
+ * future-dated. 'stale' means the row it came from has already left the
+ * dashboard (it is older than the Earlier bound), so the tap was made on a
+ * page that no longer shows what is due.
+ */
+export function checkSlotActionTime(at: Date, now: Date, tz: string): SlotActionTimeProblem | null {
+  if (at.getTime() > now.getTime()) return "future";
+  if (at.getTime() < dashboardWindow(now, tz).visibleStart.getTime()) return "stale";
+  return null;
+}
 
 /**
  * Classify an hour (0-23 in user's local timezone) into a time-of-day bucket.

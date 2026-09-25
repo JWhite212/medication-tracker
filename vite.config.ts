@@ -3,6 +3,12 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  // Under vitest, resolve `svelte` through its "browser" export condition so a
+  // jsdom suite that mount()s a component gets the client runtime rather than
+  // the server one, where mount() throws and tick() flushes nothing. Svelte's
+  // own testing guide recommends exactly this. Scoped to VITEST so the dev
+  // server and production build resolve as they always have.
+  resolve: process.env.VITEST ? { conditions: ["browser"] } : undefined,
   test: {
     include: ["tests/unit/**/*.test.ts"],
     environment: "jsdom",

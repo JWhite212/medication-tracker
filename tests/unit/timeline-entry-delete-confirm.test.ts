@@ -21,27 +21,6 @@ const hoisted = vi.hoisted(() => ({
   submissions: [] as Array<(result: ActionResult, update?: () => Promise<void>) => Promise<void>>,
 }));
 
-// Under this suite's config the bare `svelte` specifier resolves without the
-// `browser` condition, so it lands on the SERVER entry: `mount` throws there,
-// and `tick` is an empty async function, which would let the component's own
-// `await tick()` resolve before anything had rendered. The component itself
-// is compiled for the client, so this file points `svelte` at the client
-// entry rather than adding `resolve.conditions` to the shared vite config,
-// which would change resolution for every jsdom suite at once.
-// `svelte/internal/client` is redirected too, to the same Node-loaded copy:
-// a `mount` from one runtime instance driving a component compiled against
-// another fails on its first DOM operation. require() of an ES module needs
-// Node 20.19 or later on the 20 line, or 22.12 or later, which CI's
-// `node-version: 22` provides; an older Node fails this file with
-// ERR_REQUIRE_ESM before any test runs.
-async function svelteClientFile(file: string) {
-  const { createRequire } = await import("node:module");
-  const require = createRequire(import.meta.url);
-  return require(require.resolve("svelte/package.json").replace(/package\.json$/, file));
-}
-vi.mock("svelte", () => svelteClientFile("src/index-client.js"));
-vi.mock("svelte/internal/client", () => svelteClientFile("src/internal/client/index.js"));
-
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast: hoisted.showToast }));
 
 // Stands in for SvelteKit's `enhance` with the same two-phase contract: the

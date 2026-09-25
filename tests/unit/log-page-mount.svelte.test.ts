@@ -7,18 +7,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 
-// vitest resolves the bare `svelte` specifier without the `browser` condition,
-// so under jsdom it still gets the SERVER entry: `mount` throws
-// `lifecycle_function_unavailable` and the page's own `onDestroy` reaches for
-// an SSR context that does not exist. The component itself is compiled for
-// the client here, so point `svelte` at the client entry. `vi.mock` keeps that
-// to this file; the suite-wide alternative, `resolve.conditions` in
-// vite.config.ts, would change what every other test imports as well. svelte
-// publishes types for its package entry only, so this path is untyped; the
-// typed import above already describes what it exports.
-// @ts-expect-error -- no declaration file for svelte's client source entry
-vi.mock("svelte", () => import("../../node_modules/svelte/src/index-client.js"));
-
 // Mocked ONCE, with reactive objects the tests repoint, for the same reason as
 // the SSR suite: re-mocking per case reloads svelte's internals.
 const pageState = $state({ url: new URL("https://medtracker.test/log") });

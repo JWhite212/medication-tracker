@@ -22,9 +22,10 @@
 <header
   class="border-glass-border bg-surface-raised fixed top-0 right-0 left-0 z-20 flex h-14 items-center justify-between border-b px-4"
 >
-  <!-- aria-controls names an id that only exists while the menu is open. That
-       is deliberate: aria-expanded="false" tells AT there is nothing to go to,
-       and axe skips the reference check in exactly that state. -->
+  <!-- aria-controls is emitted only while the menu is open, because the
+       overlay it names is unmounted while closed and an IDREF must point at
+       an element that exists. aria-expanded="false" already tells AT there is
+       nothing to go to in that state. -->
   <button
     bind:this={toggle}
     type="button"
@@ -32,7 +33,7 @@
     class="text-text-secondary hover:bg-surface-overlay hover:text-text-primary flex h-9 w-9 items-center justify-center rounded-lg transition-colors"
     aria-label="Toggle menu"
     aria-expanded={menuOpen}
-    aria-controls={menuId}
+    aria-controls={menuOpen ? menuId : undefined}
   >
     <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />

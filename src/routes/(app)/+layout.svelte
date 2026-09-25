@@ -24,7 +24,8 @@
   async function openMenu() {
     sidebarOpen = true;
     await tick();
-    if (menuPanel) collectFocusable(menuPanel)[0]?.focus();
+    // Modal's fallback: the panel itself when nothing inside is focusable.
+    if (menuPanel) (collectFocusable(menuPanel)[0] ?? menuPanel).focus();
   }
 
   /**
@@ -61,8 +62,9 @@
     }
     // Trapped in the panel, not the whole overlay: the scrim is the dimmed
     // backdrop itself, and a Tab stop on it would look like focus had vanished.
-    // Keyboards close with Escape; the scrim stays inside the dialog, so screen
-    // readers can still reach it.
+    // Keyboards close with Escape or Sidebar's close button, which is inside
+    // the panel; the scrim stays inside the dialog, so screen readers can
+    // still reach it.
     if (e.key === "Tab" && menuPanel) trapTab(menuPanel, e);
   }
 
@@ -71,7 +73,15 @@
   // layout survives every in-app navigation, so without this the menu stayed
   // open over the next page. afterNavigate runs after SvelteKit has reset
   // focus, so closing here cannot undo that reset.
-  afterNavigate(() => closeMenu(false));
+  //
+  // Whether to return focus is read from where focus actually is, not from
+  // the fact that this was a navigation. After a normal navigation the reset
+  // has already moved it out of the menu, so it is left alone. A keepFocus
+  // navigation skips the reset, and one to a hash target only moves the Tab
+  // starting point, so either can leave focus on a menu link that closing is
+  // about to unmount; that is the Escape case again, and it drops to <body>
+  // unless it goes back to the toggle.
+  afterNavigate(() => closeMenu(!!menuPanel?.contains(document.activeElement)));
 
   // The overlay is md:hidden but `sidebarOpen` does not know that. Rotating a
   // tablet past the breakpoint with the menu open would hide it while leaving
@@ -120,6 +130,9 @@
   <!-- The header and main go `inert` while the menu is open. aria-modal alone
        neither stops Tab nor is honoured by every screen reader, so without it
        the page behind the scrim stays reachable by swipe and virtual cursor.
+       The one thing it does not cover is the skip link, which app.html
+       renders outside the Svelte tree: the window Tab trap keeps keyboard
+       focus off it, but a virtual cursor can still reach it.
        It cannot break closing: Escape is on window and the scrim sits outside
        both inert subtrees. The one cost is focus return, since the toggle is
        inside the header; closeMenu waits for the attribute to clear first.
@@ -152,12 +165,18 @@
         aria-label="Close navigation"
         onclick={() => closeMenu(true)}
       ></button>
-      <!-- tabindex="-1" because trapTab focuses its container when nothing
-           inside is tabbable; Sidebar always renders links, but the contract
-           is the util's, not this call site's. -->
+      <!-- tabindex="-1" because openMenu and trapTab both focus the panel
+           when nothing inside is tabbable; Sidebar always renders links, but
+           the contract is the util's, not this call site's. -->
       <div bind:this={menuPanel} class="relative h-full w-64" tabindex="-1">
-        <!-- Sidebar calls onclose only when one of its links is followed. -->
-        <Sidebar user={data.user} mobile={true} onclose={() => closeMenu(false)} />
+        <!-- Sidebar calls onclose only when one of its links is followed, and
+             ondismiss from its close button, which dismisses in place. -->
+        <Sidebar
+          user={data.user}
+          mobile={true}
+          onclose={() => closeMenu(false)}
+          ondismiss={() => closeMenu(true)}
+        />
       </div>
     </div>
   {/if}

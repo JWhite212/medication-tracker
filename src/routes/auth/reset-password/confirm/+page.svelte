@@ -15,8 +15,16 @@
     <h1 class="mb-2 text-2xl font-bold">Set new password</h1>
     <p class="text-text-secondary mb-6">Choose a strong password for your account</p>
 
+    <!-- Announced, and describing both password fields, because the action
+         returns one unkeyed string for every outcome: a short password, a
+         mismatch and a dead link alike. Neither field is marked invalid for
+         the same reason; the page cannot tell which one, if either, is wrong. -->
     {#if form?.error}
-      <div class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm">
+      <div
+        id="form-error"
+        class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
+        role="alert"
+      >
         {form.error}
       </div>
     {/if}
@@ -42,6 +50,7 @@
           type="password"
           required
           minlength="8"
+          aria-describedby={form?.error ? "form-error" : undefined}
           class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Min. 8 characters"
         />
@@ -55,6 +64,7 @@
           type="password"
           required
           minlength="8"
+          aria-describedby={form?.error ? "form-error" : undefined}
           class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Repeat your password"
         />

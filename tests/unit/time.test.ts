@@ -5,6 +5,7 @@ import {
   formatUserDate,
   startOfDay,
   formatDueIn,
+  formatDuration,
   computeTimingStatus,
 } from "$lib/utils/time";
 
@@ -207,6 +208,12 @@ describe("formatDueIn", () => {
     expect(formatDueIn(60_000)).toBe("Due in 1m");
     expect(formatDueIn(-60_000)).toBe("Overdue 1m");
   });
+
+  it("prints days instead of hundreds of hours", () => {
+    // Live on the dashboard: a medication last taken three weeks ago read
+    // "Overdue 504h 20m".
+    expect(formatDueIn(-(504 * 60 + 20) * 60_000)).toBe("Overdue 21d");
+  });
 });
 
 describe("computeTimingStatus", () => {
@@ -256,5 +263,72 @@ describe("computeTimingStatus", () => {
     const result = computeTimingStatus(0.5, lastTaken, now);
     expect(result.status).toBe("due_soon");
     expect(result.minutesUntilDue).toBe(10);
+  });
+});
+
+describe("formatDuration", () => {
+  const MIN = 60_000;
+  const HOUR = 60 * MIN;
+
+  it("short style at every threshold", () => {
+    expect(formatDuration(59_999)).toBe("<1m");
+    expect(formatDuration(60_000)).toBe("1m");
+    expect(formatDuration(45 * MIN)).toBe("45m");
+    expect(formatDuration(60 * MIN)).toBe("1h");
+    expect(formatDuration(2 * HOUR + 15 * MIN)).toBe("2h 15m");
+    expect(formatDuration(23 * HOUR + 59 * MIN)).toBe("23h 59m");
+    expect(formatDuration(24 * HOUR)).toBe("1d");
+    expect(formatDuration(24 * HOUR + 59 * MIN)).toBe("1d");
+    expect(formatDuration(25 * HOUR)).toBe("1d 1h");
+    expect(formatDuration(49 * HOUR)).toBe("2d 1h");
+  });
+
+  it("long style at every threshold", () => {
+    const long = (ms: number) => formatDuration(ms, { style: "long" });
+    expect(long(59_999)).toBe("less than a minute");
+    expect(long(60_000)).toBe("1 minute");
+    expect(long(45 * MIN)).toBe("45 minutes");
+    expect(long(60 * MIN)).toBe("1 hour");
+    expect(long(2 * HOUR + 15 * MIN)).toBe("2 hours 15 minutes");
+    expect(long(23 * HOUR + 59 * MIN)).toBe("23 hours 59 minutes");
+    expect(long(24 * HOUR)).toBe("1 day");
+    expect(long(24 * HOUR + 59 * MIN)).toBe("1 day");
+    expect(long(25 * HOUR)).toBe("1 day 1 hour");
+    expect(long(49 * HOUR)).toBe("2 days 1 hour");
+  });
+
+  it("maxUnits 1 keeps only the largest non-zero unit, floored", () => {
+    // The dashboard's copy shape: "2 hours ago", never "3 hours ago" for 2h15m.
+    const one = (ms: number) => formatDuration(ms, { style: "long", maxUnits: 1 });
+    expect(one(59_999)).toBe("less than a minute");
+    expect(one(45 * MIN)).toBe("45 minutes");
+    expect(one(2 * HOUR + 15 * MIN)).toBe("2 hours");
+    expect(one(23 * HOUR + 59 * MIN)).toBe("23 hours");
+    expect(one(25 * HOUR)).toBe("1 day");
+    expect(formatDuration(2 * HOUR + 15 * MIN, { maxUnits: 1 })).toBe("2h");
+  });
+
+  it("floors at every unit, so lateness is never overstated", () => {
+    expect(formatDuration(2 * MIN - 1)).toBe("1m");
+    expect(formatDuration(HOUR - 1)).toBe("59m");
+    expect(formatDuration(24 * HOUR - 1)).toBe("23h 59m");
+  });
+
+  it("uses the magnitude, so the sign never reaches the label", () => {
+    expect(formatDuration(-(2 * HOUR + 15 * MIN))).toBe("2h 15m");
+    expect(formatDuration(-59_999, { style: "long" })).toBe("less than a minute");
+  });
+
+  it("drops zero units, and drops minutes once days appear", () => {
+    expect(formatDuration(2 * HOUR + 30_000)).toBe("2h");
+    expect(formatDuration(24 * HOUR + 5 * MIN, { style: "long" })).toBe("1 day");
+    // The live defect: three weeks and twenty minutes.
+    expect(formatDuration((504 * 60 + 20) * MIN)).toBe("21d");
+  });
+
+  it("defaults to the short style and two units", () => {
+    expect(formatDuration(2 * HOUR + 15 * MIN)).toBe(
+      formatDuration(2 * HOUR + 15 * MIN, { style: "short", maxUnits: 2 }),
+    );
   });
 });

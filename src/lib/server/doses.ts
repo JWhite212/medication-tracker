@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and, gte, desc, sql, isNotNull, max } from "drizzle-orm";
+import { eq, and, gte, lt, desc, sql, isNotNull, max } from "drizzle-orm";
 import { db, dbTx } from "$lib/server/db";
 import { doseLogs, medications, syncTombstones } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
@@ -24,6 +24,33 @@ async function assertMedicationBelongsToUser(userId: string, medicationId: strin
   if (!row) throw new MedicationNotFoundError(medicationId);
 }
 
+/**
+ * The columns a dashboard dose read returns: the dose plus the medication
+ * fields its row renders. `inventoryApplied` is deliberately absent — see
+ * `DoseLog` in `$lib/types`.
+ */
+const doseWithMedicationColumns = {
+  id: doseLogs.id,
+  userId: doseLogs.userId,
+  medicationId: doseLogs.medicationId,
+  quantity: doseLogs.quantity,
+  status: doseLogs.status,
+  takenAt: doseLogs.takenAt,
+  loggedAt: doseLogs.loggedAt,
+  updatedAt: doseLogs.updatedAt,
+  notes: doseLogs.notes,
+  sideEffects: doseLogs.sideEffects,
+  medication: {
+    name: medications.name,
+    dosageAmount: medications.dosageAmount,
+    dosageUnit: medications.dosageUnit,
+    form: medications.form,
+    colour: medications.colour,
+    colourSecondary: medications.colourSecondary,
+    pattern: medications.pattern,
+  },
+};
+
 export async function getTodaysDoses(
   userId: string,
   timezone: string,
@@ -31,30 +58,36 @@ export async function getTodaysDoses(
   const dayStart = startOfDay(new Date(), timezone);
 
   const rows = await db
-    .select({
-      id: doseLogs.id,
-      userId: doseLogs.userId,
-      medicationId: doseLogs.medicationId,
-      quantity: doseLogs.quantity,
-      status: doseLogs.status,
-      takenAt: doseLogs.takenAt,
-      loggedAt: doseLogs.loggedAt,
-      updatedAt: doseLogs.updatedAt,
-      notes: doseLogs.notes,
-      sideEffects: doseLogs.sideEffects,
-      medication: {
-        name: medications.name,
-        dosageAmount: medications.dosageAmount,
-        dosageUnit: medications.dosageUnit,
-        form: medications.form,
-        colour: medications.colour,
-        colourSecondary: medications.colourSecondary,
-        pattern: medications.pattern,
-      },
-    })
+    .select(doseWithMedicationColumns)
     .from(doseLogs)
     .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
     .where(and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, dayStart)))
+    .orderBy(desc(doseLogs.takenAt));
+
+  return rows;
+}
+
+/**
+ * Every dose with `from ≤ takenAt < to`, newest first, with the medication
+ * fields a dashboard row renders.
+ *
+ * Half-open, so a dose exactly at `to` belongs to the next range and never
+ * to both. The dashboard passes `dashboardWindow`'s `doseFetchFrom` /
+ * `doseFetchTo`, which reach an hour before yesterday's midnight and two
+ * hours past tonight's — pass 1's reach either side of the slots it
+ * matches. The read it replaced stopped at today's midnight, so no dose from
+ * before it could reach the matcher.
+ */
+export async function getDosesInRange(
+  userId: string,
+  from: Date,
+  to: Date,
+): Promise<DoseLogWithMedication[]> {
+  const rows = await db
+    .select(doseWithMedicationColumns)
+    .from(doseLogs)
+    .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
+    .where(and(eq(doseLogs.userId, userId), gte(doseLogs.takenAt, from), lt(doseLogs.takenAt, to)))
     .orderBy(desc(doseLogs.takenAt));
 
   return rows;

@@ -71,9 +71,16 @@ describe("actionErrorMessage — an unexpected throw", () => {
   });
 
   it("falls back when the error carries nothing renderable", () => {
-    // A network failure reaches this arm with a raw Error, which has no
-    // `message` property of the App.Error shape and must not be rendered raw.
     expect(actionErrorMessage({ type: "error", error: undefined } as ActionResult)).toBe(FALLBACK);
+  });
+
+  it("falls back for a network failure rather than rendering the browser's own text", () => {
+    // enhance turns a failed fetch into an 'error' result carrying the raw
+    // TypeError. Its message ("Failed to fetch", "Load failed") is the
+    // browser's, not ours. A server-side App.Error arrives as a plain object,
+    // never an Error instance.
+    const result = { type: "error", error: new TypeError("Failed to fetch") } as ActionResult;
+    expect(actionErrorMessage(result)).toBe(FALLBACK);
   });
 });
 

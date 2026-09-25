@@ -64,9 +64,12 @@
       clock.onVisible();
     };
     document.addEventListener("visibilitychange", onVisibility);
+    // A refresh that came due offline waits for the connection to return.
+    window.addEventListener("online", clock.onOnline);
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", clock.onOnline);
     };
   });
 

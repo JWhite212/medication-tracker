@@ -18,3 +18,10 @@ export const SUCCESS_FALLBACK_TOAST = "Saved";
 
 /** After the toast's Undo removed the dose. */
 export const UNDONE_TOAST = "Undone";
+
+/**
+ * A dose write whose outcome is unknown because the request never completed.
+ * It may have landed, and a chip retry would log a second dose, so the user
+ * is sent to Done first.
+ */
+export const NETWORK_FAILURE_TOAST = "Couldn't reach the server. Check Done before trying again.";

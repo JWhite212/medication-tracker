@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
+  import { ariaDescribedBy } from "$lib/utils/form-errors";
 
   let { form, data } = $props();
   let loading = $state(false);
@@ -43,7 +44,11 @@
     {/if}
 
     {#if errors.form}
-      <div class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm" role="alert">
+      <div
+        id="form-error"
+        class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
+        role="alert"
+      >
         {errors.form[0]}
       </div>
     {/if}
@@ -67,9 +72,22 @@
           type="email"
           required
           value={form?.email ?? ""}
+          aria-invalid={errors.email ? "true" : undefined}
+          aria-describedby={ariaDescribedBy(
+            errors.email && "email-error",
+            errors.form && "form-error",
+          )}
           class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="you@example.com"
         />
+        <!-- The action returns zod's field errors, but only `errors.form` was
+             ever rendered, so an address the browser accepts and zod does not
+             (`a@b`) was refused with no message at all. -->
+        {#if errors.email}
+          <p id="email-error" class="text-danger-ink mt-1 text-sm" role="alert">
+            {errors.email[0]}
+          </p>
+        {/if}
       </div>
       <div>
         <label for="password" class="mb-1 block text-sm font-medium">Password</label>
@@ -78,9 +96,19 @@
           name="password"
           type="password"
           required
+          aria-invalid={errors.password ? "true" : undefined}
+          aria-describedby={ariaDescribedBy(
+            errors.password && "password-error",
+            errors.form && "form-error",
+          )}
           class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Your password"
         />
+        {#if errors.password}
+          <p id="password-error" class="text-danger-ink mt-1 text-sm" role="alert">
+            {errors.password[0]}
+          </p>
+        {/if}
       </div>
       <div class="flex items-center justify-between">
         <a href="/auth/reset-password" class="text-accent-ink text-sm hover:underline"

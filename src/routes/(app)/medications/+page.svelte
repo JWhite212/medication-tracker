@@ -74,7 +74,13 @@
     <div class="space-y-3">
       {#each data.medications as medication, i (medication.id)}
         <div class="flex items-center gap-2">
-          <div class="flex flex-col gap-0.5">
+          <!-- 32x44 each. They were about 20px square and 2px apart, under
+               the 24px minimum (WCAG 2.5.8) with overlapping spacing circles.
+               Stacked rather than side by side, so the pair costs one 32px
+               column of a 320px screen instead of two; at 92px the stack is
+               still shorter than the shortest card beside it. The glyph keeps
+               its size; only the hit area grows. -->
+          <div class="flex flex-col gap-1">
             <form method="POST" action="?/reorder" use:enhance={reorder(medication, "up")}>
               <input type="hidden" name="medicationId" value={medication.id} />
               <input type="hidden" name="direction" value="up" />
@@ -83,7 +89,7 @@
                 id="move-{medication.id}-up"
                 disabled={i === 0}
                 aria-label="Move {medication.name} up"
-                class="text-text-muted hover:bg-surface-overlay hover:text-text-primary rounded-xs px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
+                class="text-text-muted hover:bg-surface-overlay hover:text-text-primary flex h-11 w-8 items-center justify-center rounded-md text-xs disabled:pointer-events-none disabled:opacity-30"
               >
                 <span aria-hidden="true">&#9650;</span>
               </button>
@@ -96,13 +102,17 @@
                 id="move-{medication.id}-down"
                 disabled={i === data.medications.length - 1}
                 aria-label="Move {medication.name} down"
-                class="text-text-muted hover:bg-surface-overlay hover:text-text-primary rounded-xs px-1.5 py-0.5 text-xs disabled:pointer-events-none disabled:opacity-30"
+                class="text-text-muted hover:bg-surface-overlay hover:text-text-primary flex h-11 w-8 items-center justify-center rounded-md text-xs disabled:pointer-events-none disabled:opacity-30"
               >
                 <span aria-hidden="true">&#9660;</span>
               </button>
             </form>
           </div>
-          <div class="flex-1">
+          <!-- min-w-0 keeps the card shrinkable. Without it this flex item's
+               automatic minimum is the card's min-content width, so anything
+               unbreakable in the card (it was a long medication name) widened
+               it past a 320px screen and pushed the Log button off the edge. -->
+          <div class="min-w-0 flex-1">
             <MedicationCard {medication} />
           </div>
         </div>

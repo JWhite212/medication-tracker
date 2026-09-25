@@ -19,6 +19,7 @@ import type { MedicationWithStats } from "$lib/types";
 import MedicationCard from "../../src/lib/components/MedicationCard.svelte";
 import MedicationsPage from "../../src/routes/(app)/medications/+page.svelte";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
+import { JSDOM } from "jsdom";
 
 type ListedMedication = MedicationWithStats & {
   sparkline: number[];
@@ -126,7 +127,9 @@ describe("the medication card's quick-log button", () => {
     const inner = html.match(
       /<button[^>]*aria-label="Log a dose of Paracetamol"[^>]*>([\s\S]*?)<\/button>/,
     )![1];
-    expect(inner.replace(/<[^>]*>/g, "").trim()).toBe("Log");
+    // A real parser for the text content: a tag-stripping regex is the
+    // incomplete sanitiser CodeQL flags, even in a test.
+    expect(new JSDOM(inner).window.document.body.textContent?.trim()).toBe("Log");
   });
 
   it("sits in the flow beside the card's link, so it cannot cover the status chips", () => {

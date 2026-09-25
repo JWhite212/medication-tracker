@@ -707,3 +707,220 @@ export function timingStatusFromSlots(
     minutesUntilDue: Math.round(msUntilDue / 60_000),
   };
 }
+
+// ── Dashboard buttons ─────────────────────────────────────────────────────
+
+/**
+ * How long after a taken dose Log now stays off that medication (D8). A
+ * second tap inside the hour is far likelier a double log than a second
+ * dose. Took it at and Skip stay, because each names its own instant.
+ */
+export const LOG_NOW_COOLDOWN_MS = 60 * 60 * 1000;
+
+export interface SlotActionInput {
+  med: Medication;
+  schedules: MedicationSchedule[];
+  /**
+   * `projectFixedTimes(schedules, segmentsFor(window), tz)` for this
+   * medication — computed once per request and reused by every simulation,
+   * which is what keeps the simulations free of `Intl`.
+   */
+  fixedInstants: Date[];
+  /** This medication's doses in `[window.doseFetchFrom, window.doseFetchTo)`. */
+  doses: MatchDose[];
+  /** All-time latest TAKEN `takenAt` (`getLastDosePerMedication`); skips never anchor. */
+  lastTakenAt: Date | null;
+  window: DashboardWindow;
+}
+
+/** One visible, unresolved row's secondary buttons. ISO instants, posted verbatim. */
+export interface RowActions {
+  /** "Took it at HH:MM": always the row's own instant, or null. */
+  tookItAt: string | null;
+  /** Skip at `min(expectedTime, now)`, so never future-dated, or null. */
+  skipAt: string | null;
+}
+
+export interface SlotActions {
+  /** ISO `expectedTime` of the one row that carries Log now, or null. */
+  logNowTarget: string | null;
+  /** Every visible, unresolved row, keyed by ISO `expectedTime`. */
+  rows: Map<string, RowActions>;
+}
+
+/**
+ * A probe's id. U+FFFF sorts after every stored id, so a simulated dose
+ * never wins a tie a real row would have won — pass 0's smaller-id rule,
+ * pass 1's id tie-break, pass 2's `(takenAt, id)` order.
+ */
+const PROBE_ID = "￿";
+
+interface SlotIndex {
+  all: Map<number, MatchedSlot>;
+  visible: Map<number, MatchedSlot>;
+}
+
+/**
+ * The dashboard's visibility rule: before `end`, and either on today's
+ * civil day or an overdue Earlier row under 12 hours old.
+ *
+ * Exported (CONTROLLER RULING R3) so Task 7's composition imports this
+ * implementation rather than keeping a private copy; `tests/unit/slot-actions.test.ts`
+ * restates the rule independently rather than importing it, so the property
+ * test remains an oracle over this function's behaviour, not a tautology.
+ */
+export function isVisibleSlot(slot: MatchedSlot, window: DashboardWindow): boolean {
+  const t = slot.expectedTime.getTime();
+  if (t >= window.end.getTime()) return false;
+  if (t >= window.todayStart.getTime()) return true;
+  return slot.status === "overdue" && t >= window.visibleStart.getTime();
+}
+
+function indexSlots(slots: MatchedSlot[], window: DashboardWindow): SlotIndex {
+  const all = new Map<number, MatchedSlot>();
+  const visible = new Map<number, MatchedSlot>();
+  for (const slot of slots) {
+    const t = slot.expectedTime.getTime();
+    all.set(t, slot);
+    if (isVisibleSlot(slot, window)) visible.set(t, slot);
+  }
+  return { all, visible };
+}
+
+/**
+ * Does `sim` show every visible row of `base` — bar the one at `ownMs` — at
+ * the same instant with the same status?
+ *
+ * The only licensed difference is an interval row the re-anchor stopped
+ * projecting (in `base`, absent from `sim`) or newly projects (in `sim`,
+ * absent from `base`): a taken probe moves `lastTakenAt`, and the next load
+ * supersedes those rows the same way. Anything else — an overdue row
+ * turning taken because a freed dose slid onto it, an Earlier row leaving
+ * the list — means the tap would change a row it is not on.
+ */
+function othersUnchanged(base: SlotIndex, sim: SlotIndex, ownMs: number): boolean {
+  for (const [t, before] of base.visible) {
+    if (t === ownMs) continue;
+    const after = sim.visible.get(t);
+    if (after) {
+      if (after.status !== before.status) return false;
+    } else if (before.kind !== "interval" || sim.all.has(t)) {
+      return false;
+    }
+  }
+  for (const [t, after] of sim.visible) {
+    if (t === ownMs || base.visible.has(t)) continue;
+    if (after.kind !== "interval" || base.all.has(t)) return false;
+  }
+  return true;
+}
+
+/**
+ * Which buttons each visible, unresolved row of ONE medication offers,
+ * decided by SIMULATING the write each button makes and re-running the
+ * matcher — never by a rule about which row "should" take a dose.
+ *
+ * - Log now probes a taken ×1 dose at `now`. Its target is the latest
+ *   visible, unresolved row at most `MATCH_TOLERANCE_MS` ahead that the dose
+ *   would resolve (or, for an interval row, supersede by re-anchoring) while
+ *   every other visible row stays as it is. None while a taken dose sits in
+ *   `(now − LOG_NOW_COOLDOWN_MS, now]`.
+ * - Took it at probes a taken dose at exactly the row's instant (past rows
+ *   only) and is offered when that resolves this row and moves no other.
+ * - Skip probes a skip at `min(expectedTime, now)` and is offered when that
+ *   moves this row, and no other, to skipped.
+ *
+ * Every taken probe re-projects the interval rows with
+ * `lastTakenAt' = max(lastTakenAt, probe.takenAt)`, which is what the next
+ * load will see. No simulation calls `isoDayKey` or `wallClockToInstant`:
+ * fixed-time instants arrive precomputed in `fixedInstants`.
+ *
+ * Log now's "no other row moves" condition is deliberately stricter than
+ * the spec's wording. On a medication mixing interval and fixed rows, the
+ * re-anchor can free an old dose that pass 2 then hands to another row, or
+ * supersede a later interval row while the dose itself lands on a fixed
+ * one; without the guard Log now would sit on a row whose tap changes a
+ * different row. tests/unit/slot-actions.test.ts pins the placement cases
+ * and the slot-anchored property this guarantees.
+ */
+export function slotActions(input: SlotActionInput): SlotActions {
+  const { med, schedules, fixedInstants, doses, lastTakenAt, window } = input;
+  const now = window.now;
+  const nowMs = now.getTime();
+  const segments = segmentsFor(window);
+  const matchOpts = { now, segments, pass2Bound: window.visibleStart };
+
+  const project = (anchor: Date | null): ProjectedSlot[] =>
+    projectMedicationSlots({ med, schedules, fixedInstants, lastTakenAt: anchor, segments });
+
+  const baseProjection = project(lastTakenAt);
+  const base = matchMedicationSlots(baseProjection, doses, matchOpts);
+  const baseIndex = indexSlots(base, window);
+
+  const simulate = (takenAt: Date, status: "taken" | "skipped"): SlotIndex => {
+    const probe: MatchDose = { id: PROBE_ID, takenAt, status, quantity: 1 };
+    // Only a taken dose moves the interval anchor, and only forwards.
+    const reanchors =
+      status === "taken" && (lastTakenAt === null || takenAt.getTime() > lastTakenAt.getTime());
+    const projection = reanchors ? project(takenAt) : baseProjection;
+    return indexSlots(matchMedicationSlots(projection, [...doses, probe], matchOpts), window);
+  };
+
+  const open = base
+    .filter((slot) => slot.resolvedByDoseId === null && isVisibleSlot(slot, window))
+    .sort((a, b) => a.expectedTime.getTime() - b.expectedTime.getTime());
+
+  const rows = new Map<string, RowActions>();
+  // Every row still ahead probes the same skip-at-now, so simulate it once.
+  const skipSims = new Map<number, SlotIndex>();
+  for (const slot of open) {
+    const t = slot.expectedTime.getTime();
+
+    let tookItAt: string | null = null;
+    if (t <= nowMs) {
+      const sim = simulate(slot.expectedTime, "taken");
+      if (sim.all.get(t)?.status === "taken" && othersUnchanged(baseIndex, sim, t)) {
+        tookItAt = slot.expectedTime.toISOString();
+      }
+    }
+
+    const skipMs = Math.min(t, nowMs);
+    let skipSim = skipSims.get(skipMs);
+    if (!skipSim) {
+      skipSim = simulate(new Date(skipMs), "skipped");
+      skipSims.set(skipMs, skipSim);
+    }
+    const skipAt =
+      skipSim.all.get(t)?.status === "skipped" && othersUnchanged(baseIndex, skipSim, t)
+        ? new Date(skipMs).toISOString()
+        : null;
+
+    rows.set(slot.expectedTime.toISOString(), { tookItAt, skipAt });
+  }
+
+  let logNowTarget: string | null = null;
+  const cooling = doses.some(
+    (d) =>
+      d.status === "taken" &&
+      d.takenAt.getTime() > nowMs - LOG_NOW_COOLDOWN_MS &&
+      d.takenAt.getTime() <= nowMs,
+  );
+  if (!cooling && open.length > 0) {
+    const sim = simulate(now, "taken");
+    const reach = nowMs + MATCH_TOLERANCE_MS;
+    // Latest first: the target is the latest row a dose logged now would resolve.
+    for (let k = open.length - 1; k >= 0; k--) {
+      const slot = open[k];
+      const t = slot.expectedTime.getTime();
+      if (t > reach) continue;
+      // Resolved by a taken dose, or (interval rows only) superseded by the re-anchor.
+      const after = sim.all.get(t);
+      const landed = after ? after.status === "taken" : slot.kind === "interval";
+      if (!landed || !othersUnchanged(baseIndex, sim, t)) continue;
+      logNowTarget = slot.expectedTime.toISOString();
+      break;
+    }
+  }
+
+  return { logNowTarget, rows };
+}

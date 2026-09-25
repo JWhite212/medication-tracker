@@ -18,6 +18,21 @@ export interface DoseWriteLock {
   acquire(): boolean;
   /** Start the cooldown. A no-op when nothing holds the lock or a cooldown is already running. */
   release(): void;
+  /**
+   * Take the lock unconditionally, even over an in-progress write or a
+   * running cooldown — for a write that must never be refused (the toast's
+   * Undo). Cancels any cooldown already counting down, so `busy` reads true
+   * without interruption until a matching `extend()`.
+   */
+  hold(): void;
+  /**
+   * Start (or restart) the cooldown from now, replacing whatever cooldown
+   * `release()` may already have started. Pairs with `hold()`: an Undo that
+   * lands while the write it is undoing is still cooling down must not let
+   * that earlier cooldown's deadline decide when the shifted list is safe
+   * to tap again — it needs its own full cooldown after its own reload.
+   */
+  extend(): void;
 }
 
 /**
@@ -30,6 +45,20 @@ export function createDoseWriteLock(opts: { cooldownMs?: number } = {}): DoseWri
   let busy = $state(false);
   let cooldown: ReturnType<typeof setTimeout> | undefined;
 
+  function clearCooldown() {
+    if (cooldown === undefined) return;
+    clearTimeout(cooldown);
+    cooldown = undefined;
+  }
+
+  function startCooldown() {
+    clearCooldown();
+    cooldown = setTimeout(() => {
+      cooldown = undefined;
+      busy = false;
+    }, cooldownMs);
+  }
+
   return {
     get busy() {
       return busy;
@@ -41,10 +70,15 @@ export function createDoseWriteLock(opts: { cooldownMs?: number } = {}): DoseWri
     },
     release() {
       if (!busy || cooldown !== undefined) return;
-      cooldown = setTimeout(() => {
-        cooldown = undefined;
-        busy = false;
-      }, cooldownMs);
+      startCooldown();
+    },
+    hold() {
+      clearCooldown();
+      busy = true;
+    },
+    extend() {
+      busy = true;
+      startCooldown();
     },
   };
 }

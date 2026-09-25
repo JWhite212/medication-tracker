@@ -85,22 +85,34 @@
   }
 
   async function undoDose(doseId: string): Promise<void> {
-    const body = new FormData();
-    body.set("doseId", doseId);
+    // Undo is a dose write like any other — it must hold the page-wide lock
+    // across its fetch and reload, or a tap during that window (or on the
+    // list right after the removed row reappears) lands on whatever slid
+    // under the finger. Unlike every other write, Undo must never be
+    // refused: `hold()` takes the lock even if the write it is undoing is
+    // still cooling down, and `extend()` afterward starts a fresh cooldown
+    // so that earlier write's deadline cannot cut this one short.
+    lock.hold();
     try {
-      const response = await fetch(UNDO_ACTION, {
-        method: "POST",
-        body,
-        headers: { accept: "application/json" },
-      });
-      const result = deserialize(await response.text()) as ActionResult;
-      if (result.type === "success") showToast(UNDONE_TOAST, "success");
-      else showToast(actionErrorMessage(result), "error");
-    } catch (error) {
-      // A network failure never reaches `deserialize`.
-      showToast(actionErrorMessage({ type: "error", error }), "error");
+      const body = new FormData();
+      body.set("doseId", doseId);
+      try {
+        const response = await fetch(UNDO_ACTION, {
+          method: "POST",
+          body,
+          headers: { accept: "application/json" },
+        });
+        const result = deserialize(await response.text()) as ActionResult;
+        if (result.type === "success") showToast(UNDONE_TOAST, "success");
+        else showToast(actionErrorMessage(result), "error");
+      } catch (error) {
+        // A network failure never reaches `deserialize`.
+        showToast(actionErrorMessage({ type: "error", error }), "error");
+      }
+      await reload();
+    } finally {
+      lock.extend();
     }
-    await reload();
   }
 
   const submit: SubmitFunction = ({ cancel, formElement }) => {

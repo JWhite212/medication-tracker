@@ -279,6 +279,50 @@ describe("DoseActionForm submit", () => {
     expect(h.showToast).toHaveBeenLastCalledWith(UNDONE_TOAST, "success");
   });
 
+  it("holds the lock across Undo's fetch and reload — even over the write it undoes still cooling down — then cools down again", async () => {
+    const fetchStarted = deferred();
+    const fetchMock = vi.fn(async () => {
+      await fetchStarted.promise;
+      return { text: async () => JSON.stringify({ type: "success", status: 200 }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { lock, form, submit } = setup({ props: { buildToast: () => "logged", undoable: true } });
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, SUCCESS).done;
+
+    // The write Undo is about to reverse is still cooling down, with 50ms of
+    // its 700ms left: it must not be refused by that, and its own reload
+    // must not inherit that shorter deadline.
+    await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS - 50);
+    expect(lock.busy).toBe(true);
+
+    const undo = h.showToast.mock.calls[0][2] as () => void;
+    const invalidateAllDone = deferred();
+    h.invalidateAll.mockReset();
+    h.invalidateAll.mockImplementation(() => invalidateAllDone.promise);
+    undo();
+    await flushMicrotasks();
+    expect(lock.busy).toBe(true); // mid-fetch
+
+    // Past where the original write's own cooldown would have expired
+    // (50ms remained above): a lock that only inherited it would be free by now.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(lock.busy).toBe(true);
+
+    fetchStarted.resolve();
+    await flushMicrotasks();
+    expect(lock.busy).toBe(true); // fetch settled, reload (invalidateAll) still pending
+
+    invalidateAllDone.resolve();
+    await flushMicrotasks();
+    expect(lock.busy).toBe(true); // reload landed; now cooling down fresh
+
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 1);
+    expect(lock.busy).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(lock.busy).toBe(false);
+  });
+
   it("a 409 reloads before releasing the lock, and never runs update()", async () => {
     const reload = deferred();
     h.invalidateAll.mockImplementation(() => reload.promise);

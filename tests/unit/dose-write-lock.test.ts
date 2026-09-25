@@ -94,6 +94,34 @@ describe("createDoseWriteLock", () => {
     vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 400);
     expect(lock.busy).toBe(false);
   });
+
+  it("hold() takes the lock even while free, and extend() starts a fresh cooldown afterward", () => {
+    const lock = createDoseWriteLock();
+    lock.hold();
+    expect(lock.busy).toBe(true);
+    expect(lock.acquire()).toBe(false);
+    lock.extend();
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 1);
+    expect(lock.busy).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(lock.busy).toBe(false);
+  });
+
+  it("hold() takes over a running cooldown so it cannot expire underneath it, and extend() restarts a full cooldown from that point", () => {
+    const lock = createDoseWriteLock();
+    lock.acquire();
+    lock.release();
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 100); // 100ms left of the original cooldown
+    lock.hold();
+    // Past where the original cooldown would have expired: hold() cancelled it.
+    vi.advanceTimersByTime(200);
+    expect(lock.busy).toBe(true);
+    lock.extend();
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 1);
+    expect(lock.busy).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(lock.busy).toBe(false);
+  });
 });
 
 describe("DoseActionForm on an 'error' result (outcome unknown)", () => {

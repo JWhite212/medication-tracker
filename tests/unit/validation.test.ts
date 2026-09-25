@@ -5,6 +5,7 @@ import {
   medicationSchema,
   doseLogSchema,
   doseEditSchema,
+  doseSkipSchema,
   settingsSchema,
 } from "$lib/utils/validation";
 
@@ -213,6 +214,85 @@ describe("doseLogSchema", () => {
       medicationId: "abc123",
       quantity: 0,
     });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("doseLogSchema forSlot (Log now)", () => {
+  it("accepts a millisecond-exact forSlot on its own and keeps it verbatim", () => {
+    const result = doseLogSchema.safeParse({
+      medicationId: "m1",
+      quantity: "1",
+      forSlot: "2026-04-16T09:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.forSlot).toBe("2026-04-16T09:00:00.000Z");
+  });
+
+  it("rejects takenAt and forSlot together, on the forSlot field the action returns", () => {
+    // The dashboard action answers with `fieldErrors` only, so a root-level
+    // refine would reach the client as `{}` and a generic toast.
+    const result = doseLogSchema.safeParse({
+      medicationId: "m1",
+      takenAt: "2026-04-16T09:00:00.000Z",
+      forSlot: "2026-04-16T09:00:00.000Z",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.forSlot).toEqual([
+        "Send takenAt or forSlot, not both",
+      ]);
+    }
+  });
+
+  it("rejects a forSlot with no UTC designator — it names no instant", () => {
+    const result = doseLogSchema.safeParse({ medicationId: "m1", forSlot: "2026-04-16T09:00" });
+    expect(result.success).toBe(false);
+  });
+
+  it("still accepts takenAt on its own (Took it at)", () => {
+    const result = doseLogSchema.safeParse({
+      medicationId: "m1",
+      takenAt: "2026-04-16T09:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("doseSkipSchema", () => {
+  it("accepts a bare medicationId — skip at now, the legacy door", () => {
+    const result = doseSkipSchema.safeParse({ medicationId: "m1" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.takenAt).toBeUndefined();
+  });
+
+  it("accepts a millisecond-exact takenAt and keeps it verbatim", () => {
+    // Pass 0 and the reserved skip compare instants to the millisecond, so
+    // the string must reach the database exactly as the page posted it.
+    const result = doseSkipSchema.safeParse({
+      medicationId: "m1",
+      takenAt: "2026-04-16T09:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.takenAt).toBe("2026-04-16T09:00:00.000Z");
+  });
+
+  it("rejects a missing medicationId, so the action answers 400 rather than 404", () => {
+    // The old action read `String(formData.medicationId)`, which turned a
+    // missing field into the id "undefined" and answered 404.
+    const result = doseSkipSchema.safeParse({});
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.medicationId).toBeDefined();
+    }
+  });
+
+  it("rejects an empty medicationId", () => {
+    expect(doseSkipSchema.safeParse({ medicationId: "" }).success).toBe(false);
+  });
+
+  it("rejects a datetime-local takenAt, which names no instant", () => {
+    const result = doseSkipSchema.safeParse({ medicationId: "m1", takenAt: "2026-04-16T09:00" });
     expect(result.success).toBe(false);
   });
 });

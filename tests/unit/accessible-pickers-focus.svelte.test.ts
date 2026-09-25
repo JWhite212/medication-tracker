@@ -10,20 +10,11 @@
 // `document.activeElement`, which jsdom tracks faithfully, including falling
 // back to <body> when the focused element is removed.
 //
-// The harness: vitest resolves `svelte` without the `browser` condition, so a
-// bare import is Svelte's server entry, where `mount()` throws and `tick()`
-// resolves without flushing anything. The components themselves compile for
-// the client under jsdom, so pointing `svelte` at its client entry, for this
-// file only, is all a mount needs, and it also gives the components the real
-// `tick()` they await before moving focus. The path is spelled out because
-// the package's exports map offers the client entry only under `browser`. The
-// file is `.svelte.test.ts` so that `$state` can stand in for a parent: the
-// side-effect picker is controlled, and removes a chip only once its parent
-// hands back the shorter list.
-import { describe, it, expect, vi, afterEach } from "vitest";
-
-vi.mock("svelte", () => vi.importActual("../../node_modules/svelte/src/index-client.js"));
-
+// The file is `.svelte.test.ts` so that `$state` can stand in for a parent:
+// the side-effect picker is controlled, and removes a chip only once its
+// parent hands back the shorter list. vite.config.ts resolves `svelte` to its
+// client entry under vitest, which is what lets `mount()` and `tick()` work.
+import { describe, it, expect, afterEach } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import MedicationStylePicker from "../../src/lib/components/medication-form/MedicationStylePicker.svelte";
 import SideEffectPicker from "../../src/lib/components/SideEffectPicker.svelte";

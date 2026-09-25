@@ -11,28 +11,10 @@
 // focus ARRIVES rather than trusting where focus ends up: in a browser,
 // focusing the toggle while its header is still inert silently does nothing,
 // and only the ordering distinguishes the two.
-//
-// The `svelte` mock is load-bearing. This suite resolves bare `svelte` without
-// the "browser" export condition, so it gets the SERVER entry even under jsdom:
-// there `mount()` throws and `tick()` is an empty async function, which would
-// let the layout's awaited tick() "pass" without flushing a thing. The .svelte
-// files themselves already compile against `svelte/internal/client`, so
-// pointing `svelte` at the client entry puts the test, the layout and Sidebar
-// on the one runtime a browser would give them.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount, unmount, flushSync, createRawSnippet } from "svelte";
 import { readable } from "svelte/store";
 import { collectFocusable } from "$lib/utils/focus-trap";
-
-// Named by path because svelte's export map offers this file only under the
-// "browser" condition. The specifier has to stay a literal: computed at
-// runtime, it skips vite's import analysis and is handed to Node unresolved.
-vi.mock(
-  "svelte",
-  // @ts-expect-error -- svelte ships no declarations for its src/ tree; the
-  // module's shape is the public "svelte" API, which is how the test uses it.
-  () => import("../../node_modules/svelte/src/index-client.js"),
-);
 
 const nav = vi.hoisted(() => ({ afterNavigate: [] as Array<() => void> }));
 

@@ -7,19 +7,6 @@ import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
 import type { DoseLogWithMedication } from "$lib/types";
 import { NO_RESPONSE_MESSAGE, SESSION_EXPIRED_MESSAGE } from "$lib/utils/form-errors";
 
-// Under jsdom the components are compiled for the client, but the bare
-// `svelte` specifier is loaded as an external dependency under Node's
-// conditions, which pick the package's SERVER entry: `mount` throws there and
-// `tick` does nothing. This file points `svelte` at the client entry instead,
-// for the test and for the components' own `import { tick } from "svelte"`
-// alike. It is a relative path because the export map does not expose
-// `src/index-client.js`; the specifier form (`svelte/src/...`) is refused, and
-// a computed path is resolved differently and fails. If a later svelte moves
-// the file, this is the line to update.
-// @ts-expect-error The internal entry ships no declarations; the imports
-// above are typed by the package's public `svelte` types, which describe it.
-vi.mock("svelte", () => import("../../node_modules/svelte/src/index-client.js"));
-
 // `enhance` is replaced by a recorder, so each test can hand the component's
 // own callback exactly the ActionResult it wants and observe what the
 // component does with it, including whether it lets SvelteKit's `update()`

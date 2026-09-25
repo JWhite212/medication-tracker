@@ -15,15 +15,6 @@ const { showToast, invalidateAll } = vi.hoisted(() => ({
   invalidateAll: vi.fn(async () => {}),
 }));
 
-// Under jsdom the `.svelte` files compile for the client, but a bare `svelte`
-// import still resolves to the package's server entry, where `mount` only
-// throws. This points every importer in the file at the client entry, the
-// components as well as the test, so `tick` and friends come from the same
-// runtime the components were compiled against. The path is widened to
-// `string` only for the type checker, which has no declarations for a file
-// inside the package; vite still sees the literal and resolves it.
-vi.mock("svelte", () => import("../../node_modules/svelte/src/index-client.js" as string));
-
 // SvelteKit's client runtime is not running here; the card only needs the
 // three calls it makes, and the page only needs `enhance` to be inert.
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast }));

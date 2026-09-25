@@ -154,6 +154,25 @@ function makeDose(overrides: Partial<DoseLogWithMedication> = {}): DoseLogWithMe
   };
 }
 
+/** No-window matching over UTC 2026-04-16 for one medication with these fixed times. */
+function fixedDaySlots(times: string[], doses: DoseLogWithMedication[], now: Date): ScheduleSlot[] {
+  return computeScheduleSlots(
+    [makeMed()],
+    schedMap(times.map((t, i) => makeFixedTimeSchedule("med-1", t, null, i))),
+    doses,
+    {},
+    new Date("2026-04-16T00:00:00Z"),
+    new Date("2026-04-17T00:00:00Z"),
+    "UTC",
+    now,
+  );
+}
+
+/** [HH:MM, status, matchedDoseId] per slot, in slot order — UTC fixtures only. */
+function outcome(slots: ScheduleSlot[]): [string, ScheduleSlotStatus, string | null][] {
+  return slots.map((s) => [s.expectedTime.slice(11, 16), s.status, s.matchedDoseId]);
+}
+
 describe("classifyHour", () => {
   it("classifies morning hours (5-11)", () => {
     expect(classifyHour(5)).toBe("morning");
@@ -503,6 +522,13 @@ describe("computeScheduleSlots — multi-unit dose matching (quantity)", () => {
     const slots = computeScheduleSlots(meds, sched, [skip], {}, dayStart, dayEnd, timezone, now);
     expect(slots.filter((s) => s.status === "skipped")).toHaveLength(1);
     expect(slots.filter((s) => s.status === "overdue")).toHaveLength(2);
+    // Same count, different slot, on purpose. The skip sits exactly on the
+    // 09:00 instant, which makes it 09:00's RESERVED skip: a pass-1
+    // candidate for that slot only. Before reserved skips, pass 1's
+    // ascending greed gave it to 08:45.
+    expect(slots.find((s) => s.status === "skipped")?.expectedTime).toBe(
+      "2026-04-16T09:00:00.000Z",
+    );
   });
 
   it("prefers a taken dose over a skipped dose when both are in-vicinity of a slot", () => {
@@ -548,6 +574,10 @@ describe("computeScheduleSlots — multi-unit dose matching (quantity)", () => {
     const slots = computeScheduleSlots(meds, sched, [dose], {}, dayStart, dayEnd, timezone, now);
     expect(slots.filter((s) => s.status === "taken")).toHaveLength(1);
     expect(slots.filter((s) => s.status === "overdue")).toHaveLength(2);
+    // Same count, different slot, on purpose. The dose sits exactly on the
+    // 09:00 instant, so PASS 0 gives it 09:00 before pass 1 runs. Before
+    // pass 0, pass 1's ascending greed gave it to 08:30.
+    expect(slots.find((s) => s.status === "taken")?.expectedTime).toBe("2026-04-16T09:00:00.000Z");
   });
 });
 
@@ -1199,5 +1229,113 @@ describe("computeScheduleSlots — slot fields", () => {
       ["2026-04-16T08:00:00.000Z", false, "overdue", null],
       // 2026-04-17T00:30 is projected (tomorrow's first hour) but never returned.
     ]);
+  });
+});
+
+describe("computeScheduleSlots — pass 0 (exact claims)", () => {
+  it("a taken dose at exactly a slot's instant resolves that slot, not an open neighbour", () => {
+    // "Took it at 09:00" next to an open 08:55. Without pass 0, pass 1's
+    // ascending greed hands the 09:00 dose to 08:55, and the row the user
+    // tapped stays overdue.
+    const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00.000Z") });
+    const slots = fixedDaySlots(
+      ["08:55", "09:00", "11:00"],
+      [dose],
+      new Date("2026-04-16T13:30:00Z"),
+    );
+    expect(outcome(slots)).toEqual([
+      ["08:55", "overdue", null],
+      ["09:00", "taken", "dose-1"],
+      ["11:00", "overdue", null],
+    ]);
+  });
+
+  it("is exact to the millisecond — one millisecond late is pass 1's to place", () => {
+    const now = new Date("2026-04-16T12:00:00Z");
+    const exact = makeDose({ takenAt: new Date("2026-04-16T09:00:00.000Z") });
+    const late = makeDose({ takenAt: new Date("2026-04-16T09:00:00.001Z") });
+    expect(outcome(fixedDaySlots(["08:30", "09:00"], [exact], now))).toEqual([
+      ["08:30", "overdue", null],
+      ["09:00", "taken", "dose-1"],
+    ]);
+    expect(outcome(fixedDaySlots(["08:30", "09:00"], [late], now))).toEqual([
+      ["08:30", "taken", "dose-1"],
+      ["09:00", "overdue", null],
+    ]);
+  });
+
+  it("breaks a tie at one instant by the smaller id", () => {
+    const at = new Date("2026-04-16T09:00:00.000Z");
+    const slots = fixedDaySlots(
+      ["09:00"],
+      [makeDose({ id: "dose-b", takenAt: at }), makeDose({ id: "dose-a", takenAt: at })],
+      new Date("2026-04-16T12:00:00Z"),
+    );
+    expect(outcome(slots)).toEqual([["09:00", "taken", "dose-a"]]);
+  });
+
+  it("a skip never claims in pass 0 — a taken dose at the same instant wins and the skip stays inert", () => {
+    const at = new Date("2026-04-16T09:00:00.000Z");
+    const slots = fixedDaySlots(
+      ["08:30", "09:00"],
+      [
+        makeDose({ id: "dose-skip", takenAt: at, status: "skipped" }),
+        makeDose({ id: "dose-taken", takenAt: at }),
+      ],
+      new Date("2026-04-16T12:00:00Z"),
+    );
+    // "dose-skip" sorts before "dose-taken", so a pass 0 that let skips in
+    // would give it 09:00. The skip is reserved for 09:00, so it cannot move
+    // to 08:30 either.
+    expect(outcome(slots)).toEqual([
+      ["08:30", "overdue", null],
+      ["09:00", "taken", "dose-taken"],
+    ]);
+  });
+
+  it("pass 1 never re-claims a slot pass 0 resolved", () => {
+    const slots = fixedDaySlots(
+      ["09:00", "09:30"],
+      [
+        makeDose({ id: "dose-a", takenAt: new Date("2026-04-16T09:00:00.000Z") }),
+        makeDose({ id: "dose-b", takenAt: new Date("2026-04-16T09:20:00Z") }),
+      ],
+      new Date("2026-04-16T12:00:00Z"),
+    );
+    expect(outcome(slots)).toEqual([
+      ["09:00", "taken", "dose-a"],
+      ["09:30", "taken", "dose-b"],
+    ]);
+  });
+});
+
+describe("computeScheduleSlots — reserved skips", () => {
+  it("a skip at a slot's instant is that slot's own Skip, not an open neighbour's", () => {
+    const skip = makeDose({
+      id: "dose-skip-1",
+      takenAt: new Date("2026-04-16T09:00:00.000Z"),
+      status: "skipped",
+    });
+    const slots = fixedDaySlots(["08:55", "09:00"], [skip], new Date("2026-04-16T13:30:00Z"));
+    expect(outcome(slots)).toEqual([
+      ["08:55", "overdue", null],
+      ["09:00", "skipped", "dose-skip-1"],
+    ]);
+  });
+
+  it("a real taken dose within the hour still beats a skip at the slot's instant (D7)", () => {
+    const slots = fixedDaySlots(
+      ["09:00"],
+      [
+        makeDose({
+          id: "dose-skip-1",
+          takenAt: new Date("2026-04-16T09:00:00.000Z"),
+          status: "skipped",
+        }),
+        makeDose({ id: "dose-taken-1", takenAt: new Date("2026-04-16T09:20:00Z") }),
+      ],
+      new Date("2026-04-16T12:00:00Z"),
+    );
+    expect(outcome(slots)).toEqual([["09:00", "taken", "dose-taken-1"]]);
   });
 });

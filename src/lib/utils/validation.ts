@@ -194,12 +194,35 @@ const sideEffectsField = z
       .optional(),
   );
 
-export const doseLogSchema = z.object({
+export const doseLogSchema = z
+  .object({
+    medicationId: z.string().min(1),
+    quantity: z.coerce.number().int().min(1).default(1),
+    takenAt: z.string().datetime().optional(),
+    // Log now: the ISO instant of the row the button sat on. The server
+    // re-derives where a dose logged now would land and refuses unless it is
+    // still this row (`logDoseForSlot`). Millisecond-exact, like `takenAt`.
+    forSlot: z.string().datetime().optional(),
+    notes: z.string().max(500).optional(),
+    sideEffects: sideEffectsField,
+  })
+  // Two different writes: `takenAt` records the slot's own instant, `forSlot`
+  // records now against a proven slot. Both at once is a client bug, not a
+  // choice. The path puts the message in `fieldErrors`, which is all the
+  // dashboard action returns.
+  .refine((d) => !(d.takenAt && d.forSlot), {
+    message: "Send takenAt or forSlot, not both",
+    path: ["forSlot"],
+  });
+
+/**
+ * The dashboard's Skip. `takenAt` is the row's `skipAt` — the slot's own
+ * instant for a past slot, now for a due-now slot still ahead — posted
+ * verbatim. Absent, the skip is recorded at now (the legacy door).
+ */
+export const doseSkipSchema = z.object({
   medicationId: z.string().min(1),
-  quantity: z.coerce.number().int().min(1).default(1),
   takenAt: z.string().datetime().optional(),
-  notes: z.string().max(500).optional(),
-  sideEffects: sideEffectsField,
 });
 
 /**

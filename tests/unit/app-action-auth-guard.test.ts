@@ -55,12 +55,16 @@ vi.mock("$lib/server/inventory-events", () => ({
 }));
 vi.mock("$lib/server/doses", () => ({
   getTodaysDoses: never("getTodaysDoses"),
+  getDosesInRange: never("getDosesInRange"),
   getLastDosePerMedication: never("getLastDosePerMedication"),
   logDose: never("logDose"),
+  logDoseForSlot: never("logDoseForSlot"),
   logSkippedDose: never("logSkippedDose"),
   deleteDose: never("deleteDose"),
   updateDose: never("updateDose"),
   MedicationNotFoundError: FakeError,
+  SlotAlreadyTakenError: FakeError,
+  SlotTargetChangedError: FakeError,
 }));
 vi.mock("$lib/server/schedules", () => ({
   getSchedulesForUser: never("getSchedulesForUser"),

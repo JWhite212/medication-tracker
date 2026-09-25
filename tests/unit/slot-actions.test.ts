@@ -9,6 +9,8 @@
  */
 import { describe, it, expect } from "vitest";
 import {
+  LOG_NOW_COOLDOWN_MS,
+  MATCH_TOLERANCE_MS,
   dashboardWindow,
   matchMedicationSlots,
   projectFixedTimes,
@@ -559,4 +561,277 @@ describe("slotActions — Log now placement", () => {
   it("targets a London Earlier row by its UTC instant", () => {
     expect(slotActions(londonBedtime()).logNowTarget).toBe("2026-04-15T21:00:00.000Z");
   });
+});
+
+// ── Seeded slot-anchored property ───────────────────────────────────────
+
+const SEED = 0x5107_ac75;
+/** Roughly 1ms per fixture: comfortably inside the explicit 60s timeout. */
+const FIXTURES = 1_500;
+/**
+ * The id a pressed button's dose gets here. Like slotActions' probe it sorts
+ * after every fixture id ("d0".."d5"), so ties break the same way.
+ */
+const APPLIED_ID = "zz-applied";
+const ZONES = ["UTC", "Europe/London", "America/New_York", "Pacific/Auckland"] as const;
+const INTERVAL_HOURS = ["4", "6", "8", "12", "24"] as const;
+const LONG_AGO = new Date("2025-01-01T00:00:00Z");
+
+/** mulberry32: a tiny deterministic PRNG, so a failure names a reproducible fixture. */
+function mulberry32(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const minuteFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** The wall-clock minute of `at` in `tz` (0–1439): where to cluster slots so they sit near now. */
+function localMinuteOfDay(at: Date, tz: string): number {
+  let fmt = minuteFormatters.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz,
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    minuteFormatters.set(tz, fmt);
+  }
+  const parts = fmt.formatToParts(at);
+  const field = (type: "hour" | "minute") => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return field("hour") * 60 + field("minute");
+}
+
+function hhmm(minuteOfDay: number): string {
+  const m = ((minuteOfDay % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+function generateFixture(rng: () => number): { input: SlotActionInput; tz: string } {
+  const int = (lo: number, hi: number): number => lo + Math.floor(rng() * (hi - lo + 1));
+  const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)];
+
+  const tz = pick(ZONES);
+  const now = new Date(Date.UTC(2026, 0, 1) + int(0, 364 * 24 * 60) * 60_000);
+  const window = dashboardWindow(now, tz);
+  const nowMinute = localMinuteOfDay(now, tz);
+
+  // A save rewrites every schedule row with effectiveFrom = now: one instant per medication.
+  const effectiveFrom = rng() < 0.15 ? new Date(now.getTime() - int(0, 36) * 3_600_000) : LONG_AGO;
+  const schedules: MedicationSchedule[] = [];
+  const fixedCount = rng() < 0.15 ? 0 : int(1, 4);
+  for (let k = 0; k < fixedCount; k++) {
+    // Most slots cluster in the four hours before now and the two after, where the buttons are.
+    const minute = rng() < 0.6 ? nowMinute + 5 * int(-48, 24) : 5 * int(0, 287);
+    const daysOfWeek = rng() < 0.15 ? [int(0, 6), int(0, 6)] : null;
+    schedules.push(fixed(hhmm(minute), k + 1, { daysOfWeek, effectiveFrom }));
+  }
+  if (fixedCount === 0 || rng() < 0.3) {
+    schedules.push(interval(pick(INTERVAL_HOURS), { effectiveFrom }));
+  }
+
+  const fixedInstants = projectFixedTimes(schedules, segmentsFor(window), tz);
+  const pastInstants = fixedInstants.filter((t) => t.getTime() <= now.getTime());
+  const fetchFrom = window.doseFetchFrom.getTime();
+  const doses: MatchDose[] = [];
+  const doseCount = int(0, 6);
+  for (let k = 0; k < doseCount; k++) {
+    const roll = rng();
+    let takenAt: Date;
+    if (roll < 0.25 && pastInstants.length > 0) {
+      takenAt = new Date(pick(pastInstants).getTime()); // Took it at / reserved skip
+    } else if (roll < 0.3) {
+      takenAt = new Date(now.getTime() + int(1, 90) * 60_000); // future-dated
+    } else if (roll < 0.8) {
+      takenAt = new Date(now.getTime() - int(0, 300) * 60_000);
+    } else {
+      takenAt = new Date(fetchFrom + Math.floor(rng() * (now.getTime() - fetchFrom)));
+    }
+    const s = rng();
+    const status: MatchDose["status"] = s < 0.7 ? "taken" : s < 0.95 ? "skipped" : "missed";
+    const quantity = status === "taken" && rng() < 0.25 ? int(2, 3) : 1;
+    doses.push({ id: `d${k}`, takenAt, status, quantity });
+  }
+
+  const takenMs = doses.filter((d) => d.status === "taken").map((d) => d.takenAt.getTime());
+  const lastTakenAt =
+    takenMs.length > 0
+      ? new Date(Math.max(...takenMs))
+      : rng() < 0.5
+        ? null
+        : new Date(fetchFrom - int(1, 48) * 3_600_000);
+  const med = makeMed({
+    startedAt: rng() < 0.15 ? new Date(now.getTime() - int(0, 36) * 3_600_000) : LONG_AGO,
+  });
+  return { input: { med, schedules, fixedInstants, doses, lastTakenAt, window }, tz };
+}
+
+function describeFixture(i: SlotActionInput, tz: string): string {
+  return JSON.stringify({
+    tz,
+    now: i.window.now.toISOString(),
+    startedAt: i.med.startedAt.toISOString(),
+    lastTakenAt: i.lastTakenAt?.toISOString() ?? null,
+    schedules: i.schedules.map((s) => [
+      s.scheduleKind,
+      s.timeOfDay ?? s.intervalHours,
+      s.daysOfWeek,
+      s.effectiveFrom.toISOString(),
+    ]),
+    doses: i.doses.map((d) => [d.id, d.takenAt.toISOString(), d.status, d.quantity]),
+  });
+}
+
+/** The spec's visibility rule, restated independently of the implementation. */
+function isVisible(slot: MatchedSlot, w: DashboardWindow): boolean {
+  const t = slot.expectedTime.getTime();
+  if (t >= w.end.getTime()) return false;
+  if (t >= w.todayStart.getTime()) return true;
+  return slot.status === "overdue" && t >= w.visibleStart.getTime();
+}
+
+function byInstant(slots: MatchedSlot[]): Map<number, MatchedSlot> {
+  return new Map(slots.map((s) => [s.expectedTime.getTime(), s]));
+}
+
+/**
+ * Press a button the way the next load sees it: add the dose, move
+ * lastTakenAt if it is a later taken dose, re-project and re-match. Returns
+ * what went wrong, or null when the button did exactly what its row says.
+ */
+function pressProblem(
+  i: SlotActionInput,
+  base: MatchedSlot[],
+  row: string,
+  press: MatchDose,
+  supersedable: boolean,
+): string | null {
+  const reanchors =
+    press.status === "taken" &&
+    (i.lastTakenAt === null || press.takenAt.getTime() > i.lastTakenAt.getTime());
+  const after = matchWith(i, [...i.doses, press], reanchors ? press.takenAt : i.lastTakenAt);
+  const ownMs = Date.parse(row);
+  const want = press.status === "taken" ? "taken" : "skipped";
+  const baseAll = byInstant(base);
+  const afterAll = byInstant(after);
+
+  const own = afterAll.get(ownMs);
+  if (own) {
+    if (own.status !== want) return `its own row is ${own.status}, not ${want}`;
+  } else if (!(supersedable && baseAll.get(ownMs)?.kind === "interval")) {
+    return "its own row disappeared";
+  }
+
+  const baseVisible = byInstant(base.filter((s) => isVisible(s, i.window)));
+  const afterVisible = byInstant(after.filter((s) => isVisible(s, i.window)));
+  for (const [ms, before] of baseVisible) {
+    if (ms === ownMs) continue;
+    const later = afterVisible.get(ms);
+    if (later) {
+      if (later.status !== before.status) {
+        return `row ${new Date(ms).toISOString()} moved from ${before.status} to ${later.status}`;
+      }
+    } else if (before.kind !== "interval" || afterAll.has(ms)) {
+      return `row ${new Date(ms).toISOString()} left the list`;
+    }
+  }
+  for (const [ms, later] of afterVisible) {
+    if (ms === ownMs || baseVisible.has(ms)) continue;
+    if (later.kind !== "interval" || baseAll.has(ms)) {
+      return `row ${new Date(ms).toISOString()} joined the list as ${later.status}`;
+    }
+  }
+  return null;
+}
+
+describe("slotActions — slot-anchored property (seeded)", () => {
+  it("every offered button, pressed as the next load sees it, resolves its own row and moves no other", () => {
+    const rng = mulberry32(SEED);
+    const seen = { logNow: 0, tookItAt: 0, skip: 0, notLatest: 0 };
+
+    for (let n = 0; n < FIXTURES; n++) {
+      const { input: i, tz } = generateFixture(rng);
+      const label = `fixture ${n} ${describeFixture(i, tz)}`;
+      const nowMs = i.window.now.getTime();
+      const base = matchWith(i, i.doses, i.lastTakenAt);
+      const actions = slotActions(i);
+
+      const open = base
+        .filter((s) => s.resolvedByDoseId === null && isVisible(s, i.window))
+        .map((s) => s.expectedTime.toISOString())
+        .sort();
+      expect([...actions.rows.keys()].sort(), label).toEqual(open);
+
+      const cooling = i.doses.some(
+        (d) =>
+          d.status === "taken" &&
+          d.takenAt.getTime() > nowMs - LOG_NOW_COOLDOWN_MS &&
+          d.takenAt.getTime() <= nowMs,
+      );
+      const inReach = open.filter((t) => Date.parse(t) <= nowMs + MATCH_TOLERANCE_MS);
+      if (cooling) expect(actions.logNowTarget, label).toBeNull();
+      if (!cooling && inReach.length > 0 && inReach[inReach.length - 1] !== actions.logNowTarget) {
+        seen.notLatest++;
+      }
+
+      const presses: Array<{ row: string; dose: MatchDose; supersedable: boolean }> = [];
+      if (actions.logNowTarget !== null) {
+        expect(inReach, label).toContain(actions.logNowTarget);
+        presses.push({
+          row: actions.logNowTarget,
+          dose: { id: APPLIED_ID, takenAt: i.window.now, status: "taken", quantity: 1 },
+          supersedable: true,
+        });
+        seen.logNow++;
+      }
+      for (const [row, offered] of actions.rows) {
+        const rowMs = Date.parse(row);
+        if (offered.tookItAt !== null) {
+          expect(offered.tookItAt, label).toBe(row);
+          expect(rowMs, label).toBeLessThanOrEqual(nowMs);
+          presses.push({
+            row,
+            dose: { id: APPLIED_ID, takenAt: new Date(rowMs), status: "taken", quantity: 1 },
+            supersedable: false,
+          });
+          seen.tookItAt++;
+        }
+        if (offered.skipAt !== null) {
+          expect(offered.skipAt, label).toBe(new Date(Math.min(rowMs, nowMs)).toISOString());
+          presses.push({
+            row,
+            dose: {
+              id: APPLIED_ID,
+              takenAt: new Date(offered.skipAt),
+              status: "skipped",
+              quantity: 1,
+            },
+            supersedable: false,
+          });
+          seen.skip++;
+        }
+      }
+
+      for (const p of presses) {
+        expect(
+          pressProblem(i, base, p.row, p.dose, p.supersedable),
+          `${label} pressed ${p.dose.status} at ${p.dose.takenAt.toISOString()} for ${p.row}`,
+        ).toBeNull();
+      }
+    }
+
+    // Not vacuous: every kind of button was pressed many times, and Log now
+    // often sat somewhere other than the latest open row. Those are the
+    // cases a "latest outstanding" rule gets wrong.
+    expect(seen.logNow).toBeGreaterThanOrEqual(25);
+    expect(seen.tookItAt).toBeGreaterThanOrEqual(25);
+    expect(seen.skip).toBeGreaterThanOrEqual(25);
+    expect(seen.notLatest).toBeGreaterThanOrEqual(5);
+  }, 60_000);
 });

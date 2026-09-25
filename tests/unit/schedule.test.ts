@@ -1385,3 +1385,318 @@ describe("computeScheduleSlots — the segment limit (with a window)", () => {
     });
   });
 });
+
+describe("computeScheduleSlots — pass 2 (late resolution)", () => {
+  it("the live case: a late ×4 resolves 08:55, 09:00 and 11:00; a later ×3 covers nothing", () => {
+    const slots = fixedDaySlots(
+      ["08:55", "09:00", "11:00"],
+      [
+        makeDose({ id: "dose-a", takenAt: new Date("2026-04-16T13:31:00Z"), quantity: 4 }),
+        makeDose({ id: "dose-b", takenAt: new Date("2026-04-16T21:48:00Z"), quantity: 3 }),
+      ],
+      new Date("2026-04-16T22:00:00Z"),
+    );
+    expect(outcome(slots)).toEqual([
+      ["08:55", "taken", "dose-a"],
+      ["09:00", "taken", "dose-a"],
+      ["11:00", "taken", "dose-a"],
+    ]);
+    expect(slots.map((s) => s.resolvedByDoseId)).toEqual(["dose-a", "dose-a", "dose-a"]);
+  });
+
+  it("resolves the latest open slot first", () => {
+    const slots = fixedDaySlots(
+      ["08:00", "10:00", "12:00"],
+      [makeDose({ takenAt: new Date("2026-04-16T14:00:00Z") })],
+      new Date("2026-04-16T15:00:00Z"),
+    );
+    expect(outcome(slots)).toEqual([
+      ["08:00", "overdue", null],
+      ["10:00", "overdue", null],
+      ["12:00", "taken", "dose-1"],
+    ]);
+  });
+
+  it("never resolves a slot after its dose", () => {
+    const slots = fixedDaySlots(
+      ["08:00", "16:00"],
+      [makeDose({ takenAt: new Date("2026-04-16T12:00:00Z"), quantity: 2 })],
+      new Date("2026-04-16T17:00:00Z"),
+    );
+    expect(outcome(slots)).toEqual([
+      ["08:00", "taken", "dose-1"],
+      ["16:00", "overdue", null],
+    ]);
+  });
+
+  it("pass 1 places a dose before pass 2 sees it", () => {
+    const now = new Date("2026-04-16T21:00:00Z");
+    const dose = makeDose({ takenAt: new Date("2026-04-16T20:30:00Z") });
+    // The spec's worked case: pass 1 gives 20:30 to 20:00, and 14:00 stays overdue.
+    expect(outcome(fixedDaySlots(["14:00", "20:00"], [dose], now))).toEqual([
+      ["14:00", "overdue", null],
+      ["20:00", "taken", "dose-1"],
+    ]);
+    // A case where the two orders disagree. Pass 2 alone would give the dose
+    // to 14:00, the only slot BEFORE 20:30. Pass 1 gives it to 20:45, which
+    // is 15 minutes away.
+    expect(outcome(fixedDaySlots(["14:00", "20:45"], [dose], now))).toEqual([
+      ["14:00", "overdue", null],
+      ["20:45", "taken", "dose-1"],
+    ]);
+  });
+
+  it("replays doses in time order, so a later dose never takes an earlier dose's slot", () => {
+    const slots = fixedDaySlots(
+      ["08:00", "12:00"],
+      [
+        // Listed first on purpose: input order must not decide.
+        makeDose({ id: "dose-late", takenAt: new Date("2026-04-16T14:00:00Z"), quantity: 2 }),
+        makeDose({ id: "dose-early", takenAt: new Date("2026-04-16T10:00:00Z") }),
+      ],
+      new Date("2026-04-16T15:00:00Z"),
+    );
+    expect(outcome(slots)).toEqual([
+      ["08:00", "taken", "dose-early"],
+      ["12:00", "taken", "dose-late"],
+    ]);
+  });
+
+  it("ignores a dose dated after now until now reaches it", () => {
+    const dose = makeDose({ takenAt: new Date("2026-04-16T14:00:00Z") });
+    expect(outcome(fixedDaySlots(["08:00"], [dose], new Date("2026-04-16T12:00:00Z")))).toEqual([
+      ["08:00", "overdue", null],
+    ]);
+    expect(outcome(fixedDaySlots(["08:00"], [dose], new Date("2026-04-16T14:00:00Z")))).toEqual([
+      ["08:00", "taken", "dose-1"],
+    ]);
+  });
+
+  it("a legacy skip-at-now (not on a slot instant) resolves the latest earlier open slot", () => {
+    // /api/v1 skip_dose, the Mac app and the old dashboard Skip all write
+    // takenAt = now. That skip's one unit of capacity now dismisses the slot
+    // it was meant for, instead of nothing.
+    const skip = makeDose({
+      id: "dose-skip-1",
+      takenAt: new Date("2026-04-16T14:07:13Z"),
+      status: "skipped",
+    });
+    expect(
+      outcome(fixedDaySlots(["08:00", "12:00"], [skip], new Date("2026-04-16T14:10:00Z"))),
+    ).toEqual([
+      ["08:00", "overdue", null],
+      ["12:00", "skipped", "dose-skip-1"],
+    ]);
+  });
+
+  it("shares one capacity map: a ×3 dose resolves via passes 0, 1 and 2 and no further", () => {
+    const dose = makeDose({ takenAt: new Date("2026-04-16T09:00:00.000Z"), quantity: 3 });
+    const slots = fixedDaySlots(
+      ["06:00", "07:00", "09:00", "09:30"],
+      [dose],
+      new Date("2026-04-16T12:00:00Z"),
+    );
+    // Pass 0 takes 09:00, pass 1 takes 09:30 and pass 2 takes 07:00. 06:00
+    // stays open because all three units are spent, not because pass 2
+    // started with a fresh count.
+    expect(outcome(slots)).toEqual([
+      ["06:00", "overdue", null],
+      ["07:00", "taken", "dose-1"],
+      ["09:00", "taken", "dose-1"],
+      ["09:30", "taken", "dose-1"],
+    ]);
+  });
+
+  it("a reserved skip never resolves another slot, even when a taken dose got its own slot", () => {
+    const slots = fixedDaySlots(
+      ["07:00", "09:00"],
+      [
+        makeDose({
+          id: "dose-skip-1",
+          takenAt: new Date("2026-04-16T09:00:00.000Z"),
+          status: "skipped",
+        }),
+        makeDose({ id: "dose-taken-1", takenAt: new Date("2026-04-16T09:10:00Z") }),
+      ],
+      new Date("2026-04-16T12:00:00Z"),
+    );
+    expect(outcome(slots)).toEqual([
+      ["07:00", "overdue", null],
+      ["09:00", "taken", "dose-taken-1"],
+    ]);
+  });
+
+  it("without a window, reaches back to dayStart", () => {
+    // 21 hours late. With no window the bound is dayStart, not a 12h carry-over.
+    const slots = fixedDaySlots(
+      ["01:00"],
+      [makeDose({ takenAt: new Date("2026-04-16T22:00:00Z") })],
+      new Date("2026-04-16T23:00:00Z"),
+    );
+    expect(outcome(slots)).toEqual([["01:00", "taken", "dose-1"]]);
+  });
+});
+
+describe("computeScheduleSlots — pass-2 bound with a window", () => {
+  it("stops at visibleStart: a slot past the 12h carry-over is never resolved late", () => {
+    const timezone = "UTC";
+    const sched = schedMap([makeFixedTimeSchedule("med-1", "20:00")]);
+    const dose = makeDose({ takenAt: new Date("2026-04-16T07:00:00Z") });
+    const slotsAt = (now: Date) => {
+      const window = dashboardWindow(now, timezone);
+      return computeScheduleSlots(
+        [makeMed()],
+        sched,
+        [dose],
+        {},
+        window.todayStart,
+        window.end,
+        timezone,
+        now,
+        { window },
+      );
+    };
+    // At 07:30 yesterday's 20:00 is 11.5h old: visible and above the bound.
+    expect(
+      slotAt(slotsAt(new Date("2026-04-16T07:30:00Z")), "2026-04-15T20:00:00.000Z"),
+    ).toMatchObject({ status: "taken", resolvedByDoseId: "dose-1", isEarlier: true });
+    // At 08:30 it is 12.5h old: hidden and below the bound, so the 07:00
+    // dose does not resolve it.
+    const later = slotsAt(new Date("2026-04-16T08:30:00Z"));
+    expect(slotAt(later, "2026-04-15T20:00:00.000Z")).toMatchObject({
+      status: "overdue",
+      resolvedByDoseId: null,
+      isEarlier: true,
+    });
+    expect(slotAt(later, "2026-04-16T20:00:00.000Z")).toMatchObject({
+      status: "upcoming",
+      isEarlier: false,
+    });
+  });
+});
+
+describe("computeScheduleSlots — missed rows", () => {
+  it("a future slot matched only to a missed row reads upcoming, not overdue", () => {
+    const missed = makeDose({
+      id: "dose-missed-1",
+      takenAt: new Date("2026-04-16T15:30:00Z"),
+      status: "missed",
+    });
+    const [slot] = fixedDaySlots(["16:00"], [missed], new Date("2026-04-16T12:00:00Z"));
+    expect(slot).toMatchObject({
+      status: "upcoming",
+      matchedDoseId: "dose-missed-1",
+      missedByDoseId: "dose-missed-1",
+      resolvedByDoseId: null,
+    });
+  });
+
+  it("a slot holding only a missed row can still be resolved late", () => {
+    const [slot] = fixedDaySlots(
+      ["08:00"],
+      [
+        makeDose({
+          id: "dose-missed-1",
+          takenAt: new Date("2026-04-16T08:10:00Z"),
+          status: "missed",
+        }),
+        makeDose({ id: "dose-taken-1", takenAt: new Date("2026-04-16T11:00:00Z") }),
+      ],
+      new Date("2026-04-16T12:00:00Z"),
+    );
+    expect(slot).toMatchObject({
+      status: "taken",
+      resolvedByDoseId: "dose-taken-1",
+      missedByDoseId: "dose-missed-1",
+      matchedDoseId: "dose-taken-1",
+    });
+  });
+
+  it("a missed row never resolves anything late", () => {
+    const [slot] = fixedDaySlots(
+      ["08:00"],
+      [
+        makeDose({
+          id: "dose-missed-1",
+          takenAt: new Date("2026-04-16T11:00:00Z"),
+          status: "missed",
+        }),
+      ],
+      new Date("2026-04-16T12:00:00Z"),
+    );
+    expect(slot).toMatchObject({ status: "overdue", matchedDoseId: null });
+  });
+});
+
+describe("computeScheduleSlots — stability across midnight and noon", () => {
+  const timezone = "UTC";
+  function windowSlots(times: string[], doses: DoseLogWithMedication[], now: Date): ScheduleSlot[] {
+    const window = dashboardWindow(now, timezone);
+    return computeScheduleSlots(
+      [makeMed()],
+      schedMap(times.map((t, i) => makeFixedTimeSchedule("med-1", t, null, i))),
+      doses,
+      {},
+      window.todayStart,
+      window.end,
+      timezone,
+      now,
+      { window },
+    );
+  }
+
+  it("an evening slot left open at 23:59 is still open at 00:01", () => {
+    // 22:00 is open, and a 23:30 dose is 43 minutes before tomorrow's 00:13.
+    // At 00:01, pass 1 gives the dose to 00:13, which is now today's slot.
+    // At 23:59 the matcher must make the same choice. It can only do that
+    // because tomorrow's first hour is projected and matched. Otherwise
+    // pass 2 hands the dose to 22:00, and the row flips back to overdue at
+    // midnight.
+    const doses = [makeDose({ takenAt: new Date("2026-04-16T23:30:00Z") })];
+    const before = windowSlots(["00:13", "22:00"], doses, new Date("2026-04-16T23:59:00Z"));
+    const after = windowSlots(["00:13", "22:00"], doses, new Date("2026-04-17T00:01:00Z"));
+    expect(slotAt(before, "2026-04-16T22:00:00.000Z").status).toBe("overdue");
+    expect(slotAt(after, "2026-04-16T22:00:00.000Z")).toMatchObject({
+      status: "overdue",
+      isEarlier: true,
+    });
+    expect(slotAt(after, "2026-04-17T00:13:00.000Z")).toMatchObject({
+      status: "taken",
+      matchedDoseId: "dose-1",
+    });
+    // Tomorrow's first hour is matched at 23:59 but never returned.
+    expect(before.some((s) => s.expectedTime === "2026-04-17T00:13:00.000Z")).toBe(false);
+  });
+
+  it("a slot at today's midnight keeps its late resolution when the bound clamps at noon", () => {
+    // Pass 2's bound moves forward all morning and stops at todayStart at
+    // noon. A 00:00 slot sits exactly on that bound and must stay reachable.
+    const doses = [makeDose({ takenAt: new Date("2026-04-16T03:00:00Z") })];
+    for (const now of ["2026-04-16T11:59:00Z", "2026-04-16T12:01:00Z"]) {
+      expect(
+        slotAt(windowSlots(["00:00"], doses, new Date(now)), "2026-04-16T00:00:00.000Z"),
+        now,
+      ).toMatchObject({ status: "taken", matchedDoseId: "dose-1" });
+    }
+  });
+});
+
+describe("pinned divergence: the dashboard credits slots Analytics does not", () => {
+  it("one ×3 dose at 20:30 marks 08:00, 14:00 and 20:00 all taken", () => {
+    // Deliberate. See "The dashboard and Analytics disagree about late and
+    // multi-unit doses" in CLAUDE.md. Analytics counts this as ONE dose
+    // event on 2026-04-16. The dashboard asks "has this slot been
+    // handled?" and resolves all three: 20:00 in pass 1, then 14:00 and
+    // 08:00 in pass 2. Do not change either surface to match the other
+    // without revisiting decisions D3 and D4 of
+    // docs/superpowers/specs/2026-09-24-dashboard-due-now-design.md.
+    const dose = makeDose({ takenAt: new Date("2026-04-16T20:30:00Z"), quantity: 3 });
+    expect(
+      outcome(fixedDaySlots(["08:00", "14:00", "20:00"], [dose], new Date("2026-04-16T21:00:00Z"))),
+    ).toEqual([
+      ["08:00", "taken", "dose-1"],
+      ["14:00", "taken", "dose-1"],
+      ["20:00", "taken", "dose-1"],
+    ]);
+  });
+});

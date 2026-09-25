@@ -1,5 +1,7 @@
 <script lang="ts">
-  // MyDayTimeline.svelte: today's slots grouped by time of day. `done` maps a
+  // Depicts the dashboard's former "My Day" timeline (today's slots grouped by
+  // time of day). The dashboard is now grouped by action (Due, Done today,
+  // Later today) and this scene has not been redrawn to match. `done` maps a
   // slot key (medication id + time) to 0..1 as it animates from its current
   // status to taken, which also collapses its "Log" button.
   import { getMedicationBackground } from "$lib/utils/medication-style";

@@ -293,7 +293,7 @@ const MS_PER_DAY = 86_400_000;
  * This is exactly why `projectFixedTimes` (utils/schedule.ts) and `computeOverdueSlot`
  * take their day-of-week from the requested day key and never from the
  * instant this returns: a Saturday-only medication whose slot rolls into
- * Sunday would otherwise vanish from both the timeline and the sweep.
+ * Sunday would otherwise vanish from both the dashboard and the sweep.
  *
  * @param dayKey    local calendar date as `YYYY-MM-DD`
  * @param timeOfDay local wall clock as `HH:mm` or `HH:mm:ss`
@@ -712,52 +712,6 @@ export function formatDueIn(ms: number): string {
 }
 
 /**
- * Compute the timing status for a scheduled medication.
- * @param intervalHours - the schedule interval in hours
- * @param lastEventAt   - when the medication was last *handled* — taken
- *                        OR skipped. Both advance the clock so the user
- *                        can dismiss an overdue slot by skipping it.
- *                        `null` if the schedule has never been touched.
- * @param now           - current timestamp (for testability)
- * @returns status and minutesUntilDue (negative if overdue)
- */
-export function computeTimingStatus(
-  intervalHours: number,
-  lastEventAt: Date | null,
-  now: Date = new Date(),
-): {
-  status: "ok" | "due_soon" | "due_now" | "overdue";
-  minutesUntilDue: number;
-} {
-  if (!lastEventAt) {
-    // Never handled — treat as overdue
-    return { status: "overdue", minutesUntilDue: -1 };
-  }
-
-  const intervalMs = intervalHours * 60 * 60 * 1000;
-  const nextDueAt = lastEventAt.getTime() + intervalMs;
-  const msUntilDue = nextDueAt - now.getTime();
-  return {
-    status: classifyDueStatus(msUntilDue),
-    minutesUntilDue: Math.round(msUntilDue / 60_000),
-  };
-}
-
-/**
- * Shared due-ness thresholds: overdue if more than a minute past due,
- * due_now within ±1 minute, due_soon within the next hour. Used by
- * both the interval-based computeTimingStatus above and the slot-based
- * timing in $lib/utils/schedule.ts so the QuickLogBar badges mean the
- * same thing for every schedule kind.
- */
-export function classifyDueStatus(msUntilDue: number): "ok" | "due_soon" | "due_now" | "overdue" {
-  if (msUntilDue <= -60_000) return "overdue";
-  if (msUntilDue <= 60_000) return "due_now";
-  if (msUntilDue <= 60 * 60_000) return "due_soon";
-  return "ok";
-}
-
-/**
  * The instant at which `date`'s civil day begins in `timezone`.
  *
  * Two steps, each owned elsewhere: ask `isoDayKey` which civil day the
@@ -771,9 +725,9 @@ export function classifyDueStatus(msUntilDue: number): "ok" | "due_soon" | "due_
  * so the time-of-day read back was 00:00, the correction subtracted nothing,
  * and the function returned *tomorrow's* midnight. Every day of the year,
  * for all 18 zones at or east of UTC+12 (Auckland, Fiji, Kiritimati,
- * Chatham, Tongatapu, Kamchatka…). Since `getTodaysDoses` filters on
- * `takenAt >= dayStart`, a New Zealand user's dashboard listed no doses at
- * all, permanently, and My Day projected tomorrow's slots. Its one test used
+ * Chatham, Tongatapu, Kamchatka…). Since the dashboard's dose query filtered
+ * on `takenAt >= dayStart`, a New Zealand user's dashboard listed no doses at
+ * all, permanently, and projected tomorrow's slots. Its one test used
  * "UTC" — the single zone that can expose neither failure.
  *
  * Local midnight does not always exist (America/Santiago, America/Havana and

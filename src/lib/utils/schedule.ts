@@ -1,7 +1,6 @@
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import {
-  classifyDueStatus,
   isoDayKey,
   wallClockToInstant,
   dayOfWeekForDayKey,
@@ -35,15 +34,6 @@ export interface ScheduleSlot {
   missedByDoseId: string | null;
   /** `expectedTime < todayStart`, by instant: an "Earlier" row on the dashboard. */
   isEarlier: boolean;
-}
-
-export type TimeOfDay = "morning" | "afternoon" | "evening" | "night";
-
-export interface TimeOfDayGroup {
-  key: TimeOfDay;
-  label: string;
-  icon: string;
-  slots: ScheduleSlot[];
 }
 
 /**
@@ -134,25 +124,6 @@ export function checkSlotActionTime(at: Date, now: Date, tz: string): SlotAction
   if (at.getTime() > now.getTime()) return "future";
   if (at.getTime() < dashboardWindow(now, tz).visibleStart.getTime()) return "stale";
   return null;
-}
-
-/**
- * Classify an hour (0-23 in user's local timezone) into a time-of-day bucket.
- */
-export function classifyHour(hour: number): TimeOfDay {
-  if (hour >= 5 && hour < 12) return "morning";
-  if (hour >= 12 && hour < 17) return "afternoon";
-  if (hour >= 17 && hour < 21) return "evening";
-  return "night";
-}
-
-function getLocalHour(date: Date, timezone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour: "numeric",
-    hour12: false,
-  }).formatToParts(date);
-  return Number(parts.find((p) => p.type === "hour")?.value ?? 0);
 }
 
 /**
@@ -643,69 +614,6 @@ export function computeScheduleSlots(
   }
 
   return slots;
-}
-
-/**
- * Group schedule slots into time-of-day sections.
- * Only returns groups that have at least one slot.
- */
-export function groupSlotsByTimeOfDay(slots: ScheduleSlot[], timezone: string): TimeOfDayGroup[] {
-  const groups: Record<TimeOfDay, ScheduleSlot[]> = {
-    morning: [],
-    afternoon: [],
-    evening: [],
-    night: [],
-  };
-
-  for (const slot of slots) {
-    const hour = getLocalHour(new Date(slot.expectedTime), timezone);
-    const bucket = classifyHour(hour);
-    groups[bucket].push(slot);
-  }
-
-  for (const key of Object.keys(groups) as TimeOfDay[]) {
-    groups[key].sort(
-      (a, b) => new Date(a.expectedTime).getTime() - new Date(b.expectedTime).getTime(),
-    );
-  }
-
-  const config: { key: TimeOfDay; label: string; icon: string }[] = [
-    { key: "morning", label: "Morning", icon: "\u2600\uFE0F" },
-    { key: "afternoon", label: "Afternoon", icon: "\uD83C\uDF24\uFE0F" },
-    { key: "evening", label: "Evening", icon: "\uD83C\uDF05" },
-    { key: "night", label: "Night", icon: "\uD83C\uDF19" },
-  ];
-
-  return config
-    .filter((c) => groups[c.key].length > 0)
-    .map((c) => ({ ...c, slots: groups[c.key] }));
-}
-
-/**
- * Derive a QuickLogBar-style timing status from a medication's My Day
- * slots: the earliest unresolved (overdue/upcoming) slot is the next
- * due dose. Returns null when nothing is pending today — used for
- * fixed-time medications, whose deprecated legacy interval columns are
- * null and who therefore never matched the interval-based path.
- */
-export function timingStatusFromSlots(
-  slots: ScheduleSlot[],
-  now: Date,
-): { status: "ok" | "due_soon" | "due_now" | "overdue"; minutesUntilDue: number } | null {
-  let pending: ScheduleSlot | undefined;
-  for (const s of slots) {
-    if (s.status !== "overdue" && s.status !== "upcoming") continue;
-    if (!pending || new Date(s.expectedTime).getTime() < new Date(pending.expectedTime).getTime()) {
-      pending = s;
-    }
-  }
-  if (!pending) return null;
-
-  const msUntilDue = new Date(pending.expectedTime).getTime() - now.getTime();
-  return {
-    status: classifyDueStatus(msUntilDue),
-    minutesUntilDue: Math.round(msUntilDue / 60_000),
-  };
 }
 
 // ── Dashboard buttons ─────────────────────────────────────────────────────

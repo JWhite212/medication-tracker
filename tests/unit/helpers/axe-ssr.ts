@@ -10,8 +10,7 @@ export function ssrDocument(bodyHtml: string): Document {
 /**
  * Run the named axe rules against a JSDOM document. axe reads `window` and
  * `document` off the global at run time and SSR tests run in the `node`
- * environment, so they are put there for the run and taken back off
- * (the pattern tests/unit/my-day-timeline-ssr.test.ts uses).
+ * environment, so they are put there for the run and taken back off.
  */
 export async function runAxe(doc: Document, rules: string[]): Promise<AxeResults> {
   const axe = (await import("axe-core")).default;

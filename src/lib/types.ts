@@ -49,12 +49,6 @@ export type MedicationWithStats = Medication & {
   refillSeverity?: "critical" | "warning" | "watch" | "ok";
 };
 
-export type MedicationTimingStatus = {
-  medicationId: string;
-  status: "ok" | "due_soon" | "due_now" | "overdue";
-  minutesUntilDue: number; // negative if overdue
-};
-
 // Analytics insight returned from buildInsights (server-side) and
 // rendered by InsightsCard (client-side). Lives here so client
 // components don't reach into $lib/server/* — type-only imports are

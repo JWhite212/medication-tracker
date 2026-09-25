@@ -37,7 +37,6 @@ vi.mock("$lib/server/medications", () => ({ getActiveMedications: async () => []
 vi.mock("$lib/server/inventory", () => ({ getRefillForecast: async () => [] }));
 vi.mock("$lib/server/schedules", () => ({ getSchedulesForUser: async () => new Map() }));
 vi.mock("$lib/server/doses", () => ({
-  getTodaysDoses: async () => [],
   getDosesInRange: async () => [],
   getLastDosePerMedication: async () => [],
   logDose: (...args: unknown[]) => logDose(...args),

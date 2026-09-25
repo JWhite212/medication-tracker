@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and, gte, lt, desc, sql, isNotNull, max } from "drizzle-orm";
+import { eq, and, gte, lt, asc, desc, sql, isNotNull, max } from "drizzle-orm";
 import { db, dbTx } from "$lib/server/db";
 import { doseLogs, medications, syncTombstones } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
@@ -11,6 +11,34 @@ export class MedicationNotFoundError extends Error {
   constructor(medicationId: string) {
     super(`Medication ${medicationId} not found for user`);
     this.name = "MedicationNotFoundError";
+  }
+}
+
+/**
+ * A skip was asked for at an instant that already holds a TAKEN dose.
+ *
+ * Only the guarded skip throws it — the dashboard's Skip, which posts the
+ * slot's own instant. Taken beats skip in the matcher, so a skip written
+ * there would record a decision the page could never show. The honest
+ * answer is "refresh, it's already logged".
+ */
+export class SlotAlreadyTakenError extends Error {
+  constructor(message = "A taken dose already exists at this instant") {
+    super(message);
+    this.name = "SlotAlreadyTakenError";
+  }
+}
+
+/**
+ * Log now was posted for a row that is no longer where a dose logged now
+ * would land. Causes: render-to-tap drift, a page left open across
+ * midnight, the 12h expiry, a double tap, a second device.
+ * `logDoseForSlot` throws it and writes nothing.
+ */
+export class SlotTargetChangedError extends Error {
+  constructor(message = "The Log-now target has changed") {
+    super(message);
+    this.name = "SlotTargetChangedError";
   }
 }
 
@@ -93,6 +121,87 @@ export async function getDosesInRange(
   return rows;
 }
 
+type DbTransaction = Parameters<Parameters<typeof dbTx.transaction>[0]>[0];
+
+/**
+ * The one taken-dose write: the row, the stock decrement, the inventory
+ * event and the audit entry, all inside the caller's transaction.
+ *
+ * `logDose` and `logDoseForSlot` both end here, so a Log-now dose and a chip
+ * dose cannot drift apart on `inventoryApplied`, the column `deleteDose`
+ * restores from. `previousCount` is the caller's own read of
+ * `medications.inventoryCount`, taken inside the same transaction before
+ * this insert. The caller decides whether that read locks.
+ */
+async function insertTakenDose(
+  tx: DbTransaction,
+  input: {
+    userId: string;
+    medicationId: string;
+    quantity: number;
+    takenAt: Date;
+    loggedAt: Date;
+    notes: string | null;
+    sideEffects: SideEffect[] | null;
+    previousCount: number | null;
+  },
+) {
+  const { userId, medicationId, quantity, previousCount } = input;
+  const id = createId();
+
+  // What will really leave the bottle. `GREATEST(0, …)` cannot take more
+  // than there is, so a dose of 3 logged against a stock of 1 removes 1 —
+  // and a delete that gave back 3 would invent the other two.
+  const inventoryApplied =
+    previousCount === null ? 0 : previousCount - Math.max(0, previousCount - quantity);
+
+  const [inserted] = await tx
+    .insert(doseLogs)
+    .values({
+      id,
+      userId,
+      medicationId,
+      quantity,
+      inventoryApplied,
+      takenAt: input.takenAt,
+      loggedAt: input.loggedAt,
+      notes: input.notes,
+      sideEffects: input.sideEffects,
+      status: "taken",
+    })
+    .returning();
+
+  await tx
+    .update(medications)
+    .set({
+      inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${quantity})`,
+    })
+    .where(
+      and(
+        eq(medications.id, medicationId),
+        eq(medications.userId, userId),
+        isNotNull(medications.inventoryCount),
+      ),
+    );
+
+  // Only record an event when inventory was actually tracked.
+  // The actual delta accounts for the GREATEST(0, ...) clamp.
+  if (previousCount !== null) {
+    await recordInventoryEvent(tx, {
+      userId,
+      medicationId,
+      eventType: "dose_taken",
+      quantityChange: -inventoryApplied,
+      previousCount,
+      newCount: previousCount - inventoryApplied,
+    });
+  }
+
+  await logAudit(userId, "dose_log", id, "create", undefined, tx);
+
+  return inserted;
+}
+
 export async function logDose(
   userId: string,
   medicationId: string,
@@ -100,10 +209,12 @@ export async function logDose(
   takenAt?: Date,
   notes?: string,
   sideEffects?: SideEffect[],
+  opts: { exactInstantGuard?: boolean } = {},
 ) {
   await assertMedicationBelongsToUser(userId, medicationId);
-  const id = createId();
   const now = new Date();
+  const at = takenAt ?? now;
+  const guard = opts.exactInstantGuard === true;
 
   // Insert + inventory decrement + audit log all happen inside a single
   // transaction so logDose is all-or-nothing: on any throw, nothing —
@@ -114,94 +225,121 @@ export async function logDose(
     // Snapshot the count BEFORE anything else. It is needed in two places:
     // the inventory event records both ends of the change, and the dose row
     // stores how much it ACTUALLY removed — which is not `quantity` whenever
-    // the clamp below engages. Reading it before the insert rather than
-    // after is what lets that value be written with the row instead of in a
-    // second update.
-    const [med] = await tx
+    // the clamp engages.
+    const medRead = tx
       .select({ inventoryCount: medications.inventoryCount })
       .from(medications)
       .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
       .limit(1);
+    // Under the guard the read LOCKS. Two "Took it at 09:00" posts for one
+    // medication serialise here, so the second one's lookup below sees the
+    // first one's row instead of both inserting. Unguarded callers (the
+    // chips, `/api/v1`) keep the plain read. So does
+    // `tests/unit/doses-inventory.test.ts`, whose fake-db has no select
+    // `.for()` and must not grow one (CLAUDE.md, test-seam rule).
+    const [med] = guard ? await medRead.for("update") : await medRead;
     const previousCount = med?.inventoryCount ?? null;
 
-    // What will really leave the bottle. `GREATEST(0, …)` cannot take more
-    // than there is, so a dose of 3 logged against a stock of 1 removes 1 —
-    // and a delete that gave back 3 would invent the other two.
-    const inventoryApplied =
-      previousCount === null ? 0 : previousCount - Math.max(0, previousCount - quantity);
-
-    const [inserted] = await tx
-      .insert(doseLogs)
-      .values({
-        id,
-        userId,
-        medicationId,
-        quantity,
-        inventoryApplied,
-        takenAt: takenAt ?? now,
-        loggedAt: now,
-        notes: notes ?? null,
-        sideEffects: sideEffects ?? null,
-        status: "taken",
-      })
-      .returning();
-
-    await tx
-      .update(medications)
-      .set({
-        inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${quantity})`,
-      })
-      .where(
-        and(
-          eq(medications.id, medicationId),
-          eq(medications.userId, userId),
-          isNotNull(medications.inventoryCount),
-        ),
-      );
-
-    // Only record an event when inventory was actually tracked.
-    // The actual delta accounts for the GREATEST(0, ...) clamp.
-    if (previousCount !== null) {
-      await recordInventoryEvent(tx, {
-        userId,
-        medicationId,
-        eventType: "dose_taken",
-        quantityChange: -inventoryApplied,
-        previousCount,
-        newCount: previousCount - inventoryApplied,
-      });
+    if (guard) {
+      // "Took it at" names the slot's own instant to the millisecond, and a
+      // taken row already there IS this dose. Return it, with no second row
+      // and no second decrement. A SKIP there does not count: taken beats
+      // skip, and pass 0 then gives the slot to the taken dose.
+      const [existing] = await tx
+        .select()
+        .from(doseLogs)
+        .where(
+          and(
+            eq(doseLogs.userId, userId),
+            eq(doseLogs.medicationId, medicationId),
+            eq(doseLogs.takenAt, at),
+            eq(doseLogs.status, "taken"),
+          ),
+        )
+        .orderBy(asc(doseLogs.id))
+        .limit(1);
+      if (existing) return existing;
     }
 
-    await logAudit(userId, "dose_log", id, "create", undefined, tx);
-
-    return inserted;
+    return insertTakenDose(tx, {
+      userId,
+      medicationId,
+      quantity,
+      takenAt: at,
+      loggedAt: now,
+      notes: notes ?? null,
+      sideEffects: sideEffects ?? null,
+      previousCount,
+    });
   });
 
   return dose;
 }
 
-export async function logSkippedDose(userId: string, medicationId: string) {
+export async function logSkippedDose(
+  userId: string,
+  medicationId: string,
+  takenAt?: Date,
+  opts: { exactInstantGuard?: boolean } = {},
+): Promise<string> {
   await assertMedicationBelongsToUser(userId, medicationId);
-  const id = createId();
   const now = new Date();
+  const at = takenAt ?? now;
+
   // Insert + audit log in a single transaction so logSkippedDose is
   // all-or-nothing (see logDose above for why this matters for
   // runCommands' reserve-first idempotency).
-  await dbTx.transaction(async (tx) => {
+  return dbTx.transaction(async (tx) => {
+    if (opts.exactInstantGuard) {
+      // The dashboard's Skip posts the slot's own instant. Lock the
+      // medication so two Skip taps, or a Skip racing "Took it at" on another
+      // device, serialise. Then look at what that instant already holds.
+      const [locked] = await tx
+        .select({ id: medications.id })
+        .from(medications)
+        .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
+        .limit(1)
+        .for("update");
+      if (!locked) throw new MedicationNotFoundError(medicationId);
+
+      const atInstant = await tx
+        .select({ id: doseLogs.id, status: doseLogs.status })
+        .from(doseLogs)
+        .where(
+          and(
+            eq(doseLogs.userId, userId),
+            eq(doseLogs.medicationId, medicationId),
+            eq(doseLogs.takenAt, at),
+          ),
+        )
+        .orderBy(asc(doseLogs.id));
+
+      // Taken beats skip: a skip written here could never show.
+      if (atInstant.some((d) => d.status === "taken")) {
+        throw new SlotAlreadyTakenError(
+          `Medication ${medicationId} already has a taken dose at ${at.toISOString()}`,
+        );
+      }
+      // A second Skip for the same slot is the first one.
+      const existingSkip = atInstant.find((d) => d.status === "skipped");
+      if (existingSkip) return existingSkip.id;
+    }
+
+    const id = createId();
     await tx.insert(doseLogs).values({
       id,
       userId,
       medicationId,
       quantity: 1,
-      takenAt: now,
+      takenAt: at,
       loggedAt: now,
       notes: null,
       sideEffects: null,
       status: "skipped",
     });
     await logAudit(userId, "dose_log", id, "create", undefined, tx);
+    return id;
   });
-  return id;
 }
 
 export async function deleteDose(userId: string, doseId: string) {

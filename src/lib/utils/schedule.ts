@@ -13,6 +13,9 @@ import { parseIntervalHours } from "$lib/utils/schedule-rate";
 
 export type ScheduleSlotStatus = "taken" | "skipped" | "upcoming" | "overdue";
 
+/** The two schedule kinds that project slots. `prn` rows never do. */
+export type ScheduleKind = "interval" | "fixed_time";
+
 export interface ScheduleSlot {
   medicationId: string;
   medicationName: string;
@@ -226,6 +229,93 @@ function expectedTimesForFixedTime(
   }
 
   return out;
+}
+
+/**
+ * The projection range, cut into three segments at instants — never at day
+ * keys, because a resolved instant does not carry a civil day (see
+ * `wallClockToInstant`):
+ *
+ *   yesterday          [projectStart, todayStart)
+ *   today              [todayStart,   end)
+ *   tomorrow's 1st hour [end,         projectEnd)
+ *
+ * Tomorrow's first hour is projected and matched but never returned, so
+ * today's view already makes the choice tomorrow's view will make.
+ */
+export interface Segments {
+  projectStart: Date;
+  todayStart: Date;
+  end: Date;
+  projectEnd: Date;
+}
+
+/** The dashboard's three segments, straight off its window. */
+export function segmentsFor(window: DashboardWindow): Segments {
+  return {
+    projectStart: window.projectStart,
+    todayStart: window.todayStart,
+    end: window.end,
+    projectEnd: window.projectEnd,
+  };
+}
+
+/**
+ * One civil day and nothing either side: yesterday and tomorrow's first hour
+ * collapse to empty ranges. What `computeScheduleSlots` uses without a window.
+ */
+export function singleDaySegments(dayStart: Date, dayEnd: Date): Segments {
+  return { projectStart: dayStart, todayStart: dayStart, end: dayEnd, projectEnd: dayEnd };
+}
+
+export interface ProjectedSlot {
+  expectedTime: Date;
+  kind: ScheduleKind;
+  segment: "yesterday" | "today" | "tomorrow";
+}
+
+/**
+ * Every fixed-time instant in `[projectStart, projectEnd)`, deduplicated and
+ * ascending, for every `fixed_time` row in `schedules`.
+ *
+ * THE only projection step that reads a timezone. Each day key the range
+ * touches is resolved with `wallClockToInstant`; the instant is then kept or
+ * dropped by comparing it with the range, never by re-deriving its day.
+ * Day-of-week comes from the requested date KEY, never from the resolved
+ * instant: on a transition that swallows the scheduled minute the instant can
+ * legitimately land on the next civil day (America/Godthab springs forward at
+ * 23:00 local), and reading the weekday off it would turn a Saturday-only
+ * medication into a Sunday one and drop the slot entirely.
+ *
+ * Callers compute this once per medication per request and hand the result
+ * to `projectMedicationSlots`, which is pure arithmetic and can therefore be
+ * re-run cheaply for every simulated write.
+ */
+export function projectFixedTimes(
+  schedules: MedicationSchedule[],
+  segments: Segments,
+  tz: string,
+): Date[] {
+  const startMs = segments.projectStart.getTime();
+  const endMs = segments.projectEnd.getTime();
+  const fixedRows = schedules.filter((s) => s.scheduleKind === "fixed_time");
+  if (fixedRows.length === 0 || endMs <= startMs) return [];
+
+  const dayKeys = getLocalDatesInRange(segments.projectStart, segments.projectEnd, tz);
+  const instants = new Set<number>();
+  for (const schedule of fixedRows) {
+    const timeOfDay = schedule.timeOfDay;
+    if (!timeOfDay) continue;
+    const allowed = schedule.daysOfWeek;
+    for (const dayKey of dayKeys) {
+      if (allowed && allowed.length > 0 && !allowed.includes(dayOfWeekForDayKey(dayKey))) {
+        continue;
+      }
+      const ms = wallClockToInstant(dayKey, timeOfDay, tz).getTime();
+      if (ms >= startMs && ms < endMs) instants.add(ms);
+    }
+  }
+  return [...instants].sort((a, b) => a - b).map((ms) => new Date(ms));
 }
 
 /**

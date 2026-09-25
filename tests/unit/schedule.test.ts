@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   classifyHour,
   computeScheduleSlots,
   dashboardWindow,
   groupSlotsByTimeOfDay,
   projectFixedTimes,
+  projectMedicationSlots,
   segmentsFor,
   singleDaySegments,
   timingStatusFromSlots,
@@ -826,5 +827,217 @@ describe("projectFixedTimes", () => {
     const instant = new Date("2026-04-16T00:00:00Z");
     const schedules = [makeFixedTimeSchedule("med-1", "00:00")];
     expect(projectFixedTimes(schedules, singleDaySegments(instant, instant), "UTC")).toEqual([]);
+  });
+});
+
+describe("projectMedicationSlots", () => {
+  function project(
+    schedules: MedicationSchedule[],
+    opts: { med?: Medication; lastTakenAt?: Date | null } = {},
+  ): string[] {
+    return projectMedicationSlots({
+      med: opts.med ?? makeMed(),
+      schedules,
+      fixedInstants: projectFixedTimes(schedules, UTC_SEGMENTS, "UTC"),
+      lastTakenAt: opts.lastTakenAt ?? null,
+      segments: UTC_SEGMENTS,
+    }).map((s) => `${s.expectedTime.toISOString()} ${s.kind} ${s.segment}`);
+  }
+
+  function editedAt(schedule: MedicationSchedule, effectiveFrom: string): MedicationSchedule {
+    return { ...schedule, effectiveFrom: new Date(effectiveFrom) };
+  }
+
+  it("assigns each slot to the segment containing its instant", () => {
+    // 00:00 sits exactly on each boundary: projectStart is yesterday,
+    // todayStart is today, end is tomorrow's first hour.
+    expect(project([makeFixedTimeSchedule("med-1", "00:00")])).toEqual([
+      "2026-04-15T00:00:00.000Z fixed_time yesterday",
+      "2026-04-16T00:00:00.000Z fixed_time today",
+      "2026-04-17T00:00:00.000Z fixed_time tomorrow",
+    ]);
+  });
+
+  it("anchors interval rows on lastTakenAt across the whole range", () => {
+    const lastTakenAt = new Date("2026-04-14T22:00:00Z");
+    expect(project([makeIntervalSchedule("med-1", "8")], { lastTakenAt })).toEqual([
+      "2026-04-15T06:00:00.000Z interval yesterday",
+      "2026-04-15T14:00:00.000Z interval yesterday",
+      "2026-04-15T22:00:00.000Z interval yesterday",
+      "2026-04-16T06:00:00.000Z interval today",
+      "2026-04-16T14:00:00.000Z interval today",
+      "2026-04-16T22:00:00.000Z interval today",
+    ]);
+  });
+
+  it("re-anchors on a taken dose inside the range: earlier interval points stop existing", () => {
+    const lastTakenAt = new Date("2026-04-16T09:30:00Z");
+    expect(project([makeIntervalSchedule("med-1", "8")], { lastTakenAt })).toEqual([
+      "2026-04-16T09:30:00.000Z interval today",
+      "2026-04-16T17:30:00.000Z interval today",
+    ]);
+  });
+
+  it("gives a never-taken interval medication one grid per segment, each from its own start", () => {
+    // 7h does not divide 24h, so one grid run from projectStart would put
+    // today's points at 04:00, 11:00, 18:00. Per segment, today's grid is
+    // the 00:00 / 07:00 / 14:00 / 21:00 a single-day projection has always
+    // drawn, and nothing slides as the day goes on.
+    expect(project([makeIntervalSchedule("med-1", "7")])).toEqual([
+      "2026-04-15T00:00:00.000Z interval yesterday",
+      "2026-04-15T07:00:00.000Z interval yesterday",
+      "2026-04-15T14:00:00.000Z interval yesterday",
+      "2026-04-15T21:00:00.000Z interval yesterday",
+      "2026-04-16T00:00:00.000Z interval today",
+      "2026-04-16T07:00:00.000Z interval today",
+      "2026-04-16T14:00:00.000Z interval today",
+      "2026-04-16T21:00:00.000Z interval today",
+      "2026-04-17T00:00:00.000Z interval tomorrow",
+    ]);
+  });
+
+  it("drops an interval point within 1h of a fixed slot in its own segment", () => {
+    // A 24h interval row anchored on yesterday's 08:55 log drifts onto 08:55
+    // beside the declared 09:00: the same intended dose, not a second one.
+    const schedules = [
+      makeIntervalSchedule("med-1", "24"),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+    ];
+    expect(project(schedules, { lastTakenAt: new Date("2026-04-15T08:55:00Z") })).toEqual([
+      "2026-04-15T09:00:00.000Z fixed_time yesterday",
+      "2026-04-16T09:00:00.000Z fixed_time today",
+    ]);
+  });
+
+  it("never suppresses an interval point because of a fixed slot in another segment", () => {
+    // Today's 00:10 is 40 minutes after YESTERDAY's 23:30 — a different dose
+    // on a different day. Cross-day suppression would delete it, and
+    // tomorrow's 00:10 beside today's 23:30 with it.
+    const schedules = [
+      makeIntervalSchedule("med-1", "24"),
+      makeFixedTimeSchedule("med-1", "23:30", null, 1),
+    ];
+    expect(project(schedules, { lastTakenAt: new Date("2026-04-15T00:10:00Z") })).toEqual([
+      "2026-04-15T00:10:00.000Z interval yesterday",
+      "2026-04-15T23:30:00.000Z fixed_time yesterday",
+      "2026-04-16T00:10:00.000Z interval today",
+      "2026-04-16T23:30:00.000Z fixed_time today",
+      "2026-04-17T00:10:00.000Z interval tomorrow",
+    ]);
+  });
+
+  it("keeps the fixed_time kind on an exact interval/fixed collision", () => {
+    const schedules = [
+      makeIntervalSchedule("med-1", "24"),
+      makeFixedTimeSchedule("med-1", "09:00", null, 1),
+    ];
+    expect(project(schedules, { lastTakenAt: new Date("2026-04-15T09:00:00Z") })).toEqual([
+      "2026-04-15T09:00:00.000Z fixed_time yesterday",
+      "2026-04-16T09:00:00.000Z fixed_time today",
+    ]);
+  });
+
+  it("drops every slot before startedAt: created at 14:00, no 08:00 and no yesterday", () => {
+    const med = makeMed({ startedAt: new Date("2026-04-16T14:00:00Z") });
+    const schedules = [
+      makeFixedTimeSchedule("med-1", "08:00", null, 0),
+      makeFixedTimeSchedule("med-1", "20:00", null, 1),
+    ];
+    expect(project(schedules, { med })).toEqual(["2026-04-16T20:00:00.000Z fixed_time today"]);
+  });
+
+  it("clips a never-taken interval grid at startedAt too", () => {
+    const med = makeMed({ startedAt: new Date("2026-04-16T14:00:00Z") });
+    expect(project([makeIntervalSchedule("med-1", "8")], { med })).toEqual([
+      "2026-04-16T16:00:00.000Z interval today",
+      "2026-04-17T00:00:00.000Z interval tomorrow",
+    ]);
+  });
+
+  it("drops every slot after endedAt", () => {
+    const med = makeMed({ endedAt: new Date("2026-04-16T12:00:00Z") });
+    const schedules = [
+      makeFixedTimeSchedule("med-1", "08:00", null, 0),
+      makeFixedTimeSchedule("med-1", "20:00", null, 1),
+    ];
+    expect(project(schedules, { med })).toEqual([
+      "2026-04-15T08:00:00.000Z fixed_time yesterday",
+      "2026-04-15T20:00:00.000Z fixed_time yesterday",
+      "2026-04-16T08:00:00.000Z fixed_time today",
+    ]);
+  });
+
+  it("keeps a slot exactly at startedAt and one exactly at endedAt", () => {
+    const med = makeMed({
+      startedAt: new Date("2026-04-16T08:00:00Z"),
+      endedAt: new Date("2026-04-16T20:00:00Z"),
+    });
+    const schedules = [
+      makeFixedTimeSchedule("med-1", "08:00", null, 0),
+      makeFixedTimeSchedule("med-1", "20:00", null, 1),
+    ];
+    expect(project(schedules, { med })).toEqual([
+      "2026-04-16T08:00:00.000Z fixed_time today",
+      "2026-04-16T20:00:00.000Z fixed_time today",
+    ]);
+  });
+
+  it("drops a yesterday slot older than the schedule's last save", () => {
+    // The evening dose moved from 20:00 to 22:00 at 07:00 this morning. The
+    // rows now say 22:00, but yesterday was a 20:00 day: "Due yesterday
+    // 22:00" beside yesterday's 20:05 dose would invite a double dose.
+    const schedules = [editedAt(makeFixedTimeSchedule("med-1", "22:00"), "2026-04-16T07:00:00Z")];
+    expect(project(schedules)).toEqual(["2026-04-16T22:00:00.000Z fixed_time today"]);
+  });
+
+  it("leaves today's slots alone, even ones before the save", () => {
+    const schedules = [
+      editedAt(makeFixedTimeSchedule("med-1", "06:00", null, 0), "2026-04-16T07:00:00Z"),
+      editedAt(makeFixedTimeSchedule("med-1", "22:00", null, 1), "2026-04-16T07:00:00Z"),
+    ];
+    expect(project(schedules)).toEqual([
+      "2026-04-16T06:00:00.000Z fixed_time today",
+      "2026-04-16T22:00:00.000Z fixed_time today",
+    ]);
+  });
+
+  it("measures the save from the EARLIEST effectiveFrom across the medication's rows", () => {
+    const schedules = [
+      editedAt(makeFixedTimeSchedule("med-1", "06:00", null, 0), "2026-04-15T12:00:00Z"),
+      editedAt(makeFixedTimeSchedule("med-1", "22:00", null, 1), "2026-04-16T07:00:00Z"),
+    ];
+    expect(project(schedules)).toEqual([
+      "2026-04-15T22:00:00.000Z fixed_time yesterday",
+      "2026-04-16T06:00:00.000Z fixed_time today",
+      "2026-04-16T22:00:00.000Z fixed_time today",
+    ]);
+  });
+
+  it("is pure arithmetic: it never reads a timezone", () => {
+    // slotActions re-runs this once per simulated write. The one
+    // timezone-aware step, projectFixedTimes, is computed once outside it —
+    // re-projecting inside would cost ~0.3s per dashboard load.
+    const timezone = "Europe/London";
+    const segments = segmentsFor(dashboardWindow(new Date("2026-10-25T12:00:00Z"), timezone));
+    const schedules = [
+      makeIntervalSchedule("med-1", "8"),
+      makeFixedTimeSchedule("med-1", "23:30", null, 1),
+    ];
+    const fixedInstants = projectFixedTimes(schedules, segments, timezone);
+
+    const formatToParts = vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts");
+    try {
+      const slots = projectMedicationSlots({
+        med: makeMed(),
+        schedules,
+        fixedInstants,
+        lastTakenAt: new Date("2026-10-24T21:00:00Z"),
+        segments,
+      });
+      expect(slots.length).toBeGreaterThan(0);
+      expect(formatToParts).not.toHaveBeenCalled();
+    } finally {
+      formatToParts.mockRestore();
+    }
   });
 });

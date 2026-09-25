@@ -318,6 +318,100 @@ export function projectFixedTimes(
   return [...instants].sort((a, b) => a - b).map((ms) => new Date(ms));
 }
 
+function segmentOf(ms: number, segments: Segments): ProjectedSlot["segment"] {
+  if (ms < segments.todayStart.getTime()) return "yesterday";
+  if (ms < segments.end.getTime()) return "today";
+  return "tomorrow";
+}
+
+/**
+ * One medication's slots over the three segments, deduplicated and ascending.
+ *
+ * Pure arithmetic: no `Intl`, no `isoDayKey`, no `wallClockToInstant`. The
+ * only timezone-dependent input is `fixedInstants`, from `projectFixedTimes`.
+ *
+ * - **Interval rows** anchor on `lastTakenAt` and step by whole intervals
+ *   across the range. With no taken dose ever, each segment gets its own grid
+ *   anchored at that segment's start, so today's grid is exactly the one a
+ *   single-day projection has always drawn and nothing slides during the day.
+ * - **Exact collision**: an interval point on a fixed instant is that fixed
+ *   slot; the declared schedule, not the derived projection, is canonical.
+ * - **Drifted twin, per segment**: interval projections drift with the user's
+ *   behaviour (log at 08:55 → project 08:55). One within the matching
+ *   tolerance of a declared fixed slot IN THE SAME SEGMENT is the same
+ *   intended dose and is dropped. Across segments it is not: yesterday's
+ *   23:30 must not delete today's 00:10.
+ * - **Lifecycle clip**: nothing outside `[startedAt, endedAt]`. A medication
+ *   created at 14:00 has no 08:00 slot and no yesterday.
+ * - **Schedule-edit clip** (before `todayStart` only): every save rewrites a
+ *   medication's schedule rows with `effectiveFrom = now`, so the current rows
+ *   say nothing about what was scheduled before that save. A yesterday slot
+ *   earlier than the medication's earliest `effectiveFrom` is dropped rather
+ *   than shown as outstanding beside the dose that was actually due then.
+ *   Today's slots are unaffected.
+ */
+export function projectMedicationSlots(input: {
+  med: Medication;
+  schedules: MedicationSchedule[];
+  fixedInstants: Date[];
+  lastTakenAt: Date | null;
+  segments: Segments;
+}): ProjectedSlot[] {
+  const { med, schedules, fixedInstants, lastTakenAt, segments } = input;
+
+  const kindAt = new Map<number, ScheduleKind>();
+  for (const t of fixedInstants) kindAt.set(t.getTime(), "fixed_time");
+
+  const segmentRanges: Array<[Date, Date]> = [
+    [segments.projectStart, segments.todayStart],
+    [segments.todayStart, segments.end],
+    [segments.end, segments.projectEnd],
+  ];
+  for (const schedule of schedules) {
+    if (schedule.scheduleKind !== "interval") continue;
+    const intervalHours = parseIntervalHours(schedule.intervalHours);
+    if (intervalHours === null) continue;
+    const points = lastTakenAt
+      ? expectedTimesForInterval(
+          intervalHours,
+          lastTakenAt,
+          segments.projectStart,
+          segments.projectEnd,
+        )
+      : segmentRanges.flatMap(([from, to]) =>
+          expectedTimesForInterval(intervalHours, from, from, to),
+        );
+    for (const t of points) {
+      // Set only when absent: an exact collision keeps fixed_time.
+      if (!kindAt.has(t.getTime())) kindAt.set(t.getTime(), "interval");
+    }
+  }
+
+  const candidates = [...kindAt].map(([ms, kind]) => ({
+    ms,
+    kind,
+    segment: segmentOf(ms, segments),
+  }));
+
+  const startedMs = new Date(med.startedAt).getTime();
+  const endedMs = med.endedAt ? new Date(med.endedAt).getTime() : Infinity;
+  const todayStartMs = segments.todayStart.getTime();
+  const effectiveFromMs = Math.min(...schedules.map((s) => new Date(s.effectiveFrom).getTime()));
+
+  const fixed = candidates.filter((c) => c.kind === "fixed_time");
+
+  return candidates
+    .filter(
+      (c) =>
+        c.kind === "fixed_time" ||
+        !fixed.some((f) => f.segment === c.segment && Math.abs(f.ms - c.ms) <= MATCH_TOLERANCE_MS),
+    )
+    .filter((c) => !(c.ms < startedMs) && !(c.ms > endedMs))
+    .filter((c) => !(c.ms < todayStartMs && c.ms < effectiveFromMs))
+    .sort((a, b) => a.ms - b.ms)
+    .map((c) => ({ expectedTime: new Date(c.ms), kind: c.kind, segment: c.segment }));
+}
+
 /**
  * Compute expected dose schedule slots for the window.
  *

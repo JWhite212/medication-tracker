@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import { goto } from "$app/navigation";
   import { trapTab } from "$lib/utils/focus-trap";
+  import { findQuickLogForm } from "$lib/utils/quick-log";
 
   let { medications = [] }: { medications?: Array<{ id: string; name: string }> } = $props();
 
@@ -85,17 +86,13 @@
       const idx = num - 1;
       if (idx < medications.length) {
         e.preventDefault();
-        // Match on the medication id rather than the form's position in the DOM.
-        // The dashboard renders logDose forms in more than one section, so the
-        // Nth form is not reliably the Nth medication — positional coupling could
-        // log the wrong medication, which for a dosing control is the worst
-        // available failure.
-        const wanted = medications[idx].id;
-        const form = [
-          ...document.querySelectorAll<HTMLFormElement>('form[action="?/logDose"]'),
-        ].find(
-          (f) => f.querySelector<HTMLInputElement>('input[name="medicationId"]')?.value === wanted,
-        );
+        // The chip's form only, matched on the medication id rather than the
+        // form's position. Due cards render `?/logDose` forms too, and "Took
+        // it at" records a PAST instant; positional coupling could log the
+        // wrong medication, which for a dosing control is the worst available
+        // failure. requestSubmit() runs the chip's DoseActionForm enhance, so
+        // a key press goes through the same write lock as a tap.
+        const form = findQuickLogForm(document, medications[idx].id);
         if (form) form.requestSubmit();
       }
     }
@@ -108,7 +105,7 @@
   });
 
   const shortcuts = [
-    { keys: ["1-9"], description: "Quick-log medication by position" },
+    { keys: ["1-9"], description: "Log a medication now, by its position in the chip list" },
     { keys: ["n"], description: "Add new medication" },
     { keys: ["/"], description: "Focus first filter input" },
     { keys: ["?"], description: "Toggle this help overlay" },

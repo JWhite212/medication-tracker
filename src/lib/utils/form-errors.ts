@@ -60,6 +60,40 @@ export function actionErrorMessage(
   return fallback;
 }
 
+export const SESSION_EXPIRED_MESSAGE =
+  "Your session has expired, so this was not saved. Sign in again in another tab, then save.";
+
+export const NO_RESPONSE_MESSAGE =
+  "Couldn't reach the server, so this was not saved. Check your connection and try again.";
+
+/**
+ * The message for a failed save that the form answers in place, keeping the
+ * user's input on screen instead of handing the result to +error.svelte.
+ *
+ * Two error results reach such a form carrying text that is true and of no
+ * use. An expired session is the `(app)` actions' `error(401,
+ * "Unauthorized")`, which does not say what to do, and the obvious recovery
+ * (signing in on this page) would throw the edit away. A request that never
+ * got an answer is whatever `enhance` caught: the `TypeError` from `fetch`,
+ * or the `SyntaxError` from a body that was not an action result. It has no
+ * `status`, because there was no response to read one from, and its message
+ * is the browser's ("Failed to fetch", "Load failed"). Both are said here
+ * for what they mean to the user: nothing was saved, and what to do next.
+ *
+ * Everything else, a crash's reference included, is `actionErrorMessage`'s,
+ * so this refines that reader rather than becoming a second one. It is a
+ * separate function because the other callers answer with a toast after a
+ * one-click action, where there is no edit to protect and the advice to sign
+ * in elsewhere would be odd.
+ */
+export function unsavedErrorMessage(result: ActionResult, fallback?: string): string {
+  if (result.type === "error") {
+    if (result.status === 401) return SESSION_EXPIRED_MESSAGE;
+    if (result.status === undefined) return NO_RESPONSE_MESSAGE;
+  }
+  return actionErrorMessage(result, fallback);
+}
+
 /**
  * Every keyed message of a failed form action, the first one per field.
  *
@@ -99,7 +133,9 @@ export function actionFieldErrors(result: ActionResult): Record<string, string> 
  * its own error makes it `aria-invalid`: a form-level message can be a
  * refusal ("Too many attempts", an expired reset link) about a value that is
  * perfectly fine, and only a keyed error is the server saying which value
- * was wrong.
+ * was wrong. The one exception is a page with a single field (`/auth/2fa`,
+ * `/auth/reset-password`), where an unkeyed message with a 400 status can be
+ * about nothing else.
  *
  * Each id is passed guarded by the same condition that renders its element,
  * so the attribute can never name a message that is not on the page, and an

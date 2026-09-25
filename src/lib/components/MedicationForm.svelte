@@ -19,7 +19,7 @@
     type ScheduleMode,
   } from "$lib/medications/medication-form-state";
   import type { FormErrors } from "$lib/medications/medication-form-errors";
-  import { actionErrorMessage } from "$lib/utils/form-errors";
+  import { unsavedErrorMessage } from "$lib/utils/form-errors";
 
   let {
     medication = undefined,
@@ -63,6 +63,10 @@
   // hand back, so this is the only place it can be said.
   let actionError = $state("");
   let actionErrorEl = $state<HTMLElement | null>(null);
+  // The `errors` prop only changes when `update()` runs, which an error
+  // result skips, so the previous attempt's field messages would otherwise
+  // stay marked invalid beside a message saying nothing was checked at all.
+  let shownErrors = $derived<FormErrors>(actionError ? {} : errors);
 
   // Hidden-field derivations: the Zod schema validates these, so they
   // need to mirror the user's selection on every render.
@@ -131,7 +135,7 @@
         // happened here instead, with the reference `handleError` minted, and
         // leave the form intact to retry.
         loading = false;
-        actionError = actionErrorMessage(result);
+        actionError = unsavedErrorMessage(result);
         await tick();
         actionErrorEl?.focus();
         return;
@@ -160,7 +164,7 @@
 >
   <MedicationIdentityFields
     nameValue={formValues["name"] ?? medication?.name ?? ""}
-    {errors}
+    errors={shownErrors}
     {interactionWarnings}
     onNameBlur={checkInteractions}
   />
@@ -168,20 +172,20 @@
   <MedicationDosageFields
     dosageAmount={formValues["dosageAmount"] ?? medication?.dosageAmount ?? ""}
     dosageUnit={formValues["dosageUnit"] ?? medication?.dosageUnit ?? ""}
-    {errors}
+    errors={shownErrors}
   />
 
   <MedicationCategoryFields
     formValue={formValues["form"] ?? medication?.form ?? ""}
     categoryValue={formValues["category"] ?? medication?.category ?? ""}
-    {errors}
+    errors={shownErrors}
   />
 
   <MedicationStylePicker
     bind:selectedColour
     bind:selectedColourSecondary
     bind:selectedPattern
-    {errors}
+    errors={shownErrors}
   />
 
   <input type="hidden" name="colour" value={selectedColour} />
@@ -193,7 +197,7 @@
     bind:intervalHours
     bind:fixedTimes
     bind:daysOfWeek
-    {errors}
+    errors={shownErrors}
   />
 
   <input type="hidden" name="scheduleMode" value={scheduleMode} />
@@ -228,7 +232,7 @@
       medication?.notifyRepeatEveryMinutes?.toString() ??
       ""}
     maxRepeats={formValues["notifyMaxRepeats"] ?? medication?.notifyMaxRepeats?.toString() ?? "3"}
-    {errors}
+    errors={shownErrors}
   />
 
   <MedicationInventoryFields
@@ -237,7 +241,7 @@
       medication?.inventoryAlertThreshold?.toString() ??
       ""}
     notes={formValues["notes"] ?? medication?.notes ?? ""}
-    {errors}
+    errors={shownErrors}
   />
 
   <MedicalDisclaimer variant="inline" />

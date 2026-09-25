@@ -37,8 +37,9 @@
 
       <div>
         <label for="timezone" class="mb-1 block text-sm font-medium">Timezone</label>
-        <!-- The message below always had its id; nothing pointed at it, so the
-             select was never described by the error or marked invalid. -->
+        <!-- Both attributes use the same guard as the message below, so the
+             select only points at timezone-error while that element is
+             rendered. -->
         <select
           id="timezone"
           name="timezone"

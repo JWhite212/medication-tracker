@@ -216,12 +216,22 @@ describe("DoseActionForm submit", () => {
     });
 
     const { callback } = await startSubmit(submit, form);
+    // The reload takes time. Everything after it must wait for it to land,
+    // or the builder reads the old page data and drops what the reload says.
+    const reload = deferred();
     const update = vi.fn(async () => {
-      order.push("update");
+      order.push("update:start");
+      await reload.promise;
+      order.push("update:done");
     });
-    await finishSubmit(callback!, form, SUCCESS, update).done;
+    const { done } = finishSubmit(callback!, form, SUCCESS, update);
+    await flushMicrotasks();
+    expect(order).toEqual(["update:start"]);
 
-    expect(order).toEqual(["update", "toast:d-new", "focus", "onSuccess"]);
+    reload.resolve();
+    await done;
+
+    expect(order).toEqual(["update:start", "update:done", "toast:d-new", "focus", "onSuccess"]);
     expect(h.showToast).toHaveBeenCalledWith(
       "Metformin 500mg logged at 13:00",
       "success",

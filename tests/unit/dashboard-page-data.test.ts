@@ -220,6 +220,18 @@ describe("computeNextRefreshAt", () => {
     ).toBe("2026-04-16T14:00:03.000Z");
   });
 
+  it("wakes when a slot comes within the hour", () => {
+    // Otherwise 15:00 would sit read-only in Later until 15:00, with the
+    // header saying "All caught up" and no Log now for that whole hour.
+    expect(refreshAt(thu("13:30"), [matched(thu("15:00"), "today", "upcoming")])).toBe(
+      thu("14:00"),
+    );
+  });
+
+  it("wakes when a due-now slot turns overdue", () => {
+    expect(refreshAt(thu("13:30"), [matched(thu("12:45"), "today", "overdue")])).toBe(thu("13:45"));
+  });
+
   it("wakes an hour before a tomorrow's-first-hour slot", () => {
     expect(refreshAt(thu("22:00"), [matched(fri("00:30"), "tomorrow", "upcoming")])).toBe(
       thu("23:30"),
@@ -571,6 +583,26 @@ describe("composeDashboardPageData — Done", () => {
         alsoCount: 0,
       },
     });
+  });
+
+  it("lists a backdated dose logged today only from yesterday's midnight on", () => {
+    // Both were logged this morning. d-edge is at yesterday's midnight, the
+    // first instant "yesterday" is true of. d-older was edited on /log to
+    // two days ago; labelling it "yesterday" would be false, so it is
+    // history, not Done.
+    const data = compose({
+      now: thu("07:00"),
+      medications: [LISINOPRIL],
+      schedulesByMedId: schedulesOf(fixed(LISINOPRIL, "22:00")),
+      doses: [
+        dose("d-older", LISINOPRIL, "2026-04-14T23:30:00.000Z", {
+          loggedAt: new Date(thu("06:50")),
+        }),
+        dose("d-edge", LISINOPRIL, wed("00:00"), { loggedAt: new Date(thu("06:50")) }),
+      ],
+    });
+
+    expect(data.done.map((r) => r.key)).toEqual(["d-edge"]);
   });
 
   it("covers lists the slots a dose resolved, minus its own minute", () => {

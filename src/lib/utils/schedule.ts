@@ -764,10 +764,10 @@ interface SlotIndex {
  * The dashboard's visibility rule: before `end`, and either on today's
  * civil day or an overdue Earlier row under 12 hours old.
  *
- * Exported (CONTROLLER RULING R3) so Task 7's composition imports this
- * implementation rather than keeping a private copy; `tests/unit/slot-actions.test.ts`
- * restates the rule independently rather than importing it, so the property
- * test remains an oracle over this function's behaviour, not a tautology.
+ * Exported so the dashboard composition applies this one rule rather than
+ * keeping a private copy of it; `tests/unit/slot-actions.test.ts` restates
+ * the rule independently rather than importing it, so the property test
+ * remains an oracle over this function's behaviour, not a tautology.
  */
 export function isVisibleSlot(slot: MatchedSlot, window: DashboardWindow): boolean {
   const t = slot.expectedTime.getTime();

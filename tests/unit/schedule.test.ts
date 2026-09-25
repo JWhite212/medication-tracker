@@ -4,13 +4,20 @@ import {
   computeScheduleSlots,
   dashboardWindow,
   groupSlotsByTimeOfDay,
+  matchMedicationSlots,
   projectFixedTimes,
   projectMedicationSlots,
   segmentsFor,
   singleDaySegments,
   timingStatusFromSlots,
 } from "$lib/utils/schedule";
-import type { ScheduleSlot, ScheduleSlotStatus, Segments } from "$lib/utils/schedule";
+import type {
+  MatchDose,
+  ProjectedSlot,
+  ScheduleSlot,
+  ScheduleSlotStatus,
+  Segments,
+} from "$lib/utils/schedule";
 import type { Medication, DoseLogWithMedication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
 
@@ -681,8 +688,12 @@ describe("timingStatusFromSlots", () => {
       dosageAmount: "200",
       dosageUnit: "mg",
       expectedTime: iso,
+      kind: "fixed_time",
       status,
       matchedDoseId: null,
+      resolvedByDoseId: null,
+      missedByDoseId: null,
+      isEarlier: false,
     };
   }
 
@@ -1039,5 +1050,154 @@ describe("projectMedicationSlots", () => {
     } finally {
       formatToParts.mockRestore();
     }
+  });
+});
+
+describe("matchMedicationSlots — today's ±1h capacity rule", () => {
+  const now = new Date("2026-04-16T12:00:00Z");
+  const opts = { now, segments: UTC_SEGMENTS, pass2Bound: UTC_SEGMENTS.todayStart };
+
+  function slotAt(iso: string): ProjectedSlot {
+    return { expectedTime: new Date(iso), kind: "fixed_time", segment: "today" };
+  }
+
+  function dose(
+    id: string,
+    iso: string,
+    status: MatchDose["status"] = "taken",
+    quantity = 1,
+  ): MatchDose {
+    return { id, takenAt: new Date(iso), status, quantity };
+  }
+
+  it("splits a match into resolvedByDoseId and missedByDoseId", () => {
+    const slots = [
+      slotAt("2026-04-16T08:00:00Z"),
+      slotAt("2026-04-16T09:00:00Z"),
+      slotAt("2026-04-16T10:00:00Z"),
+    ];
+    const doses = [
+      dose("d-taken", "2026-04-16T08:10:00Z"),
+      dose("d-skip", "2026-04-16T09:10:00Z", "skipped"),
+      dose("d-missed", "2026-04-16T10:10:00Z", "missed"),
+    ];
+    const matched = matchMedicationSlots(slots, doses, opts);
+    expect(
+      matched.map((m) => [m.status, m.resolvedByDoseId, m.missedByDoseId, m.kind, m.segment]),
+    ).toEqual([
+      ["taken", "d-taken", null, "fixed_time", "today"],
+      ["skipped", "d-skip", null, "fixed_time", "today"],
+      // A missed row resolves nothing: the slot stays outstanding.
+      ["overdue", null, "d-missed", "fixed_time", "today"],
+    ]);
+  });
+
+  it("visits slots ascending whatever order they arrive in", () => {
+    // Ascending, 08:30 is first to reach the 09:10 dose. Visited in the
+    // order given, 09:30 would take it instead.
+    const slots = [
+      slotAt("2026-04-16T09:30:00Z"),
+      slotAt("2026-04-16T09:00:00Z"),
+      slotAt("2026-04-16T08:30:00Z"),
+    ];
+    const matched = matchMedicationSlots(slots, [dose("d1", "2026-04-16T09:10:00Z")], opts);
+    expect(matched.map((m) => [m.expectedTime.toISOString(), m.resolvedByDoseId])).toEqual([
+      ["2026-04-16T08:30:00.000Z", "d1"],
+      ["2026-04-16T09:00:00.000Z", null],
+      ["2026-04-16T09:30:00.000Z", null],
+    ]);
+  });
+
+  it("reads an unmatched slot at or before now as overdue, after it as upcoming", () => {
+    const matched = matchMedicationSlots(
+      [slotAt("2026-04-16T12:00:00Z"), slotAt("2026-04-16T12:00:00.001Z")],
+      [],
+      opts,
+    );
+    expect(matched.map((m) => m.status)).toEqual(["overdue", "upcoming"]);
+  });
+});
+
+describe("computeScheduleSlots — slot fields", () => {
+  it("labels kind, splits resolved from missed, and flags nothing earlier without a window", () => {
+    const dayStart = new Date("2026-04-16T00:00:00Z");
+    const dayEnd = new Date("2026-04-17T00:00:00Z");
+    const sched = schedMap([
+      makeIntervalSchedule("med-1", "12"),
+      makeFixedTimeSchedule("med-1", "08:00", null, 1),
+    ]);
+    const doses = [
+      makeDose({ id: "d-taken", takenAt: new Date("2026-04-16T00:10:00Z") }),
+      makeDose({ id: "d-missed", takenAt: new Date("2026-04-16T08:10:00Z"), status: "missed" }),
+    ];
+    const now = new Date("2026-04-16T10:00:00Z");
+    const slots = computeScheduleSlots([makeMed()], sched, doses, {}, dayStart, dayEnd, "UTC", now);
+    expect(
+      slots.map((s) => ({
+        expectedTime: s.expectedTime,
+        kind: s.kind,
+        status: s.status,
+        matchedDoseId: s.matchedDoseId,
+        resolvedByDoseId: s.resolvedByDoseId,
+        missedByDoseId: s.missedByDoseId,
+        isEarlier: s.isEarlier,
+      })),
+    ).toEqual([
+      {
+        expectedTime: "2026-04-16T00:00:00.000Z",
+        kind: "interval",
+        status: "taken",
+        matchedDoseId: "d-taken",
+        resolvedByDoseId: "d-taken",
+        missedByDoseId: null,
+        isEarlier: false,
+      },
+      {
+        expectedTime: "2026-04-16T08:00:00.000Z",
+        kind: "fixed_time",
+        status: "overdue",
+        matchedDoseId: "d-missed",
+        resolvedByDoseId: null,
+        missedByDoseId: "d-missed",
+        isEarlier: false,
+      },
+      {
+        expectedTime: "2026-04-16T12:00:00.000Z",
+        kind: "interval",
+        status: "upcoming",
+        matchedDoseId: null,
+        resolvedByDoseId: null,
+        missedByDoseId: null,
+        isEarlier: false,
+      },
+    ]);
+  });
+
+  it("with a window, returns yesterday's slots flagged isEarlier and never tomorrow's first hour", () => {
+    const now = new Date("2026-04-16T10:00:00Z");
+    const window = dashboardWindow(now, "UTC");
+    const sched = schedMap([
+      makeFixedTimeSchedule("med-1", "00:30", null, 0),
+      makeFixedTimeSchedule("med-1", "08:00", null, 1),
+    ]);
+    const doses = [makeDose({ id: "d-yesterday", takenAt: new Date("2026-04-15T08:05:00Z") })];
+    const slots = computeScheduleSlots(
+      [makeMed()],
+      sched,
+      doses,
+      {},
+      window.todayStart,
+      window.end,
+      "UTC",
+      now,
+      { window },
+    );
+    expect(slots.map((s) => [s.expectedTime, s.isEarlier, s.status, s.resolvedByDoseId])).toEqual([
+      ["2026-04-15T00:30:00.000Z", true, "overdue", null],
+      ["2026-04-15T08:00:00.000Z", true, "taken", "d-yesterday"],
+      ["2026-04-16T00:30:00.000Z", false, "overdue", null],
+      ["2026-04-16T08:00:00.000Z", false, "overdue", null],
+      // 2026-04-17T00:30 is projected (tomorrow's first hour) but never returned.
+    ]);
   });
 });

@@ -290,7 +290,7 @@ const MS_PER_DAY = 86_400_000;
  * tests/unit/dst-wall-clock.test.ts; do not restate the false version here
  * or in CLAUDE.md.
  *
- * This is exactly why `expectedTimesForFixedTime` and `computeOverdueSlot`
+ * This is exactly why `projectFixedTimes` (utils/schedule.ts) and `computeOverdueSlot`
  * take their day-of-week from the requested day key and never from the
  * instant this returns: a Saturday-only medication whose slot rolls into
  * Sunday would otherwise vanish from both the timeline and the sweep.

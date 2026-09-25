@@ -13,7 +13,13 @@ import {
   inclusiveDayCount,
   resolveEditedInstant,
 } from "$lib/utils/time";
-import { computeScheduleSlots } from "$lib/utils/schedule";
+import {
+  computeScheduleSlots,
+  dashboardWindow,
+  projectFixedTimes,
+  projectMedicationSlots,
+  segmentsFor,
+} from "$lib/utils/schedule";
 import { doseEditSchema } from "$lib/utils/validation";
 import { computeOverdueSlot, type OverdueRow } from "$lib/server/reminders/domain";
 import type { Medication, DoseLogWithMedication } from "$lib/types";
@@ -512,15 +518,20 @@ describe("day-of-week filters read the requested date, not the resolved instant"
     ).toBeNull();
   });
 
-  it("My Day cannot show a slot that rolled out of the day, and does not pretend to", () => {
-    // The honest counterpart to the case above. Saturday 2026-03-28 in
-    // Godthab ENDS at 23:00 local, because that is the instant the clocks
-    // jump — so the 23:30 slot resolves to 01:30Z, past `endOfDay`, and the
-    // window drops it. Sunday's timeline then excludes it on day-of-week.
+  it("a single-day call cannot show a slot that rolled out of the day, and does not pretend to", () => {
+    // The honest counterpart to the case above, for a call WITHOUT a window.
+    // Saturday 2026-03-28 in Godthab ENDS at 23:00 local, because that is the
+    // instant the clocks jump — so the 23:30 slot resolves to 01:30Z, past
+    // `endOfDay`, and a one-day range drops it. Sunday's one-day range then
+    // excludes it on day-of-week.
     //
-    // That is the correct reading of "show me Saturday", and the reminder
-    // sweep is the surface that still fires the dose (previous test). What
-    // is NOT acceptable is the old behaviour, where neither surface did.
+    // That is the correct reading of "show me Saturday", and these direct
+    // calls still return nothing. The dashboard no longer asks that
+    // question: its window projects from yesterday's key through tomorrow's
+    // first hour, so the same slot is a matched-but-hidden tomorrow's-first-
+    // hour slot at Saturday's view and a TODAY slot at Sunday's — the next
+    // test. What is NOT acceptable is the old behaviour, where neither the
+    // dashboard nor the reminder sweep fired the dose.
     const timezone = "America/Godthab";
     const saturday = new Date("2026-03-28T20:00:00Z");
     const sunday = new Date("2026-03-29T20:00:00Z");
@@ -540,6 +551,50 @@ describe("day-of-week filters read the requested date, not the resolved instant"
     expect(endOfDay(saturday, timezone).toISOString()).toBe("2026-03-29T01:00:00.000Z");
     expect(slotsOn(saturday)).toEqual([]);
     expect(slotsOn(sunday)).toEqual([]);
+  });
+
+  it("the dashboard's window shows it: today's slot at Sunday's view, hidden at Saturday's", () => {
+    const timezone = "America/Godthab";
+    const schedules = [makeFixedTimeSchedule("23:30", { daysOfWeek: [6] })];
+    const slotsAt = (now: Date) => {
+      const window = dashboardWindow(now, timezone);
+      return computeScheduleSlots(
+        [makeMed()],
+        new Map([["med-1", schedules]]),
+        [] as DoseLogWithMedication[],
+        {},
+        window.todayStart,
+        window.end,
+        timezone,
+        now,
+        { window },
+      );
+    };
+
+    // Sunday's window reaches back to Saturday's KEY, whose 23:30 resolves
+    // into Sunday's today segment: 00:30 local, not an Earlier row.
+    const sunday = slotsAt(new Date("2026-03-29T20:00:00Z"));
+    expect(sunday.map((s) => [s.expectedTime, s.isEarlier])).toEqual([
+      ["2026-03-29T01:30:00.000Z", false],
+    ]);
+    expect(localOf(new Date(sunday[0].expectedTime), timezone)).toBe("2026-03-29, 00:30");
+
+    // At Saturday's view the same instant is past `end`: projected into
+    // tomorrow's first hour, where it is matched but never returned.
+    const saturdayNow = new Date("2026-03-28T20:00:00Z");
+    const segments = segmentsFor(dashboardWindow(saturdayNow, timezone));
+    const fixedInstants = projectFixedTimes(schedules, segments, timezone);
+    const projected = projectMedicationSlots({
+      med: makeMed(),
+      schedules,
+      fixedInstants,
+      lastTakenAt: null,
+      segments,
+    });
+    expect(projected.map((s) => [s.expectedTime.toISOString(), s.segment])).toEqual([
+      ["2026-03-29T01:30:00.000Z", "tomorrow"],
+    ]);
+    expect(slotsAt(saturdayNow)).toEqual([]);
   });
 
   it("computeScheduleSlots reads the weekday off the day key too", () => {

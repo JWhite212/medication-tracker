@@ -21,18 +21,24 @@ test.describe("dose logging", () => {
   test("logging a dose via QuickLogBar decrements inventory by one", async ({ page }) => {
     const userId = await getUserIdByEmail(SEEDED_EMAIL);
     expect(userId).not.toBeNull();
+    const medId = await getMedIdByName(userId!, VITAMIN_D);
     const before = await getInventoryCount(userId!, VITAMIN_D);
     expect(before).not.toBeNull();
 
     await page.goto("/dashboard");
+    // The chip's form, found by medication id. A Due card can name Vitamin D
+    // too, and its "Took it at" records a past instant, so matching a button
+    // by its visible name could press the wrong control.
     await page
-      .getByRole("button", { name: new RegExp(`^${VITAMIN_D} `) })
-      .first()
+      .locator(`form[data-quick-log]:has(input[name="medicationId"][value="${medId}"])`)
+      .locator('button[type="submit"]')
       .click();
 
-    // The toast confirms server roundtrip; wait for it before reading
-    // the DB so we don't race the transaction.
-    await expect(page.getByText(/logged/i)).toBeVisible();
+    // The toast confirms the server round trip; wait for it before reading
+    // the DB so we don't race the transaction. Scoped to the toast region:
+    // "logged" also appears in the page's own copy ("Nothing logged yet
+    // today", "2 doses logged today").
+    await expect(page.getByRole("status").getByText(/logged at/i)).toBeVisible();
 
     const after = await getInventoryCount(userId!, VITAMIN_D);
     expect(after).toBe((before ?? 0) - 1);

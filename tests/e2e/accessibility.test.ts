@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { login, SEEDED_EMAIL, SEEDED_PASSWORD } from "./helpers/auth";
+import { HEADING } from "./helpers/selectors";
 import { E2E_LIGHT_EMAIL, E2E_LIGHT_PASSWORD } from "../../scripts/seed-e2e";
 
 // Only fail on serious or critical issues. Minor / moderate issues are
@@ -52,7 +53,9 @@ test.describe("accessibility", () => {
     await login(page, SEEDED_EMAIL, SEEDED_PASSWORD);
 
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: HEADING.dashboard, exact: true }),
+    ).toBeVisible();
     await scan(page, "/dashboard");
 
     await page.goto("/medications");
@@ -99,7 +102,9 @@ test.describe("accessibility", () => {
     );
     expect(surface, "the light-mode scan is running in dark mode").toBe("#eef0f6");
 
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: HEADING.dashboard, exact: true }),
+    ).toBeVisible();
     await scan(page, "/dashboard (light)");
 
     await page.goto("/medications");

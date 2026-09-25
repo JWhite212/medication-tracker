@@ -25,7 +25,9 @@ export async function login(page: Page, email: string, password: string): Promis
   await page.locator(SEL.passwordInput).fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: HEADING.dashboard })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: HEADING.dashboard, exact: true }),
+  ).toBeVisible();
 }
 
 /**

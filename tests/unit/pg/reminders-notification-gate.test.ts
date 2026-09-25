@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock);
 vi.mock("$lib/server/email", () => ({
@@ -27,6 +27,18 @@ beforeEach(async () => {
   await pgDb.reset();
   await pgDb.seedUser({ timezone: "UTC", emailVerified: true });
   await pgDb.seedPreferences();
+  // Pinned so the 00:01 schedules below are always TODAY's slot. On the
+  // real clock, a run between 00:00 and 00:01 UTC found only yesterday's
+  // 00:01. That slot is ~24 hours old and before local midnight, so the
+  // reminder cap (CARRY_OVER_MS) silences it and every "reminds" case
+  // failed. toFake: ["Date"] only, because faking all timers stalls
+  // PGlite's WASM layer.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-05-01T12:00:00.000Z"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("overdue sweep — per-medication gate", () => {

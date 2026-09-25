@@ -1,5 +1,5 @@
-import { getLocalDateString } from "$lib/utils/schedule";
-import { wallClockToInstant, shiftDayKey, dayOfWeekForDayKey } from "$lib/utils/time";
+import { getLocalDateString, CARRY_OVER_MS } from "$lib/utils/schedule";
+import { wallClockToInstant, shiftDayKey, dayOfWeekForDayKey, startOfDay } from "$lib/utils/time";
 import { parseIntervalHours } from "$lib/utils/schedule-rate";
 
 export const FIXED_TIME_TOLERANCE_MS = 60 * 60 * 1000;
@@ -8,11 +8,18 @@ export const FIXED_TIME_TOLERANCE_MS = 60 * 60 * 1000;
  * How many local days back from `now` the fixed-time scan looks for the
  * most recent elapsed slot.
  *
- * One day is the minimum that makes the scan correct at any cron cadence
- * up to daily: if today's occurrence has not arrived yet, yesterday's
- * has, and that is the dose the user actually missed. Reaching further
- * back would surface doses too stale to act on — by then the point is
- * adherence history, not a reminder.
+ * One day is the minimum that catches a dose timed after the last tick
+ * before midnight. If today's occurrence has not arrived yet, yesterday's
+ * has, and that is the dose the user actually missed.
+ *
+ * This is NOT "correct at any cron cadence up to daily" any more, and must
+ * not be read that way. A slot from before local midnight is dropped once
+ * it is `CARRY_OVER_MS` (12h) old (see the cap in `computeOverdueSlot`),
+ * so a tick reminds about yesterday's slot only if it runs within those 12
+ * hours. The every-30-minutes `reminder-tick` workflow does. The daily
+ * 09:00 UTC Vercel cron on its own covers only the 12 hours before it.
+ * Raising this constant would change nothing, because every slot two or
+ * more days back is already past the cap.
  */
 export const OVERDUE_LOOKBACK_DAYS = 1;
 
@@ -41,6 +48,7 @@ export function computeOverdueSlot(row: OverdueRow, now: Date): Date | null {
     if (!row.timeOfDay) return null;
     const tz = row.userTimezone || "UTC";
     const todayStr = getLocalDateString(now, tz);
+    const todayStartMs = startOfDay(now, tz).getTime();
     const lastMs = row.lastEventAt ? new Date(row.lastEventAt).getTime() : null;
 
     // Walk back day by day and return the most recent slot that has
@@ -58,6 +66,23 @@ export function computeOverdueSlot(row: OverdueRow, now: Date): Date | null {
 
       // Not yet due — try the previous day's occurrence.
       if (slotUtc.getTime() > now.getTime()) continue;
+
+      // The 12-hour cap. A slot from before local midnight stops
+      // reminding once it is CARRY_OVER_MS old. That is the same
+      // boundary as the dashboard's `visibleStart`, so the cron falls
+      // silent at the moment the dashboard's "Earlier" group drops the
+      // row, and a reminder never points at something the page no
+      // longer offers.
+      //
+      // "Before local midnight" is decided by INSTANT against `startOfDay`,
+      // never by `daysBack`. America/Godthab's Saturday 23:30 resolves to
+      // 01:30Z Sunday, after Sunday's midnight, and the dashboard files it
+      // under Sunday. Today's slots are never capped: the dashboard shows
+      // them until midnight, so they keep reminding until then. The
+      // interval branch above is deliberately left uncapped.
+      if (slotUtc.getTime() < todayStartMs && now.getTime() - slotUtc.getTime() >= CARRY_OVER_MS) {
+        continue;
+      }
 
       // Day-of-week is a property of the slot's own date, not of today —
       // and it is read off that DATE KEY, never off `slotUtc`. Where a

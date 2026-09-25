@@ -10,6 +10,7 @@ import {
   type OverdueRow,
   type NagPolicy,
 } from "$lib/server/reminders/domain";
+import { CARRY_OVER_MS, checkSlotActionTime } from "$lib/utils/schedule";
 
 const now = new Date("2026-05-01T15:00:00.000Z");
 
@@ -185,9 +186,17 @@ describe("isScheduleOverdue — fixed-time schedules (UTC)", () => {
   it("future slot today falls back to yesterday's slot, which was taken → not overdue", () => {
     // Today's 23:00 has not arrived yet, so the most recent elapsed
     // occurrence is yesterday's. A dose at that slot satisfies it.
+    //
+    // Evaluated at 09:00, ten hours after the slot. At the suite's 15:00
+    // `now` the slot is 16 hours old, and the pre-midnight cap returns null
+    // before the dose is ever consulted. This case would then pass even
+    // with the late-dose rule deleted.
     const yesterdayEvening = new Date("2026-04-30T23:00:00.000Z");
     expect(
-      isScheduleOverdue(fixedTimeRow({ timeOfDay: "23:00", lastEventAt: yesterdayEvening }), now),
+      isScheduleOverdue(
+        fixedTimeRow({ timeOfDay: "23:00", lastEventAt: yesterdayEvening }),
+        new Date("2026-05-01T09:00:00.000Z"),
+      ),
     ).toBe(false);
   });
 
@@ -244,14 +253,24 @@ describe("computeOverdueSlot — returns the actual slot Date used in dedupe key
 
   it("returns null when not overdue", () => {
     // Today's 23:00 is still ahead and yesterday's was taken on time.
+    // Evaluated at 09:00, ten hours after the slot. At the suite's 15:00
+    // `now` the pre-midnight cap returns null first and the dose is never
+    // consulted.
     const yesterdayEvening = new Date("2026-04-30T23:00:00.000Z");
     expect(
-      computeOverdueSlot(fixedTimeRow({ timeOfDay: "23:00", lastEventAt: yesterdayEvening }), now),
+      computeOverdueSlot(
+        fixedTimeRow({ timeOfDay: "23:00", lastEventAt: yesterdayEvening }),
+        new Date("2026-05-01T09:00:00.000Z"),
+      ),
     ).toBeNull();
   });
 
   it("fixed-time slot falls back to yesterday when today's has not arrived", () => {
-    const slot = computeOverdueSlot(fixedTimeRow({ timeOfDay: "23:00" }), now);
+    // 09:00, ten hours after yesterday's 23:00, which is inside the 12-hour cap.
+    const slot = computeOverdueSlot(
+      fixedTimeRow({ timeOfDay: "23:00" }),
+      new Date("2026-05-01T09:00:00.000Z"),
+    );
     expect(slot).not.toBeNull();
     expect(slot!.toISOString()).toBe("2026-04-30T23:00:00.000Z");
   });
@@ -310,22 +329,29 @@ describe("computeOverdueSlot — returns the actual slot Date used in dedupe key
 // Europe/London and 20:00 UTC against a 09:00 UTC tick).
 // ---------------------------------------------------------------------
 describe("computeOverdueSlot — look-back across the cron tick", () => {
-  // The real production shape: cron fires at 09:00 UTC, medication is
-  // due at 20:00 UTC. Before the fix this returned null forever.
-  const nineAmTick = new Date("2026-05-01T09:00:00.000Z");
+  // The original production shape was a daily cron at 09:00 UTC and a
+  // medication due at 20:00 UTC. Before the look-back, that returned null
+  // forever. The 09:00 tick is now deliberately silent about yesterday's
+  // 20:00: the slot is thirteen hours old and past the pre-midnight cap
+  // (see the next describe). So the look-back is exercised at 06:00 UTC,
+  // the first reminder-tick run of the day ("*/30 6-22 * * *"), ten hours
+  // after the slot. Every case keeps the property it is named for.
+  const sixAmTick = new Date("2026-05-01T06:00:00.000Z");
 
   it("catches an evening slot that elapsed since the previous tick", () => {
-    const slot = computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00" }), nineAmTick);
+    const slot = computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00" }), sixAmTick);
     expect(slot).not.toBeNull();
     expect(slot!.toISOString()).toBe("2026-04-30T20:00:00.000Z");
   });
 
   it("dedupe key differs per day, so a daily slot reminds once per day", () => {
-    const dayOne = computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00" }), nineAmTick)!;
+    const dayOne = computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00" }), sixAmTick)!;
     const dayTwo = computeOverdueSlot(
       fixedTimeRow({ timeOfDay: "20:00" }),
-      new Date("2026-05-02T09:00:00.000Z"),
+      new Date("2026-05-02T06:00:00.000Z"),
     )!;
+    expect(dayOne.toISOString()).toBe("2026-04-30T20:00:00.000Z");
+    expect(dayTwo.toISOString()).toBe("2026-05-01T20:00:00.000Z");
     expect(buildOverdueDedupeKey("u", "m", "fixed_time", "s", dayOne)).not.toBe(
       buildOverdueDedupeKey("u", "m", "fixed_time", "s", dayTwo),
     );
@@ -338,39 +364,41 @@ describe("computeOverdueSlot — look-back across the cron tick", () => {
   });
 
   it("does not reach back beyond the look-back window", () => {
-    // Sunday-only schedule at 20:00, evaluated Friday 09:00. The most
-    // recent Sunday slot is five days old — too stale to act on.
+    // Sunday-only schedule at 20:00, evaluated Friday 06:00. The most
+    // recent Sunday slot is five days old, too stale to act on. (The
+    // 12-hour cap would silence it as well: every slot two or more days
+    // back is already past the cap.)
     expect(
-      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", daysOfWeek: [0] }), nineAmTick),
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", daysOfWeek: [0] }), sixAmTick),
     ).toBeNull();
   });
 
   it("applies day-of-week to the looked-back date, not to today", () => {
     // 2026-05-01 is a Friday, so the fallback lands on Thursday (4).
     expect(
-      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", daysOfWeek: [4] }), nineAmTick),
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", daysOfWeek: [4] }), sixAmTick),
     ).not.toBeNull();
     // Friday-only: yesterday (Thursday) is excluded and today's 20:00
     // has not arrived, so there is nothing to report yet.
     expect(
-      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", daysOfWeek: [5] }), nineAmTick),
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", daysOfWeek: [5] }), sixAmTick),
     ).toBeNull();
   });
 
   it("a dose taken late still satisfies the slot", () => {
-    // Taken at 22:00 for a 20:00 slot — two hours late, well outside
-    // the one-hour tolerance, but unmistakably taken. Reporting this as
-    // overdue the next morning would be a false alarm.
+    // Taken at 22:00 for a 20:00 slot: two hours late, well outside the
+    // one-hour tolerance, but clearly taken. Reporting it as overdue the
+    // next morning would be a false alarm.
     const takenLate = new Date("2026-04-30T22:00:00.000Z");
     expect(
-      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastEventAt: takenLate }), nineAmTick),
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastEventAt: takenLate }), sixAmTick),
     ).toBeNull();
   });
 
   it("a dose taken shortly BEFORE the slot still satisfies it", () => {
     const takenEarly = new Date("2026-04-30T19:30:00.000Z");
     expect(
-      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastEventAt: takenEarly }), nineAmTick),
+      computeOverdueSlot(fixedTimeRow({ timeOfDay: "20:00", lastEventAt: takenEarly }), sixAmTick),
     ).toBeNull();
   });
 
@@ -379,16 +407,17 @@ describe("computeOverdueSlot — look-back across the cron tick", () => {
     expect(
       computeOverdueSlot(
         fixedTimeRow({ timeOfDay: "20:00", lastEventAt: takenTwoDaysBefore }),
-        nineAmTick,
+        sixAmTick,
       ),
     ).not.toBeNull();
   });
 
   it("resolves the look-back slot in the user's timezone during BST", () => {
-    // 20:00 Europe/London on 30 Apr is 19:00 UTC (BST, UTC+1).
+    // 20:00 Europe/London on 30 Apr is 19:00 UTC (BST, UTC+1), eleven
+    // hours before the tick.
     const slot = computeOverdueSlot(
       fixedTimeRow({ timeOfDay: "20:00", userTimezone: "Europe/London" }),
-      nineAmTick,
+      sixAmTick,
     );
     expect(slot!.toISOString()).toBe("2026-04-30T19:00:00.000Z");
   });
@@ -397,7 +426,7 @@ describe("computeOverdueSlot — look-back across the cron tick", () => {
     // 20:00 Europe/London in January is 20:00 UTC (GMT, no offset).
     const slot = computeOverdueSlot(
       fixedTimeRow({ timeOfDay: "20:00", userTimezone: "Europe/London" }),
-      new Date("2026-01-15T09:00:00.000Z"),
+      new Date("2026-01-15T06:00:00.000Z"),
     );
     expect(slot!.toISOString()).toBe("2026-01-14T20:00:00.000Z");
   });
@@ -405,9 +434,140 @@ describe("computeOverdueSlot — look-back across the cron tick", () => {
   it("crosses a month boundary when looking back", () => {
     const slot = computeOverdueSlot(
       fixedTimeRow({ timeOfDay: "20:00" }),
-      new Date("2026-06-01T09:00:00.000Z"),
+      new Date("2026-06-01T06:00:00.000Z"),
     );
     expect(slot!.toISOString()).toBe("2026-05-31T20:00:00.000Z");
+  });
+});
+
+// ---------------------------------------------------------------------
+// The 12-hour cap on pre-midnight fixed-time slots.
+//
+// The dashboard shows an unresolved slot from before local midnight under
+// "Earlier" until it is 12 hours old, then drops it. The cron now stops at
+// the same instant, so a reminder never points at a row the dashboard no
+// longer offers. The bound is CARRY_OVER_MS, imported rather than written
+// out again, and it applies to fixed-time rows only.
+// ---------------------------------------------------------------------
+describe("computeOverdueSlot — pre-midnight fixed-time slots stop at 12 hours", () => {
+  const eightPmYesterday = new Date("2026-04-30T20:00:00.000Z");
+
+  it("uses the dashboard's CARRY_OVER_MS as the boundary", () => {
+    expect(new Date("2026-05-01T08:00:00.000Z").getTime() - eightPmYesterday.getTime()).toBe(
+      CARRY_OVER_MS,
+    );
+  });
+
+  it("returns null for a pre-midnight slot exactly 12 hours old", () => {
+    expect(
+      computeOverdueSlot(
+        fixedTimeRow({ timeOfDay: "20:00" }),
+        new Date("2026-05-01T08:00:00.000Z"),
+      ),
+    ).toBeNull();
+  });
+
+  it("still returns a pre-midnight slot 1ms short of 12 hours", () => {
+    expect(
+      computeOverdueSlot(
+        fixedTimeRow({ timeOfDay: "20:00" }),
+        new Date("2026-05-01T07:59:59.999Z"),
+      ),
+    ).toEqual(eightPmYesterday);
+  });
+
+  it("the daily 09:00 UTC backstop returns null for the previous day's 20:00", () => {
+    // This is the shape the look-back was first written for. The slot is
+    // thirteen hours old at the Vercel cron's only run, and the dashboard
+    // has already dropped it, so the cron drops it too. The accepted cost
+    // is written up in .github/workflows/reminder-tick.yml.
+    expect(
+      computeOverdueSlot(
+        fixedTimeRow({ timeOfDay: "20:00" }),
+        new Date("2026-05-01T09:00:00.000Z"),
+      ),
+    ).toBeNull();
+  });
+
+  it("never caps today's slot, however old", () => {
+    // Today's rows stay on the dashboard until midnight, so they keep
+    // reminding until then: a 00:30 slot is 23 hours old at 23:30.
+    expect(
+      computeOverdueSlot(
+        fixedTimeRow({ timeOfDay: "00:30" }),
+        new Date("2026-05-01T23:30:00.000Z"),
+      ),
+    ).toEqual(new Date("2026-05-01T00:30:00.000Z"));
+  });
+
+  it("measures midnight in the user's zone, not UTC", () => {
+    // 00:30 BST on 1 May is 23:30Z on 30 April. That is yesterday in UTC
+    // but TODAY for the user, so twelve and a half hours later it must
+    // still remind.
+    expect(
+      computeOverdueSlot(
+        fixedTimeRow({ timeOfDay: "00:30", userTimezone: "Europe/London" }),
+        new Date("2026-05-01T12:00:00.000Z"),
+      ),
+    ).toEqual(new Date("2026-04-30T23:30:00.000Z"));
+  });
+
+  it("compares by instant, so a slot that rolled past midnight counts as today's", () => {
+    // Godthab springs forward at 23:00 on Saturday 2026-03-28, so
+    // Saturday's 23:30 resolves to 01:30Z, after Sunday's local midnight
+    // (01:00Z). The dashboard files it under Sunday by instant. A day-key
+    // test here ("every slot one day back is pre-midnight") would silence
+    // it at 13:30Z while the dashboard still shows it as a Sunday row.
+    expect(
+      computeOverdueSlot(
+        fixedTimeRow({ timeOfDay: "23:30", userTimezone: "America/Godthab" }),
+        new Date("2026-03-29T14:00:00.000Z"),
+      ),
+    ).toEqual(new Date("2026-03-29T01:30:00.000Z"));
+  });
+
+  it("does not cap interval rows", () => {
+    // An interval reminder is for the FIRST missed occurrence after the
+    // last event, not for a projected day. Capping it would silently end
+    // that medication's reminders. Aligning the two belongs to the
+    // due-ness unification.
+    expect(
+      computeOverdueSlot(
+        intervalRow({ intervalHours: "6", lastEventAt: new Date("2026-04-30T06:00:00.000Z") }),
+        new Date("2026-05-01T09:00:00.000Z"),
+      ),
+    ).toEqual(new Date("2026-04-30T12:00:00.000Z"));
+  });
+
+  it("falls silent at exactly the instant the dashboard stops offering the row", () => {
+    // One row and one clock, checked against both surfaces: the cron
+    // returns null exactly when checkSlotActionTime calls the slot stale.
+    // The sweep runs at the reminder-tick cadence across the day in which
+    // yesterday's 20:00 BST is the latest elapsed candidate, plus one tick
+    // either side of the boundary.
+    const tz = "Europe/London";
+    const row = fixedTimeRow({ timeOfDay: "20:00", userTimezone: tz });
+    const slot = new Date("2026-04-30T19:00:00.000Z"); // 20:00 BST
+    const ticks: Date[] = [];
+    for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
+      ticks.push(new Date(slot.getTime() + minutes * 60_000));
+    }
+    ticks.push(
+      new Date(slot.getTime() + CARRY_OVER_MS - 1),
+      new Date(slot.getTime() + CARRY_OVER_MS),
+    );
+
+    let silent = 0;
+    for (const tick of ticks) {
+      const reminded = computeOverdueSlot(row, tick);
+      const stale = checkSlotActionTime(slot, tick, tz) === "stale";
+      expect(reminded === null, tick.toISOString()).toBe(stale);
+      if (reminded === null) silent++;
+      else expect(reminded, tick.toISOString()).toEqual(slot);
+    }
+    // Non-vacuous in both directions: the sweep sees the row reminded AND
+    // silenced (24 half-hour ticks from 12h to 23.5h, plus the exact-12h tick).
+    expect(silent).toBe(25);
   });
 });
 

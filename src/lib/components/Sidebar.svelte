@@ -7,7 +7,30 @@
     user,
     mobile = false,
     onclose,
-  }: { user: SessionUser; mobile?: boolean; onclose?: () => void } = $props();
+    ondismiss,
+  }: {
+    user: SessionUser;
+    mobile?: boolean;
+    /** A link was followed, so the page is about to change under the menu. */
+    onclose?: () => void;
+    /**
+     * The close button was pressed and nothing else is happening. Kept apart
+     * from `onclose` because the layout returns focus to the toggle for this
+     * one and must not for that one, where the router owns focus.
+     */
+    ondismiss?: () => void;
+  } = $props();
+
+  /**
+   * A modified click (Ctrl or Cmd for a new tab, Shift for a window, Alt to
+   * download) leaves this page where it is; SvelteKit does not route it
+   * either. Closing the menu then would only unmount the link the user is
+   * still focused on and drop focus to <body>.
+   */
+  function closeOnFollow(e: MouseEvent) {
+    if (!mobile || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    onclose?.();
+  }
 
   const navItems = [
     {
@@ -39,13 +62,39 @@
 </script>
 
 <aside class="border-glass-border bg-surface-raised flex h-screen w-64 flex-col border-r">
-  <a
-    href="/dashboard"
-    class="border-glass-border hover:bg-surface-overlay flex items-center gap-3 border-b p-5 transition-colors"
-  >
-    <img src={appIcon} alt="" width="36" height="36" class="h-9 w-9 rounded-lg" />
-    <span class="text-lg font-semibold">MedTracker</span>
-  </a>
+  <!-- The close button is for the mobile menu, where the header's toggle is
+       inert and the scrim sits outside the Tab trap, so otherwise Escape is
+       the only keyboard exit and nothing on screen says so. It follows the
+       brand link in the DOM so opening still lands focus on the first link.
+       On desktop the link fills the row exactly as it did on its own. -->
+  <div class="border-glass-border flex items-center border-b">
+    <a
+      href="/dashboard"
+      class="hover:bg-surface-overlay flex min-w-0 flex-1 items-center gap-3 p-5 transition-colors"
+    >
+      <img src={appIcon} alt="" width="36" height="36" class="h-9 w-9 rounded-lg" />
+      <span class="text-lg font-semibold">MedTracker</span>
+    </a>
+    {#if mobile && ondismiss}
+      <button
+        type="button"
+        onclick={ondismiss}
+        class="text-text-secondary hover:bg-surface-overlay hover:text-text-primary mr-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors"
+        aria-label="Close menu"
+      >
+        <svg
+          class="h-5 w-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+      </button>
+    {/if}
+  </div>
   <nav class="flex-1 space-y-1 p-3">
     {#each navItems as item}
       {@const active = $page.url.pathname.startsWith(item.href)}
@@ -55,7 +104,7 @@
           ? 'bg-accent/15 text-accent-ink'
           : 'text-text-secondary hover:bg-surface-overlay hover:text-text-primary'}"
         aria-current={active ? "page" : undefined}
-        onclick={() => mobile && onclose?.()}
+        onclick={closeOnFollow}
       >
         <span class="flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true"
           >{@html item.icon}</span
@@ -72,7 +121,7 @@
     <a
       href="/settings"
       class="hover:bg-surface-overlay flex items-center gap-3 rounded-lg p-1 transition-colors"
-      onclick={() => mobile && onclose?.()}
+      onclick={closeOnFollow}
     >
       <div
         class="bg-accent/15 text-accent-ink flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"

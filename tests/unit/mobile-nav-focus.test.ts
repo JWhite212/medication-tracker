@@ -22,6 +22,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount, unmount, flushSync, createRawSnippet } from "svelte";
 import { readable } from "svelte/store";
+import { collectFocusable } from "$lib/utils/focus-trap";
 
 // Named by path because svelte's export map offers this file only under the
 // "browser" condition. The specifier has to stay a literal: computed at
@@ -134,6 +135,17 @@ function panelLinks(): HTMLAnchorElement[] {
   return [...d.querySelectorAll<HTMLAnchorElement>("aside a[href]")];
 }
 
+/** The element the Tab trap is scoped to: the Sidebar's wrapper inside the overlay. */
+function panel(): HTMLElement {
+  const el = dialog()?.querySelector("aside")?.parentElement;
+  if (!el) throw new Error("menu is not open");
+  return el;
+}
+
+function closeButtons(): HTMLButtonElement[] {
+  return [...target.querySelectorAll<HTMLButtonElement>('button[aria-label="Close menu"]')];
+}
+
 function header(): HTMLElement {
   const el = target.querySelector("header")?.parentElement;
   if (!el) throw new Error("header not rendered");
@@ -191,17 +203,25 @@ afterEach(() => {
 });
 
 describe("mobile nav toggle", () => {
-  it("reports its state and names the overlay it controls", async () => {
+  it("reports its state and names the overlay it controls only while it exists", async () => {
     expect(toggle().getAttribute("aria-expanded")).toBe("false");
-    const controls = toggle().getAttribute("aria-controls");
-    expect(controls).toBeTruthy();
+    // The overlay is unmounted while closed, so an id here would dangle.
+    expect(toggle().hasAttribute("aria-controls")).toBe(false);
 
     await openMenu();
 
     expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    const controls = toggle().getAttribute("aria-controls");
+    expect(controls).toBeTruthy();
     // The reference has to resolve to the dialog itself once it exists,
     // not merely be present on the button.
     expect(document.getElementById(controls!)).toBe(dialog());
+
+    press("Escape");
+    await settle();
+
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(toggle().hasAttribute("aria-controls")).toBe(false);
   });
 });
 
@@ -225,6 +245,41 @@ describe("opening the mobile nav", () => {
     // The overlay itself must stay outside both subtrees, or nothing could
     // close it.
     expect(insideInert(dialog()!)).toBe(false);
+  });
+});
+
+describe("the menu's own close button", () => {
+  it("renders only in the open mobile menu, never in the desktop sidebar", async () => {
+    // The desktop Sidebar is mounted too (it is only CSS-hidden here).
+    expect(closeButtons()).toHaveLength(0);
+
+    await openMenu();
+
+    expect(closeButtons()).toHaveLength(1);
+  });
+
+  it("sits inside the Tab trap, so a keyboard user can reach it", async () => {
+    await openMenu();
+    const [close] = closeButtons();
+
+    // The toggle is inert while the menu is open, and the scrim is outside
+    // the trapped panel, so without this Escape was the only keyboard exit.
+    expect(collectFocusable(panel())).toContain(close);
+    // Opening still lands on the first link, not on the way out.
+    expect(document.activeElement).toBe(panelLinks()[0]);
+  });
+
+  it("closes the menu and returns focus to the toggle", async () => {
+    await openMenu();
+    const [close] = closeButtons();
+    close.focus();
+
+    close.click();
+    await settle();
+
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(toggle());
+    expect(isInert(header())).toBe(false);
   });
 });
 
@@ -332,14 +387,71 @@ describe("closing the mobile nav", () => {
     expect(document.activeElement).not.toBe(toggle());
   });
 
+  it.each(["ctrlKey", "metaKey", "shiftKey", "altKey"] as const)(
+    "stays open when a nav link is followed with %s, which leaves this page where it is",
+    async (modifier) => {
+      await openMenu();
+      const link = panelLinks().find((a) => a.getAttribute("href") === "/medications")!;
+      link.focus();
+      link.addEventListener("click", (e) => e.preventDefault());
+
+      link.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, [modifier]: true }),
+      );
+      await settle();
+
+      // A new tab or window opened; this page did not navigate, so closing
+      // would only unmount the focused link and drop focus to <body>.
+      expect(dialog()).not.toBeNull();
+      expect(document.activeElement).toBe(link);
+    },
+  );
+
+  it("stays open when the account link is opened in a new tab", async () => {
+    await openMenu();
+    const account = panelLinks().at(-1)!;
+    expect(account.getAttribute("href")).toBe("/settings");
+    account.focus();
+    account.addEventListener("click", (e) => e.preventDefault());
+
+    account.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }),
+    );
+    await settle();
+
+    expect(dialog()).not.toBeNull();
+    expect(document.activeElement).toBe(account);
+  });
+
+  it("returns focus to the toggle when a navigation leaves focus inside the menu", async () => {
+    await openMenu();
+    // A keepFocus navigation (goto with keepFocus, or a link or GET form
+    // marked data-sveltekit-keepfocus) skips SvelteKit's focus reset, so by
+    // the time afterNavigate runs focus is still on the menu link that
+    // closing is about to unmount.
+    const [first] = panelLinks();
+    expect(document.activeElement).toBe(first);
+
+    for (const fn of nav.afterNavigate) fn();
+    await settle();
+
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(toggle());
+  });
+
   it("closes after a navigation the Sidebar's own handlers miss, without taking focus", async () => {
     await openMenu();
     // The brand link carries no onclick, so following it used to leave the
     // menu open over the next page. The router's afterNavigate is the backstop.
     expect(dialog()).not.toBeNull();
     // Where SvelteKit's own focus reset has left things by the time its
-    // afterNavigate callbacks run.
+    // afterNavigate callbacks run. This is reset_focus's own sequence: <body>
+    // is not focusable without a tabindex, so a bare body.focus() is a no-op
+    // and would leave focus on the menu link.
+    document.body.tabIndex = -1;
     document.body.focus();
+    document.body.removeAttribute("tabindex");
+    expect(document.activeElement).toBe(document.body);
 
     for (const fn of nav.afterNavigate) fn();
     await settle();

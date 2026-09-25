@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vite
 import { flushSync, mount, tick, unmount } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
 import type { DoseLogWithMedication } from "$lib/types";
+import { NO_RESPONSE_MESSAGE, SESSION_EXPIRED_MESSAGE } from "$lib/utils/form-errors";
 
 // Under jsdom the components are compiled for the client, but the bare
 // `svelte` specifier is loaded as an external dependency under Node's
@@ -53,6 +54,13 @@ const CRASH = {
   status: 500,
   error: { message: "Something went wrong on our end.", errorId: "a3f10c9e" },
 } as ActionResult;
+
+// What the `(app)` actions' session guard, `error(401, "Unauthorized")`,
+// reaches the callback as.
+const EXPIRED = { type: "error", status: 401, error: { message: "Unauthorized" } } as ActionResult;
+
+// What `enhance` builds when `fetch` itself rejects: no response, no status.
+const NO_RESPONSE = { type: "error", error: new TypeError("Failed to fetch") } as ActionResult;
 
 function failure(status: number, data: Record<string, unknown>): ActionResult {
   return { type: "failure", status, data } as ActionResult;
@@ -130,6 +138,18 @@ describe("DoseEditForm", () => {
   });
 
   const field = (id: string) => target.querySelector<HTMLElement>(`#${id}`)!;
+  // The form-level message: the one alert in the form that is not a field's
+  // own. Always looked up inside the <form>, because the dialog is
+  // aria-modal and only what is inside it can be heard.
+  const formAlert = () =>
+    target.querySelector("form")!.querySelector<HTMLElement>('[role="alert"]:not([id])');
+
+  /** Said inside the dialog, and focused so it is read out now. */
+  function expectFormAlert(message: string) {
+    const alert = formAlert();
+    expect(alert?.textContent?.trim()).toBe(message);
+    expect(document.activeElement).toBe(alert);
+  }
 
   it("puts each rejected field's message beside it, tied to the control", async () => {
     await submit(
@@ -157,12 +177,30 @@ describe("DoseEditForm", () => {
     // The toast says which problem, not "check the fields".
     expect(showToast).toHaveBeenCalledWith("Enter a valid date and time", "error");
     expect(onclose).not.toHaveBeenCalled();
+    // Each message already sits beside its field, so it is not repeated as a
+    // form-level one; focus lands on the first field that failed.
+    expect(formAlert()).toBeNull();
+    expect(document.activeElement).toBe(field("takenAt"));
   });
 
-  it("still toasts the form-level message for a dose deleted in another tab", async () => {
+  it("moves focus again when the same field fails twice in a row", async () => {
+    // Nothing in the DOM changes on the second attempt, so the field's
+    // role="alert" is not announced again; landing on the field re-reads it.
+    const rejected = failure(400, { editErrors: { quantity: ["Too big"] } });
+    await submit(rejected);
+    expect(document.activeElement).toBe(field("quantity"));
+
+    target.querySelector<HTMLButtonElement>('button[type="submit"]')!.focus();
+    await submit(rejected);
+
+    expect(document.activeElement).toBe(field("quantity"));
+  });
+
+  it("says a dose deleted in another tab inside the dialog, not only in the toast", async () => {
     const update = await submit(failure(404, { editErrors: { form: ["Dose no longer exists"] } }));
 
     expect(showToast).toHaveBeenCalledWith("Dose no longer exists", "error");
+    expectFormAlert("Dose no longer exists");
     expect(target.querySelector('[aria-invalid="true"]')).toBeNull();
     expect(update).toHaveBeenCalledOnce();
   });
@@ -170,25 +208,52 @@ describe("DoseEditForm", () => {
   it("answers a crash in place, with the reference, and keeps the edit open", async () => {
     const update = await submit(CRASH);
 
-    expect(showToast).toHaveBeenCalledWith(
-      "Something went wrong on our end. (reference a3f10c9e)",
-      "error",
-    );
+    const message = "Something went wrong on our end. (reference a3f10c9e)";
+    expect(showToast).toHaveBeenCalledWith(message, "error");
+    // The toast closes after five seconds; the reference has to outlast it.
+    expectFormAlert(message);
     // `update()` would replace the page with +error.svelte and discard the edit.
     expect(update).not.toHaveBeenCalled();
     expect(onclose).not.toHaveBeenCalled();
     expect(target.querySelector("form")).not.toBeNull();
   });
 
-  it("answers an expired session the same way", async () => {
-    const update = await submit({
-      type: "error",
-      status: 401,
-      error: { message: "Unauthorized" },
-    } as ActionResult);
+  it("answers an expired session the same way, saying what to do about it", async () => {
+    const update = await submit(EXPIRED);
 
-    expect(showToast).toHaveBeenCalledWith("Unauthorized", "error");
+    expect(showToast).toHaveBeenCalledWith(SESSION_EXPIRED_MESSAGE, "error");
+    expectFormAlert(SESSION_EXPIRED_MESSAGE);
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("answers a request that never got a response without the browser's wording", async () => {
+    const update = await submit(NO_RESPONSE);
+
+    expectFormAlert(NO_RESPONSE_MESSAGE);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("ties a side-effects message to the chip group it is about", async () => {
+    const group = () => target.querySelector<HTMLElement>('[role="group"]')!;
+    expect(group().hasAttribute("aria-describedby")).toBe(false);
+
+    await submit(failure(400, { editErrors: { sideEffects: ["Too many side effects"] } }));
+
+    expect(group().getAttribute("aria-describedby")).toBe("sideEffects-error");
+    expect(field("sideEffects-error").textContent?.trim()).toBe("Too many side effects");
+    // The group has no single control to carry aria-invalid, so focus goes
+    // to the message itself; it is beside its group, so no form-level copy.
+    expect(document.activeElement).toBe(field("sideEffects-error"));
+    expect(formAlert()).toBeNull();
+  });
+
+  it("clears the form-level message once a save succeeds", async () => {
+    await submit(CRASH);
+    expect(formAlert()).not.toBeNull();
+
+    await submit({ type: "success", status: 200, data: { success: true } });
+
+    expect(formAlert()).toBeNull();
   });
 
   it("clears the previous attempt's field messages once a save succeeds", async () => {
@@ -206,12 +271,13 @@ describe("DoseEditForm", () => {
 });
 
 describe("MedicationForm", () => {
-  beforeEach(() => {
-    component = mount(MedicationForm, { target, props: {} });
+  function mountForm(props: Record<string, unknown> = {}) {
+    component = mount(MedicationForm, { target, props });
     flushSync();
-  });
+  }
 
   it("shows a crash's message and reference in the form, focused, instead of leaving the page", async () => {
+    mountForm();
     const update = await submit(CRASH);
 
     const alert = target.querySelector<HTMLElement>('[role="alert"]');
@@ -224,7 +290,32 @@ describe("MedicationForm", () => {
     expect(target.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
   });
 
+  it("names an expired session rather than repeating the server's 'Unauthorized'", async () => {
+    mountForm();
+    await submit(EXPIRED);
+
+    const alert = target.querySelector<HTMLElement>('[role="alert"]');
+    expect(alert?.textContent?.trim()).toBe(SESSION_EXPIRED_MESSAGE);
+    expect(document.activeElement).toBe(alert);
+  });
+
+  it("does not leave the previous attempt's field errors marked beside a crash", async () => {
+    // The page hands field errors down as a prop, which only `update()`
+    // refreshes, and an error result skips `update()`.
+    mountForm({ errors: { name: ["Name is required"] } });
+    expect(target.querySelector('[aria-invalid="true"]')).not.toBeNull();
+
+    await submit(CRASH);
+
+    expect(target.querySelector('[aria-invalid="true"]')).toBeNull();
+    expect(target.textContent).not.toContain("Name is required");
+    const alerts = target.querySelectorAll('[role="alert"]');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].textContent).toContain("reference a3f10c9e");
+  });
+
   it("drops that message again on the next submit, whatever it returns", async () => {
+    mountForm();
     await submit(CRASH);
     expect(target.textContent).toContain("reference a3f10c9e");
 

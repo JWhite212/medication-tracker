@@ -4,8 +4,17 @@
 // and under jsdom vite resolves `svelte` to its client entry, so `render()`
 // from `svelte/server` throws `effect_orphan` before an assertion runs. Same
 // reason as tests/unit/appearance-page-ssr.test.ts.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "svelte/server";
+
+// The single-field auth pages read `page.status` to tell a refusal of the
+// value typed (400) from the rate limit (429), since both arrive as the same
+// unkeyed `error` string. On the server `$app/state` reads the request from
+// component context, which a bare `render()` does not provide; a plain object
+// the tests move between renders stands in for it.
+const pageState = vi.hoisted(() => ({ status: 200 }));
+vi.mock("$app/state", () => ({ page: pageState }));
+
 import Register from "../../src/routes/auth/register/+page.svelte";
 import Login from "../../src/routes/auth/login/+page.svelte";
 import ResetPassword from "../../src/routes/auth/reset-password/+page.svelte";
@@ -31,6 +40,9 @@ import Security from "../../src/routes/(app)/settings/security/+page.svelte";
  * field is DESCRIBED by its own keyed error and by the form-level message,
  * but only its own keyed error makes it INVALID, because a form-level
  * message may be a rate limit or an expired link about a value that is fine.
+ * The one exception is a page with a single field, whose unkeyed message can
+ * be about nothing else once the status says the value was refused (400)
+ * rather than throttled (429).
  */
 
 /** The opening tag of the control with this id. */
@@ -161,31 +173,55 @@ describe.each([
     page: "/auth/reset-password",
     render: (form: { error: string } | null) => render(ResetPassword, { props: { form } }).body,
     fields: ["email"],
+    // "Email is required." is the only 400, and there is one field.
+    invalidOn400: true,
   },
   {
     page: "/auth/reset-password/confirm",
     render: (form: { error: string } | null) =>
       render(ResetConfirm, { props: { data: { user: null, token: "t" }, form } }).body,
     fields: ["password", "confirmPassword"],
+    // A 400 here is a short password, a mismatch or a dead link alike, so
+    // even the status cannot say which field, if either, is wrong.
+    invalidOn400: false,
   },
   {
     page: "/auth/2fa",
     render: (form: { error: string } | null) => render(TwoFactor, { props: { form } }).body,
     fields: ["code"],
+    // A malformed code and a wrong code are both 400s about the one field.
+    invalidOn400: true,
   },
-])("$page (an unkeyed `error` string)", ({ render: renderPage, fields }) => {
+])("$page (an unkeyed `error` string)", ({ render: renderPage, fields, invalidOn400 }) => {
+  beforeEach(() => {
+    pageState.status = 200;
+  });
+
   it("wires nothing when the form has not failed", () => {
     expectNoErrorWiring(renderPage(null));
   });
 
-  it("announces the message and describes every field by it, marking none invalid", () => {
+  it("announces a rate limit and describes every field by it, marking none invalid", () => {
+    pageState.status = 429;
     const html = renderPage({ error: "Too many attempts. Try again in 15 minutes." });
 
     // role="alert" is what makes an enhanced submit's refusal audible at all.
     expect(html).toMatch(/<div id="form-error"[^>]*role="alert"[^>]*>\s*Too many attempts/);
     for (const id of fields) {
       expect(attr(control(html, id), "aria-describedby")).toBe("form-error");
+      // A throttle is not a verdict on what was typed.
       expect(attr(control(html, id), "aria-invalid")).toBeUndefined();
+    }
+    expectEveryDescribedByResolves(html);
+  });
+
+  it("marks the field invalid for a 400 only where one field can be meant", () => {
+    pageState.status = 400;
+    const html = renderPage({ error: "Invalid code, try again" });
+
+    for (const id of fields) {
+      expect(attr(control(html, id), "aria-describedby")).toBe("form-error");
+      expect(attr(control(html, id), "aria-invalid")).toBe(invalidOn400 ? "true" : undefined);
     }
     expectEveryDescribedByResolves(html);
   });
@@ -263,7 +299,7 @@ describe("/settings/security", () => {
     const html = render(Security, {
       props: {
         data: { ...base, twoFactorEnabled: false },
-        form: { totpError: "Incorrect password — re-enter to enable 2FA" },
+        form: { totpError: "Incorrect password" },
       },
     }).body;
 

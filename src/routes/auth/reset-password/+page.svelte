@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { page } from "$app/state";
 
   let { form } = $props();
   let loading = $state(false);
@@ -28,8 +29,18 @@
         <a href="/auth/login" class="text-accent-ink hover:underline">Back to sign in</a>
       </p>
     {:else}
+      <!-- role="alert" because this form submits with use:enhance: there is no
+           navigation, so without it a refusal was drawn on screen and never
+           announced. The action names no field, so the email input is always
+           described by this message but marked invalid only for a 400 (an
+           empty address); the 429 is the rate limit, about an address that
+           was fine. -->
       {#if form?.error}
-        <div class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm">
+        <div
+          id="form-error"
+          class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
+          role="alert"
+        >
           {form.error}
         </div>
       {/if}
@@ -52,6 +63,8 @@
             name="email"
             type="email"
             required
+            aria-invalid={form?.error && page.status === 400 ? "true" : undefined}
+            aria-describedby={form?.error ? "form-error" : undefined}
             class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
             placeholder="you@example.com"
           />

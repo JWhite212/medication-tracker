@@ -37,9 +37,14 @@
 
       <div>
         <label for="timezone" class="mb-1 block text-sm font-medium">Timezone</label>
+        <!-- Both attributes use the same guard as the message below, so the
+             select only points at timezone-error while that element is
+             rendered. -->
         <select
           id="timezone"
           name="timezone"
+          aria-invalid={form?.errors?.timezone?.[0] ? "true" : undefined}
+          aria-describedby={form?.errors?.timezone?.[0] ? "timezone-error" : undefined}
           class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
         >
           {#each timezones as tz}

@@ -27,15 +27,35 @@
     isScheduled ? adherencePercent(medication.weeklyDoseCount, weeklyExpected) : 0,
   );
 
+  // The status chips, decided here rather than inline so the header can tell
+  // whether it has any. On a narrow card the chip group wraps onto a row of
+  // its own under the name, and an empty group would still take that row and
+  // open a gap there, so it is only rendered when it holds something.
+  //
+  // Explicit === false, not !medication.notificationsEnabled: a row that
+  // reaches this component without the field (an older cached payload, or a
+  // narrowed projection added later) would be undefined, and the falsy form
+  // would render "Muted" on every medication. This fails safe instead.
+  const muted = $derived(medication.notificationsEnabled === false);
+  const refillChip = $derived(
+    Boolean(medication.refillSeverity && medication.refillSeverity !== "ok"),
+  );
+  const lowStockChip = $derived(
+    !refillChip &&
+      medication.inventoryCount !== null &&
+      medication.inventoryAlertThreshold !== null &&
+      medication.inventoryCount <= medication.inventoryAlertThreshold,
+  );
+
   let logging = $state(false);
 
   /**
    * Quick-log from the Medications list.
    *
    * This posts to the dashboard's action from a page that does not own it, so
-   * it cannot use `use:enhance` — the card is inside an `<a>` and there is no
-   * local form to progressively enhance. It stays a `fetch`, but it now does
-   * the two things `enhance` would have done for it and previously did not.
+   * there is no local form for `use:enhance` to progressively enhance. It
+   * stays a `fetch`, but it now does the two things `enhance` would have done
+   * for it and previously did not.
    *
    * It never checked `res.ok`. A dose logged against a medication deleted in
    * another tab returned 404 and the card showed a spinner, then nothing —
@@ -50,6 +70,11 @@
   async function quickLog(event: Event) {
     event.preventDefault();
     event.stopPropagation();
+    // The guard against a second log while the first is in flight lives here
+    // rather than in a native `disabled`. A disabled button cannot keep focus,
+    // so pressing it from the keyboard dropped focus to <body> and nothing put
+    // it back; `aria-disabled` says the same thing and leaves focus alone.
+    if (logging) return;
     logging = true;
     try {
       const form = new FormData();
@@ -76,54 +101,80 @@
   }
 </script>
 
+<!-- The quick-log button is a flex sibling of the link rather than laid over
+     it. Absolutely positioned in the top-right corner it sat on the status
+     chips, and because it was hidden until hover it was an invisible target
+     on a touch screen. In the flow it takes its own column and the link
+     narrows to make room, so the two cannot overlap at any width.
+
+     The link still answers a click anywhere on the card, not only on its
+     own narrower box: its ::after is stretched over this wrapper, which is
+     why the wrapper is `relative`. The button is positioned and above it in
+     z-order, so it keeps its own clicks. Without the overlay the strip
+     beside and below the button lit up on hover and then did nothing. -->
 <div
-  class="group border-glass-border bg-glass hover:bg-glass-hover relative rounded-xl border backdrop-blur-xl transition-colors"
+  class="border-glass-border bg-glass hover:bg-glass-hover relative flex rounded-xl border backdrop-blur-xl transition-colors"
 >
-  <a href="/medications/{medication.id}" class="block p-4">
-    <div class="flex items-center gap-4">
-      <div
-        class="h-10 w-10 shrink-0 rounded-lg"
-        style="background: {getMedicationBackground(
-          medication.colour,
-          medication.colourSecondary,
-          medication.pattern,
-        )}"
-      ></div>
-      <div class="min-w-0 flex-1">
-        <p class="font-medium">{medication.name}</p>
-        <p class="text-text-secondary text-sm">
-          {medication.dosageAmount}{medication.dosageUnit} &middot; {medication.form}
-          <span class="bg-glass ml-2 rounded-full px-2 py-0.5 text-xs">{medication.category}</span>
-        </p>
+  <a
+    href="/medications/{medication.id}"
+    class="block min-w-0 flex-1 p-4 pr-3 after:absolute after:inset-0 after:rounded-xl"
+  >
+    <!-- The chips share the name's row while there is room and wrap beneath
+         it when there is not: the swatch and name claim 12rem before the
+         chips are allowed alongside, which at 320px they never are. -->
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div class="flex min-w-0 grow basis-48 items-center gap-4">
+        <div
+          class="h-10 w-10 shrink-0 rounded-lg"
+          style="background: {getMedicationBackground(
+            medication.colour,
+            medication.colourSecondary,
+            medication.pattern,
+          )}"
+        ></div>
+        <!-- A long word in the name, form or category has to break inside
+             this column rather than widen the card past a 320px screen.
+             wrap-anywhere does the breaking and, unlike wrap-break-word, also
+             lowers the column's min-content width, which is what a flex
+             item's automatic minimum is sized by; break-word could not, and
+             left the card overflowing at 320px while the page's wrapper
+             lacked min-w-0. Every flex item from that wrapper down to here
+             carries min-w-0 as well, so the card is sized by the row it sits
+             in rather than by its content. -->
+        <div class="min-w-0 flex-1 wrap-anywhere">
+          <p class="font-medium">{medication.name}</p>
+          <p class="text-text-secondary text-sm">
+            {medication.dosageAmount}{medication.dosageUnit} &middot; {medication.form}
+            <span class="bg-glass ml-2 rounded-full px-2 py-0.5 text-xs">{medication.category}</span
+            >
+          </p>
+        </div>
       </div>
-      <div class="flex shrink-0 items-center gap-2">
-        {#if medication.notificationsEnabled === false}
-          <!-- Explicit === false, not !medication.notificationsEnabled: a row
-               that reaches this component without the field (an older cached
-               payload, or a narrowed projection added later) would be
-               undefined, and the falsy form would render "Muted" on every
-               medication. This fails safe instead. -->
-          <span
-            class="bg-glass text-text-secondary rounded-full px-2 py-1 text-xs font-medium"
-            title="Notifications are off for this medication"
-          >
-            Muted
-          </span>
-        {/if}
-        {#if medication.refillSeverity && medication.refillSeverity !== "ok"}
-          <span
-            class="rounded-full px-2 py-1 text-xs font-medium {refillChipClass(
-              medication.refillSeverity,
-            )}"
-          >
-            {medication.daysUntilRefill ?? 0}d left
-          </span>
-        {:else if medication.inventoryCount !== null && medication.inventoryAlertThreshold !== null && medication.inventoryCount <= medication.inventoryAlertThreshold}
-          <span class="bg-warning/15 text-warning rounded-full px-2 py-1 text-xs font-medium"
-            >Low: {medication.inventoryCount}</span
-          >
-        {/if}
-      </div>
+      {#if muted || refillChip || lowStockChip}
+        <div class="flex flex-wrap items-center gap-2">
+          {#if muted}
+            <span
+              class="bg-glass text-text-secondary rounded-full px-2 py-1 text-xs font-medium"
+              title="Notifications are off for this medication"
+            >
+              Muted
+            </span>
+          {/if}
+          {#if refillChip}
+            <span
+              class="rounded-full px-2 py-1 text-xs font-medium {refillChipClass(
+                medication.refillSeverity,
+              )}"
+            >
+              {medication.daysUntilRefill ?? 0}d left
+            </span>
+          {:else if lowStockChip}
+            <span class="bg-warning/15 text-warning rounded-full px-2 py-1 text-xs font-medium"
+              >Low: {medication.inventoryCount}</span
+            >
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <!-- Stats row -->
@@ -169,28 +220,33 @@
     {/if}
   </a>
 
-  <!-- Quick log button -->
+  <!-- Quick log button. Visible text rather than a bare "+", which read as
+       "add a medication"; the name leads with that same word so a voice
+       command of "click Log" matches it (WCAG 2.5.3). At least 44px each way
+       because it is the one control on the card a thumb is aimed at, and
+       unconditionally rather than behind a pointer query: `pointer: coarse`
+       describes only the primary pointer, so a touchscreen laptop would get
+       the small size.
+       Its border-strong edge measures 3.12:1 on the dark card and 3.43:1 on
+       the light one, but 2.98:1 while the dark card is hovered. That is
+       accepted rather than fixed here: the visible "Log" text is what
+       identifies the control, so WCAG 1.4.11 does not require its edge to
+       reach 3:1, and raising border-strong is a palette-wide change. -->
   <button
     type="button"
-    class="bg-glass text-text-secondary hover:bg-accent hover:text-accent-fg absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-lg opacity-0 transition-all group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
-    aria-label="Quick log {medication.name}"
-    disabled={logging}
+    class="border-border-strong text-accent-ink hover:bg-accent hover:text-accent-fg relative z-10 mt-4 mr-4 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center self-start rounded-lg border px-3 text-sm font-medium transition-colors"
+    aria-label="Log a dose of {medication.name}"
+    aria-disabled={logging}
     onclick={quickLog}
   >
+    <!-- The label only hides while the log is in flight, so the button keeps
+         its width and the name column beside it does not reflow. -->
+    <span class={logging ? "invisible" : ""}>Log</span>
     {#if logging}
-      <span class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+      <span
+        class="absolute inset-0 m-auto h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+        aria-hidden="true"
       ></span>
-    {:else}
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        class="h-4 w-4"
-      >
-        <path
-          d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"
-        />
-      </svg>
     {/if}
   </button>
 </div>

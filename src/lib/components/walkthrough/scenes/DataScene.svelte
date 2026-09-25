@@ -15,7 +15,8 @@
 
 <div class="mx-auto flex max-w-2xl flex-col gap-6">
   <div class="flex items-center gap-3">
-    <span class="text-text-muted">←</span>
+    <span class="text-text-muted text-sm">← Settings</span>
+    <span class="text-text-muted">/</span>
     <p class="text-2xl font-bold">Data Management</p>
   </div>
   <!-- An empty slot in the real page's layout keeps the same vertical rhythm -->

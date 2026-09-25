@@ -36,6 +36,7 @@ describe("createDashboardClock", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("tells the time on the server's clock, not the device's", () => {
@@ -63,11 +64,13 @@ describe("createDashboardClock", () => {
     expect(invalidate).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(invalidate).toHaveBeenCalledTimes(1);
+    // Let that reload settle, as it would in a browser. A refresh still in
+    // flight would absorb the next call on its own, and this case would then
+    // say nothing about the once-per-nextRefreshAt rule.
+    await vi.advanceTimersByTimeAsync(0);
 
     // Until a new payload lands, nothing fires again for the same nextRefreshAt.
     clock.onVisible();
-    // Async: lets the first reload's promise settle, as it would in a browser,
-    // so the next payload's refresh is not coalesced into it.
     await vi.advanceTimersByTimeAsync(MIN);
     expect(invalidate).toHaveBeenCalledTimes(1);
 
@@ -92,6 +95,26 @@ describe("createDashboardClock", () => {
     expect(invalidate).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(5 * MIN);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    clock.dispose();
+  });
+
+  it("holds an expired refresh while offline and runs it when the connection returns", () => {
+    // A reload that fails offline does not leave the page as it was: the
+    // app falls back to a full navigation, which the service worker answers
+    // with its plain "Offline" page. So a laptop waking with no network must
+    // keep the dashboard it has.
+    vi.stubGlobal("navigator", { onLine: false });
+    const invalidate = vi.fn(async () => {});
+    const clock = createDashboardClock(invalidate);
+    clock.sync(FIRST);
+
+    vi.advanceTimersByTime(31 * MIN); // server 12:31: the timer has fired, offline
+    clock.onVisible();
+    expect(invalidate).not.toHaveBeenCalled();
+
+    vi.stubGlobal("navigator", { onLine: true });
+    clock.onOnline();
     expect(invalidate).toHaveBeenCalledTimes(1);
     clock.dispose();
   });

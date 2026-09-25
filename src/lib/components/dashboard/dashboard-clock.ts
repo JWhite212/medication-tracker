@@ -35,6 +35,8 @@ export interface DashboardClockController extends DashboardClock {
   sync(payload: DashboardClockPayload): void;
   /** For `visibilitychange` → visible: reload if the payload expired while the tab was hidden. */
   onVisible(): void;
+  /** For the window's `online` event: run a refresh that came due while offline. */
+  onOnline(): void;
   /** Clear the refresh timer. */
   dispose(): void;
 }
@@ -55,9 +57,16 @@ export function createDashboardClock(invalidate: () => Promise<void>): Dashboard
     return inFlight;
   }
 
-  /** Reload at most once per payload, and only once the SERVER's clock says it has expired. */
+  /**
+   * Reload at most once per payload, only once the SERVER's clock says it has
+   * expired, and never while offline. A reload whose data request fails does
+   * not leave the page as it was: SvelteKit falls back to a full navigation,
+   * which the service worker answers with its plain "Offline" page. A refresh
+   * skipped offline stays pending, and `onOnline` runs it.
+   */
   function refreshIfExpired(): void {
     if (!(serverNowMs() >= refreshAtMs) || firedFor === refreshAtMs) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     firedFor = refreshAtMs;
     void refresh().catch(() => {});
   }
@@ -89,6 +98,7 @@ export function createDashboardClock(invalidate: () => Promise<void>): Dashboard
       arm();
     },
     onVisible: refreshIfExpired,
+    onOnline: refreshIfExpired,
     dispose() {
       clearTimeout(timer);
       timer = undefined;

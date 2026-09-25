@@ -8,6 +8,7 @@
   import { getDashboardClock } from "./dashboard-clock";
   import { getDoseWriteLock } from "./dose-write-lock.svelte";
   import {
+    NETWORK_FAILURE_TOAST,
     STALE_TAP_MESSAGE,
     SUCCESS_FALLBACK_TOAST,
     UNDO_ACTION,
@@ -75,7 +76,11 @@
     danger: "min-h-11 rounded-lg px-3 text-sm font-medium text-danger-ink hover:bg-surface-overlay",
   };
 
-  /** invalidateAll, but a failed reload leaves the page as it was instead of throwing out of the callback. */
+  /**
+   * invalidateAll, without throwing out of the callback. It does not reject
+   * when the data request fails: SvelteKit falls back to the root error page
+   * or a full navigation instead. The try/catch covers only a load that throws.
+   */
   async function reload(): Promise<void> {
     try {
       await invalidateAll();
@@ -107,7 +112,7 @@
         else showToast(actionErrorMessage(result), "error");
       } catch (error) {
         // A network failure never reaches `deserialize`.
-        showToast(actionErrorMessage({ type: "error", error }), "error");
+        showToast(actionErrorMessage({ type: "error", error }, NETWORK_FAILURE_TOAST), "error");
       }
       await reload();
     } finally {
@@ -140,6 +145,13 @@
     const withUndo = undoable;
     const focusTarget = focusAfter;
     const afterSuccess = onSuccess;
+    // Where focus was at the tap: the button, or whatever a 1–9 shortcut was
+    // pressed from. A success reload resets focus to <body>, so a caller with
+    // no focusAfter (a chip) gets it back here.
+    const returnFocus =
+      document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+        ? document.activeElement
+        : null;
     const card = formElement.closest<HTMLElement>("[data-dose-card]");
     pending = true;
     card?.setAttribute("aria-busy", "true");
@@ -160,7 +172,7 @@
             "success",
             withUndo && doseId ? () => void undoDose(doseId) : undefined,
           );
-          focusTarget?.()?.focus();
+          (focusTarget ? focusTarget() : returnFocus?.isConnected ? returnFocus : null)?.focus();
           afterSuccess?.();
         } else if (result.type === "failure") {
           showToast(actionErrorMessage(result), "error");
@@ -170,7 +182,7 @@
           else await update();
         } else if (result.type === "error") {
           // Outcome unknown: reload BEFORE releasing, so any retry acts on fresh data.
-          showToast(actionErrorMessage(result), "error");
+          showToast(actionErrorMessage(result, NETWORK_FAILURE_TOAST), "error");
           await reload();
         } else {
           await update();

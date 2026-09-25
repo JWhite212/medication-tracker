@@ -14,7 +14,8 @@ import type { ActionResult } from "@sveltejs/kit";
  *   fail(400)                                    no body at all
  *
  * plus `result.type === "error"`, which is an unexpected throw and carries
- * `App.Error` — the safe message and correlation id `handleError` minted.
+ * `App.Error` — the safe message and correlation id `handleError` minted —
+ * or, when the request never completed, the client's own `Error`.
  *
  * Every call site that wanted to show a failure therefore had to know all
  * six, which is a large part of why three of them showed nothing at all and
@@ -29,6 +30,10 @@ export function actionErrorMessage(
   fallback = "Something went wrong — please try again.",
 ): string {
   if (result.type === "error") {
+    // A failed fetch reaches here as a client-side Error ("Failed to fetch",
+    // "Load failed"): the browser's words, not ours. A server App.Error
+    // arrives deserialised as a plain object, never an Error instance.
+    if (result.error instanceof Error) return fallback;
     // `handleError` already made this safe to render, and attached the
     // reference the user can quote.
     const error = result.error as App.Error | undefined;

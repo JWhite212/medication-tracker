@@ -30,6 +30,7 @@ import {
 } from "$lib/components/dashboard/dose-write-lock.svelte";
 import type { DashboardClock } from "$lib/components/dashboard/dashboard-clock";
 import {
+  NETWORK_FAILURE_TOAST,
   STALE_TAP_MESSAGE,
   SUCCESS_FALLBACK_TOAST,
   UNDO_ACTION,
@@ -233,6 +234,25 @@ describe("DoseActionForm submit", () => {
     target.remove();
   });
 
+  it("with no focusAfter, a chip keeps focus through the reload's focus reset", async () => {
+    // For a success, SvelteKit's applyAction resets focus to <body>. A chip
+    // has nowhere better to send focus than itself, so it takes it back, or
+    // the next Tab after every keyboard log starts from the top of the page.
+    const { form, button, submit } = setup({ props: { variant: "chip", quickLog: true } });
+    button.focus();
+    const { callback } = await startSubmit(submit, form);
+    const update = vi.fn(async () => {
+      document.body.tabIndex = -1;
+      document.body.focus();
+      document.body.removeAttribute("tabindex");
+    });
+
+    await finishSubmit(callback!, form, SUCCESS, update).done;
+
+    expect(update).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(button);
+  });
+
   it("still toasts when the reload itself fails — the write did not", async () => {
     const buildToast = vi.fn(() => "Metformin 500mg logged at 13:00");
     const { form, submit } = setup({ props: { buildToast } });
@@ -406,6 +426,35 @@ describe("DoseActionForm submit", () => {
     await done;
     vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS);
     expect(lock.busy).toBe(false);
+  });
+
+  it("a network failure says to check Done before retrying, not the browser's own text", async () => {
+    // The write may or may not have landed, and a chip retry would log a
+    // second dose.
+    const { form, submit } = setup();
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, { type: "error", error: new TypeError("Failed to fetch") })
+      .done;
+    expect(h.showToast).toHaveBeenCalledWith(NETWORK_FAILURE_TOAST, "error");
+  });
+
+  it("Undo that cannot reach the server says so in the same words", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Load failed");
+      }),
+    );
+    const { form, submit } = setup({ props: { buildToast: () => "logged", undoable: true } });
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, SUCCESS).done;
+
+    const undo = h.showToast.mock.calls[0][2] as () => void;
+    h.invalidateAll.mockClear();
+    undo();
+
+    await vi.waitFor(() => expect(h.invalidateAll).toHaveBeenCalledOnce());
+    expect(h.showToast).toHaveBeenLastCalledWith(NETWORK_FAILURE_TOAST, "error");
   });
 
   it("any other failure runs update() and releases, without a reload", async () => {

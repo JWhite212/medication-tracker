@@ -3,8 +3,10 @@
 // click submits, and SSR markup cannot show either. Programmatic focus()
 // and document.activeElement behave in jsdom as they do in a browser; what
 // jsdom cannot do is layout, so "the confirm never appears under the pointer"
-// is asserted as its consequence (a second click on × never submits) rather
-// than as geometry.
+// is not measured here. The double-click test checks that a second click on ×
+// closes the group again, and that the group renders as a block of its own
+// after ×'s line rather than inside it, which is what keeps it from under the
+// pointer in a browser.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount, unmount, flushSync, tick } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
@@ -12,8 +14,11 @@ import type { DoseLogWithMedication } from "$lib/types";
 
 const hoisted = vi.hoisted(() => ({
   showToast: vi.fn(),
-  /** One entry per submit that reached `enhance`, awaiting its result. */
-  submissions: [] as Array<(result: ActionResult) => Promise<void>>,
+  /**
+   * One entry per submit that reached `enhance`, awaiting its result. The
+   * optional `update` stands in for SvelteKit's, which reloads the page data.
+   */
+  submissions: [] as Array<(result: ActionResult, update?: () => Promise<void>) => Promise<void>>,
 }));
 
 // Under this suite's config the bare `svelte` specifier resolves without the
@@ -26,7 +31,9 @@ const hoisted = vi.hoisted(() => ({
 // `svelte/internal/client` is redirected too, to the same Node-loaded copy:
 // a `mount` from one runtime instance driving a component compiled against
 // another fails on its first DOM operation. require() of an ES module needs
-// Node 22.12 or later, which CI's `node-version: 22` provides.
+// Node 20.19 or later on the 20 line, or 22.12 or later, which CI's
+// `node-version: 22` provides; an older Node fails this file with
+// ERR_REQUIRE_ESM before any test runs.
 async function svelteClientFile(file: string) {
   const { createRequire } = await import("node:module");
   const require = createRequire(import.meta.url);
@@ -54,9 +61,9 @@ vi.mock("$app/forms", () => ({
         submitter: e.submitter,
         cancel: () => {},
       });
-      hoisted.submissions.push(async (result) => {
+      hoisted.submissions.push(async (result, update = async () => {}) => {
         if (typeof callback === "function") {
-          await callback({ action, formData, formElement: form, result, update: async () => {} });
+          await callback({ action, formData, formElement: form, result, update });
         }
       });
     };
@@ -147,11 +154,20 @@ describe("× opens a confirmation and never deletes on its own", () => {
 
   it("survives a double-click: the second click lands on × and closes it again", async () => {
     const x = deleteToggle();
+    // The row's top-level block that holds ×: the line × sits on.
+    const xLine = [...document.querySelector('[role="listitem"]')!.children].find((el) =>
+      el.contains(x),
+    )!;
     x.click();
     // Let the confirmation render between the two clicks, as it would in the
     // gap a real double-click leaves, so the second one meets it open.
     await settle();
     expect(confirmButton()).not.toBeNull();
+    // Inside ×'s line the group would sit beside ×, and at some width wrap
+    // to under it; as a block after that line it can only start below it.
+    expect(xLine.contains(x)).toBe(true);
+    expect(xLine.contains(group())).toBe(false);
+    expect(xLine.compareDocumentPosition(group()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     x.click();
     x.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     await settle();
@@ -217,8 +233,10 @@ describe("keyboard", () => {
 describe("clicks inside the controls do not reach the row", () => {
   // The row's own click opens the edit modal; opening it over the question
   // being asked would bury the confirmation.
-  it("leaves the edit modal shut for ×, the prompt, the gap and Cancel", async () => {
+  it("leaves the edit modal shut for ×, the gap beside it, the prompt, the gap and Cancel", async () => {
     await openConfirm();
+    // The wrapper around ✎ and ×: a click on it is one in the gap between them.
+    deleteToggle().parentElement!.click();
     group()!.querySelector("p")!.click();
     group()!.click();
     confirmButton()!.parentElement!.parentElement!.click();
@@ -251,6 +269,16 @@ describe("submitting", () => {
     confirm.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await settle();
     expect(group()).not.toBeNull();
+  });
+
+  it("dims its label only while disabled, never on hover", async () => {
+    await openConfirm();
+    // hover:opacity-90 faded the danger fill and its label together, below
+    // 4.5:1 in dark mode. A disabled control is exempt from 1.4.3.
+    const dimming = confirmButton()!
+      .className.split(/\s+/)
+      .filter((t) => /(^|:)opacity-\d+$/.test(t));
+    expect(dimming.filter((t) => !t.startsWith("disabled:"))).toEqual([]);
   });
 
   it("toasts the unchanged success text e2e waits for", async () => {
@@ -310,5 +338,74 @@ describe("submitting", () => {
 
     expect(group()).toBeNull();
     expect(document.activeElement).toBe(elsewhere);
+  });
+});
+
+describe("after a confirmed delete succeeds", () => {
+  // The row leaves with the dose and takes the focused confirm button with it.
+  // Left there, focus falls to <body> and a keyboard user starts again from
+  // the top of the page.
+  let rows: Array<ReturnType<typeof mount> | undefined> = [];
+
+  function mountList(names: string[]) {
+    if (component) unmount(component);
+    component = undefined;
+    document.body.innerHTML = "";
+    const list = document.createElement("div");
+    list.setAttribute("role", "list");
+    document.body.append(list);
+    rows = names.map((name, i) =>
+      mount(TimelineEntry, {
+        target: list,
+        props: {
+          dose: { ...dose, id: `dose-${i}`, medication: { ...dose.medication, name } },
+          timezone: "UTC",
+          timeFormat: "24h",
+          onedit,
+        },
+      }),
+    );
+    flushSync();
+  }
+
+  /** Confirm the delete, then answer it and drop the row as the page's keyed each would. */
+  async function deleteRow(name: string, index: number) {
+    byLabel(`Delete dose of ${name} at`)!.click();
+    await settle();
+    byLabel(`Confirm delete dose of ${name} at`)!.click();
+    await settle();
+    await hoisted.submissions[0](
+      { type: "success", status: 200, data: { success: true } },
+      async () => {
+        unmount(rows[index]!);
+        rows[index] = undefined;
+      },
+    );
+    await settle();
+  }
+
+  afterEach(() => {
+    for (const r of rows) if (r) unmount(r);
+    rows = [];
+  });
+
+  it("hands focus to the next row", async () => {
+    mountList(["Alpha", "Bravo", "Charlie"]);
+    await deleteRow("Bravo", 1);
+    expect(byLabel("Delete dose of Bravo at")).toBeNull();
+    expect(document.activeElement).toBe(byLabel("Edit dose of Charlie at"));
+  });
+
+  it("hands focus to the previous row when the last one goes", async () => {
+    mountList(["Alpha", "Bravo"]);
+    await deleteRow("Bravo", 1);
+    expect(document.activeElement).toBe(byLabel("Edit dose of Alpha at"));
+  });
+
+  it("leaves focus where it fell when the list is left empty", async () => {
+    mountList(["Alpha"]);
+    await deleteRow("Alpha", 0);
+    expect(byLabel("Delete dose of Alpha at")).toBeNull();
+    expect(document.activeElement).toBe(document.body);
   });
 });

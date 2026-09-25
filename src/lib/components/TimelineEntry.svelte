@@ -29,7 +29,13 @@
   // confirmation's own Delete button is pressed. An Undo toast would be the
   // lighter touch, but recreating a deleted dose is a server change this
   // component cannot make on its own.
+  // The cost is that × needs JavaScript, where the old submit button posted
+  // without it: before hydration, or with scripts off, it does nothing. That
+  // fails safe, and the row's edit modal needs JavaScript already. A native
+  // disclosure could keep a scriptless path, but not without rebuilding the
+  // row around it.
   let confirming = $state(false);
+  let row: HTMLDivElement | undefined = $state();
   let deleteButton: HTMLButtonElement | undefined = $state();
   let cancelButton: HTMLButtonElement | undefined = $state();
   let confirmGroup: HTMLDivElement | undefined = $state();
@@ -69,6 +75,14 @@
     if (e.key !== "Escape" || !confirming || deleting) return;
     closeConfirm();
   }
+
+  // The row beside this one in its list, next in preference to previous: the
+  // one that will stand in this row's place once it has gone.
+  function neighbourRow(): HTMLElement | undefined {
+    return [row?.nextElementSibling, row?.previousElementSibling].find(
+      (el): el is HTMLElement => el instanceof HTMLElement && el.matches('[role="listitem"]'),
+    );
+  }
 </script>
 
 <!-- Clicking the row is a redundant mouse shortcut for the ✎ button inside it,
@@ -78,6 +92,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
+  bind:this={row}
   class="group border-glass-border bg-glass hover:bg-glass-hover rounded-lg border p-4 backdrop-blur-xl transition-colors {onedit
     ? 'cursor-pointer'
     : ''}"
@@ -104,7 +119,9 @@
     ></div>
 
     <div class="min-w-0 flex-1">
-      <p class="font-medium">
+      <!-- break-words because a long one-word name has no space to wrap at,
+           and at 320px it ran on underneath the controls. -->
+      <p class="font-medium break-words">
         <span class={dose.status === "skipped" ? "line-through decoration-1" : ""}>
           {dose.medication.name}
         </span>
@@ -150,9 +167,18 @@
          pointer left the row.
          Targets are 32px for a mouse and 44px for touch (WCAG 2.5.8, and 2.5.5
          on touch); the negative margin lets them reach into the row's padding
-         instead of making every row taller. -->
+         instead of making every row taller. Below sm on touch they also reach
+         down onto the time's line, which is in flow and painted after them, so
+         a tap on the bottom of × landed on that line and opened the edit modal.
+         Positioning them (relative) lifts them above it.
+         The click handler is a boundary, as on the confirmation below: a tap
+         in the gap between ✎ and × is a near miss of a control, not a tap on
+         the row. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="-my-1 flex items-center gap-1 opacity-100 transition-opacity pointer-coarse:-my-2.5 {confirming
+      onclick={(e) => e.stopPropagation()}
+      class="relative -my-1 flex items-center gap-1 opacity-100 transition-opacity pointer-coarse:-my-2.5 {confirming
         ? ''
         : 'md:group-focus-within:opacity-100 md:group-hover:opacity-100 md:[@media(hover:hover)]:opacity-0'}"
     >
@@ -231,19 +257,35 @@
               if (result.type === "success") showToast("Dose removed", "success");
               else if (result.type === "failure" || result.type === "error")
                 showToast(actionErrorMessage(result), "error");
+              // Taken now, before the update removes this row from the list.
+              const neighbour = result.type === "success" ? neighbourRow() : undefined;
               await update();
               deleting = false;
-              // On success the row has gone with the dose. Otherwise this
-              // attempt is over, so put focus back on × rather than leave it
-              // on a button that was disabled underneath it.
-              if (result.type !== "success") closeConfirm();
+              if (result.type === "success") {
+                // The row has gone with the dose and taken the focused confirm
+                // button with it. Left there, focus falls to <body> and a
+                // keyboard user starts again from the top of the page, so hand
+                // it to the row now in this one's place. The only row in its
+                // list has no neighbour, and there focus stays where it fell.
+                await tick();
+                const active = document.activeElement;
+                if (!active || active === document.body)
+                  neighbour?.querySelector("button")?.focus();
+              } else {
+                // This attempt is over, so put focus back on × rather than
+                // leave it on a button that was disabled underneath it.
+                closeConfirm();
+              }
             };
           }}
         >
           <input type="hidden" name="doseId" value={dose.id} />
+          <!-- Not hover:opacity, the usual hover for a fill: it fades the label
+               along with the fill, below 4.5:1 in dark mode, which is the
+               defect this row has just shed. A ring changes neither. -->
           <button
             type="submit"
-            class="bg-danger text-danger-fg inline-flex min-h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11"
+            class="bg-danger text-danger-fg hover:ring-danger-ink inline-flex min-h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium enabled:hover:ring-2 disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11"
             aria-label="Confirm delete dose of {dose.medication.name} at {takenTime}"
             disabled={deleting}
           >

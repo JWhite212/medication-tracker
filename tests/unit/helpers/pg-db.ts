@@ -9,7 +9,20 @@ import * as schema from "../../../src/lib/server/db/schema";
     singleton in fake-db.ts. */
 export const client = await PGlite.create();
 
-const database = drizzle(client, { schema });
+/** Every SQL statement this file's instance has sent, in order, transactions
+    included. A test that needs to see a query's shape (a `FOR UPDATE` that
+    PGlite's single backend cannot exercise, say) clears it in `beforeEach`
+    and reads it back. Nothing else resets it. */
+export const queryLog: string[] = [];
+
+const database = drizzle(client, {
+  schema,
+  logger: {
+    logQuery: (query) => {
+      queryLog.push(query);
+    },
+  },
+});
 
 // Apply the real migrations. This also makes the migration files
 // themselves tested — nothing else in the repo verifies they apply
@@ -122,6 +135,7 @@ export async function seedSchedule(
 export const pgDb = {
   client,
   db: database,
+  queryLog,
   reset,
   seedUser,
   seedMedication,

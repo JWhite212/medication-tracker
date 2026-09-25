@@ -95,8 +95,9 @@ export const actions: Actions = {
         );
         doseId = row.id;
       } else if (at) {
-        // "Took it at HH:MM": the slot's own instant. The guard makes a
-        // double tap one row and one decrement.
+        // "Took it at HH:MM": the slot's own instant. The guard refuses an
+        // instant that already holds a taken dose, so a double tap is one row
+        // and one decrement, and a stale page is told to refresh.
         const row = await logDose(user.id, medicationId, quantity, at, notes, sideEffects, {
           exactInstantGuard: true,
         });
@@ -112,6 +113,9 @@ export const actions: Actions = {
       }
       if (err instanceof SlotTargetChangedError) {
         return fail(409, { errors: { form: [SLOT_TARGET_CHANGED] } });
+      }
+      if (err instanceof SlotAlreadyTakenError) {
+        return fail(409, { errors: { form: [SLOT_ALREADY_TAKEN] } });
       }
       throw err;
     }
@@ -185,8 +189,8 @@ export const actions: Actions = {
     let doseId: string;
     try {
       // With an instant, this is the row's own Skip (its `skipAt`), so it is
-      // deduplicated and refused over a taken dose. Without one it is the
-      // legacy skip-at-now.
+      // refused over a taken dose or an existing skip at that instant.
+      // Without one it is the legacy skip-at-now.
       doseId = at
         ? await logSkippedDose(user.id, medicationId, at, { exactInstantGuard: true })
         : await logSkippedDose(user.id, medicationId);
@@ -196,6 +200,9 @@ export const actions: Actions = {
       }
       if (err instanceof SlotAlreadyTakenError) {
         return fail(409, { errors: { form: [SLOT_ALREADY_TAKEN] } });
+      }
+      if (err instanceof SlotTargetChangedError) {
+        return fail(409, { errors: { form: [SLOT_TARGET_CHANGED] } });
       }
       throw err;
     }

@@ -8,20 +8,21 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
  * what the slot's exact instant already holds, under a row lock, so a double
  * tap writes (and decrements) once. Log now re-derives its target from rows
  * read inside its own transaction. `fake-db` answers every read from its seed
- * and never evaluates a predicate, so it cannot tell a dedupe from an insert.
- * These tests belong on PGlite (CLAUDE.md, test-seam rule).
+ * and never evaluates a predicate, so it cannot tell a refusal from an
+ * insert. These tests belong on PGlite (CLAUDE.md, test-seam rule).
  *
- * What PGlite cannot show is the `FOR UPDATE` itself. It is one backend and
- * serialises transactions with its own mutex, so "concurrent" calls here run
- * one after the other with or without the lock. The concurrency case below
- * proves our part: the second call reads the first call's dose inside its
- * transaction and refuses. It does not prove the lock that makes the two
- * calls serialise on Neon.
+ * The `FOR UPDATE` is pinned by its SQL: the query log shows that each
+ * slot-anchored write reads the medication row with a lock, and a chip's
+ * write does not. Its runtime effect is still unprovable here. PGlite is one
+ * backend and serialises transactions with its own mutex, so "concurrent"
+ * calls run one after the other with or without the lock. The concurrency
+ * case below proves our part: the second call reads the first call's dose
+ * inside its transaction and refuses.
  */
 
 vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock);
 
-import { pgDb } from "../helpers/pg-db";
+import { pgDb, queryLog } from "../helpers/pg-db";
 import { medications, doseLogs, inventoryEvents } from "../../../src/lib/server/db/schema";
 import { asc, eq } from "drizzle-orm";
 
@@ -47,12 +48,17 @@ const SLOT = new Date("2026-04-16T09:00:00.000Z");
 const LONG_AGO = new Date("2026-01-01T00:00:00.000Z");
 const GUARD = { exactInstantGuard: true } as const;
 
-async function stock(): Promise<number | null> {
+async function stock(medicationId = "m1"): Promise<number | null> {
   const [row] = await pgDb.db
     .select({ n: medications.inventoryCount })
     .from(medications)
-    .where(eq(medications.id, "m1"));
+    .where(eq(medications.id, medicationId));
   return row?.n ?? null;
+}
+
+/** The statements that read the medications table under a row lock. */
+function medicationLocks(): string[] {
+  return queryLog.filter((q) => /from "medications"/i.test(q) && /for update/i.test(q));
 }
 
 async function rows() {
@@ -98,6 +104,7 @@ beforeEach(async () => {
   // Date only — faking all timers stalls PGlite's WASM layer.
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(TAP);
+  queryLog.length = 0;
 });
 
 afterEach(() => {
@@ -105,12 +112,17 @@ afterEach(() => {
 });
 
 describe("Took it at — logDose with the exact-instant guard", () => {
-  it("writes one taken row and decrements once for two posts at one slot", async () => {
+  it("refuses a second post at one slot, so a double tap writes and decrements once", async () => {
+    // A fresh page never offers "Took it at" on an instant that already
+    // holds a taken dose, so the second post comes from a stale page. It is
+    // refused rather than answered with the existing row, whose Undo would
+    // then delete a record this tap never wrote.
     await seedTrackedMed();
-    const first = await logDose("u1", "m1", 1, SLOT, undefined, undefined, GUARD);
-    const second = await logDose("u1", "m1", 1, SLOT, undefined, undefined, GUARD);
+    await logDose("u1", "m1", 1, SLOT, undefined, undefined, GUARD);
 
-    expect(second.id).toBe(first.id);
+    await expect(logDose("u1", "m1", 1, SLOT, undefined, undefined, GUARD)).rejects.toBeInstanceOf(
+      SlotAlreadyTakenError,
+    );
     expect(await rows()).toHaveLength(1);
     expect(await stock()).toBe(9);
     expect(await ledger()).toHaveLength(1);
@@ -162,12 +174,15 @@ describe("Took it at — logDose with the exact-instant guard", () => {
 });
 
 describe("Skip — logSkippedDose with the exact-instant guard", () => {
-  it("writes one skip and returns its id for two posts at one slot", async () => {
+  it("refuses a second skip at one slot, so a double tap writes one skip", async () => {
+    // A fresh page never offers Skip on an instant that already holds a
+    // skip: that skip resolves the slot. The second post is from a stale page.
     await seedTrackedMed();
     const first = await logSkippedDose("u1", "m1", SLOT, GUARD);
-    const second = await logSkippedDose("u1", "m1", SLOT, GUARD);
 
-    expect(second).toBe(first);
+    await expect(logSkippedDose("u1", "m1", SLOT, GUARD)).rejects.toBeInstanceOf(
+      SlotTargetChangedError,
+    );
     const all = await rows();
     expect(all).toHaveLength(1);
     expect(all[0]).toMatchObject({ id: first, status: "skipped", quantity: 1 });
@@ -337,5 +352,148 @@ describe("Log now — logDoseForSlot", () => {
       SlotTargetChangedError,
     );
     expect(await rows()).toEqual([]);
+  });
+});
+
+describe("slot-anchored reads belong to one medication", () => {
+  const SLOT_0800 = new Date("2026-04-16T08:00:00.000Z");
+
+  it("Log now on an interval medication anchors on its own last TAKEN dose", async () => {
+    // Every 8 hours, last taken 01:00, so the load draws the row at 09:00.
+    // The load projects from `lastTakenAt`, so the write must too: a skip at
+    // 03:00 and another medication's dose at 05:00 are not that anchor. Were
+    // either read as it, the write would project another grid and refuse
+    // every Log now on an interval medication.
+    await seedTrackedMed();
+    await pgDb.seedSchedule({
+      scheduleKind: "interval",
+      intervalHours: "8",
+      timeOfDay: null,
+      effectiveFrom: LONG_AGO,
+    });
+    await pgDb.seedMedication({ id: "m2", name: "Other", startedAt: LONG_AGO });
+    await pgDb.seedDose({
+      medicationId: "m1",
+      status: "taken",
+      takenAt: new Date("2026-04-16T01:00:00.000Z"),
+    });
+    await pgDb.seedDose({
+      medicationId: "m1",
+      status: "skipped",
+      takenAt: new Date("2026-04-16T03:00:00.000Z"),
+    });
+    await pgDb.seedDose({
+      medicationId: "m2",
+      status: "taken",
+      takenAt: new Date("2026-04-16T05:00:00.000Z"),
+    });
+
+    const row = await logDoseForSlot(
+      "u1",
+      "m1",
+      new Date("2026-04-16T09:00:00.000Z"),
+      new Date("2026-04-16T09:10:00.000Z"),
+      "UTC",
+    );
+
+    expect(row).toMatchObject({ medicationId: "m1", status: "taken" });
+  });
+
+  describe("two medications due at the same 08:00", () => {
+    async function seedTwoMedsAt0800() {
+      await seedTrackedMed();
+      await pgDb.seedMedication({
+        id: "m2",
+        name: "Lisinopril",
+        inventoryCount: 10,
+        startedAt: LONG_AGO,
+      });
+      await pgDb.seedSchedule({ medicationId: "m1", timeOfDay: "08:00", effectiveFrom: LONG_AGO });
+      await pgDb.seedSchedule({ medicationId: "m2", timeOfDay: "08:00", effectiveFrom: LONG_AGO });
+    }
+
+    it("Took it at for one does not find the other's dose at that instant", async () => {
+      await seedTwoMedsAt0800();
+      await logDose("u1", "m1", 1, SLOT_0800, undefined, undefined, GUARD);
+
+      const second = await logDose("u1", "m2", 1, SLOT_0800, undefined, undefined, GUARD);
+
+      expect(second).toMatchObject({ medicationId: "m2", status: "taken" });
+      expect(await stock("m1")).toBe(9);
+      expect(await stock("m2")).toBe(9);
+    });
+
+    it("Skip for one is not refused by the other's taken dose at that instant", async () => {
+      await seedTwoMedsAt0800();
+      await pgDb.seedDose({ medicationId: "m1", status: "taken", takenAt: SLOT_0800 });
+
+      const id = await logSkippedDose("u1", "m2", SLOT_0800, GUARD);
+
+      const [row] = await pgDb.db.select().from(doseLogs).where(eq(doseLogs.id, id));
+      expect(row).toMatchObject({ medicationId: "m2", status: "skipped" });
+    });
+
+    it("Log now for one is not cooled down by the other's dose", async () => {
+      await seedTwoMedsAt0800();
+      await logDoseForSlot("u1", "m1", SLOT_0800, new Date("2026-04-16T08:05:00.000Z"), "UTC");
+
+      const row = await logDoseForSlot(
+        "u1",
+        "m2",
+        SLOT_0800,
+        new Date("2026-04-16T08:10:00.000Z"),
+        "UTC",
+      );
+
+      expect(row).toMatchObject({ medicationId: "m2", status: "taken" });
+    });
+  });
+});
+
+describe("the medication row lock", () => {
+  // Two devices tapping together, or a retry after an unknown outcome, must
+  // serialise on the medication row, or both read "no dose" and both write.
+  it("Log now reads the medication row FOR UPDATE", async () => {
+    await seedTrackedMed();
+    await pgDb.seedSchedule({ timeOfDay: "08:00", effectiveFrom: LONG_AGO });
+    queryLog.length = 0;
+
+    await logDoseForSlot(
+      "u1",
+      "m1",
+      new Date("2026-04-16T08:00:00.000Z"),
+      new Date("2026-04-16T08:10:00.000Z"),
+      "UTC",
+    );
+
+    expect(medicationLocks()).toHaveLength(1);
+  });
+
+  it("Took it at reads the medication row FOR UPDATE", async () => {
+    await seedTrackedMed();
+    queryLog.length = 0;
+
+    await logDose("u1", "m1", 1, SLOT, undefined, undefined, GUARD);
+
+    expect(medicationLocks()).toHaveLength(1);
+  });
+
+  it("Skip reads the medication row FOR UPDATE", async () => {
+    await seedTrackedMed();
+    queryLog.length = 0;
+
+    await logSkippedDose("u1", "m1", SLOT, GUARD);
+
+    expect(medicationLocks()).toHaveLength(1);
+  });
+
+  it("a chip's dose takes no lock — it names no slot to protect", async () => {
+    await seedTrackedMed();
+    queryLog.length = 0;
+
+    await logDose("u1", "m1", 1);
+
+    expect(queryLog.some((q) => /from "medications"/i.test(q))).toBe(true);
+    expect(medicationLocks()).toEqual([]);
   });
 });

@@ -3,6 +3,7 @@
   import { showToast } from "$components/ui/Toast.svelte";
   import SideEffectPicker from "$components/SideEffectPicker.svelte";
   import { formatDateTimeLocal } from "$lib/utils/time";
+  import { actionErrorMessage, actionFieldErrors } from "$lib/utils/form-errors";
   import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 
   // `timezone` is the user's PROFILE zone and is not optional: the server
@@ -16,6 +17,10 @@
   }: { dose: DoseLogWithMedication; timezone: string; onclose: () => void } = $props();
   let loading = $state(false);
   let sideEffects = $state<SideEffect[]>(dose.sideEffects ?? []);
+  // The action's per-field messages, shown beside their controls. The toast
+  // names one problem and then disappears; a rejected date and quantity
+  // together need both to stay put next to the fields that caused them.
+  let fieldErrors = $state<Record<string, string>>({});
 </script>
 
 <form
@@ -25,13 +30,18 @@
     loading = true;
     return async ({ result, update }) => {
       loading = false;
+      fieldErrors = actionFieldErrors(result);
       if (result.type === "success") {
         showToast("Dose updated", "success");
         onclose();
-      } else if (result.type === "failure") {
-        const formError = (result.data as { editErrors?: { form?: string[] } } | undefined)
-          ?.editErrors?.form?.[0];
-        showToast(formError ?? "Couldn't update dose — check the fields", "error");
+      } else if (result.type === "failure" || result.type === "error") {
+        showToast(actionErrorMessage(result, "Couldn't update dose. Please try again."), "error");
+        // `update()` hands an error result to the nearest +error.svelte, which
+        // replaces the whole page: the modal and the edit in it are thrown
+        // away, and nothing says the dose was not saved. An expired session
+        // or a crash is better answered here, with the edit still open to
+        // retry or cancel.
+        if (result.type === "error") return;
       }
       await update();
     };
@@ -59,8 +69,15 @@
       name="takenAt"
       type="datetime-local"
       value={formatDateTimeLocal(new Date(dose.takenAt), timezone)}
+      aria-invalid={fieldErrors.takenAt ? "true" : undefined}
+      aria-describedby={fieldErrors.takenAt ? "takenAt-error" : undefined}
       class="border-border-strong bg-surface text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     />
+    {#if fieldErrors.takenAt}
+      <p id="takenAt-error" class="text-danger-ink mt-1 text-sm" role="alert">
+        {fieldErrors.takenAt}
+      </p>
+    {/if}
   </div>
 
   <div>
@@ -72,8 +89,15 @@
       min="1"
       max="10"
       value={dose.quantity}
+      aria-invalid={fieldErrors.quantity ? "true" : undefined}
+      aria-describedby={fieldErrors.quantity ? "quantity-error" : undefined}
       class="border-border-strong bg-surface text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
     />
+    {#if fieldErrors.quantity}
+      <p id="quantity-error" class="text-danger-ink mt-1 text-sm" role="alert">
+        {fieldErrors.quantity}
+      </p>
+    {/if}
   </div>
 
   <div>
@@ -82,12 +106,26 @@
       id="notes"
       name="notes"
       rows="2"
+      aria-invalid={fieldErrors.notes ? "true" : undefined}
+      aria-describedby={fieldErrors.notes ? "notes-error" : undefined}
       class="border-border-strong bg-surface text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
       placeholder="Optional notes...">{dose.notes ?? ""}</textarea
     >
+    {#if fieldErrors.notes}
+      <p id="notes-error" class="text-danger-ink mt-1 text-sm" role="alert">
+        {fieldErrors.notes}
+      </p>
+    {/if}
   </div>
 
   <SideEffectPicker value={sideEffects} onchange={(effects) => (sideEffects = effects)} />
+  <!-- The picker is a group of toggles with no single control to carry
+       aria-invalid, so its message is shown beside it and announced. -->
+  {#if fieldErrors.sideEffects}
+    <p id="sideEffects-error" class="text-danger-ink -mt-2 text-sm" role="alert">
+      {fieldErrors.sideEffects}
+    </p>
+  {/if}
   <input
     type="hidden"
     name="sideEffects"

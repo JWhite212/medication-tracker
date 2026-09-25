@@ -3,6 +3,7 @@
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
   import splashImage from "$lib/assets/8ccec61e-617c-4da0-8596-c6aa9970893e.webp";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
+  import { ariaDescribedBy } from "$lib/utils/form-errors";
 
   let { form } = $props();
   let loading = $state(false);
@@ -39,6 +40,19 @@
     <h1 class="mb-2 text-2xl font-bold">Create account</h1>
     <p class="text-text-secondary mb-6">Start tracking your medications</p>
 
+    <!-- The action's rate limit answers with `errors.form`, which this page
+         never rendered: a throttled sign-up looked like a button that did
+         nothing. -->
+    {#if errors.form}
+      <div
+        id="form-error"
+        class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
+        role="alert"
+      >
+        {errors.form[0]}
+      </div>
+    {/if}
+
     <form
       method="POST"
       use:enhance={() => {
@@ -58,11 +72,16 @@
           type="text"
           required
           value={formValues.name ?? ""}
+          aria-invalid={errors.name ? "true" : undefined}
+          aria-describedby={ariaDescribedBy(
+            errors.name && "name-error",
+            errors.form && "form-error",
+          )}
           class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Your name"
         />
         {#if errors.name}
-          <p class="text-danger-ink mt-1 text-sm" role="alert">{errors.name[0]}</p>
+          <p id="name-error" class="text-danger-ink mt-1 text-sm" role="alert">{errors.name[0]}</p>
         {/if}
       </div>
 
@@ -74,11 +93,18 @@
           type="email"
           required
           value={formValues.email ?? ""}
+          aria-invalid={errors.email ? "true" : undefined}
+          aria-describedby={ariaDescribedBy(
+            errors.email && "email-error",
+            errors.form && "form-error",
+          )}
           class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="you@example.com"
         />
         {#if errors.email}
-          <p class="text-danger-ink mt-1 text-sm" role="alert">{errors.email[0]}</p>
+          <p id="email-error" class="text-danger-ink mt-1 text-sm" role="alert">
+            {errors.email[0]}
+          </p>
         {/if}
       </div>
 
@@ -90,11 +116,18 @@
           type="password"
           required
           minlength="8"
+          aria-invalid={errors.password ? "true" : undefined}
+          aria-describedby={ariaDescribedBy(
+            errors.password && "password-error",
+            errors.form && "form-error",
+          )}
           class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
           placeholder="Min. 8 characters"
         />
         {#if errors.password}
-          <p class="text-danger-ink mt-1 text-sm" role="alert">{errors.password[0]}</p>
+          <p id="password-error" class="text-danger-ink mt-1 text-sm" role="alert">
+            {errors.password[0]}
+          </p>
         {/if}
       </div>
 

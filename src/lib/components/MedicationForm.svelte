@@ -19,6 +19,7 @@
     type ScheduleMode,
   } from "$lib/medications/medication-form-state";
   import type { FormErrors } from "$lib/medications/medication-form-errors";
+  import { actionErrorMessage } from "$lib/utils/form-errors";
 
   let {
     medication = undefined,
@@ -57,6 +58,11 @@
   let daysOfWeek = $state<number[]>(deriveInitialDaysOfWeek(schedules));
 
   let loading = $state(false);
+  // An unexpected throw or an expired session. Field failures arrive through
+  // the `errors` prop, but an error result carries no `form` for the page to
+  // hand back, so this is the only place it can be said.
+  let actionError = $state("");
+  let actionErrorEl = $state<HTMLElement | null>(null);
 
   // Hidden-field derivations: the Zod schema validates these, so they
   // need to mirror the user's selection on every render.
@@ -119,6 +125,18 @@
   use:enhance={() => {
     loading = true;
     return async ({ result, update }) => {
+      if (result.type === "error") {
+        // `update()` would hand this to the nearest +error.svelte, which
+        // replaces the page and every field the user has filled in. Say what
+        // happened here instead, with the reference `handleError` minted, and
+        // leave the form intact to retry.
+        loading = false;
+        actionError = actionErrorMessage(result);
+        await tick();
+        actionErrorEl?.focus();
+        return;
+      }
+      actionError = "";
       await update();
       loading = false;
       if (result.type === "failure") {
@@ -223,6 +241,17 @@
   />
 
   <MedicalDisclaimer variant="inline" />
+
+  {#if actionError}
+    <p
+      bind:this={actionErrorEl}
+      class="bg-danger/10 text-danger-ink rounded-lg px-4 py-2 text-sm"
+      role="alert"
+      tabindex="-1"
+    >
+      {actionError}
+    </p>
+  {/if}
 
   <button
     type="submit"

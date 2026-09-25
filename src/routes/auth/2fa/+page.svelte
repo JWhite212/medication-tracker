@@ -20,8 +20,15 @@
     <h1 class="mb-2 text-2xl font-bold">Two-Factor Authentication</h1>
     <p class="text-text-secondary mb-6">Enter the 6-digit code from your authenticator app.</p>
 
+    <!-- Describes the code field without marking it invalid: the action's
+         bare string is also its per-account rate limit, which someone else
+         holding the password can trigger against a code that is correct. -->
     {#if form?.error}
-      <div class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm" role="alert">
+      <div
+        id="form-error"
+        class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
+        role="alert"
+      >
         {form.error}
       </div>
     {/if}
@@ -48,6 +55,7 @@
           maxlength="6"
           required
           oninput={sanitize}
+          aria-describedby={form?.error ? "form-error" : undefined}
           class="border-border-strong bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 text-center text-2xl tracking-widest focus:ring-1 focus:outline-none"
           placeholder="000000"
         />

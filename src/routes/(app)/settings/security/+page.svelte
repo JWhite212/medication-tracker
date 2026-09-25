@@ -87,8 +87,16 @@
         </p>
       {/if}
     </div>
+    <!-- One unkeyed string for every 2FA action, so each field of whichever
+         arm is showing is described by it, and none is marked invalid: the
+         disable arm's "Incorrect password" and "Invalid code" arrive the same
+         way and the page cannot tell which field they mean. -->
     {#if form?.totpError}
-      <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm" role="alert">
+      <p
+        id="totp-error"
+        class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm"
+        role="alert"
+      >
         {form.totpError}
       </p>
     {/if}
@@ -122,6 +130,7 @@
             autocomplete="one-time-code"
             inputmode="numeric"
             required
+            describedBy={form?.totpError ? "totp-error" : undefined}
           />
           <button
             type="submit"
@@ -154,6 +163,7 @@
             type="password"
             autocomplete="current-password"
             required
+            describedBy={form?.totpError ? "totp-error" : undefined}
           />
           <div class="flex items-end gap-3">
             <Input
@@ -164,6 +174,7 @@
               autocomplete="one-time-code"
               inputmode="numeric"
               required
+              describedBy={form?.totpError ? "totp-error" : undefined}
             />
             <button
               type="submit"
@@ -190,6 +201,7 @@
           type="password"
           autocomplete="current-password"
           required
+          describedBy={form?.totpError ? "totp-error" : undefined}
         />
         <button
           type="submit"

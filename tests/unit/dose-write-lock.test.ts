@@ -122,6 +122,38 @@ describe("createDoseWriteLock", () => {
     vi.advanceTimersByTime(1);
     expect(lock.busy).toBe(false);
   });
+
+  it("an unrelated write's release() does not end a concurrent hold() — only the LAST holder's letting go starts the cooldown", () => {
+    // A normal write acquires the lock, and — while it is still in flight —
+    // Undo is tapped on a different, already-visible toast and takes its own
+    // hold(). The write finishes first and releases; that must not free the
+    // page while Undo's own fetch/reload is still pending.
+    const lock = createDoseWriteLock();
+    lock.acquire();
+    lock.hold();
+    lock.release();
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS);
+    expect(lock.busy).toBe(true); // the concurrent hold() never let go
+    lock.extend();
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 1);
+    expect(lock.busy).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(lock.busy).toBe(false);
+  });
+
+  it("symmetrically, extend() letting go first does not start a cooldown while acquire()'s own release() is still outstanding", () => {
+    const lock = createDoseWriteLock();
+    lock.acquire();
+    lock.hold();
+    lock.extend();
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS);
+    expect(lock.busy).toBe(true); // the acquire()d write never released
+    lock.release();
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 1);
+    expect(lock.busy).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(lock.busy).toBe(false);
+  });
 });
 
 describe("DoseActionForm on an 'error' result (outcome unknown)", () => {

@@ -4,6 +4,17 @@
 independent implementations that disagree with each other. Collapse them into one
 module so the question has one home, one rule, and one place to test.
 
+> **Amended 2026-09-24 by the [dashboard "Due Now" rebuild](2026-09-24-dashboard-due-now-design.md).**
+> That change landed some of this spec's pieces early and made others obsolete; read
+> the _Amended_ notes below before implementing anything here. In short:
+>
+> - The dashboard's `computeTimingStatus` block and `covered` merge are already deleted.
+> - `timingStatusFromSlots`, `classifyDueStatus`, `groupSlotsByTimeOfDay` and
+>   `classifyHour` are deleted rather than moved or kept.
+> - The lifecycle clip already applies in `computeScheduleSlots`.
+> - The resolution rule should adopt that spec's passes 0–2 rather than the symmetric
+>   ±1h rule stated here.
+
 ## The three answers, and how they differ
 
 |                | module                                           | evidence it reads                     | used by            |
@@ -62,10 +73,13 @@ medication becomes outstanding at `startedAt + intervalHours` — not instantly
 New module at `src/lib/utils/due.ts`. It must live in `utils/` because the cron
 (server), the dashboard load (server) and `MyDayTimeline.svelte` (client) all consume
 it, so it may never import `$lib/server`. Date primitives (`localTimeOnDateToUtc`,
-`getLocalDayOfWeek`, `getLocalDateString`) and presentation helpers
-(`groupSlotsByTimeOfDay`, `classifyHour`) stay in `schedule.ts` and are imported.
-`classifyDueStatus` stays in `time.ts` — it is a pure threshold classifier with its
-own tests and no reason to move.
+`getLocalDayOfWeek`, `getLocalDateString`) stay in `schedule.ts` and are imported.
+_Amended 2026-09-24:_ the dashboard due-now rebuild **deleted** the presentation
+helpers `groupSlotsByTimeOfDay` and `classifyHour`, and `classifyDueStatus` in
+`time.ts`. The page is now grouped by action, not time of day, and no caller of the
+classifier remained. None of them is moved here or kept. `MyDayTimeline.svelte` is
+deleted as well; the client consumers are now the `src/lib/components/dashboard/`
+components, which render a composed payload instead of calling due-ness directly.
 
 ```ts
 export const SLOT_TOLERANCE_MS = 60 * 60 * 1000;
@@ -93,8 +107,9 @@ back `OVERDUE_LOOKBACK_DAYS` from `now` internally.
 
 Both entry points are thin callers of one private occurrence-walk. Tolerance,
 DST-safe day arithmetic, the walk-back, per-kind occurrence projection, the lifecycle
-clip and the resolution rule are all private to it. `timingStatusFromSlots` moves here
-from `schedule.ts` — it answers a due-ness question, not a formatting one.
+clip and the resolution rule are all private to it. _Amended 2026-09-24:_
+`timingStatusFromSlots` was **deleted** rather than moved. Its only consumer was the
+dashboard's `covered` merge, which is gone.
 
 Modelling the evidence as a union is the point of the design: the cron's weaker
 evidence becomes explicit in the type rather than an unremarked difference, which is
@@ -111,7 +126,10 @@ Occurrences project per schedule kind:
 - **`prn`** — no occurrences.
 
 Occurrences are clipped to the medication's `[startedAt, endedAt]` lifecycle window,
-consistent with how analytics already treats that range.
+consistent with how analytics already treats that range. _Amended 2026-09-24:_ this
+clip has already landed in `computeScheduleSlots`, together with a second,
+schedule-edit clip for pre-midnight slots. Move both into the new module; do not add
+them again.
 
 An occurrence is **resolved** by a `taken` or `skipped` event within
 ±`SLOT_TOLERANCE_MS`. A `missed` row never resolves one — it records that a dose was
@@ -119,6 +137,14 @@ not consumed, so the slot stays outstanding. An occurrence in the past that is n
 resolved is outstanding. The fixed-time scan walks back `OVERDUE_LOOKBACK_DAYS` to
 find the most recent elapsed occurrence, so a slot timed after the cron tick is not
 lost when the local date rolls over.
+
+_Amended 2026-09-24:_ the symmetric ±`SLOT_TOLERANCE_MS` rule above is what the
+dashboard used to do, and it is now pass 1 of three. `outstandingSlots` should adopt
+the dashboard's rules as specified in
+[the due-now spec's Three passes](2026-09-24-dashboard-due-now-design.md#three-passes):
+passes 0–2 (exact-instant claims, reserved skips, late resolution), the segment limit
+and both clips. The cron's anchor evidence cannot run pass 2 and stays as described
+under "Limits of the anchor projection".
 
 ### Limits of the anchor projection
 
@@ -176,6 +202,11 @@ medication.
 
 `dashboard/+page.server.ts:39-54` (the `computeTimingStatus` block and its filter on
 deprecated columns) and `:81-89` (the `covered`-set merge) are both deleted.
+_Amended 2026-09-24: both deletions have landed._ The dashboard load is now
+`loadDashboard` (`src/lib/server/dashboard/load.ts`) plus `getRefillForecast`, and
+composition lives in `src/lib/server/dashboard/page-data.ts`. What remains here is to
+route that composition's per-medication projection and matching through
+`outstandingSlots`.
 `lastDoseByMedication` is rebuilt from `lastEventAt` rather than `lastTakenAt`. What
 remains is one call to `outstandingSlots` with `{kind:"events", doses: todaysDoses}`,
 with badges derived from the returned slots. Roughly 50 lines of domain logic leave
@@ -187,14 +218,18 @@ implementation.
 `computeOverdueSlot`, `isScheduleOverdue`, `computeTimingStatus`,
 `MATCH_TOLERANCE_MS`, `FIXED_TIME_TOLERANCE_MS`, and the `covered`-set merge.
 `reminders/domain.ts` keeps only its dedupe-key builders, which are reminder
-concerns rather than due-ness.
+concerns rather than due-ness. _Amended 2026-09-24:_ `computeTimingStatus` and the
+`covered`-set merge are already gone. `MATCH_TOLERANCE_MS` is now **exported** from
+`schedule.ts` beside `CARRY_OVER_MS`, which the reminder cap imports. Fold both into
+`SLOT_TOLERANCE_MS`'s module rather than deleting them.
 
 ### Unchanged
 
-`MyDayTimeline.svelte` and `QuickLogBar.svelte` keep their current props — the
-`ScheduleSlot` and `MedicationTimingStatus` shapes are preserved. The medications list
-computes no due-ness and is untouched. The three modules consuming `ScheduleSlot` are
-the entire blast radius.
+_Amended 2026-09-24: obsolete as written._ `MyDayTimeline.svelte` and
+`MedicationTimingStatus` are deleted. `QuickLogBar.svelte` takes
+`{ medications, todayStart, timezone, timeFormat }` and shows no due-ness at all. `ScheduleSlot` is kept
+(it gained `kind`, `isEarlier`, `resolvedByDoseId` and `missedByDoseId`). The
+medications list computes no due-ness and is untouched.
 
 ## Testing
 
@@ -204,23 +239,28 @@ must preserve — skipped-dose matching (`:218`), missed-rows-stay-overdue (`:24
 (`:498-549`). Assertions stand; only the call signature gains the `Evidence` argument.
 If a rewrite breaks a rule, that suite says so. `reminders-dedupe.test.ts` keeps its
 dedupe-key cases, its look-back cases (`:216-247`) and its fixed-time tolerance cases.
+_Amended 2026-09-24:_ it keeps the look-back cases, with ticks inside 12h of the
+slot, because the reminder cap stops reminding about a pre-midnight slot once it is
+12h old.
 
 **Contradicts the new rule — exactly two cases.** These are the only assertions in the
 suite that the `startedAt` decision invalidates, one on each side of the old
 contradiction:
 
 - `reminders-dedupe.test.ts:86` — "never-taken interval is not overdue (no baseline)"
-- `time.test.ts:152` — "returns 'overdue' when lastTakenAt is null (never taken)"
+- ~~`time.test.ts:152` — "returns 'overdue' when lastTakenAt is null (never taken)"~~
+  _Amended 2026-09-24:_ deleted with `computeTimingStatus` by the dashboard due-now
+  rebuild, so this half of the check no longer exists.
 
-Both are replaced by a single case asserting the `startedAt + intervalHours` rule.
-Having to edit precisely these two, and nothing else, is the check that the decision
+The remaining case is replaced by one asserting the `startedAt + intervalHours` rule.
+Having to edit precisely that one, and nothing else, is the check that the decision
 landed where the design says it does.
 
-**Retires with its function.** The remainder of `computeTimingStatus`'s block in
-`time.test.ts` is deleted along with the function itself — those cases are not
-rewritten, because the behaviour they cover moves under the slot projection and is
-already asserted by `schedule.test.ts`. `time.test.ts` keeps `formatTimeSince`,
-`formatTime`, `startOfDay`, `formatDueIn` and `classifyDueStatus`.
+**Retires with its function.** _Amended 2026-09-24: done._ The dashboard due-now
+rebuild deleted `computeTimingStatus`'s block in `time.test.ts` together with the
+function. `time.test.ts` keeps `formatTimeSince`, `formatTime`, `startOfDay` and
+`formatDueIn`, and gains `formatDuration`. `classifyDueStatus` had no tests and is
+deleted.
 
 **New.** The test that matters most is a **parity test**, bounded as described under
 "Limits of the anchor projection": given one schedule, one timezone, one instant and

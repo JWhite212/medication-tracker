@@ -201,8 +201,12 @@ describe("the row's controls hide only on devices that can hover to reveal them"
 describe("the row's controls are real targets (WCAG 2.5.8, and 2.5.5 on touch)", () => {
   /** The px size a `size-N` token sets, for any variant prefix given. */
   function sizePx(list: string[], prefix: string): number {
-    const re = new RegExp(`^${prefix.replace(/[-:]/g, "\\$&")}size-(\\d+(?:\\.5)?)$`);
-    const sizes = list.map((t) => t.match(re)?.[1]).filter((n): n is string => n !== undefined);
+    // startsWith rather than a RegExp built from the prefix: no escaping to get
+    // wrong, and an unprefixed lookup cannot match a variant's token.
+    const sizes = list
+      .filter((t) => t.startsWith(`${prefix}size-`))
+      .map((t) => t.slice(prefix.length + "size-".length).match(/^(\d+(?:\.5)?)$/)?.[1])
+      .filter((n): n is string => n !== undefined);
     return sizes.length ? Math.max(...sizes.map((n) => Number(n) * 4)) : 0;
   }
 

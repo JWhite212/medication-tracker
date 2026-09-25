@@ -50,6 +50,11 @@ test.describe("dose logging", () => {
     expect(beforeCount).toBeGreaterThan(0);
 
     await page.getByRole("button", { name: "Delete dose" }).first().click();
+    // × only opens an inline confirmation now. Playwright matches a string
+    // name as a case-insensitive substring, and "delete dose" is inside the
+    // confirm's name too, so this one is a regex anchored at ^Confirm: it
+    // cannot match any row's ×, and only the row just opened has a confirm.
+    await page.getByRole("button", { name: /^Confirm delete dose of Vitamin D at / }).click();
     await expect(page.getByText(/dose removed/i)).toBeVisible();
 
     const after = await getInventoryCount(userId!, VITAMIN_D);
@@ -69,6 +74,7 @@ test.describe("dose logging", () => {
 
     const inventoryBefore = await getInventoryCount(userId!, VITAMIN_D);
     await page.getByRole("button", { name: "Delete dose" }).first().click();
+    await page.getByRole("button", { name: /^Confirm delete dose of Vitamin D at / }).click();
     await expect(page.getByText(/dose removed/i)).toBeVisible();
 
     const inventoryAfter = await getInventoryCount(userId!, VITAMIN_D);

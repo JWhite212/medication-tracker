@@ -385,9 +385,8 @@ describe("DoseActionForm submit", () => {
     await flushMicrotasks();
     expect(lock.busy).toBe(true); // Undo's fetch in flight
 
-    // The unrelated second write settles and calls its own release() —
-    // this is the exact interference the finding describes, and must not
-    // free the page while Undo's fetch/reload is still outstanding.
+    // The unrelated second write settles and calls its own release(). That
+    // must not free the page while Undo's fetch/reload is still outstanding.
     await finishSubmit(secondCallback!, second.form, SUCCESS).done;
     expect(lock.busy).toBe(true);
 

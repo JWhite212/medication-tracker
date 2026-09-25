@@ -619,7 +619,7 @@ export function computeScheduleSlots(
 // ── Dashboard buttons ─────────────────────────────────────────────────────
 
 /**
- * How long after a taken dose Log now stays off that medication (D8). A
+ * How long after a taken dose Log now stays off that medication. A
  * second tap inside the hour is far likelier a double log than a second
  * dose. Took it at and Skip stay, because each names its own instant.
  */
@@ -661,7 +661,7 @@ export interface SlotActions {
  * never wins a tie a real row would have won — pass 0's smaller-id rule,
  * pass 1's id tie-break, pass 2's `(takenAt, id)` order.
  */
-const PROBE_ID = "￿";
+const PROBE_ID = "\uffff";
 
 interface SlotIndex {
   all: Map<number, MatchedSlot>;
@@ -744,7 +744,8 @@ function othersUnchanged(base: SlotIndex, sim: SlotIndex, ownMs: number): boolea
  * fixed-time instants arrive precomputed in `fixedInstants`.
  *
  * Log now's "no other row moves" condition is deliberately stricter than
- * the spec's wording. On a medication mixing interval and fixed rows, the
+ * asking only which row a dose logged now would resolve. On a medication
+ * mixing interval and fixed rows, the
  * re-anchor can free an old dose that pass 2 then hands to another row, or
  * supersede a later interval row while the dose itself lands on a fixed
  * one; without the guard Log now would sit on a row whose tap changes a

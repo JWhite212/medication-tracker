@@ -1218,7 +1218,7 @@ describe("computeScheduleSlots — reserved skips", () => {
     ]);
   });
 
-  it("a real taken dose within the hour still beats a skip at the slot's instant (D7)", () => {
+  it("a real taken dose within the hour still beats a skip at the slot's instant", () => {
     const slots = fixedDaySlots(
       ["09:00"],
       [
@@ -1319,7 +1319,7 @@ describe("computeScheduleSlots — pass 2 (late resolution)", () => {
   it("pass 1 places a dose before pass 2 sees it", () => {
     const now = new Date("2026-04-16T21:00:00Z");
     const dose = makeDose({ takenAt: new Date("2026-04-16T20:30:00Z") });
-    // The spec's worked case: pass 1 gives 20:30 to 20:00, and 14:00 stays overdue.
+    // The worked case: pass 1 gives 20:30 to 20:00, and 14:00 stays overdue.
     expect(outcome(fixedDaySlots(["14:00", "20:00"], [dose], now))).toEqual([
       ["14:00", "overdue", null],
       ["20:00", "taken", "dose-1"],
@@ -1574,9 +1574,9 @@ describe("pinned divergence: the dashboard credits slots Analytics does not", ()
     // multi-unit doses" in CLAUDE.md. Analytics counts this as ONE dose
     // event on 2026-04-16. The dashboard asks "has this slot been
     // handled?" and resolves all three: 20:00 in pass 1, then 14:00 and
-    // 08:00 in pass 2. Do not change either surface to match the other
-    // without revisiting decisions D3 and D4 of
-    // docs/superpowers/specs/2026-09-24-dashboard-due-now-design.md.
+    // 08:00 in pass 2. Do not change either surface to match the other:
+    // that reverses a product decision either way. A late dose resolves the
+    // slot it was for, and logging now records the current time.
     const dose = makeDose({ takenAt: new Date("2026-04-16T20:30:00Z"), quantity: 3 });
     expect(
       outcome(fixedDaySlots(["08:00", "14:00", "20:00"], [dose], new Date("2026-04-16T21:00:00Z"))),

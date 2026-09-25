@@ -4,7 +4,7 @@ export type StatusMarkerState = "taken" | "overdue" | "due-now" | "upcoming" | "
  * Each marker's accessible name. "Overdue" survives on the dashboard ONLY
  * here — no visible copy says it. A total Record, so a state added to the
  * union without a label does not compile; status-marker-ssr.test.ts pins
- * the wording against the spec's table.
+ * each label's exact wording.
  */
 export const STATUS_MARKER_LABELS: Record<StatusMarkerState, string> = {
   taken: "Taken",

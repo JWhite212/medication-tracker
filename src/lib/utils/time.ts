@@ -599,26 +599,74 @@ export function parseDateTimeLocal(datetimeLocal: string, timezone: string): Dat
   return wallClockToInstant(dayKey, timeOfDay, timezone);
 }
 
+export interface DurationOptions {
+  /** "2h 15m" (default) or "2 hours 15 minutes". */
+  style?: "short" | "long";
+  /** How many units to show, largest first. Default 2. */
+  maxUnits?: 1 | 2;
+}
+
+type DurationUnit = "day" | "hour" | "minute";
+
+const MINUTES_PER_DAY = 24 * 60;
+
 /**
- * Format a duration in milliseconds as a human-readable "due in" string.
- * Positive ms = time until due. Negative ms = overdue. Near-zero = "Due now".
+ * THE duration formatter. Every "how long" on screen goes through it, so no
+ * caller can print "504h 20m" for three weeks again. `formatDueIn` did,
+ * because it had no day unit.
+ *
+ * - Magnitude only. The sign belongs to the caller ("ago" versus "in",
+ *   "Due in" versus "Overdue"), never to this function.
+ * - Floors at every unit, so lateness is never overstated: 119,999ms is
+ *   "1m", and 23h59m at one unit is "23 hours".
+ * - Units are d / h / m, where a day is 24 ELAPSED hours. This measures a
+ *   duration, not a count of civil days, so a DST day does not bend it.
+ * - Largest first. Zero units are dropped, and so are minutes once days
+ *   appear ("1d 0h 5m" is "1d").
+ * - Under a minute: "<1m" / "less than a minute".
+ */
+export function formatDuration(
+  ms: number,
+  { style = "short", maxUnits = 2 }: DurationOptions = {},
+): string {
+  const totalMinutes = Math.floor(Math.abs(ms) / 60_000);
+  if (totalMinutes < 1) return style === "long" ? "less than a minute" : "<1m";
+
+  const days = Math.floor(totalMinutes / MINUTES_PER_DAY);
+  const hours = Math.floor((totalMinutes % MINUTES_PER_DAY) / 60);
+  const minutes = totalMinutes % 60;
+
+  const units: Array<[number, DurationUnit]> =
+    days > 0
+      ? [
+          [days, "day"],
+          [hours, "hour"],
+        ]
+      : [
+          [hours, "hour"],
+          [minutes, "minute"],
+        ];
+
+  return units
+    .filter(([count]) => count > 0)
+    .slice(0, maxUnits)
+    .map(([count, unit]) =>
+      style === "long" ? `${count} ${unit}${count === 1 ? "" : "s"}` : `${count}${unit[0]}`,
+    )
+    .join(" ");
+}
+
+/**
+ * "Due in 2h 15m" / "Overdue 21d" / "Due now". Positive ms is time until
+ * due, negative is overdue, and under a minute either way is "Due now".
+ *
+ * Built on `formatDuration` (short, two units), which is what gives it a
+ * day unit. A medication last taken three weeks ago used to read
+ * "Overdue 504h 20m".
  */
 export function formatDueIn(ms: number): string {
-  const absMins = Math.floor(Math.abs(ms) / 60_000);
-  if (absMins < 1) return "Due now";
-
-  const hours = Math.floor(absMins / 60);
-  const mins = absMins % 60;
-
-  let label: string;
-  if (hours > 0 && mins > 0) {
-    label = `${hours}h ${mins}m`;
-  } else if (hours > 0) {
-    label = `${hours}h`;
-  } else {
-    label = `${mins}m`;
-  }
-
+  if (Math.abs(ms) < 60_000) return "Due now";
+  const label = formatDuration(ms, { style: "short", maxUnits: 2 });
   return ms > 0 ? `Due in ${label}` : `Overdue ${label}`;
 }
 

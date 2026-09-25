@@ -1,141 +1,186 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
-  import { showToast } from "$components/ui/Toast.svelte";
-  import { actionErrorMessage } from "$lib/utils/form-errors";
-  import SummaryStrip from "$components/SummaryStrip.svelte";
-  import MyDayTimeline from "$components/MyDayTimeline.svelte";
-  import QuickLogBar from "$components/QuickLogBar.svelte";
-  import TimelineEntry from "$components/TimelineEntry.svelte";
+  import { invalidateAll } from "$app/navigation";
   import OnboardingWelcome from "$components/OnboardingWelcome.svelte";
   import Modal from "$components/ui/Modal.svelte";
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import KeyboardShortcuts from "$components/KeyboardShortcuts.svelte";
   import RefillsCard from "$components/RefillsCard.svelte";
-  import EmptyState from "$components/EmptyState.svelte";
+  import QuickLogBar from "$components/QuickLogBar.svelte";
+  import DashboardHeader from "$components/dashboard/DashboardHeader.svelte";
+  import DueCard from "$components/dashboard/DueCard.svelte";
+  import DoneList from "$components/dashboard/DoneList.svelte";
+  import LaterList from "$components/dashboard/LaterList.svelte";
+  import DoseActionForm from "$components/dashboard/DoseActionForm.svelte";
+  import {
+    createDoseWriteLock,
+    setDoseWriteLock,
+  } from "$components/dashboard/dose-write-lock.svelte";
+  import { createDashboardClock, setDashboardClock } from "$components/dashboard/dashboard-clock";
+  import { DASHBOARD_HEADING_ID, DONE_HEADING_ID } from "$components/dashboard/dom-ids";
+  import type { DateFormat, TimeFormat } from "$lib/utils/time";
   import type { DoseLogWithMedication } from "$lib/types";
-  import { formatDueIn } from "$lib/utils/time";
-  import { getMedicationBackground } from "$lib/utils/medication-style";
 
   let { data } = $props();
+
   let editingDose = $state<DoseLogWithMedication | null>(null);
 
-  const overdueCount = $derived(data.timingStatus.filter((t) => t.status === "overdue").length);
+  const timeFormat = $derived(data.preferences.timeFormat as TimeFormat);
+  const dateFormat = $derived(data.preferences.dateFormat as DateFormat);
+  const todayStart = $derived(new Date(data.todayStart));
+  const asNeededOnly = $derived(data.status.kind === "as-needed-only");
+  const doneTitle = $derived(asNeededOnly ? "Logged today" : "Done today");
+  const hasDue = $derived(data.earlier.length + data.today.length > 0);
 
-  // "Doses today" counts only doses actually taken — skipped events
-  // appear in the timeline below but should not inflate the count.
-  const takenTodayCount = $derived(data.doses.filter((d) => d.status === "taken").length);
+  // One page-wide write lock and one server-relative clock. Every
+  // DoseActionForm, DueCard and chip reads them from context; nothing here
+  // re-implements a timer, a skew or a lock.
+  setDoseWriteLock(createDoseWriteLock());
+  const clock = createDashboardClock(invalidateAll);
+  setDashboardClock(clock);
 
-  const overdueMeds = $derived(
-    data.timingStatus
-      .filter((t) => t.status === "overdue")
-      .map((t) => {
-        const med = data.medications.find((m) => m.id === t.medicationId);
-        return med ? { ...t, medication: med } : null;
-      })
-      .filter(Boolean) as Array<
-      (typeof data.timingStatus)[number] & { medication: (typeof data.medications)[number] }
-    >,
-  );
+  // The instant visible durations are rendered against. It starts at the
+  // server's own `now`, so SSR and hydration print the same text, then
+  // follows clock.serverNow() every 60s (the TimeSince pattern).
+  let tickMs = $state<number | null>(null);
+  const renderNow = $derived(new Date(tickMs ?? Date.parse(data.now)));
+
+  // Once per payload: re-measure the skew and re-arm the one refresh timer
+  // at nextRefreshAt. The teardown clears it before the next payload's sync,
+  // and on unmount.
+  $effect(() => {
+    clock.sync({ now: data.now, nextRefreshAt: data.nextRefreshAt });
+    tickMs = clock.serverNow().getTime();
+    return () => clock.dispose();
+  });
+
+  $effect(() => {
+    const tick = () => {
+      tickMs = clock.serverNow().getTime();
+    };
+    const interval = setInterval(tick, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      tick();
+      clock.onVisible();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  });
+
+  /** DueCard's last resort after a row resolves: the same card, else the next card, else this h1. */
+  const headingTarget = () => document.getElementById(DASHBOARD_HEADING_ID);
+  /** The Done h2 (tabindex="-1", always rendered): focus after Remove. */
+  const doneHeading = () => document.getElementById(DONE_HEADING_ID);
 </script>
 
 <svelte:head>
   <title>Dashboard — MedTracker</title>
 </svelte:head>
 
+{#snippet chips(title: string)}
+  <section aria-labelledby="quick-log-heading">
+    <h2
+      id="quick-log-heading"
+      class="text-text-muted mb-3 text-sm font-medium tracking-wider uppercase"
+    >
+      {title}
+    </h2>
+    <QuickLogBar
+      medications={data.medications}
+      {todayStart}
+      timezone={data.timezone}
+      {timeFormat}
+    />
+  </section>
+{/snippet}
+
 {#if data.medications.length === 0}
   <OnboardingWelcome />
 {:else}
   <div class="mx-auto w-full max-w-2xl space-y-6">
-    <h1 class="text-2xl font-bold">Dashboard</h1>
-
-    <SummaryStrip doseCount={takenTodayCount} {overdueCount} />
-
-    <RefillsCard entries={data.refillForecast} />
-
-    <MyDayTimeline
-      scheduleSlots={data.scheduleSlots}
+    <DashboardHeader
+      status={data.status}
+      serverNow={renderNow}
       timezone={data.timezone}
-      timeFormat={data.preferences.timeFormat as "12h" | "24h"}
+      {timeFormat}
+      {dateFormat}
     />
 
-    <section>
-      <h2 class="text-text-muted mb-3 text-sm font-medium tracking-wider uppercase">Quick Log</h2>
-      <QuickLogBar medications={data.medications} timingStatus={data.timingStatus} />
-    </section>
-
-    <section>
-      <h2 class="text-text-muted mb-3 text-sm font-medium tracking-wider uppercase">Today</h2>
-
-      {#if overdueMeds.length > 0}
-        <div class="mb-2 space-y-2" role="list" aria-label="Overdue medications">
-          {#each overdueMeds as entry (entry.medicationId)}
-            <div
-              class="border-warning/40 bg-warning/5 flex items-center gap-4 rounded-lg border border-dashed p-4 opacity-60"
-              role="listitem"
-            >
-              <div
-                class="h-3 w-3 shrink-0 rounded-full"
-                style="background: {getMedicationBackground(
-                  entry.medication.colour,
-                  entry.medication.colourSecondary,
-                  entry.medication.pattern,
-                  true,
-                )}"
-              ></div>
-              <div class="min-w-0 flex-1">
-                <p class="text-text-secondary font-medium">
-                  {entry.medication.name}
-                  <span class="text-text-muted text-sm">
-                    {entry.medication.dosageAmount}{entry.medication.dosageUnit}
-                  </span>
-                </p>
-              </div>
-              <span class="text-warning text-xs font-medium">
-                {formatDueIn(entry.minutesUntilDue * 60_000)}
-              </span>
-              <form
-                method="POST"
-                action="?/skipDose"
-                use:enhance={() =>
-                  async ({ result, update }) => {
-                    // This form had no callback at all, so skipping a
-                    // medication deleted in another tab produced no toast, no
-                    // error and no change — the row simply stayed put.
-                    if (result.type === "failure" || result.type === "error") {
-                      showToast(actionErrorMessage(result), "error");
-                    }
-                    await update();
-                  }}
-              >
-                <input type="hidden" name="medicationId" value={entry.medicationId} />
-                <button
-                  type="submit"
-                  aria-label="Skip {entry.medication.name}"
-                  class="text-text-muted hover:bg-surface-overlay hover:text-text-primary rounded-xs px-2 py-1 text-xs transition-colors"
-                >
-                  Skip
-                </button>
-              </form>
-            </div>
-          {/each}
-        </div>
+    {#if asNeededOnly}
+      <!-- No active medication has an interval or fixed-time schedule, so
+           nothing can be due: the chips are the page. -->
+      {@render chips("Log a dose")}
+      <DoneList
+        rows={data.done}
+        title={doneTitle}
+        {todayStart}
+        timezone={data.timezone}
+        {timeFormat}
+        onedit={(dose) => (editingDose = dose)}
+      />
+    {:else}
+      {#if hasDue}
+        <section aria-labelledby="due-heading" class="space-y-3">
+          <h2 id="due-heading" class="sr-only">Due</h2>
+          {#if data.earlier.length > 0}
+            <h3 class="text-text-secondary text-sm font-semibold">Earlier</h3>
+            <ul role="list" data-due-list="earlier" class="space-y-3">
+              {#each data.earlier as card (card.key)}
+                <DueCard
+                  {card}
+                  serverNow={renderNow}
+                  {todayStart}
+                  timezone={data.timezone}
+                  {timeFormat}
+                  focusAfter={headingTarget}
+                />
+              {/each}
+            </ul>
+          {/if}
+          {#if data.today.length > 0}
+            {#if data.earlier.length > 0}
+              <h3 class="text-text-secondary text-sm font-semibold">Today</h3>
+            {/if}
+            <ul role="list" data-due-list="today" class="space-y-3">
+              {#each data.today as card (card.key)}
+                <DueCard
+                  {card}
+                  serverNow={renderNow}
+                  {todayStart}
+                  timezone={data.timezone}
+                  {timeFormat}
+                  focusAfter={headingTarget}
+                />
+              {/each}
+            </ul>
+          {/if}
+        </section>
       {/if}
 
-      {#if data.doses.length === 0 && overdueMeds.length === 0}
-        <EmptyState title="No doses logged today" body="Use Quick Log above to record one." />
-      {:else if data.doses.length > 0}
-        <div class="space-y-2" role="list" aria-label="Today's doses">
-          {#each data.doses as dose (dose.id)}
-            <TimelineEntry
-              {dose}
-              timezone={data.timezone}
-              timeFormat={data.preferences.timeFormat as "12h" | "24h"}
-              onedit={(d) => (editingDose = d)}
-            />
-          {/each}
-        </div>
-      {/if}
-    </section>
+      <DoneList
+        rows={data.done}
+        title={doneTitle}
+        {todayStart}
+        timezone={data.timezone}
+        {timeFormat}
+        onedit={(dose) => (editingDose = dose)}
+      />
+
+      <LaterList
+        rows={data.later}
+        serverNow={renderNow}
+        {todayStart}
+        timezone={data.timezone}
+        {timeFormat}
+      />
+
+      {@render chips("Log something else")}
+    {/if}
+
+    <RefillsCard entries={data.refillForecast} />
   </div>
 {/if}
 
@@ -145,11 +190,26 @@
   title={editingDose ? `Edit dose of ${editingDose.medication.name}` : "Edit dose"}
 >
   {#if editingDose}
+    <!-- Edit stays on DoseEditForm's own enhance: the component is shared
+         with /log. Remove is a separate form so it goes through the page's
+         write lock like every other dose write. -->
     <DoseEditForm
       dose={editingDose}
       timezone={data.timezone}
       onclose={() => (editingDose = null)}
     />
+    <div class="border-glass-border mt-4 border-t pt-4">
+      <DoseActionForm
+        action="?/deleteDose"
+        fields={{ doseId: editingDose.id }}
+        label="Remove this dose"
+        pendingLabel="Removing…"
+        variant="danger"
+        buildToast={() => "Dose removed"}
+        focusAfter={doneHeading}
+        onSuccess={() => (editingDose = null)}
+      />
+    </div>
   {/if}
 </Modal>
 

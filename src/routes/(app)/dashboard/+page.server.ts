@@ -1,10 +1,8 @@
 import { error, fail } from "@sveltejs/kit";
 import { track } from "@vercel/analytics/server";
-import { getActiveMedications } from "$lib/server/medications";
 import { getRefillForecast } from "$lib/server/inventory";
+import { loadDashboard } from "$lib/server/dashboard/load";
 import {
-  getTodaysDoses,
-  getLastDosePerMedication,
   logDose,
   logDoseForSlot,
   logSkippedDose,
@@ -15,96 +13,30 @@ import {
   SlotTargetChangedError,
 } from "$lib/server/doses";
 import { doseLogSchema, doseEditSchema, doseSkipSchema } from "$lib/utils/validation";
-import { resolveEditedInstant, startOfDay, endOfDay, computeTimingStatus } from "$lib/utils/time";
-import {
-  computeScheduleSlots,
-  timingStatusFromSlots,
-  checkSlotActionTime,
-  type SlotActionTimeProblem,
-} from "$lib/utils/schedule";
-import { getSchedulesForUser } from "$lib/server/schedules";
-import { parseIntervalHours } from "$lib/utils/schedule-rate";
+import { resolveEditedInstant } from "$lib/utils/time";
+import { checkSlotActionTime, type SlotActionTimeProblem } from "$lib/utils/schedule";
+import type { DashboardPageData } from "$lib/types";
 import type { Actions, PageServerLoad } from "./$types";
-import type { MedicationTimingStatus } from "$lib/types";
 
+/**
+ * I/O only. `loadDashboard` owns the window, the four dashboard queries and
+ * the composition (`server/dashboard/`), `getRefillForecast` owns refills, and
+ * this merges them. Two things are gone: the per-medication `timingStatus`
+ * built on the deprecated interval columns, and the `covered` merge that
+ * patched it for fixed-time medications. Every due-ness answer on this page
+ * now comes from the per-slot model. New derived values belong in
+ * `page-data.ts`, not here.
+ */
 export const load: PageServerLoad = async ({ locals }) => {
   const user = locals.user!;
-  const [medications, doses, lastDoses, schedulesByMedId, refillForecast] = await Promise.all([
-    getActiveMedications(user.id),
-    getTodaysDoses(user.id, user.timezone),
-    getLastDosePerMedication(user.id),
-    getSchedulesForUser(user.id),
+  // One instant per request: the window, every row's state and nextRefreshAt
+  // are all computed against it.
+  const now = new Date();
+  const [dash, refillForecast] = await Promise.all([
+    loadDashboard(user.id, user.timezone, now),
     getRefillForecast(user.id),
   ]);
-
-  // lastEventAt advances on both "taken" and "skipped" so a Skip clears
-  // the overdue badge; lastTakenAt anchors slot projection so historical
-  // taken doses stay visible on My Day.
-  const lastEventMap = new Map(lastDoses.map((d) => [d.medicationId, d.lastEventAt]));
-
-  const now = new Date();
-
-  // Timing status for QuickLogBar badges. `scheduleIntervalHours` is a
-  // Drizzle numeric and arrives as a string, so the interval is parsed
-  // (and non-positive/non-finite values excluded) through the shared
-  // primitive rather than a hand-rolled null check — see schedule-rate.ts.
-  const timingStatus: MedicationTimingStatus[] = medications
-    .filter((m) => m.scheduleType === "scheduled")
-    .flatMap((m) => {
-      const hours = parseIntervalHours(m.scheduleIntervalHours);
-      if (hours === null) return [];
-      const lastEventAt = lastEventMap.get(m.id) ?? null;
-      const { status, minutesUntilDue } = computeTimingStatus(hours, lastEventAt, now);
-      return [{ medicationId: m.id, status, minutesUntilDue }];
-    });
-
-  // Schedule slots for My Day timeline — anchor from last *taken* dose
-  // so the day's already-taken slots stay in the projection.
-  const lastDoseByMedication: Record<string, Date> = {};
-  for (const d of lastDoses) {
-    if (d.lastTakenAt) lastDoseByMedication[d.medicationId] = d.lastTakenAt;
-  }
-
-  // Not `dayStart + 24h`: a civil day is 23, 24, 24.5 or 25 hours long, and
-  // the fixed offset silently truncated the long ones. On Europe/London
-  // 2026-10-25 it ended My Day at 23:00 local and dropped every slot in the
-  // last hour — the most common bedtime-medication slot there is.
-  const dayStart = startOfDay(now, user.timezone);
-  const dayEnd = endOfDay(now, user.timezone);
-
-  const scheduleSlots = computeScheduleSlots(
-    medications,
-    schedulesByMedId,
-    doses,
-    lastDoseByMedication,
-    dayStart,
-    dayEnd,
-    user.timezone,
-    now,
-  );
-
-  // Fixed-time medications have null legacy interval columns, so the
-  // filter above never gives them a QuickLogBar badge. Derive their
-  // timing from today's slots instead (PRN meds project no slots and
-  // stay badge-free).
-  const covered = new Set(timingStatus.map((t) => t.medicationId));
-  for (const med of medications) {
-    if (covered.has(med.id)) continue;
-    const t = timingStatusFromSlots(
-      scheduleSlots.filter((s) => s.medicationId === med.id),
-      now,
-    );
-    if (t) timingStatus.push({ medicationId: med.id, ...t });
-  }
-
-  return {
-    medications,
-    doses,
-    scheduleSlots,
-    timezone: user.timezone,
-    timingStatus,
-    refillForecast,
-  };
+  return { ...dash, refillForecast } satisfies DashboardPageData;
 };
 
 // The refusals a dashboard dose write can meet. Each is a shape

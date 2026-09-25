@@ -5,7 +5,7 @@
   // the `$state` rune the moment anyone added one to this component.
   let { state: marker }: { state: StatusMarkerState } = $props();
 
-  // Shape first, colour as reinforcement (spec, Section 1 → Accessibility).
+  // Shape first, colour as reinforcement — status is never carried by colour alone.
   const RECIPES: Record<StatusMarkerState, string> = {
     taken: "bg-success/20 text-success",
     overdue: "bg-warning/20 text-warning",

@@ -1,9 +1,10 @@
 // @vitest-environment node
 //
 // `@vitest-environment node` is load-bearing: the suite's default is jsdom,
-// and under jsdom vite resolves `svelte` to its client entry, so `render()`
-// from `svelte/server` throws `effect_orphan` before an assertion runs. Same
-// reason as tests/unit/my-day-timeline-ssr.test.ts.
+// and under jsdom the component is compiled for the client, so `render()`
+// from `svelte/server` runs client code and throws `effect_orphan` before an
+// assertion runs. How the `svelte` specifier itself resolves there is
+// explained in tests/unit/timeline-entry-delete-confirm.test.ts.
 //
 // Covers the dose row's static markup: what a skipped or missed row dims, when
 // the hover-revealed controls are allowed to hide, and how big they are. The
@@ -214,4 +215,31 @@ describe("the row's controls are real targets (WCAG 2.5.8, and 2.5.5 on touch)",
       expect(sizePx(list, "pointer-coarse:")).toBeGreaterThanOrEqual(44);
     });
   }
+
+  // Below sm on touch the 44px targets overhang the time's line beneath them.
+  // That line is in flow and painted after them, so it took the taps on their
+  // lower edge and the row opened the edit modal instead. Positioned, the
+  // controls paint, and take taps, above it.
+  it("positions the controls so their overhang sits above the line below", async () => {
+    const x = renderRow("taken").querySelector('button[aria-label^="Delete dose of"]');
+    expect(x, "no delete button rendered").not.toBeNull();
+    const atRest = tokens(x!.parentElement!).filter((t) => !t.includes(":"));
+    const rules = await Promise.all(atRest.map(compiledRule));
+    expect(rules.some((r) => /position: ?(relative|absolute|sticky)/.test(r ?? ""))).toBe(true);
+  });
+});
+
+describe("a long one-word medication name wraps before it reaches the controls", () => {
+  // The name's column is min-w-0, so it can be narrower than the word; without
+  // a break opportunity inside the word it ran on underneath ✎ at 320px.
+  it("lets the name break inside a word", async () => {
+    const doc = renderRow("taken");
+    const name = [...doc.querySelectorAll('[role="listitem"] p')].find((p) =>
+      p.textContent?.includes("Vitamin D"),
+    );
+    expect(name, "no name rendered").not.toBeUndefined();
+    const atRest = tokens(name!).filter((t) => !t.includes(":"));
+    const rules = await Promise.all(atRest.map(compiledRule));
+    expect(rules.some((r) => /overflow-wrap: ?(break-word|anywhere)/.test(r ?? ""))).toBe(true);
+  });
 });

@@ -335,9 +335,6 @@ describe.each(SCHEMES)(
     // SideEffectPicker severity chips: .bg-glass > DoseEditForm > Modal panel
     // on --color-surface-raised.
     const modalGlass = compositeOver(glass.alpha, T["--color-surface-raised"], glass.overlay);
-    // MyDayTimeline: row.hover:bg-glass-hover > .bg-glass group > page.
-    const row = card;
-    const rowHover = compositeOver(glassHover.alpha, card, glassHover.overlay);
 
     // [fill, alpha, backdrop, foreground, threshold]. 3:1 rather than 4.5 where
     // the foreground is a glyph in a status circle (WCAG 1.4.11), not text.
@@ -379,10 +376,13 @@ describe.each(SCHEMES)(
         4.5,
         "side effect severity: mild",
       ],
-      ["--color-success", 0.2, row, "--color-success", 3, "timeline status glyph: taken"],
-      ["--color-success", 0.2, rowHover, "--color-success", 3, "…hovered"],
-      ["--color-warning", 0.2, row, "--color-warning", 3, "timeline status glyph: skipped"],
-      ["--color-warning", 0.2, rowHover, "--color-warning", 3, "…hovered"],
+      // StatusMarker's two tinted states: a 20px circle inside a DueCard
+      // <li class="bg-glass"> or the Done today card (.bg-glass), each sitting
+      // directly on the page <main>, so the backdrop is `card`. Neither has a
+      // hover background, so there is no hovered row. `due-now`, `upcoming`,
+      // `skipped` and `missed` are untinted rings and carry no chip to check.
+      ["--color-success", 0.2, card, "--color-success", 3, "StatusMarker: taken"],
+      ["--color-warning", 0.2, card, "--color-warning", 3, "StatusMarker: overdue"],
     ];
 
     for (const [fill, alpha, base, fg, threshold, site] of CHIPS) {

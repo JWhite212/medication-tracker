@@ -7,7 +7,7 @@
  * dose, and the filter bar, which renders from the loaded URL, reset to
  * match. So this starts from the current URL and changes exactly one
  * parameter: everything else, including parameters no filter today uses, is
- * carried across as it was.
+ * carried across as it was, except SvelteKit's own form-action key.
  *
  * Page 1 drops the parameter instead of writing `page=1`. The server already
  * reads an absent page as 1, and a filter submission never carries one, so
@@ -22,6 +22,11 @@ export function hrefForPage(url: URL, page: number): string {
   // own `page.url`, and editing that in place would rewrite the current URL
   // under everything else that reads it.
   const params = new URLSearchParams(url.searchParams);
+  // The one exception to carrying everything: SvelteKit names a form action
+  // with a key starting "/" (`?/deleteDose`), and a delete made without
+  // JavaScript leaves the page at that URL. It is not a filter, a GET never
+  // runs it, and carried forward it would ride along in every link after.
+  for (const key of [...params.keys()]) if (key.startsWith("/")) params.delete(key);
   if (page <= 1) params.delete("page");
   else params.set("page", String(page));
   const query = params.toString();

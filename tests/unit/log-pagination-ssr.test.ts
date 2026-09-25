@@ -262,9 +262,12 @@ describe("Clear filters", () => {
   });
 
   it("is not offered when nothing is filtered", () => {
-    // Pins the other half of "only when active". `status=any` is the form's
-    // default and filters nothing, so it must not count as a filter either.
-    for (const query of ["", "?status=any", "?page=2"]) {
+    // Pins the other half of "only when active". The page decides from
+    // `data.filters`, so what is pinned here is that its defaults (including
+    // `status: "any"`, which filters nothing) count as no filter, and that
+    // being past page 1 is not a filter either. Reading `?status=any` into
+    // that default is the server load's job, not this component's.
+    for (const query of ["", "?page=2"]) {
       const html = renderAt(`/log${query}`, { page: query === "?page=2" ? 2 : 1 });
       expect(html, `offered for "${query}"`).not.toContain("Clear filters");
     }

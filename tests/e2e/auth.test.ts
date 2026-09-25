@@ -13,7 +13,9 @@ test.describe("authentication", () => {
 
   test("the seeded user can log in with the canonical credentials", async ({ page }) => {
     await login(page, SEEDED_EMAIL, SEEDED_PASSWORD);
-    await expect(page.getByRole("heading", { name: HEADING.dashboard })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: HEADING.dashboard, exact: true }),
+    ).toBeVisible();
   });
 
   test("login fails on bad password and shows the standard error", async ({ page }) => {

@@ -11,7 +11,11 @@ export const SEL = {
 export const HEADING = {
   login: "Welcome back",
   register: "Create account",
-  dashboard: "Dashboard",
+  // The dashboard's h1 is "Today"; the tab title and the nav still say
+  // "Dashboard". Match it with { level: 1, exact: true }: "Today" is a
+  // substring of "Done today" and "Later today", and the Due section has an
+  // h3 "Today" whenever Earlier rows are shown.
+  dashboard: "Today",
   medications: "Medications",
   doseHistory: "Dose History",
   analytics: "Analytics",

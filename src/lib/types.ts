@@ -77,3 +77,103 @@ export type RefillForecastEntry = {
   daysUntilRefill: number | null;
   severity: RefillSeverity;
 };
+
+/**
+ * The dashboard payload (docs/superpowers/specs/2026-09-24-dashboard-due-now-design.md).
+ * Built by `composeDashboardPageData` in `$lib/server/dashboard/page-data.ts`.
+ * Every instant is an ISO string so the client never re-derives a civil day
+ * from one; the client formats them against `todayStart`.
+ */
+
+/** First matching predicate wins, in this order: as-needed-only, due, caught-up, all-done, none-today. */
+export type DashboardStatusKind =
+  | "due"
+  | "caught-up"
+  | "all-done"
+  | "none-today"
+  | "as-needed-only";
+
+export type DashboardStatus = {
+  kind: DashboardStatusKind;
+  /** Every Due row, Earlier and nested rows included. */
+  dueCount: number;
+  /** Today's slots resolved (taken or skipped). Earlier rows are not counted. */
+  doneToday: number;
+  /** Today's slots, resolved or not. */
+  totalToday: number;
+  /** Taken dose events among the Done rows; a skip is not a dose logged. */
+  loggedToday: number;
+  /** The earliest outstanding slot ahead, set only for `caught-up`; `alsoCount` = other slots at that instant. */
+  next: {
+    name: string;
+    dosageAmount: string;
+    dosageUnit: string;
+    expectedTime: string;
+    alsoCount: number;
+  } | null;
+};
+
+/**
+ * One outstanding slot on a Due card. `tookItAt` / `skipAt` are the exact
+ * instants those buttons post, or null when the row does not offer them —
+ * decided by simulation in `slotActions`, never by the component.
+ */
+export type DueRow = {
+  key: string;
+  kind: "interval" | "fixed_time";
+  expectedTime: string;
+  state: "earlier" | "overdue" | "due-now";
+  logNow: boolean;
+  tookItAt: string | null;
+  skipAt: string | null;
+};
+
+/** One medication in one Due sub-group; `key` is `${subGroup}:${medicationId}`. `rows[0]` is the top row. */
+export type DueCard = {
+  key: string;
+  medicationId: string;
+  name: string;
+  dosageAmount: string;
+  dosageUnit: string;
+  colour: string;
+  colourSecondary: string | null;
+  pattern: string;
+  rows: DueRow[];
+};
+
+/** One dose event in Done. `covers` = ISO slot instants this dose resolved, other than its own minute. */
+export type DoneRow = {
+  key: string;
+  dose: DoseLogWithMedication;
+  covers: string[];
+  dayLabel: "yesterday" | null;
+};
+
+/** A read-only line for a slot of today's more than an hour ahead. */
+export type LaterRow = {
+  key: string;
+  medicationId: string;
+  name: string;
+  dosageAmount: string;
+  dosageUnit: string;
+  colour: string;
+  colourSecondary: string | null;
+  pattern: string;
+  expectedTime: string;
+};
+
+export type DashboardPageData = {
+  now: string;
+  nextRefreshAt: string;
+  timezone: string;
+  todayStart: string;
+  status: DashboardStatus;
+  earlier: DueCard[];
+  today: DueCard[];
+  done: DoneRow[];
+  later: LaterRow[];
+  /** Active medications in `sortOrder` — the chip list. */
+  medications: Medication[];
+  /** Merged in by the page load beside `loadDashboard`. */
+  refillForecast: RefillForecastEntry[];
+};

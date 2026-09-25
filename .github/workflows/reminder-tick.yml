@@ -3,9 +3,18 @@ name: Reminder tick
 # Drives /api/cron/reminders more often than the Vercel Hobby plan
 # allows. Hobby caps cron jobs at one run per day, which is far too
 # coarse for medication reminders: an evening dose would only ever be
-# reported the following morning. The vercel.json cron stays in place as
-# a guaranteed daily backstop; this workflow is what makes reminders
+# reported the following morning. This workflow is what makes reminders
 # timely during waking hours.
+#
+# The vercel.json cron (09:00 UTC) stays in place as a daily backstop,
+# but a narrow one. computeOverdueSlot stops reminding about a fixed-time
+# slot from before the user's local midnight once it is 12 hours old
+# (CARRY_OVER_MS, the instant the dashboard stops showing it). So the
+# 09:00 run on its own covers today's elapsed slots and only the last 12
+# hours of yesterday's. If GitHub disables this workflow (see below),
+# yesterday's daytime slots lose their day-late reminder rather than
+# getting it at 09:00. The cron dead-man switch (#128) is what detects
+# that.
 #
 # Setup: add a repository secret CRON_SECRET matching the value set in
 # the Vercel production environment. Without it this workflow no-ops
@@ -24,7 +33,10 @@ on:
   schedule:
     # Every 30 minutes, 06:00–22:59 UTC. The overnight gap lets the Neon
     # compute scale to zero instead of being held awake around the
-    # clock, and the daily Vercel cron still covers that window.
+    # clock. A slot that falls due in the gap is picked up by the 06:00
+    # run, at most 7½ hours late. Keep the gap under 12 hours: a slot
+    # from before the user's midnight stops reminding at 12 hours old
+    # (computeOverdueSlot's cap), so a longer gap would silently skip it.
     - cron: "*/30 6-22 * * *"
 
 permissions:

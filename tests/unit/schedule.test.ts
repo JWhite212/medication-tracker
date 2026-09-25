@@ -173,6 +173,14 @@ function outcome(slots: ScheduleSlot[]): [string, ScheduleSlotStatus, string | n
   return slots.map((s) => [s.expectedTime.slice(11, 16), s.status, s.matchedDoseId]);
 }
 
+function slotAt(slots: ScheduleSlot[], iso: string): ScheduleSlot {
+  const slot = slots.find((s) => s.expectedTime === iso);
+  if (!slot) {
+    throw new Error(`no slot at ${iso}; slots are ${slots.map((s) => s.expectedTime).join(", ")}`);
+  }
+  return slot;
+}
+
 describe("classifyHour", () => {
   it("classifies morning hours (5-11)", () => {
     expect(classifyHour(5)).toBe("morning");
@@ -1337,5 +1345,43 @@ describe("computeScheduleSlots — reserved skips", () => {
       new Date("2026-04-16T12:00:00Z"),
     );
     expect(outcome(slots)).toEqual([["09:00", "taken", "dose-taken-1"]]);
+  });
+});
+
+describe("computeScheduleSlots — the segment limit (with a window)", () => {
+  it("a 00:10 dose goes to today's 00:13, not to yesterday's open 23:30", () => {
+    // A slot from yesterday may only take a dose taken before today's
+    // midnight. Without that limit, pass 1's ascending loop reaches
+    // yesterday's 23:30 first and takes the 00:10 dose from the slot it was
+    // meant for. Production (no yesterday at all) gave it to 00:13 too.
+    const timezone = "UTC";
+    const now = new Date("2026-04-16T01:00:00Z");
+    const sched = schedMap([
+      makeFixedTimeSchedule("med-1", "00:13", null, 0),
+      makeFixedTimeSchedule("med-1", "23:30", null, 1),
+    ]);
+    const dose = makeDose({ takenAt: new Date("2026-04-16T00:10:00Z") });
+    const window = dashboardWindow(now, timezone);
+    const slots = computeScheduleSlots(
+      [makeMed()],
+      sched,
+      [dose],
+      {},
+      window.todayStart,
+      window.end,
+      timezone,
+      now,
+      { window },
+    );
+    expect(slotAt(slots, "2026-04-16T00:13:00.000Z")).toMatchObject({
+      status: "taken",
+      matchedDoseId: "dose-1",
+      isEarlier: false,
+    });
+    expect(slotAt(slots, "2026-04-15T23:30:00.000Z")).toMatchObject({
+      status: "overdue",
+      matchedDoseId: null,
+      isEarlier: true,
+    });
   });
 });

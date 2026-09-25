@@ -141,7 +141,8 @@
 
 <div class="mx-auto w-full max-w-2xl space-y-6">
   <div class="flex items-center gap-3">
-    <a href="/settings" class="text-text-muted hover:text-text-primary transition-colors">&larr;</a>
+    <a href="/settings" class="text-text-muted hover:text-text-primary text-sm">← Settings</a>
+    <span class="text-text-muted">/</span>
     <h1 class="text-2xl font-bold">Notifications</h1>
   </div>
 

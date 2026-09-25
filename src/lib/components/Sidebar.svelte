@@ -65,6 +65,10 @@
     {/each}
   </nav>
   <div class="border-glass-border border-t p-4">
+    <!-- Same fix as MobileHeader's avatar link: the initial is decoration and
+         read as a stray letter, and the name and email say who, not where.
+         The destination goes LAST so the accessible name still starts with
+         the visible text, which is what speech-input users will say. -->
     <a
       href="/settings"
       class="hover:bg-surface-overlay flex items-center gap-3 rounded-lg p-1 transition-colors"
@@ -72,6 +76,7 @@
     >
       <div
         class="bg-accent/15 text-accent-ink flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium"
+        aria-hidden="true"
       >
         {user.name.charAt(0).toUpperCase()}
       </div>
@@ -79,6 +84,7 @@
         <p class="truncate text-sm font-medium">{user.name}</p>
         <p class="text-text-muted truncate text-xs">{user.email}</p>
       </div>
+      <span class="sr-only">Account settings</span>
     </a>
   </div>
 </aside>

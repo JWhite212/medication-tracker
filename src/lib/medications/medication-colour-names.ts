@@ -47,6 +47,14 @@ export function isPresetColour(colour: string): colour is PresetColour {
   return (PRESET_COLOURS as readonly string[]).includes(colour);
 }
 
+/**
+ * A preset stored in upper case is still its own radio (see above), but it is
+ * drawn as a second swatch identical to the preset, so calling it "Custom
+ * colour" would contradict what a sighted user can see. It borrows the
+ * preset's name, marked so it never collides with the preset's own radio.
+ */
 export function colourName(colour: string): string {
-  return isPresetColour(colour) ? PRESET_COLOUR_NAMES[colour] : CUSTOM_COLOUR_NAME;
+  if (isPresetColour(colour)) return PRESET_COLOUR_NAMES[colour];
+  const folded = colour.toLowerCase();
+  return isPresetColour(folded) ? `${PRESET_COLOUR_NAMES[folded]} (custom)` : CUSTOM_COLOUR_NAME;
 }

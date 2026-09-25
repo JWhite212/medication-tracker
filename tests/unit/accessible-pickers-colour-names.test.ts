@@ -53,6 +53,20 @@ describe("colourName", () => {
     // A stored "#6366F1" checks no preset radio. Naming it "Indigo" would put
     // two radios called Indigo in one group, only one of which is Indigo's.
     expect(isPresetColour("#6366F1")).toBe(false);
-    expect(colourName("#6366F1")).toBe(CUSTOM_COLOUR_NAME);
+    expect(colourName("#6366F1")).not.toBe("Indigo");
+  });
+
+  it("still names an upper-case preset after the colour it looks like", () => {
+    // It is drawn as a second indigo swatch, so "Custom colour" would
+    // contradict what a sighted user can see.
+    expect(colourName("#6366F1")).toBe("Indigo (custom)");
+    expect(colourName("#FFFFFF")).toBe("White (custom)");
+  });
+
+  it("gives an upper-case preset a name no preset uses", () => {
+    const presetNames = new Set(Object.values(PRESET_COLOUR_NAMES).map((n) => n.toLowerCase()));
+    for (const colour of PRESET_COLOURS) {
+      expect(presetNames.has(colourName(colour.toUpperCase()).toLowerCase())).toBe(false);
+    }
   });
 });

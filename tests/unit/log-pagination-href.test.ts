@@ -79,6 +79,18 @@ describe("hrefForPage", () => {
     expect(hrefForPage(url, 0)).toBe("/log?q=abc");
   });
 
+  it("drops SvelteKit's form-action key rather than carrying it to every page", () => {
+    // A delete without JavaScript posts to `?/deleteDose` and the page renders
+    // at that URL. The action key is not a filter, and a GET never runs it,
+    // but carried forward it would sit in every pagination link after.
+    const url = at("/log?/deleteDose&status=taken");
+    const next = follow(url, hrefForPage(url, 2));
+
+    expect([...next.searchParams.keys()].filter((k) => k.startsWith("/"))).toEqual([]);
+    expect(next.searchParams.get("status")).toBe("taken");
+    expect(next.searchParams.get("page")).toBe("2");
+  });
+
   it("keeps repeated non-page params, in order", () => {
     const url = at("/log?tag=a&tag=b&page=2");
     const next = follow(url, hrefForPage(url, 3));

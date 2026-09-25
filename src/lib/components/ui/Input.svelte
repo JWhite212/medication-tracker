@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ariaDescribedBy } from "$lib/utils/form-errors";
+
   let {
     label,
     name,
@@ -11,6 +13,11 @@
     type = "text",
     value = "",
     error = "",
+    // The id of a message this field does not own but is about, such as a
+    // form-level error rendered above the form. Merged with the field's own
+    // error id rather than passed through `rest`, where an `aria-describedby`
+    // would silently replace it the moment the field also had an `error`.
+    describedBy = undefined,
     required = false,
     placeholder = "",
     ...rest
@@ -21,6 +28,7 @@
     type?: string;
     value?: string;
     error?: string;
+    describedBy?: string;
     required?: boolean;
     placeholder?: string;
     [key: string]: unknown;
@@ -40,7 +48,7 @@
     {required}
     {placeholder}
     aria-invalid={error ? "true" : undefined}
-    aria-describedby={error ? `${id}-error` : undefined}
+    aria-describedby={ariaDescribedBy(error && `${id}-error`, describedBy)}
     aria-required={required ? "true" : undefined}
     class="bg-surface-raised text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none {error
       ? 'border-danger-ink'

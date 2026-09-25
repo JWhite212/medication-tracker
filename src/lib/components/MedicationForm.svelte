@@ -19,6 +19,7 @@
     type ScheduleMode,
   } from "$lib/medications/medication-form-state";
   import type { FormErrors } from "$lib/medications/medication-form-errors";
+  import { unsavedErrorMessage } from "$lib/utils/form-errors";
 
   let {
     medication = undefined,
@@ -57,6 +58,15 @@
   let daysOfWeek = $state<number[]>(deriveInitialDaysOfWeek(schedules));
 
   let loading = $state(false);
+  // An unexpected throw or an expired session. Field failures arrive through
+  // the `errors` prop, but an error result carries no `form` for the page to
+  // hand back, so this is the only place it can be said.
+  let actionError = $state("");
+  let actionErrorEl = $state<HTMLElement | null>(null);
+  // The `errors` prop only changes when `update()` runs, which an error
+  // result skips, so the previous attempt's field messages would otherwise
+  // stay marked invalid beside a message saying nothing was checked at all.
+  let shownErrors = $derived<FormErrors>(actionError ? {} : errors);
 
   // Hidden-field derivations: the Zod schema validates these, so they
   // need to mirror the user's selection on every render.
@@ -119,6 +129,18 @@
   use:enhance={() => {
     loading = true;
     return async ({ result, update }) => {
+      if (result.type === "error") {
+        // `update()` would hand this to the nearest +error.svelte, which
+        // replaces the page and every field the user has filled in. Say what
+        // happened here instead, with the reference `handleError` minted, and
+        // leave the form intact to retry.
+        loading = false;
+        actionError = unsavedErrorMessage(result);
+        await tick();
+        actionErrorEl?.focus();
+        return;
+      }
+      actionError = "";
       await update();
       loading = false;
       if (result.type === "failure") {
@@ -142,7 +164,7 @@
 >
   <MedicationIdentityFields
     nameValue={formValues["name"] ?? medication?.name ?? ""}
-    {errors}
+    errors={shownErrors}
     {interactionWarnings}
     onNameBlur={checkInteractions}
   />
@@ -150,20 +172,20 @@
   <MedicationDosageFields
     dosageAmount={formValues["dosageAmount"] ?? medication?.dosageAmount ?? ""}
     dosageUnit={formValues["dosageUnit"] ?? medication?.dosageUnit ?? ""}
-    {errors}
+    errors={shownErrors}
   />
 
   <MedicationCategoryFields
     formValue={formValues["form"] ?? medication?.form ?? ""}
     categoryValue={formValues["category"] ?? medication?.category ?? ""}
-    {errors}
+    errors={shownErrors}
   />
 
   <MedicationStylePicker
     bind:selectedColour
     bind:selectedColourSecondary
     bind:selectedPattern
-    {errors}
+    errors={shownErrors}
   />
 
   <input type="hidden" name="colour" value={selectedColour} />
@@ -175,7 +197,7 @@
     bind:intervalHours
     bind:fixedTimes
     bind:daysOfWeek
-    {errors}
+    errors={shownErrors}
   />
 
   <input type="hidden" name="scheduleMode" value={scheduleMode} />
@@ -210,7 +232,7 @@
       medication?.notifyRepeatEveryMinutes?.toString() ??
       ""}
     maxRepeats={formValues["notifyMaxRepeats"] ?? medication?.notifyMaxRepeats?.toString() ?? "3"}
-    {errors}
+    errors={shownErrors}
   />
 
   <MedicationInventoryFields
@@ -219,10 +241,21 @@
       medication?.inventoryAlertThreshold?.toString() ??
       ""}
     notes={formValues["notes"] ?? medication?.notes ?? ""}
-    {errors}
+    errors={shownErrors}
   />
 
   <MedicalDisclaimer variant="inline" />
+
+  {#if actionError}
+    <p
+      bind:this={actionErrorEl}
+      class="bg-danger/10 text-danger-ink rounded-lg px-4 py-2 text-sm"
+      role="alert"
+      tabindex="-1"
+    >
+      {actionError}
+    </p>
+  {/if}
 
   <button
     type="submit"

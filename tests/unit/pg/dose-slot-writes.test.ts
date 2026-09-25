@@ -25,8 +25,14 @@ import { pgDb } from "../helpers/pg-db";
 import { medications, doseLogs, inventoryEvents } from "../../../src/lib/server/db/schema";
 import { asc, eq } from "drizzle-orm";
 
-const { logDose, logSkippedDose, MedicationNotFoundError, SlotAlreadyTakenError } =
-  await import("../../../src/lib/server/doses");
+const {
+  logDose,
+  logSkippedDose,
+  logDoseForSlot,
+  MedicationNotFoundError,
+  SlotAlreadyTakenError,
+  SlotTargetChangedError,
+} = await import("../../../src/lib/server/doses");
 
 /** The frozen moment of the tap. `loggedAt` reads it. */
 const TAP = new Date("2026-04-16T13:31:00.000Z");
@@ -205,5 +211,131 @@ describe("Skip — logSkippedDose with the exact-instant guard", () => {
     await expect(logSkippedDose("u1", "m2", SLOT, GUARD)).rejects.toBeInstanceOf(
       MedicationNotFoundError,
     );
+  });
+});
+
+describe("Log now — logDoseForSlot", () => {
+  const AT_0810 = new Date("2026-04-16T08:10:00.000Z");
+  const SLOT_0800 = new Date("2026-04-16T08:00:00.000Z");
+
+  async function seedDaily0800() {
+    await seedTrackedMed();
+    await pgDb.seedSchedule({
+      medicationId: "m1",
+      scheduleKind: "fixed_time",
+      timeOfDay: "08:00",
+      effectiveFrom: LONG_AGO,
+    });
+  }
+
+  it("writes one taken dose at now, with logDose's stock bookkeeping", async () => {
+    await seedDaily0800();
+
+    const row = await logDoseForSlot("u1", "m1", SLOT_0800, AT_0810, "UTC");
+
+    expect(row).toMatchObject({
+      medicationId: "m1",
+      status: "taken",
+      quantity: 1,
+      inventoryApplied: 1,
+    });
+    expect(row.takenAt).toEqual(AT_0810);
+    expect(row.loggedAt).toEqual(AT_0810);
+    expect(await stock()).toBe(9);
+    expect(await ledger()).toEqual([
+      { eventType: "dose_taken", quantityChange: -1, previousCount: 10, newCount: 9 },
+    ]);
+  });
+
+  it("refuses a forSlot a dose logged now would not resolve, and writes nothing", async () => {
+    await seedDaily0800();
+
+    await expect(
+      logDoseForSlot("u1", "m1", new Date("2026-04-16T09:00:00.000Z"), AT_0810, "UTC"),
+    ).rejects.toBeInstanceOf(SlotTargetChangedError);
+    expect(await rows()).toEqual([]);
+    expect(await stock()).toBe(10);
+  });
+
+  describe("render-to-tap drift (fixed 14:00 and 20:00)", () => {
+    const SLOT_1400 = new Date("2026-04-16T14:00:00.000Z");
+
+    async function seedTwoSlots() {
+      await seedTrackedMed();
+      await pgDb.seedSchedule({ timeOfDay: "14:00", effectiveFrom: LONG_AGO, sortOrder: 0 });
+      await pgDb.seedSchedule({ timeOfDay: "20:00", effectiveFrom: LONG_AGO, sortOrder: 1 });
+    }
+
+    it("accepts 14:00 at 18:50, when a dose logged now would count for it", async () => {
+      // 20:00 is 70 minutes ahead, beyond pass 1's hour, so pass 2 walks
+      // back to 14:00.
+      await seedTwoSlots();
+
+      const row = await logDoseForSlot(
+        "u1",
+        "m1",
+        SLOT_1400,
+        new Date("2026-04-16T18:50:00.000Z"),
+        "UTC",
+      );
+
+      expect(row.status).toBe("taken");
+    });
+
+    it("refuses the same 14:00 at 19:05, once 20:00 is within the hour", async () => {
+      // Pass 1 now gives a dose logged at 19:05 to 20:00, so the page's
+      // 14:00 button is stale.
+      await seedTwoSlots();
+
+      await expect(
+        logDoseForSlot("u1", "m1", SLOT_1400, new Date("2026-04-16T19:05:00.000Z"), "UTC"),
+      ).rejects.toBeInstanceOf(SlotTargetChangedError);
+      expect(await rows()).toEqual([]);
+    });
+  });
+
+  it("two concurrent posts for one medication write one dose; the other is told the target changed", async () => {
+    await seedDaily0800();
+
+    const results = await Promise.allSettled([
+      logDoseForSlot("u1", "m1", SLOT_0800, AT_0810, "UTC"),
+      logDoseForSlot("u1", "m1", SLOT_0800, AT_0810, "UTC"),
+    ]);
+
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(SlotTargetChangedError);
+    expect(await rows()).toHaveLength(1);
+    expect(await stock()).toBe(9);
+  });
+
+  it("is MedicationNotFoundError for an unknown medication or another user's", async () => {
+    await seedDaily0800();
+    await pgDb.seedUser({ id: "u2", email: "u2@example.com" });
+    await pgDb.seedMedication({ id: "m2", userId: "u2", startedAt: LONG_AGO });
+    await pgDb.seedSchedule({
+      medicationId: "m2",
+      userId: "u2",
+      timeOfDay: "08:00",
+      effectiveFrom: LONG_AGO,
+    });
+
+    await expect(logDoseForSlot("u1", "nope", SLOT_0800, AT_0810, "UTC")).rejects.toBeInstanceOf(
+      MedicationNotFoundError,
+    );
+    await expect(logDoseForSlot("u1", "m2", SLOT_0800, AT_0810, "UTC")).rejects.toBeInstanceOf(
+      MedicationNotFoundError,
+    );
+  });
+
+  it("finds no target on an archived medication — the load never lists one", async () => {
+    await seedTrackedMed({ isArchived: true });
+    await pgDb.seedSchedule({ timeOfDay: "08:00", effectiveFrom: LONG_AGO });
+
+    await expect(logDoseForSlot("u1", "m1", SLOT_0800, AT_0810, "UTC")).rejects.toBeInstanceOf(
+      SlotTargetChangedError,
+    );
+    expect(await rows()).toEqual([]);
   });
 });

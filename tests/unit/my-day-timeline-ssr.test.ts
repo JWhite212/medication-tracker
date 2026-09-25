@@ -39,8 +39,12 @@ function slot(status: ScheduleSlotStatus, overrides: Partial<ScheduleSlot> = {})
     dosageUnit: "mg",
     // Fixed instant so the slot always lands in the same time-of-day group.
     expectedTime: "2026-05-01T09:00:00.000Z",
+    kind: "fixed_time",
     status,
     matchedDoseId: null,
+    resolvedByDoseId: null,
+    missedByDoseId: null,
+    isEarlier: false,
     ...overrides,
   };
 }

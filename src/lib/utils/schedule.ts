@@ -25,8 +25,16 @@ export interface ScheduleSlot {
   dosageAmount: string;
   dosageUnit: string;
   expectedTime: string; // ISO string
+  kind: ScheduleKind;
   status: ScheduleSlotStatus;
+  /** `resolvedByDoseId ?? missedByDoseId ?? null`, kept for existing readers. */
   matchedDoseId: string | null;
+  /** The taken or skipped dose that resolved this slot. Covers and toasts read this. */
+  resolvedByDoseId: string | null;
+  /** A `missed` row matched to this slot. A missed row never resolves a slot. */
+  missedByDoseId: string | null;
+  /** `expectedTime < todayStart`, by instant: an "Earlier" row on the dashboard. */
+  isEarlier: boolean;
 }
 
 export type TimeOfDay = "morning" | "afternoon" | "evening" | "night";
@@ -198,36 +206,6 @@ function expectedTimesForInterval(
   }
 
   out.sort((a, b) => a.getTime() - b.getTime());
-  return out;
-}
-
-function expectedTimesForFixedTime(
-  schedule: MedicationSchedule,
-  dayStartUtc: Date,
-  dayEndUtc: Date,
-  timezone: string,
-): Date[] {
-  if (!schedule.timeOfDay) return [];
-  const out: Date[] = [];
-  const allowed = schedule.daysOfWeek;
-
-  for (const dateStr of getLocalDatesInRange(dayStartUtc, dayEndUtc, timezone)) {
-    // Day-of-week comes from the requested date KEY, never from the resolved
-    // instant. On a transition that swallows the scheduled minute the instant
-    // can legitimately land on the next civil day (America/Godthab springs
-    // forward at 23:00 local), and reading the weekday off it would turn a
-    // Saturday-only medication into a Sunday one and drop the slot entirely.
-    if (allowed && allowed.length > 0) {
-      if (!allowed.includes(dayOfWeekForDayKey(dateStr))) continue;
-    }
-
-    const utc = wallClockToInstant(dateStr, schedule.timeOfDay, timezone);
-    if (utc.getTime() < dayStartUtc.getTime() || utc.getTime() >= dayEndUtc.getTime()) {
-      continue;
-    }
-    out.push(utc);
-  }
-
   return out;
 }
 
@@ -412,148 +390,159 @@ export function projectMedicationSlots(input: {
     .map((c) => ({ expectedTime: new Date(c.ms), kind: c.kind, segment: c.segment }));
 }
 
+/** A dose as the matcher sees it. */
+export interface MatchDose {
+  id: string;
+  takenAt: Date;
+  status: "taken" | "skipped" | "missed";
+  quantity: number;
+}
+
+export interface MatchedSlot extends ProjectedSlot {
+  status: ScheduleSlotStatus;
+  resolvedByDoseId: string | null;
+  missedByDoseId: string | null;
+}
+
 /**
- * Compute expected dose schedule slots for the window.
+ * Match one medication's doses to its projected slots.
  *
- * Walks every schedule row for each medication. Interval rows project
- * forward from the last dose (or window start) by intervalHours.
- * Fixed-time rows produce one slot per local-time-of-day per local
- * day in the window, optionally filtered by daysOfWeek. PRN rows
- * produce no slots.
+ * Capacity-based: a single logged dose can satisfy several nearby slots, up
+ * to the number of units actually taken. A `taken` dose has a capacity equal
+ * to its quantity (so logging ×3 in one go covers up to three slots within
+ * the tolerance); a `skipped` or `missed` row can only ever clear one slot.
+ *
+ * Slots are visited ascending. Each takes the best dose within
+ * ±`MATCH_TOLERANCE_MS` that still has capacity: a real `taken` dose over a
+ * `skipped`/`missed` one, then the nearest in time, then the smaller id, so
+ * the output never depends on the order `doses` arrives in.
+ *
+ * A `missed` row goes to `missedByDoseId` and resolves nothing; anything
+ * else goes to `resolvedByDoseId`.
+ */
+export function matchMedicationSlots(
+  slots: ProjectedSlot[],
+  doses: MatchDose[],
+  opts: { now: Date; segments: Segments; pass2Bound: Date },
+): MatchedSlot[] {
+  const nowMs = opts.now.getTime();
+  const remaining = new Map<string, number>();
+  for (const d of doses) {
+    remaining.set(d.id, d.status === "taken" ? Math.max(1, d.quantity) : 1);
+  }
+
+  const ordered = [...slots].sort((a, b) => a.expectedTime.getTime() - b.expectedTime.getTime());
+  return ordered.map((slot) => {
+    const expectedMs = slot.expectedTime.getTime();
+
+    let matched: MatchDose | undefined;
+    let bestRank = Infinity;
+    let bestDist = Infinity;
+    for (const d of doses) {
+      if ((remaining.get(d.id) ?? 0) <= 0) continue;
+      const dist = Math.abs(d.takenAt.getTime() - expectedMs);
+      if (dist > MATCH_TOLERANCE_MS) continue;
+      const rank = d.status === "taken" ? 0 : 1;
+      const better =
+        rank < bestRank ||
+        (rank === bestRank && dist < bestDist) ||
+        (rank === bestRank && dist === bestDist && (!matched || d.id < matched.id));
+      if (better) {
+        matched = d;
+        bestRank = rank;
+        bestDist = dist;
+      }
+    }
+    if (matched) remaining.set(matched.id, (remaining.get(matched.id) ?? 0) - 1);
+
+    let status: ScheduleSlotStatus;
+    if (matched?.status === "taken") status = "taken";
+    else if (matched?.status === "skipped") status = "skipped";
+    // A "missed" dose row hasn't actually been consumed, so the slot is
+    // still unfulfilled — render it as overdue, not green-check taken.
+    else if (matched?.status === "missed") status = "overdue";
+    else status = expectedMs <= nowMs ? "overdue" : "upcoming";
+
+    return {
+      ...slot,
+      status,
+      resolvedByDoseId: matched && matched.status !== "missed" ? matched.id : null,
+      missedByDoseId: matched?.status === "missed" ? matched.id : null,
+    };
+  });
+}
+
+/**
+ * Compute expected dose schedule slots.
+ *
+ * With `opts.window` the projection spans the dashboard's three segments
+ * (`segmentsFor`): yesterday, today and tomorrow's first hour. Without it,
+ * one segment `[dayStartUtc, dayEndUtc)` and nothing either side
+ * (`singleDaySegments`). Either way the steps are the same, per medication:
+ * `projectFixedTimes` (the one timezone-aware step), `projectMedicationSlots`
+ * (arithmetic, including both clips), then `matchMedicationSlots`.
+ *
+ * Returns only slots before `end`: tomorrow's first hour is matched, so that
+ * today's view makes the choice tomorrow's view will make, but never returned.
+ * `isEarlier` flags a slot before `todayStart`; deciding which of those are
+ * still visible belongs to the caller.
  */
 export function computeScheduleSlots(
   medications: Medication[],
   schedulesByMedId: Map<string, MedicationSchedule[]>,
-  todaysDoses: DoseLogWithMedication[],
+  doses: DoseLogWithMedication[],
   lastDoseByMedication: Record<string, Date>,
   dayStartUtc: Date,
   dayEndUtc: Date,
   timezone: string,
   now: Date,
+  opts: { window?: DashboardWindow } = {},
 ): ScheduleSlot[] {
-  const slots: ScheduleSlot[] = [];
+  const segments = opts.window
+    ? segmentsFor(opts.window)
+    : singleDaySegments(dayStartUtc, dayEndUtc);
+  const pass2Bound = opts.window ? opts.window.visibleStart : dayStartUtc;
+  const endMs = segments.end.getTime();
+  const todayStartMs = segments.todayStart.getTime();
 
-  const dosesByMedId = new Map<string, DoseLogWithMedication[]>();
-  for (const dose of todaysDoses) {
+  const dosesByMedId = new Map<string, MatchDose[]>();
+  for (const dose of doses) {
     let arr = dosesByMedId.get(dose.medicationId);
     if (!arr) {
       arr = [];
       dosesByMedId.set(dose.medicationId, arr);
     }
-    arr.push(dose);
+    arr.push({
+      id: dose.id,
+      takenAt: new Date(dose.takenAt),
+      status: dose.status,
+      quantity: dose.quantity,
+    });
   }
 
+  const slots: ScheduleSlot[] = [];
   for (const med of medications) {
-    const medSchedules = schedulesByMedId.get(med.id) ?? [];
-    if (medSchedules.length === 0) continue;
+    const schedules = schedulesByMedId.get(med.id) ?? [];
+    if (schedules.length === 0) continue;
 
-    const expectedTimes: { time: Date; kind: "interval" | "fixed_time" }[] = [];
+    const projected = projectMedicationSlots({
+      med,
+      schedules,
+      fixedInstants: projectFixedTimes(schedules, segments, timezone),
+      lastTakenAt: lastDoseByMedication[med.id] ?? null,
+      segments,
+    });
+    if (projected.length === 0) continue;
 
-    for (const schedule of medSchedules) {
-      if (schedule.scheduleKind === "prn") continue;
+    const matched = matchMedicationSlots(projected, dosesByMedId.get(med.id) ?? [], {
+      now,
+      segments,
+      pass2Bound,
+    });
 
-      if (schedule.scheduleKind === "interval") {
-        const intervalHours = parseIntervalHours(schedule.intervalHours);
-        if (intervalHours === null) continue;
-        const lastDose = lastDoseByMedication[med.id];
-        const anchor = lastDose ? new Date(lastDose.getTime()) : new Date(dayStartUtc.getTime());
-        for (const t of expectedTimesForInterval(intervalHours, anchor, dayStartUtc, dayEndUtc)) {
-          expectedTimes.push({ time: t, kind: "interval" });
-        }
-      } else if (schedule.scheduleKind === "fixed_time") {
-        for (const t of expectedTimesForFixedTime(schedule, dayStartUtc, dayEndUtc, timezone)) {
-          expectedTimes.push({ time: t, kind: "fixed_time" });
-        }
-      }
-    }
-
-    if (expectedTimes.length === 0) continue;
-
-    // Dedupe — two schedule rows might emit the same expected time.
-    // On an exact collision keep the fixed_time entry so the declared
-    // schedule, not the derived interval projection, is canonical.
-    const byTime = new Map<number, { time: Date; kind: "interval" | "fixed_time" }>();
-    for (const e of expectedTimes) {
-      const key = e.time.getTime();
-      const existing = byTime.get(key);
-      if (!existing || (existing.kind === "interval" && e.kind === "fixed_time")) {
-        byTime.set(key, e);
-      }
-    }
-
-    // Interval projections anchor to the *actual* last-taken time, so
-    // they drift with the user's behaviour (log at 08:55 → project
-    // 08:55). When such a projection lands within the matching
-    // tolerance of a declared fixed_time slot it is the same intended
-    // dose, not an extra one — drop the phantom twin and keep the
-    // declared time. Explicit fixed_time rows are never collapsed.
-    const fixedMs = [...byTime.values()]
-      .filter((e) => e.kind === "fixed_time")
-      .map((e) => e.time.getTime());
-    const dedup = [...byTime.values()]
-      .filter(
-        (e) =>
-          e.kind === "fixed_time" ||
-          !fixedMs.some((f) => Math.abs(f - e.time.getTime()) <= MATCH_TOLERANCE_MS),
-      )
-      .map((e) => e.time);
-    dedup.sort((a, b) => a.getTime() - b.getTime());
-
-    const medDoses = dosesByMedId.get(med.id) ?? [];
-
-    // Capacity-based matching: a single logged dose can satisfy several
-    // nearby slots, up to the number of units actually taken. A `taken`
-    // dose has a capacity equal to its quantity (so logging ×3 in one go
-    // covers up to three slots within the vicinity window); a `skipped` or
-    // `missed` row can only ever clear one slot. `remaining` is decremented
-    // as slots consume each dose's capacity.
-    const remaining = new Map<string, number>();
-    for (const d of medDoses) {
-      remaining.set(d.id, d.status === "taken" ? Math.max(1, d.quantity) : 1);
-    }
-
-    for (const expected of dedup) {
-      const expectedMs = expected.getTime();
-
-      // Pick the best in-vicinity dose with capacity left: prefer a real
-      // `taken` dose over a `skipped`/`missed` one, then the nearest in
-      // time, tie-broken by id for deterministic output.
-      let matchedDose: DoseLogWithMedication | undefined;
-      let bestRank = Infinity;
-      let bestDist = Infinity;
-      for (const d of medDoses) {
-        if ((remaining.get(d.id) ?? 0) <= 0) continue;
-        const dist = Math.abs(new Date(d.takenAt).getTime() - expectedMs);
-        if (dist > MATCH_TOLERANCE_MS) continue;
-        const rank = d.status === "taken" ? 0 : 1;
-        const better =
-          rank < bestRank ||
-          (rank === bestRank && dist < bestDist) ||
-          (rank === bestRank && dist === bestDist && (!matchedDose || d.id < matchedDose.id));
-        if (better) {
-          matchedDose = d;
-          bestRank = rank;
-          bestDist = dist;
-        }
-      }
-      if (matchedDose) {
-        remaining.set(matchedDose.id, (remaining.get(matchedDose.id) ?? 0) - 1);
-      }
-
-      let status: ScheduleSlotStatus;
-      if (matchedDose) {
-        if (matchedDose.status === "skipped") status = "skipped";
-        // A "missed" dose row hasn't actually been consumed, so the slot
-        // is still unfulfilled — render it as overdue, not green-check
-        // taken.
-        else if (matchedDose.status === "missed") status = "overdue";
-        else status = "taken";
-      } else if (expected.getTime() <= now.getTime()) {
-        status = "overdue";
-      } else {
-        status = "upcoming";
-      }
-
+    for (const slot of matched) {
+      const ms = slot.expectedTime.getTime();
+      if (ms >= endMs) continue;
       slots.push({
         medicationId: med.id,
         medicationName: med.name,
@@ -562,9 +551,13 @@ export function computeScheduleSlots(
         pattern: med.pattern,
         dosageAmount: med.dosageAmount,
         dosageUnit: med.dosageUnit,
-        expectedTime: expected.toISOString(),
-        status,
-        matchedDoseId: matchedDose?.id ?? null,
+        expectedTime: slot.expectedTime.toISOString(),
+        kind: slot.kind,
+        status: slot.status,
+        matchedDoseId: slot.resolvedByDoseId ?? slot.missedByDoseId ?? null,
+        resolvedByDoseId: slot.resolvedByDoseId,
+        missedByDoseId: slot.missedByDoseId,
+        isEarlier: ms < todayStartMs,
       });
     }
   }

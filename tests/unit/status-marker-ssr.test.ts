@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
-// Moved from the My Day timeline's SSR test (deleted with that component in T11),
-// with the same assertions: the marker is the ONLY thing that says whether a
+// Uses the pattern tests/unit/my-day-timeline-ssr.test.ts uses for its own status
+// markers, with the same assertions: the marker is the ONLY thing that says whether a
 // dose was taken, skipped, missed, is overdue, due now or still to come, so
 // its accessible name is load-bearing. An aria-label on a bare <span> is
 // prohibited (`generic` does not support naming) and is DISCARDED — confirmed
@@ -17,7 +17,7 @@ import {
 } from "$lib/components/dashboard/status-marker";
 import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
 
-/** The spec's table (Section 1, Accessibility). A new state fails the first test until it is added here. */
+/** The marker label table. A new state fails the first test until it is added here. */
 const SPEC: Record<StatusMarkerState, { label: string; classes: string[] }> = {
   taken: { label: "Taken", classes: ["bg-success/20", "text-success"] },
   overdue: { label: "Overdue", classes: ["bg-warning/20", "text-warning"] },

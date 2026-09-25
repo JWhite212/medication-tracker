@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
-// The header is the ONLY place a count appears. Its copy is
-// dashboardHeaderCopy's (T6); this pins that the component renders it, the
+// The header is the ONLY place a count appears. Its copy comes from
+// dashboardHeaderCopy; this pins that the component renders it, the
 // eyebrow date, the stable h1, and that it is not a live region.
 import { describe, it, expect } from "vitest";
 import { render } from "svelte/server";

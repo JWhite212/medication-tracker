@@ -4,8 +4,11 @@
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import EmptyState from "$components/EmptyState.svelte";
   import { onDestroy } from "svelte";
+  import { afterNavigate, beforeNavigate } from "$app/navigation";
+  import { page } from "$app/state";
   import type { DoseLogWithMedication } from "$lib/types";
   import { formatUserDate, isoDayKey, type DateFormat } from "$lib/utils/time";
+  import { hrefForPage } from "$lib/utils/search-params";
   import emptyDoseHistory from "$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.webp";
 
   let { data } = $props();
@@ -21,11 +24,48 @@
   });
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-  onDestroy(() => {
+  function cancelPendingSearch() {
     if (searchTimer) {
       clearTimeout(searchTimer);
       searchTimer = null;
     }
+  }
+
+  onDestroy(cancelPendingSearch);
+
+  // Any navigation is a newer choice than a search still waiting out its
+  // debounce. Left running, the timer fires after the user has followed
+  // Clear filters, Next or a sidebar link, and its form submission takes
+  // over the navigation they asked for. The unsent text is dropped rather
+  // than left showing: the effect above resyncs the input from the new
+  // `data`, which is a fresh object on every load even when `q` is not.
+  beforeNavigate(cancelPendingSearch);
+
+  // The filter bar's Clear filters link sits inside the GET form, so it
+  // inherits the form's data-sveltekit-keepfocus. Following it clears every
+  // filter, which unmounts the link while it holds focus: the browser drops
+  // focus to <body> and keepfocus tells SvelteKit to leave it there, so a
+  // keyboard user loses their place with nothing announced. The medication
+  // select survives the navigation and is the first filter, so focus goes
+  // there instead. The link stays a plain href so it still works without JS.
+  let medicationSelect = $state<HTMLSelectElement>();
+  let refocusAfterClear = false;
+
+  function armRefocusAfterClear(e: MouseEvent) {
+    // A modified or non-primary click opens /log in another tab and this
+    // page does not navigate. A flag set by one would fire on some later,
+    // unrelated navigation and pull focus off the control being used. The
+    // checks mirror the ones SvelteKit's router makes before it intercepts.
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    refocusAfterClear = true;
+  }
+
+  // afterNavigate callbacks run once SvelteKit has made its own focus
+  // decision for the navigation, so nothing overrides this.
+  afterNavigate(() => {
+    if (!refocusAfterClear) return;
+    refocusAfterClear = false;
+    medicationSelect?.focus();
   });
 
   // The filters are a plain GET form so they work without JavaScript
@@ -40,10 +80,7 @@
   function handleSearch(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
     searchInput = input.value;
-    if (searchTimer) {
-      clearTimeout(searchTimer);
-      searchTimer = null;
-    }
+    cancelPendingSearch();
     searchTimer = setTimeout(() => input.form?.requestSubmit(), 300);
   }
 
@@ -76,6 +113,12 @@
       data.filters.q,
     ),
   );
+
+  // Built from the current URL rather than written as a bare `?page=N`: a
+  // query-only href replaces the whole query string, so page 2 of a filtered
+  // view used to be page 2 of every dose, with the filter bar reset to match.
+  const previousPageHref = $derived(hrefForPage(page.url, data.page - 1));
+  const nextPageHref = $derived(hrefForPage(page.url, data.page + 1));
 
   // A grouping *key*, not a label: it is compared against todayKey and
   // yesterdayKey and used as a Map key, so it stays hardcoded en-CA
@@ -151,6 +194,7 @@
     class="border-glass-border bg-glass flex flex-col gap-2 rounded-xl border p-4 backdrop-blur-xl sm:flex-row sm:flex-wrap sm:gap-3"
   >
     <select
+      bind:this={medicationSelect}
       name="medication"
       aria-label="Filter by medication"
       class="border-border-strong bg-surface-raised text-text-primary w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
@@ -215,6 +259,18 @@
     >
       Apply
     </button>
+    {#if hasActiveFilter}
+      <!-- A link to the bare route rather than a reset button: like the rest
+           of this form it works without JavaScript, and it lands on the same
+           clean URL as an unfiltered visit, back on page 1. -->
+      <a
+        href="/log"
+        onclick={armRefocusAfterClear}
+        class="border-border-strong bg-surface-raised text-text-secondary hover:text-text-primary rounded-lg border px-3 py-2 text-center text-sm"
+      >
+        Clear filters
+      </a>
+    {/if}
   </form>
 
   {#if data.doses.length === 0}
@@ -222,6 +278,7 @@
       <EmptyState
         title="No doses match these filters"
         body="Try clearing one or more filters above to see more results."
+        action={{ href: "/log", label: "Clear filters" }}
       />
     {:else}
       <EmptyState
@@ -260,20 +317,20 @@
   <nav aria-label="Dose history pagination" class="flex items-center justify-between">
     {#if data.page > 1}
       <a
-        href="?page={data.page - 1}"
+        href={previousPageHref}
         rel="prev"
         aria-label="Go to previous page"
-        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2 text-sm"
+        class="border-border-strong hover:bg-surface-overlay rounded-lg border px-4 py-2 text-sm"
         >Previous</a
       >
     {:else}<div></div>{/if}
     <span class="text-text-secondary text-sm" aria-current="page">Page {data.page}</span>
     {#if data.hasMore}
       <a
-        href="?page={data.page + 1}"
+        href={nextPageHref}
         rel="next"
         aria-label="Go to next page"
-        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2 text-sm"
+        class="border-border-strong hover:bg-surface-overlay rounded-lg border px-4 py-2 text-sm"
         >Next</a
       >
     {:else}<div></div>{/if}

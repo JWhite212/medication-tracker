@@ -323,6 +323,66 @@ describe("DoseActionForm submit", () => {
     expect(lock.busy).toBe(false);
   });
 
+  it("keeps Undo's hold exclusive: an unrelated write's own release() must not end it early", async () => {
+    // The write whose toast carries the Undo.
+    const first = setup({ props: { buildToast: () => "logged", undoable: true } });
+    const { lock } = first;
+    const { callback: firstCallback } = await startSubmit(first.submit, first.form);
+    await finishSubmit(firstCallback!, first.form, SUCCESS).done;
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS);
+    expect(lock.busy).toBe(false); // the first write has fully settled and cooled down
+    const undo = h.showToast.mock.calls[0][2] as () => void;
+
+    // A second, unrelated write on the same page: it takes the lock via acquire().
+    const second = mountDoseActionForm({ lock, clock: fixedClock(NOW) });
+    const secondSubmit = h.submit!;
+    const { callback: secondCallback } = await startSubmit(secondSubmit, second.form);
+    expect(lock.busy).toBe(true);
+
+    // While that second write is still in flight, Undo is tapped on the
+    // first toast — the Undo button has no lock gating, so this is allowed
+    // to overlap with any other write.
+    const fetchStarted = deferred();
+    const fetchMock = vi.fn(async () => {
+      await fetchStarted.promise;
+      return { text: async () => JSON.stringify({ type: "success", status: 200 }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const invalidateAllDone = deferred();
+    h.invalidateAll.mockReset();
+    h.invalidateAll.mockImplementation(() => invalidateAllDone.promise);
+    undo();
+    await flushMicrotasks();
+    expect(lock.busy).toBe(true); // Undo's fetch in flight
+
+    // The unrelated second write settles and calls its own release() —
+    // this is the exact interference the finding describes, and must not
+    // free the page while Undo's fetch/reload is still outstanding.
+    await finishSubmit(secondCallback!, second.form, SUCCESS).done;
+    expect(lock.busy).toBe(true);
+
+    // Outlast the cooldown a lock that (wrongly) timed itself from the
+    // second write's own completion would already have expired by — while
+    // Undo's fetch/reload is still pending, the lock must still be busy.
+    await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS);
+    expect(lock.busy).toBe(true);
+
+    fetchStarted.resolve();
+    await flushMicrotasks();
+    expect(lock.busy).toBe(true); // fetch settled, Undo's own reload still pending
+
+    invalidateAllDone.resolve();
+    await flushMicrotasks();
+    expect(lock.busy).toBe(true); // Undo's reload landed; now cooling down fresh
+
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 1);
+    expect(lock.busy).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(lock.busy).toBe(false);
+
+    second.destroy();
+  });
+
   it("a 409 reloads before releasing the lock, and never runs update()", async () => {
     const reload = deferred();
     h.invalidateAll.mockImplementation(() => reload.promise);

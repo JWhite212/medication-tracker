@@ -405,6 +405,17 @@ export interface MatchedSlot extends ProjectedSlot {
 }
 
 /**
+ * The segment limit: a dose is a pass-1 candidate for a slot only if it was
+ * taken before the end of that slot's segment. Yesterday's segment ends at
+ * today's midnight and today's at `end`; tomorrow's first hour has no limit.
+ */
+function segmentEndMs(segment: ProjectedSlot["segment"], segments: Segments): number {
+  if (segment === "yesterday") return segments.todayStart.getTime();
+  if (segment === "today") return segments.end.getTime();
+  return Number.POSITIVE_INFINITY;
+}
+
+/**
  * Match one medication's projected slots to its doses.
  *
  * Every pass spends from ONE capacity map. A taken dose covers
@@ -458,6 +469,7 @@ export function matchMedicationSlots(
   for (let i = 0; i < ordered.length; i++) {
     if (resolvedBy[i]) continue;
     const t = slotMs[i];
+    const segmentEnd = segmentEndMs(ordered[i].segment, opts.segments);
     let best: MatchDose | undefined;
     let bestRank = Infinity;
     let bestDist = Infinity;
@@ -466,6 +478,7 @@ export function matchMedicationSlots(
       const at = d.takenAt.getTime();
       const dist = Math.abs(at - t);
       if (dist > MATCH_TOLERANCE_MS) continue;
+      if (at >= segmentEnd) continue;
       if (isReservedSkip(d) && at !== t) continue;
       const rank = d.status === "taken" ? 0 : 1;
       const better =

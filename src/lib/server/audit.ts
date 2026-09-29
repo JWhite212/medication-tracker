@@ -45,7 +45,10 @@ export async function logAudit(
   userId: string,
   entityType: string,
   entityId: string,
-  action: "create" | "update" | "delete" | "failed_login",
+  // "restore" is a deleted dose put back by its Undo (`restoreDose`). Like
+  // "delete", it is written with no diff: a dose's diff would carry its note
+  // text, and audit rows are synced and never purged.
+  action: "create" | "update" | "delete" | "failed_login" | "restore",
   changes?: Record<string, { from: unknown; to: unknown }> | null,
   client: AuditClient = db,
 ) {

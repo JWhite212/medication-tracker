@@ -196,6 +196,68 @@ export const doseLogs = pgTable(
 
 export type DoseLogStatus = "taken" | "skipped" | "missed";
 
+/**
+ * A deleted dose, kept so its Undo can put it back (spec D4, D6).
+ *
+ * A restore (`restoreDose`) moves the row back into `dose_logs` under the SAME
+ * id. It matches on `(id, deletedAt)` to the millisecond, so an out-of-date
+ * Undo can never reverse a newer delete, and only within
+ * `DOSE_UNDO_WINDOW_MS` (`$lib/utils/dose-undo`). Expired rows are purged with
+ * `FOR UPDATE SKIP LOCKED`, so a purge never waits on a restore (D7).
+ *
+ * Every `dose_logs` column except `updatedAt` is mirrored here, with the same
+ * name, type and nullability. A column the trash lacks is silently lost by a
+ * delete-then-Undo, so `tests/unit/dose-log-trash-columns.test.ts` fails when
+ * one is added to `dose_logs` alone. `updatedAt` is left out on purpose: it is
+ * the sync cursor, and a restore writes it fresh so a delta sync carries the
+ * dose back to the Mac app. No column has a default. The row is a copy, and a
+ * NOT NULL field the copy forgot must fail the insert, not be invented.
+ *
+ * `inventoryCredited` is what the delete ACTUALLY gave back to
+ * `medications.inventory_count`, and a restore takes back at most that. Never
+ * `inventoryApplied`, never `quantity`. It is not a copy of
+ * `inventoryApplied`: a delete credits nothing while tracking is off (count
+ * NULL), so it is 0 then. Without it, a dose deleted while tracking was off
+ * and restored after tracking came back on would take stock that was never
+ * given back.
+ *
+ * `deletedAt` comes from the app clock, read after the medication row lock,
+ * so it orders correctly against `dose_logs.loggedAt` for the restore's
+ * "logged since the delete" guard.
+ *
+ * Owners: `src/lib/server/doses.ts` (delete, restore, purge) and
+ * `src/lib/server/api/wipe.ts` (Delete dose history). Retention reaches the
+ * table only through `purgeExpiredTrash` in `doses.ts`. Both foreign keys
+ * cascade, so the archived-medication wipe, import replace mode and account
+ * deletion clean it up with no code of their own. Nothing exports it:
+ * re-importing a trashed dose would undo its delete.
+ */
+export const doseLogTrash = pgTable(
+  "dose_log_trash",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    medicationId: text("medication_id")
+      .notNull()
+      .references(() => medications.id, { onDelete: "cascade" }),
+    quantity: integer("quantity").notNull(),
+    inventoryApplied: integer("inventory_applied"),
+    inventoryCredited: integer("inventory_credited").notNull(),
+    takenAt: timestamp("taken_at", { withTimezone: true }).notNull(),
+    loggedAt: timestamp("logged_at", { withTimezone: true }).notNull(),
+    notes: text("notes"),
+    sideEffects:
+      jsonb("side_effects").$type<
+        Array<{ name: string; severity: "mild" | "moderate" | "severe" }>
+      >(),
+    status: text("status").notNull().$type<DoseLogStatus>(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("dose_log_trash_user_deleted_idx").on(table.userId, table.deletedAt)],
+);
+
 export type ScheduleKind = "fixed_time" | "interval" | "prn";
 
 export const medicationSchedules = pgTable(
@@ -362,9 +424,16 @@ export const reminderEvents = pgTable(
   ],
 );
 
+// `dose_restored` is a delete's Undo taking back what that delete credited,
+// and never more (see `doseLogTrash.inventoryCredited`). A type here has four
+// homes that must move together: this union, the import enum in
+// validation.ts, the history labels on the medication page, and the eventType
+// list in docs/api-v1-contract.md. tests/unit/inventory-event-types.test.ts
+// holds the first three.
 export type InventoryEventType =
   | "dose_taken"
   | "dose_deleted"
+  | "dose_restored"
   | "dose_quantity_updated"
   | "manual_adjustment"
   | "refill"
@@ -381,9 +450,9 @@ export const inventoryEvents = pgTable(
       .notNull()
       .references(() => medications.id, { onDelete: "cascade" }),
     eventType: text("event_type").notNull().$type<InventoryEventType>(),
-    // Signed delta applied to inventory_count. dose_taken is negative,
-    // refill / dose_deleted (taken) are positive, manual_adjustment
-    // and correction can be either.
+    // Signed delta applied to inventory_count. dose_taken and
+    // dose_restored are negative, refill / dose_deleted (taken) are
+    // positive, manual_adjustment and correction can be either.
     quantityChange: integer("quantity_change").notNull(),
     // Snapshot of the count immediately before and after the change.
     // Nullable for medications without inventory tracking, where the

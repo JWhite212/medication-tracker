@@ -4,7 +4,8 @@ import { z } from "zod";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { doseEditSchema, logFilterSchema } from "$lib/utils/validation";
-import { updateDose, deleteDose } from "$lib/server/doses";
+import { updateDose } from "$lib/server/doses";
+import { deleteDoseAction } from "$lib/server/dose-actions";
 import { resolveEditedInstant, parseDayRangeParam } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -139,14 +140,6 @@ export const actions: Actions = {
     if (!updated) return fail(404, { editErrors: { form: ["Dose no longer exists"] } });
     return { success: true };
   },
-  deleteDose: async ({ request, locals }) => {
-    if (!locals.user) error(401, "Unauthorized");
-
-    const formData = await request.formData();
-    const doseId = formData.get("doseId") as string;
-    if (!doseId) return fail(400, { error: "Missing dose ID" });
-    const deleted = await deleteDose(locals.user!.id, doseId);
-    if (!deleted) return fail(404, { error: "Dose not found" });
-    return { success: true };
-  },
+  // Shared with the dashboard; see `deleteDoseAction`.
+  deleteDose: (event) => deleteDoseAction(event),
 };

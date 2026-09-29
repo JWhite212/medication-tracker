@@ -1,11 +1,18 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and, gte, lt, asc, desc, sql, isNotNull, max } from "drizzle-orm";
+import { eq, and, gte, lt, lte, asc, desc, sql, isNotNull, max, inArray } from "drizzle-orm";
 import { db, dbTx } from "$lib/server/db";
-import { doseLogs, medications, medicationSchedules, syncTombstones } from "$lib/server/db/schema";
+import {
+  doseLogs,
+  doseLogTrash,
+  medications,
+  medicationSchedules,
+  syncTombstones,
+} from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
 import { recordInventoryEvent } from "./inventory-events";
 import { dashboardWindow, projectFixedTimes, segmentsFor, slotActions } from "$lib/utils/schedule";
 import type { DoseLogWithMedication, SideEffect } from "$lib/types";
+import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
 
 export class MedicationNotFoundError extends Error {
   constructor(medicationId: string) {
@@ -464,54 +471,144 @@ export async function logDoseForSlot(
   });
 }
 
-export async function deleteDose(userId: string, doseId: string) {
-  const [dose] = await db
-    .select()
-    .from(doseLogs)
-    .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
-    .limit(1);
+/** What `deleteDose` reports: enough for a toast to name the dose and for Undo to key its restore. */
+export interface DeletedDose {
+  doseId: string;
+  medicationId: string;
+  deletedAt: Date;
+}
 
-  if (!dose) return false;
+/** The global `db` (autocommit: the retention sweep) or a transaction. */
+type DbExecutor = typeof db | DbTransaction;
 
-  // Skipped/missed doses never decremented inventory, so don't restore.
-  // Delete + (conditional) inventory restore in a single transaction —
-  // either both happen or neither does.
-  const shouldRestoreInventory = dose.status === "taken";
-  await dbTx.transaction(async (tx) => {
-    await tx.delete(doseLogs).where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)));
+/**
+ * Delete trash rows whose undo window has closed:
+ * `deleted_at <= now − DOSE_UNDO_WINDOW_MS`, the same rule `restoreDose`
+ * uses for "expired".
+ *
+ * - With a `userId` it purges only that user's rows. The on-write purges in
+ *   `deleteDose` and `restoreDose` use this form.
+ * - Without one it purges everyone's. The retention sweep uses this form.
+ *
+ * It never waits. The ids come from a `FOR UPDATE SKIP LOCKED` subquery, so a
+ * row that a restore, a wipe or a cascade has locked is left for a later
+ * purge instead of being queued behind. A purge that never waits cannot close
+ * a lock cycle with any of those (spec D7). This is the only copy of the purge
+ * SQL; the retention policy calls this function as well.
+ */
+export async function purgeExpiredTrash(
+  executor: DbExecutor,
+  opts: { now: Date; userId?: string },
+): Promise<void> {
+  const cutoff = new Date(opts.now.getTime() - DOSE_UNDO_WINDOW_MS);
+  const expired = executor
+    .select({ id: doseLogTrash.id })
+    .from(doseLogTrash)
+    .where(
+      and(
+        opts.userId ? eq(doseLogTrash.userId, opts.userId) : undefined,
+        lte(doseLogTrash.deletedAt, cutoff),
+      ),
+    )
+    .for("update", { skipLocked: true });
 
-    if (shouldRestoreInventory) {
-      const [med] = await tx
-        .select({ inventoryCount: medications.inventoryCount })
-        .from(medications)
-        .where(and(eq(medications.id, dose.medicationId), eq(medications.userId, userId)))
-        .limit(1);
-      const previousCount = med?.inventoryCount ?? null;
+  await executor.delete(doseLogTrash).where(inArray(doseLogTrash.id, expired));
+}
 
-      // Give back exactly what this dose took, which is not always what it
-      // says it took. NULL means the row predates the column (or its
-      // backfill was skipped by a `drizzle-kit push`), and falling back to
-      // `quantity` reproduces the historical behaviour rather than
-      // restoring nothing — the same bug in the opposite direction.
-      const applied = dose.inventoryApplied ?? dose.quantity;
+/**
+ * Delete one dose and give back what it took from stock. When the caller will
+ * offer an Undo, also keep the dose in `dose_log_trash`, so that `restoreDose`
+ * can put the same row back.
+ *
+ * Everything runs in one transaction, in D7's lock order: the medication row
+ * first, then the dose.
+ *
+ * **Double delete.** Two overlapping deletes of one dose serialise on the
+ * medication lock. The second one's `DELETE … RETURNING` then finds nothing,
+ * so it writes nothing: no second credit, event, trash row, tombstone or
+ * audit row. The code this replaces read the dose outside its transaction,
+ * deleted without checking the row count and always credited. So the losing
+ * delete minted a second dose's worth of stock, and the ledger reconciled
+ * with the mint.
+ *
+ * **Edit, then delete.** The credit comes from RETURNING's after-image, not
+ * an earlier read. An edit that committed first is therefore credited at its
+ * edited applied amount.
+ *
+ * **What the trash row records.** `inventoryCredited` is what this delete
+ * actually gave back, which is not always `inventoryApplied`: nothing is
+ * credited while tracking is off. A restore takes back only
+ * `inventoryCredited`. So a dose deleted while tracking was off, then
+ * restored after tracking came back on, takes nothing it never gave.
+ *
+ * **When to keep nothing.** `keepForUndo: false` is for deletes nobody can
+ * undo (D8): the Mac app's `delete_dose`, and the delete behind a create's
+ * Undo.
+ *
+ * **The clock.** `deletedAt` is read from the app clock AFTER the medication
+ * lock (D7), so it orders correctly against every `loggedAt` written under
+ * the same lock. `opts.now` overrides it for tests.
+ */
+export async function deleteDose(
+  userId: string,
+  doseId: string,
+  opts: { keepForUndo: boolean; now?: Date },
+): Promise<DeletedDose | null> {
+  return dbTx.transaction(async (tx): Promise<DeletedDose | null> => {
+    // 1. Find which medication to lock. This read needs no lock, because a
+    //    dose's medicationId never changes.
+    const [found] = await tx
+      .select({ medicationId: doseLogs.medicationId })
+      .from(doseLogs)
+      .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
+      .limit(1);
+    if (!found) return null;
+    const { medicationId } = found;
+
+    // 2. Lock the medication (D7), which also makes this count read exact.
+    //    Only then read the clock.
+    const [med] = await tx
+      .select({ inventoryCount: medications.inventoryCount })
+      .from(medications)
+      .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
+      .limit(1)
+      .for("update");
+    const previousCount = med?.inventoryCount ?? null;
+    const now = opts.now ?? new Date();
+
+    // 3. The delete. A second delete of this dose waited on the lock above
+    //    and finds nothing here, so it stops before writing anything.
+    const [deleted] = await tx
+      .delete(doseLogs)
+      .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
+      .returning();
+    if (!deleted) return null;
+
+    // 4. Give the stock back. Skipped and missed rows never took any.
+    let credited = 0;
+    if (deleted.status === "taken") {
+      // NULL means the row predates the column, or a `drizzle-kit push`
+      // skipped its backfill. Falling back to `quantity` keeps the
+      // historical behaviour; giving back nothing would be the same bug in
+      // the other direction.
+      const applied = deleted.inventoryApplied ?? deleted.quantity;
 
       await tx
         .update(medications)
-        .set({
-          inventoryCount: sql`${medications.inventoryCount} + ${applied}`,
-        })
+        .set({ inventoryCount: sql`${medications.inventoryCount} + ${applied}` })
         .where(
           and(
-            eq(medications.id, dose.medicationId),
+            eq(medications.id, medicationId),
             eq(medications.userId, userId),
             isNotNull(medications.inventoryCount),
           ),
         );
 
       if (previousCount !== null) {
+        credited = applied;
         await recordInventoryEvent(tx, {
           userId,
-          medicationId: dose.medicationId,
+          medicationId,
           eventType: "dose_deleted",
           quantityChange: applied,
           previousCount,
@@ -520,16 +617,29 @@ export async function deleteDose(userId: string, doseId: string) {
       }
     }
 
+    // 5. Keep the dose for Undo: every stored column except `updatedAt`,
+    //    which a restore rewrites. Purge first, so the trash stays bounded.
+    if (opts.keepForUndo) {
+      await purgeExpiredTrash(tx, { now, userId });
+      const { updatedAt: _updatedAt, ...kept } = deleted;
+      await tx
+        .insert(doseLogTrash)
+        .values({ ...kept, inventoryCredited: credited, deletedAt: now });
+    }
+
+    // 6. The sync tombstone and the audit row. The audit row carries no diff,
+    //    so no note text reaches the audit log, which is synced and never
+    //    purged.
     await tx.insert(syncTombstones).values({
       id: createId(),
       userId,
       entityType: "dose_log",
       entityId: doseId,
     });
-
     await logAudit(userId, "dose_log", doseId, "delete", undefined, tx);
+
+    return { doseId, medicationId, deletedAt: now };
   });
-  return true;
 }
 
 export async function updateDose(

@@ -87,7 +87,9 @@ const handlers: Record<string, Handler> = {
   },
   delete_dose: async (userId, payload) => {
     const p = deleteDosePayload.parse(payload);
-    return { deleted: await deleteDose(userId, p.doseId) };
+    // The Mac app has no Undo, so a trash row would only linger (spec D8).
+    // The wire shape stays `{ deleted: boolean }`.
+    return { deleted: (await deleteDose(userId, p.doseId, { keepForUndo: false })) !== null };
   },
   refill: async (userId, payload) => {
     const p = refillPayload.parse(payload);

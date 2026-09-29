@@ -6,12 +6,12 @@ import {
   logDose,
   logDoseForSlot,
   logSkippedDose,
-  deleteDose,
   updateDose,
   MedicationNotFoundError,
   SlotAlreadyTakenError,
   SlotTargetChangedError,
 } from "$lib/server/doses";
+import { deleteDoseAction } from "$lib/server/dose-actions";
 import { doseLogSchema, doseEditSchema, doseSkipSchema } from "$lib/utils/validation";
 import { resolveEditedInstant } from "$lib/utils/time";
 import { checkSlotActionTime, type SlotActionTimeProblem } from "$lib/utils/schedule";
@@ -134,19 +134,9 @@ export const actions: Actions = {
 
     return { success: true, doseId };
   },
-  deleteDose: async ({ request, locals }) => {
-    if (!locals.user) error(401, "Unauthorized");
-
-    const formData = await request.formData();
-    const doseId = formData.get("doseId") as string;
-
-    if (!doseId) return fail(400, { error: "Missing dose ID" });
-    // deleteDose returns false for a stale/unowned row (removed in
-    // another tab or via sync) — surface it instead of a false toast.
-    const deleted = await deleteDose(locals.user!.id, doseId);
-    if (!deleted) return fail(404, { error: "Dose not found" });
-    return { success: true };
-  },
+  // Shared with /log. The 401 guard, the parse, D8's `forUndo` and the
+  // restore handle all live in `deleteDoseAction`.
+  deleteDose: (event) => deleteDoseAction(event),
   editDose: async ({ request, locals }) => {
     if (!locals.user) error(401, "Unauthorized");
 

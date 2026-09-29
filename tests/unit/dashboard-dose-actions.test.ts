@@ -3,8 +3,8 @@ import { actionErrorMessage } from "$lib/utils/form-errors";
 
 // Verifies the dashboard's dose mutations don't report success when the
 // underlying row no longer exists (deleted in another tab or via native
-// -app sync). deleteDose() returns false and updateDose() returns null
-// in that case — the actions must surface a failure, not `success`.
+// -app sync). deleteDose() and updateDose() return null in that case —
+// the actions must surface a failure, not `success`.
 //
 // The log and skip actions check the posted instant against the request's
 // clock, route to the right write (Log now, Took it at, Skip or a chip) and
@@ -12,12 +12,16 @@ import { actionErrorMessage } from "$lib/utils/form-errors";
 // by app-action-auth-guard.test.ts, and what the writes do to the database
 // by pg/dose-slot-writes.test.ts. This file pins what is left: routing, the
 // clock and the error mapping.
+const DELETED_AT = new Date("2026-04-16T19:05:00.000Z");
+/** What deleteDose returns for a dose it removed. */
+const deletedDose = () => ({ doseId: "d1", medicationId: "m1", deletedAt: DELETED_AT });
+
 const state = {
-  deleteResult: true as boolean,
+  deleteResult: deletedDose() as ReturnType<typeof deletedDose> | null,
   updateResult: { id: "d1" } as object | null,
 };
 
-const deleteDose = vi.fn(async () => state.deleteResult);
+const deleteDose = vi.fn(async (..._args: unknown[]) => state.deleteResult);
 const updateDose = vi.fn(async () => state.updateResult);
 // The writes return what production returns — a row for the two taken
 // writes, an id string for a skip. Each has a distinct id, so the `doseId`
@@ -44,7 +48,7 @@ vi.mock("$lib/server/doses", () => ({
   logDose: (...args: unknown[]) => logDose(...args),
   logDoseForSlot: (...args: unknown[]) => logDoseForSlot(...args),
   logSkippedDose: (...args: unknown[]) => logSkippedDose(...args),
-  deleteDose: (...args: unknown[]) => deleteDose(...(args as [])),
+  deleteDose: (...args: unknown[]) => deleteDose(...args),
   updateDose: (...args: unknown[]) => updateDose(...(args as [])),
   MedicationNotFoundError,
   SlotAlreadyTakenError,
@@ -80,7 +84,7 @@ function toastFor(res: unknown): string {
 }
 
 beforeEach(() => {
-  state.deleteResult = true;
+  state.deleteResult = deletedDose();
   state.updateResult = { id: "d1" };
   deleteDose.mockClear();
   updateDose.mockClear();
@@ -98,21 +102,48 @@ afterEach(() => {
 });
 
 describe("dashboard deleteDose action", () => {
+  const postDelete = (fields: Record<string, string>) =>
+    actions.deleteDose({ request: formRequest(fields), locals } as never);
+
   it("returns 404 when the dose no longer exists instead of success", async () => {
-    state.deleteResult = false;
-    const res = await actions.deleteDose({
-      request: formRequest({ doseId: "gone" }),
-      locals,
-    } as never);
-    expect(res).toMatchObject({ status: 404 });
+    state.deleteResult = null;
+
+    const res = await postDelete({ doseId: "gone" });
+
+    expect(res).toMatchObject({ status: 404, data: { error: "Dose not found" } });
   });
 
-  it("returns success when the dose was actually deleted", async () => {
-    const res = await actions.deleteDose({
-      request: formRequest({ doseId: "d1" }),
-      locals,
-    } as never);
-    expect(res).toEqual({ success: true });
+  it("keeps the dose for Undo and hands back its restore handle", async () => {
+    const res = await postDelete({ doseId: "d1" });
+
+    expect(deleteDose).toHaveBeenCalledWith("u1", "d1", { keepForUndo: true });
+    // D6: the server keeps the row for ten minutes; deletedAt round-trips exactly.
+    expect(res).toEqual({
+      success: true,
+      doseId: "d1",
+      restore: { deletedAt: "2026-04-16T19:05:00.000Z", expiresInMs: 600_000 },
+    });
+  });
+
+  it("keeps no trash row and offers no restore for a create's Undo (forUndo=1)", async () => {
+    const res = await postDelete({ doseId: "d1", forUndo: "1" });
+
+    expect(deleteDose).toHaveBeenCalledWith("u1", "d1", { keepForUndo: false });
+    expect(res).toEqual({ success: true, doseId: "d1" });
+  });
+
+  it("answers 400 with the existing copy when doseId is missing, deleting nothing", async () => {
+    const res = await postDelete({});
+
+    expect(res).toMatchObject({ status: 400, data: { error: "Missing dose ID" } });
+    expect(deleteDose).not.toHaveBeenCalled();
+  });
+
+  it('refuses a forUndo flag other than "1" rather than guessing, deleting nothing', async () => {
+    const res = await postDelete({ doseId: "d1", forUndo: "true" });
+
+    expect(res).toMatchObject({ status: 400 });
+    expect(deleteDose).not.toHaveBeenCalled();
   });
 });
 

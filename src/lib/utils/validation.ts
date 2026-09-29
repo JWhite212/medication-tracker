@@ -226,6 +226,30 @@ export const doseSkipSchema = z.object({
 });
 
 /**
+ * Every dose delete and restore names its dose by id. `max(64)` bounds a
+ * hand-edited field the same way the import door bounds ids. Real ids are
+ * 24-character cuid2s.
+ */
+export const doseIdSchema = z.object({ doseId: z.string().min(1).max(64) });
+
+/**
+ * The dashboard's and /log's delete. `forUndo=1` marks the delete behind a
+ * CREATE's Undo. Nobody can undo that one in turn, so it skips the trash and
+ * answers without a restore handle (spec D8). Only the literal "1" is
+ * accepted, so a stray value is a 400 rather than a silent choice between the
+ * two kinds of delete.
+ */
+export const doseDeleteSchema = doseIdSchema.extend({ forUndo: z.literal("1").optional() });
+
+/**
+ * A delete's Undo. `deletedAt` is the ISO instant the delete returned, posted
+ * back verbatim. The restore matches the trash row on `(doseId, deletedAt)` to
+ * the millisecond, so an out-of-date Undo can never reverse a newer delete of
+ * the same dose (spec D6).
+ */
+export const doseRestoreSchema = doseIdSchema.extend({ deletedAt: z.string().datetime() });
+
+/**
  * The shape a `<input type="datetime-local">` submits: `YYYY-MM-DDTHH:mm`,
  * optionally with seconds. Browsers add the seconds field only when the
  * control has a sub-minute `step`, so both forms have to be accepted.
@@ -608,6 +632,7 @@ export const importInventoryEventSchema = z.object({
   eventType: z.enum([
     "dose_taken",
     "dose_deleted",
+    "dose_restored",
     "dose_quantity_updated",
     "manual_adjustment",
     "refill",

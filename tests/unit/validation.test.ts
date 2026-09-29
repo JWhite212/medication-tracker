@@ -6,6 +6,10 @@ import {
   doseLogSchema,
   doseEditSchema,
   doseSkipSchema,
+  doseIdSchema,
+  doseDeleteSchema,
+  doseRestoreSchema,
+  importInventoryEventSchema,
   settingsSchema,
 } from "$lib/utils/validation";
 
@@ -294,6 +298,97 @@ describe("doseSkipSchema", () => {
   it("rejects a datetime-local takenAt, which names no instant", () => {
     const result = doseSkipSchema.safeParse({ medicationId: "m1", takenAt: "2026-04-16T09:00" });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("doseIdSchema", () => {
+  it("accepts a dose id", () => {
+    const result = doseIdSchema.safeParse({ doseId: "d1" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toEqual({ doseId: "d1" });
+  });
+
+  it("rejects a missing or empty id, so the action answers 400 rather than 404", () => {
+    for (const input of [{}, { doseId: "" }]) {
+      const result = doseIdSchema.safeParse(input);
+      expect(result.success, JSON.stringify(input)).toBe(false);
+      if (!result.success) expect(result.error.flatten().fieldErrors.doseId).toBeDefined();
+    }
+  });
+
+  it("accepts a 64-character id and rejects a 65-character one", () => {
+    expect(doseIdSchema.safeParse({ doseId: "x".repeat(64) }).success).toBe(true);
+    expect(doseIdSchema.safeParse({ doseId: "x".repeat(65) }).success).toBe(false);
+  });
+});
+
+describe("doseDeleteSchema", () => {
+  it("leaves forUndo undefined when it is absent: an ordinary delete, kept for its Undo", () => {
+    const result = doseDeleteSchema.safeParse({ doseId: "d1" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.forUndo).toBeUndefined();
+  });
+
+  it("accepts forUndo=1: the delete behind a create's Undo, which skips the trash (D8)", () => {
+    const result = doseDeleteSchema.safeParse({ doseId: "d1", forUndo: "1" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.forUndo).toBe("1");
+  });
+
+  it("rejects any other forUndo value rather than guessing which delete was meant", () => {
+    for (const forUndo of ["0", "true", "", "yes"]) {
+      expect(doseDeleteSchema.safeParse({ doseId: "d1", forUndo }).success, forUndo).toBe(false);
+    }
+  });
+
+  it("still requires the dose id", () => {
+    expect(doseDeleteSchema.safeParse({ forUndo: "1" }).success).toBe(false);
+  });
+});
+
+describe("doseRestoreSchema", () => {
+  it("accepts the delete's ISO instant and keeps it verbatim", () => {
+    // The restore matches the trash row on (doseId, deletedAt) to the
+    // millisecond, so the string must reach the server exactly as it was sent.
+    const result = doseRestoreSchema.safeParse({
+      doseId: "d1",
+      deletedAt: "2026-08-01T09:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ doseId: "d1", deletedAt: "2026-08-01T09:00:00.000Z" });
+    }
+  });
+
+  it("rejects a missing deletedAt", () => {
+    const result = doseRestoreSchema.safeParse({ doseId: "d1" });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.flatten().fieldErrors.deletedAt).toBeDefined();
+  });
+
+  it("rejects a datetime-local deletedAt, which names no instant", () => {
+    const result = doseRestoreSchema.safeParse({ doseId: "d1", deletedAt: "2026-08-01T09:00" });
+    expect(result.success).toBe(false);
+  });
+
+  it("still requires the dose id", () => {
+    const result = doseRestoreSchema.safeParse({
+      doseId: "",
+      deletedAt: "2026-08-01T09:00:00.000Z",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("importInventoryEventSchema", () => {
+  it("accepts a dose_restored event", () => {
+    const result = importInventoryEventSchema.safeParse({
+      medicationId: "med_1",
+      eventType: "dose_restored",
+      quantityChange: -1,
+      createdAt: "2026-08-01T09:05:00.000Z",
+    });
+    expect(result.success).toBe(true);
   });
 });
 

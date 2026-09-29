@@ -426,3 +426,30 @@ describe("parseBackup — one bad row must not sink the file", () => {
     expect(result.bundle.warnings).toEqual([]);
   });
 });
+
+describe("parseBackup — restored doses", () => {
+  it("keeps a dose_restored inventory event instead of skipping it as unreadable", () => {
+    // A delete's Undo writes a `dose_restored` event. A backup taken after one
+    // must re-import it, or the ledger it restores no longer adds up.
+    const raw = backup();
+    (raw.inventoryEvents as Json[]).push({
+      id: "evt_2",
+      userId: "user_source",
+      medicationId: "med_1",
+      eventType: "dose_restored",
+      quantityChange: -1,
+      previousCount: 30,
+      newCount: 29,
+      note: null,
+      createdAt: "2026-04-02T00:00:00.000Z",
+    });
+    const result = parseBackup(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bundle.inventoryEvents.map((e) => e.eventType)).toEqual([
+      "refill",
+      "dose_restored",
+    ]);
+    expect(result.bundle.warnings).toEqual([]);
+  });
+});

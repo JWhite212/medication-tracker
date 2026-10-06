@@ -10,7 +10,13 @@ import {
 } from "$lib/server/db/schema";
 import { logAudit, computeChanges } from "./audit";
 import { recordInventoryEvent } from "./inventory-events";
-import { dashboardWindow, projectFixedTimes, segmentsFor, slotActions } from "$lib/utils/schedule";
+import {
+  dashboardWindow,
+  projectFixedTimes,
+  segmentsFor,
+  slotActions,
+  type SlotActions,
+} from "$lib/utils/schedule";
 import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
 
@@ -22,15 +28,14 @@ export class MedicationNotFoundError extends Error {
 }
 
 /**
- * A guarded write was asked for at an instant that already holds a TAKEN
- * dose.
+ * Took it at was posted for an instant that already holds a TAKEN dose of
+ * this medication.
  *
- * Only the guarded writes throw it: the dashboard's "Took it at" and Skip,
- * which post the slot's own instant. For Skip, taken beats skip in the
- * matcher, so a skip written there would record a decision the page could
- * never show. For "Took it at", the page that offered the button was stale,
- * and the dose is already there. Either way the honest answer is "refresh,
- * it's already logged".
+ * Only `logDoseAtSlot` throws it, before it re-derives the row's buttons. A
+ * fresh page never offers Took it at on such an instant (pass 0 resolves that
+ * slot), so the tap came from a stale page, usually a double tap. The
+ * re-derivation would refuse it too, as SlotTargetChangedError. This check
+ * runs first so the answer is the specific "refresh, it's already logged".
  */
 export class SlotAlreadyTakenError extends Error {
   constructor(message = "A taken dose already exists at this instant") {
@@ -42,11 +47,16 @@ export class SlotAlreadyTakenError extends Error {
 /**
  * The button that was tapped no longer names what the tap would do.
  *
- * `logDoseForSlot` throws it when Log now was posted for a row that is no
- * longer where a dose logged now would land. Causes: render-to-tap drift, a
- * page left open across midnight, the 12h expiry, a double tap, a second
- * device. The guarded Skip throws it when the instant already holds a skip,
- * which a fresh page never offers. Neither writes anything.
+ * Every guarded dashboard write re-derives the medication's `slotActions`
+ * under the medication lock, and throws this when the posted slot no longer
+ * offers its button:
+ *
+ * - Log now (`logDoseForSlot`) when the target moved;
+ * - Took it at (`logDoseAtSlot`) or Skip (`skipDoseForSlot`) when the row is
+ *   resolved, gone, or no longer offers that action.
+ *
+ * Causes: render-to-tap drift, a page left open across midnight, the 12h
+ * expiry, a double tap, a second device. None of them writes anything.
  */
 export class SlotTargetChangedError extends Error {
   constructor(message = "The Log-now target has changed") {
@@ -174,12 +184,13 @@ async function takeFromStock(
  * The one taken-dose write: the stock decrement, the inventory event, the
  * row and the audit entry, all inside the caller's transaction.
  *
- * `logDose` and `logDoseForSlot` both end here, so a Log-now dose and a chip
- * dose cannot drift apart on `inventoryApplied`, the column `deleteDose`
- * gives back. `previousCount` is the caller's own read of
- * `medications.inventoryCount`, taken inside the same transaction before
- * this insert, under the medication row lock every caller takes first (D7),
- * so no other stock writer can commit between that read and this decrement.
+ * `logDose`, `logDoseForSlot` and `logDoseAtSlot` all end here, so a chip
+ * dose, a Log-now dose and a Took-it-at dose cannot drift apart on
+ * `inventoryApplied`, the column `deleteDose` gives back. `previousCount` is
+ * the caller's own read of `medications.inventoryCount`, taken inside the
+ * same transaction before this insert, under the medication row lock every
+ * caller takes first (D7), so no other stock writer can commit between that
+ * read and this decrement.
  */
 async function insertTakenDose(
   tx: DbTransaction,
@@ -228,6 +239,11 @@ async function insertTakenDose(
   return inserted;
 }
 
+/**
+ * A taken dose with no slot to prove: the Quick Log chips, the 1–9 keys, the
+ * medications card and `/api/v1 log_dose`. The dashboard's Took it at is
+ * `logDoseAtSlot`, and Log now is `logDoseForSlot`.
+ */
 export async function logDose(
   userId: string,
   medicationId: string,
@@ -235,31 +251,21 @@ export async function logDose(
   takenAt?: Date,
   notes?: string,
   sideEffects?: SideEffect[],
-  opts: { exactInstantGuard?: boolean } = {},
 ) {
-  // The action's clock. A dose posted without a `takenAt` is recorded at the
-  // moment the request arrived, so this is read before any lock wait.
   const now = new Date();
   const at = takenAt ?? now;
-  const guard = opts.exactInstantGuard === true;
 
   // Insert + inventory decrement + audit log all happen inside a single
   // transaction so logDose is all-or-nothing: on any throw, nothing —
   // including the audit row — is durably committed. This is required by
   // runCommands' reserve-first idempotency (see commands.ts), which relies
   // on "handler threw" meaning "safe to retry" for every command handler.
-  const dose = await dbTx.transaction(async (tx) => {
-    // D7: the medication row first, locked, on EVERY path. The count read
-    // here is what `inventoryApplied` is computed from. Unlocked, a
-    // concurrent stock writer (a refill, an adjust, a delete, a restore)
-    // could commit between this read and the decrement below, and the dose
-    // would record an `inventoryApplied` larger than what really left the
-    // bottle, which a later delete then minted back. The lock also makes two
-    // "Took it at 09:00" posts serialise, so the second one's lookup below
-    // sees the first one's row instead of both inserting.
-    //
-    // The read is scoped by user, so it is also the ownership check: another
-    // user's medication is simply not there.
+  return dbTx.transaction(async (tx) => {
+    // D7: lock the medication before anything touches its doses or its stock.
+    // The dose is measured against the count read here: the inventory event
+    // records both ends of the change, and the row stores how much it
+    // ACTUALLY removed, which is not `quantity` whenever the clamp engages.
+    // So nothing may move the count between this read and the write.
     const [med] = await tx
       .select({ inventoryCount: medications.inventoryCount })
       .from(medications)
@@ -267,42 +273,8 @@ export async function logDose(
       .limit(1)
       .for("update");
     if (!med) throw new MedicationNotFoundError(medicationId);
-    const previousCount = med.inventoryCount;
-
-    // `loggedAt` orders writes to this medication: restore's since-delete
-    // guard compares it with a trash row's `deletedAt`. Read after the lock,
-    // clock order is commit order (D7).
+    // D7: the clock that orders writes is read after the lock.
     const loggedAt = new Date();
-
-    if (guard) {
-      // "Took it at" names the slot's own instant to the millisecond. A fresh
-      // page never offers it on an instant that already holds a taken dose,
-      // because pass 0 resolves that slot, so a taken row here means the page
-      // is stale: a double tap, a second device, or a row that arrived by
-      // import, `/api/v1` or an edit. Refuse, so a double tap still writes
-      // and decrements once, and the caller never reports someone else's row
-      // as this tap's (its Undo would delete that record). A SKIP there does
-      // not count: taken beats skip, and pass 0 then gives the slot to the
-      // taken dose.
-      const [existing] = await tx
-        .select()
-        .from(doseLogs)
-        .where(
-          and(
-            eq(doseLogs.userId, userId),
-            eq(doseLogs.medicationId, medicationId),
-            eq(doseLogs.takenAt, at),
-            eq(doseLogs.status, "taken"),
-          ),
-        )
-        .orderBy(asc(doseLogs.id))
-        .limit(1);
-      if (existing) {
-        throw new SlotAlreadyTakenError(
-          `Medication ${medicationId} already has a taken dose at ${at.toISOString()}`,
-        );
-      }
-    }
 
     return insertTakenDose(tx, {
       userId,
@@ -312,21 +284,21 @@ export async function logDose(
       loggedAt,
       notes: notes ?? null,
       sideEffects: sideEffects ?? null,
-      previousCount,
+      previousCount: med.inventoryCount,
     });
   });
-
-  return dose;
 }
 
+/**
+ * A skip at `takenAt` (default: now), with no slot to prove: the dashboard's
+ * legacy skip-at-now and `/api/v1 skip_dose`. The dashboard's row Skip is
+ * `skipDoseForSlot`.
+ */
 export async function logSkippedDose(
   userId: string,
   medicationId: string,
   takenAt?: Date,
-  opts: { exactInstantGuard?: boolean } = {},
 ): Promise<string> {
-  // The action's clock, read before any lock wait: a skip posted without a
-  // `takenAt` is recorded at the moment the request arrived.
   const now = new Date();
   const at = takenAt ?? now;
 
@@ -334,52 +306,16 @@ export async function logSkippedDose(
   // all-or-nothing (see logDose above for why this matters for
   // runCommands' reserve-first idempotency).
   return dbTx.transaction(async (tx) => {
-    // D7 on BOTH paths. A skip is a per-dose write like any other, and its
-    // `loggedAt` must be read after the medication lock for the restore's
-    // since-delete guard to see commit order. Under the guard the lock also
-    // makes two Skip taps, or a Skip racing "Took it at" on another device,
-    // serialise. The read is scoped by user, so it is the ownership check
-    // on both paths too.
-    const [locked] = await tx
+    // D7: every dose insert locks its medication first, so the `loggedAt`
+    // below is ordered against every other write to it.
+    const [med] = await tx
       .select({ id: medications.id })
       .from(medications)
       .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
       .limit(1)
       .for("update");
-    if (!locked) throw new MedicationNotFoundError(medicationId);
-
+    if (!med) throw new MedicationNotFoundError(medicationId);
     const loggedAt = new Date();
-
-    if (opts.exactInstantGuard) {
-      // The dashboard's Skip posts the slot's own instant. Look at what that
-      // instant already holds.
-      const atInstant = await tx
-        .select({ id: doseLogs.id, status: doseLogs.status })
-        .from(doseLogs)
-        .where(
-          and(
-            eq(doseLogs.userId, userId),
-            eq(doseLogs.medicationId, medicationId),
-            eq(doseLogs.takenAt, at),
-          ),
-        )
-        .orderBy(asc(doseLogs.id));
-
-      // Taken beats skip: a skip written here could never show.
-      if (atInstant.some((d) => d.status === "taken")) {
-        throw new SlotAlreadyTakenError(
-          `Medication ${medicationId} already has a taken dose at ${at.toISOString()}`,
-        );
-      }
-      // A fresh page never offers Skip on an instant that already holds a
-      // skip: that skip resolves the slot. So this is a stale page, and
-      // returning the existing id would hand its Undo someone else's row.
-      if (atInstant.some((d) => d.status === "skipped")) {
-        throw new SlotTargetChangedError(
-          `Medication ${medicationId} already has a skip at ${at.toISOString()}`,
-        );
-      }
-    }
 
     const id = createId();
     await tx.insert(doseLogs).values({
@@ -399,23 +335,122 @@ export async function logSkippedDose(
 }
 
 /**
+ * The first statement of every guarded dashboard write: Log now, Took it at
+ * and Skip.
+ *
+ * It locks the medication row, so two taps for one medication serialise here:
+ * a double tap, a second device, a retry after an unknown outcome. The second
+ * one's re-derivation then reads the first one's dose (spec D7: the
+ * medication first, then its dose rows).
+ *
+ * The load lists active medications only (`getActiveMedications`), so an
+ * archived one has no button to honour.
+ */
+async function lockSlotMedication(
+  tx: DbTransaction,
+  userId: string,
+  medicationId: string,
+): Promise<typeof medications.$inferSelect> {
+  const [med] = await tx
+    .select()
+    .from(medications)
+    .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
+    .limit(1)
+    .for("update");
+  if (!med) throw new MedicationNotFoundError(medicationId);
+  if (med.isArchived) {
+    throw new SlotTargetChangedError(`Medication ${medicationId} is archived`);
+  }
+  return med;
+}
+
+/**
+ * ONE medication's dashboard buttons, re-derived inside the caller's
+ * transaction from rows read there. It uses the same pure functions the load
+ * ran: `dashboardWindow`, `projectFixedTimes` and `slotActions`.
+ *
+ * The caller has already locked `med` (`lockSlotMedication`), so no other
+ * write to this medication can land between this read and the caller's
+ * insert. Log now, Took it at and Skip all ask it, and each writes only if
+ * the answer still names the row its button sat on.
+ *
+ * PGlite is one backend and serialises transactions itself, so the lock's
+ * effect cannot be exercised in the suite. `tests/unit/pg/dose-slot-writes.test.ts`
+ * pins the lock by its SQL, and covers each losing side by seeding what it
+ * would read.
+ */
+async function recomputeSlotActions(
+  tx: DbTransaction,
+  med: typeof medications.$inferSelect,
+  userId: string,
+  now: Date,
+  timezone: string,
+): Promise<SlotActions> {
+  const window = dashboardWindow(now, timezone);
+
+  const schedules = await tx
+    .select()
+    .from(medicationSchedules)
+    .where(
+      and(eq(medicationSchedules.medicationId, med.id), eq(medicationSchedules.userId, userId)),
+    )
+    .orderBy(asc(medicationSchedules.sortOrder));
+
+  // The load's bounds, so pass 1 reaches as far either side of the window
+  // here as it did when the button was drawn.
+  const doses = await tx
+    .select({
+      id: doseLogs.id,
+      takenAt: doseLogs.takenAt,
+      status: doseLogs.status,
+      quantity: doseLogs.quantity,
+    })
+    .from(doseLogs)
+    .where(
+      and(
+        eq(doseLogs.userId, userId),
+        eq(doseLogs.medicationId, med.id),
+        gte(doseLogs.takenAt, window.doseFetchFrom),
+        lt(doseLogs.takenAt, window.doseFetchTo),
+      ),
+    );
+
+  // All-time and taken-only: `getLastDosePerMedication`'s `lastTakenAt`,
+  // the anchor the load projects interval rows from.
+  const [last] = await tx
+    .select({ at: max(doseLogs.takenAt) })
+    .from(doseLogs)
+    .where(
+      and(
+        eq(doseLogs.userId, userId),
+        eq(doseLogs.medicationId, med.id),
+        eq(doseLogs.status, "taken"),
+      ),
+    );
+
+  const fixedInstants = projectFixedTimes(schedules, segmentsFor(window), timezone);
+  return slotActions({
+    med,
+    schedules,
+    fixedInstants,
+    doses,
+    lastTakenAt: last?.at ?? null,
+    window,
+  });
+}
+
+/**
  * Log now's write.
  *
  * The page rendered Log now on the row a dose logged at render time would
  * resolve. By the time the tap arrives, that can be a different row: a slot
  * came within the hour, midnight passed, the 12h expiry hid the row, or
- * another device logged. So the server re-derives the target with the SAME
- * pure functions the load used (`dashboardWindow`, `projectFixedTimes`,
- * `slotActions`), from rows read inside this transaction, and writes only
- * if the target is still `forSlot`.
+ * another device logged.
  *
- * The medication row is locked first, so two Log-now posts for one
- * medication serialise. The second reads the first one's dose, finds the
- * one-hour cooldown active and throws SlotTargetChangedError instead of
- * writing a second dose. PGlite is one backend and serialises transactions
- * itself, so the lock's effect is unexercisable in the suite.
- * `tests/unit/pg/dose-slot-writes.test.ts` pins the lock by its SQL and
- * proves the recompute reads inside the transaction.
+ * So the server re-derives the target under the medication lock
+ * (`recomputeSlotActions`) and writes only if it is still `forSlot`. A second
+ * Log now for one medication reads the first one's dose, finds the one-hour
+ * cooldown active, and is refused.
  *
  * Always ×1. A larger dose could resolve rows the simulation never proved,
  * and Log now's contract is "this row".
@@ -427,80 +462,13 @@ export async function logDoseForSlot(
   now: Date,
   timezone: string,
 ): Promise<typeof doseLogs.$inferSelect> {
-  const window = dashboardWindow(now, timezone);
-
   return dbTx.transaction(async (tx) => {
-    const [med] = await tx
-      .select()
-      .from(medications)
-      .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
-      .limit(1)
-      .for("update");
-    if (!med) throw new MedicationNotFoundError(medicationId);
-
-    // The load lists active medications only (`getActiveMedications`), so an
-    // archived one has no Log-now target there and must have none here.
-    if (med.isArchived) {
-      throw new SlotTargetChangedError(`Medication ${medicationId} is archived`);
-    }
-
-    // `takenAt` is the action's `now`: the instant the tap names. `loggedAt`
-    // orders writes to this medication, so it is read after the lock (D7).
+    const med = await lockSlotMedication(tx, userId, medicationId);
+    // D7: the clock that orders writes is read after the lock. `takenAt`
+    // keeps the action's `now`, the instant the recompute judged.
     const loggedAt = new Date();
 
-    const schedules = await tx
-      .select()
-      .from(medicationSchedules)
-      .where(
-        and(
-          eq(medicationSchedules.medicationId, medicationId),
-          eq(medicationSchedules.userId, userId),
-        ),
-      )
-      .orderBy(asc(medicationSchedules.sortOrder));
-
-    // The load's bounds, so pass 1 reaches as far either side of the window
-    // here as it did when the button was drawn.
-    const doses = await tx
-      .select({
-        id: doseLogs.id,
-        takenAt: doseLogs.takenAt,
-        status: doseLogs.status,
-        quantity: doseLogs.quantity,
-      })
-      .from(doseLogs)
-      .where(
-        and(
-          eq(doseLogs.userId, userId),
-          eq(doseLogs.medicationId, medicationId),
-          gte(doseLogs.takenAt, window.doseFetchFrom),
-          lt(doseLogs.takenAt, window.doseFetchTo),
-        ),
-      );
-
-    // All-time and taken-only: `getLastDosePerMedication`'s `lastTakenAt`,
-    // the anchor the load projects interval rows from.
-    const [last] = await tx
-      .select({ at: max(doseLogs.takenAt) })
-      .from(doseLogs)
-      .where(
-        and(
-          eq(doseLogs.userId, userId),
-          eq(doseLogs.medicationId, medicationId),
-          eq(doseLogs.status, "taken"),
-        ),
-      );
-
-    const fixedInstants = projectFixedTimes(schedules, segmentsFor(window), timezone);
-    const { logNowTarget } = slotActions({
-      med,
-      schedules,
-      fixedInstants,
-      doses,
-      lastTakenAt: last?.at ?? null,
-      window,
-    });
-
+    const { logNowTarget } = await recomputeSlotActions(tx, med, userId, now, timezone);
     if (logNowTarget !== forSlot.toISOString()) {
       throw new SlotTargetChangedError(
         `Log-now target for ${medicationId} is ${logNowTarget ?? "none"}, not ${forSlot.toISOString()}`,
@@ -517,6 +485,138 @@ export async function logDoseForSlot(
       sideEffects: null,
       previousCount: med.inventoryCount,
     });
+  });
+}
+
+/**
+ * Took it at's write: a ×1 taken dose at `slot`, the row's own instant.
+ *
+ * A fresh page offers Took it at on a row only when `slotActions` proved that
+ * a dose at exactly that instant resolves the row and moves no other. By the
+ * time of the tap that can have changed:
+ *
+ * - a second device logged or skipped the slot;
+ * - a double tap already wrote it;
+ * - midnight or the 12h expiry moved it off the dashboard.
+ *
+ * So the server re-derives the row's buttons under the medication lock, and
+ * writes only if the row still offers Took it at `slot`. That also refuses a
+ * slot a skip already resolved: remove the skip first.
+ *
+ * Before re-deriving, it checks whether `slot` already holds a taken dose of
+ * this medication. The re-derivation would refuse that too, but a double tap
+ * deserves the specific "it's already logged" (`SlotAlreadyTakenError`).
+ *
+ * Always ×1, like Log now: the simulation proved a probe of one dose, and a
+ * larger dose could resolve rows it never checked. The action does not pass
+ * the posted quantity.
+ */
+export async function logDoseAtSlot(
+  userId: string,
+  medicationId: string,
+  slot: Date,
+  notes: string | undefined,
+  sideEffects: SideEffect[] | undefined,
+  now: Date,
+  timezone: string,
+): Promise<typeof doseLogs.$inferSelect> {
+  const slotIso = slot.toISOString();
+
+  return dbTx.transaction(async (tx) => {
+    const med = await lockSlotMedication(tx, userId, medicationId);
+    // D7: the clock that orders writes is read after the lock.
+    const loggedAt = new Date();
+
+    const [existing] = await tx
+      .select({ id: doseLogs.id })
+      .from(doseLogs)
+      .where(
+        and(
+          eq(doseLogs.userId, userId),
+          eq(doseLogs.medicationId, medicationId),
+          eq(doseLogs.takenAt, slot),
+          eq(doseLogs.status, "taken"),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      throw new SlotAlreadyTakenError(
+        `Medication ${medicationId} already has a taken dose at ${slotIso}`,
+      );
+    }
+
+    const { rows } = await recomputeSlotActions(tx, med, userId, now, timezone);
+    if (rows.get(slotIso)?.tookItAt !== slotIso) {
+      throw new SlotTargetChangedError(
+        `Took it at ${slotIso} is no longer offered for ${medicationId}`,
+      );
+    }
+
+    return insertTakenDose(tx, {
+      userId,
+      medicationId,
+      quantity: 1,
+      takenAt: slot,
+      loggedAt,
+      notes: notes ?? null,
+      sideEffects: sideEffects ?? null,
+      previousCount: med.inventoryCount,
+    });
+  });
+}
+
+/**
+ * Skip's write: a skip for the row whose slot is `forSlot`.
+ *
+ * The page posts the row's slot, not an instant. The server re-derives the
+ * row's buttons under the medication lock, and writes the skip at ITS
+ * `skipAt`: `min(slot, now)`, the instant its own simulation proved.
+ *
+ * It refuses when the row no longer offers Skip, which covers a row resolved
+ * by a dose or a skip, a row off the dashboard, and an instant that is not a
+ * slot at all. There is no `checkSlotActionTime` here: a due-now slot is
+ * legitimately still ahead.
+ *
+ * A pre-deploy page posted `takenAt` = its render-time `skipAt`. For one
+ * release, the action hands that here as `forSlot` (spec D9). It names a slot
+ * exactly when the slot was already past, which is the only case accepted.
+ */
+export async function skipDoseForSlot(
+  userId: string,
+  medicationId: string,
+  forSlot: Date,
+  now: Date,
+  timezone: string,
+): Promise<string> {
+  const forSlotIso = forSlot.toISOString();
+
+  return dbTx.transaction(async (tx) => {
+    const med = await lockSlotMedication(tx, userId, medicationId);
+    // D7: the clock that orders writes is read after the lock.
+    const loggedAt = new Date();
+
+    const { rows } = await recomputeSlotActions(tx, med, userId, now, timezone);
+    const skipAt = rows.get(forSlotIso)?.skipAt ?? null;
+    if (skipAt === null) {
+      throw new SlotTargetChangedError(
+        `Skip for ${forSlotIso} is no longer offered for ${medicationId}`,
+      );
+    }
+
+    const id = createId();
+    await tx.insert(doseLogs).values({
+      id,
+      userId,
+      medicationId,
+      quantity: 1,
+      takenAt: new Date(skipAt),
+      loggedAt,
+      notes: null,
+      sideEffects: null,
+      status: "skipped",
+    });
+    await logAudit(userId, "dose_log", id, "create", undefined, tx);
+    return id;
   });
 }
 

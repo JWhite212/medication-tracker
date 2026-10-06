@@ -59,6 +59,8 @@ vi.mock("$lib/server/doses", () => ({
   logDose: never("logDose"),
   logDoseForSlot: never("logDoseForSlot"),
   logSkippedDose: never("logSkippedDose"),
+  logDoseAtSlot: never("logDoseAtSlot"),
+  skipDoseForSlot: never("skipDoseForSlot"),
   deleteDose: never("deleteDose"),
   restoreDose: never("restoreDose"),
   updateDose: never("updateDose"),

@@ -56,6 +56,17 @@
       }
     }
 
+    // A held key repeats its keydown. Without this, holding a digit logged the
+    // same medication again the moment the 700ms write cooldown ran out.
+    if (e.repeat) return;
+
+    // Nothing fires behind an open dialog. isControlFocused() below exempts
+    // [tabindex="-1"], and every modal panel here is exactly that (ui/Modal,
+    // this overlay, the mobile menu), so with focus on a panel 1–9 logged a
+    // dose and n navigated away behind the edit dialog. `?` is let through
+    // only to close this component's own overlay.
+    if (document.querySelector('[aria-modal="true"]') && !(showHelp && e.key === "?")) return;
+
     if (isControlFocused()) return;
 
     if (e.key === "?") {

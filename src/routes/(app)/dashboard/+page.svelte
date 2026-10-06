@@ -9,12 +9,13 @@
   import QuickLogBar from "$components/QuickLogBar.svelte";
   import DashboardHeader from "$components/dashboard/DashboardHeader.svelte";
   import DueCard from "$components/dashboard/DueCard.svelte";
-  import DoneList from "$components/dashboard/DoneList.svelte";
+  import DoneList, { restoredDoneRowFocus } from "$components/dashboard/DoneList.svelte";
   import LaterList from "$components/dashboard/LaterList.svelte";
   import DoseActionForm from "$components/dashboard/DoseActionForm.svelte";
   import { createDashboardClock, setDashboardClock } from "$components/dashboard/dashboard-clock";
   import { DASHBOARD_HEADING_ID, DONE_HEADING_ID } from "$components/dashboard/dom-ids";
-  import type { DateFormat, TimeFormat } from "$lib/utils/time";
+  import { formatDoseLabel } from "$lib/utils/dashboard-copy";
+  import { formatUserTime, type DateFormat, type TimeFormat } from "$lib/utils/time";
   import type { DoseLogWithMedication } from "$lib/types";
 
   let { data } = $props();
@@ -82,6 +83,19 @@
   const headingTarget = () => document.getElementById(DASHBOARD_HEADING_ID);
   /** The Done h2 (tabindex="-1", always rendered): focus after Remove. */
   const doneHeading = () => document.getElementById(DONE_HEADING_ID);
+
+  /**
+   * The edit dialog's Remove toast: "Dose removed: Metformin 500mg at 08:00".
+   * Resolved to a string when the dialog renders, because it is read after
+   * the reload and onSuccess clears editingDose straight after.
+   */
+  function removedToast(dose: DoseLogWithMedication): () => string {
+    const med = dose.medication;
+    const label = formatDoseLabel(med.name, med.dosageAmount, med.dosageUnit);
+    const at = formatUserTime(new Date(dose.takenAt), data.timezone, timeFormat);
+    const message = `Dose removed: ${label} at ${at}`;
+    return () => message;
+  }
 </script>
 
 <svelte:head>
@@ -213,7 +227,9 @@
         label="Remove this dose"
         pendingLabel="Removing…"
         variant="danger"
-        buildToast={() => "Dose removed"}
+        buildToast={removedToast(editingDose)}
+        undo={{ kind: "restore", focusTarget: restoredDoneRowFocus(editingDose.id) }}
+        withdrawsUndoFor={editingDose.id}
         focusAfter={doneHeading}
         onSuccess={() => (editingDose = null)}
       />

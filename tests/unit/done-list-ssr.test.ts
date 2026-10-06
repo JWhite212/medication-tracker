@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // "Done today": one row per dose event, the slots it covered, and the untimed
-// alternatives to the toast's Undo (Edit → Remove, Undo skip). `node` is
+// alternatives to the toast's Undo (Edit → Remove, Remove skip). `node` is
 // load-bearing — see tests/unit/error-page-ssr.test.ts.
 import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
@@ -164,11 +164,14 @@ describe("DoneList", () => {
     expect([...edit.classList]).toEqual(expect.arrayContaining(["h-11", "border-border-strong"]));
   });
 
-  it("gives a skipped row a neutral marker, the word, and an Undo skip that removes it", () => {
+  it("gives a skipped row a neutral marker, the word, and a Remove skip that removes it", () => {
     const li = items(renderList(ROWS))[1];
     expect(li.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe("Skipped");
     expect(textOf(li)).toContain("Skipped");
-    const form = buttonNamed(li, "Undo skip: Metformin 500mg, skipped at 11:00").closest("form")!;
+    // Not "Undo skip": every Undo offer has a button named Undo, and a voice
+    // command of "click Undo" must not match this one as well.
+    expect(textOf(li)).not.toContain("Undo");
+    const form = buttonNamed(li, "Remove skip: Metformin 500mg, skipped at 11:00").closest("form")!;
     expect(form.getAttribute("action")).toBe("?/deleteDose");
     expect(hiddenFields(form)).toEqual({ doseId: "d2" });
   });
@@ -179,6 +182,21 @@ describe("DoneList", () => {
     expect(textOf(li)).toContain("Missed");
     const form = buttonNamed(li, "Remove: Metformin 500mg, missed at 12:00").closest("form")!;
     expect(hiddenFields(form)).toEqual({ doseId: "d3" });
+  });
+
+  it("marks every row with its dose id, and only a taken row's Edit with data-edit", () => {
+    // What an Undo's focus target reads once the restore's reload has
+    // re-rendered the row: the row by its id, then its Edit.
+    const doc = renderList(ROWS);
+    expect(items(doc).map((li) => li.getAttribute("data-dose-id"))).toEqual([
+      "d0",
+      "d2",
+      "d3",
+      "d1",
+    ]);
+    const edits = [...doc.querySelectorAll<HTMLElement>("[data-edit]")];
+    expect(edits.map((el) => el.closest("li")?.getAttribute("data-dose-id"))).toEqual(["d0", "d1"]);
+    for (const edit of edits) expect(visibleLabel(edit)).toBe("Edit");
   });
 
   it("has no hover-revealed controls", () => {

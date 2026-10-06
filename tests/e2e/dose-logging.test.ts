@@ -55,12 +55,10 @@ test.describe("dose logging", () => {
     const beforeCount = await countDoseLogs(userId!, VITAMIN_D, "taken");
     expect(beforeCount).toBeGreaterThan(0);
 
+    // One tap: × deletes at once and the toast offers Undo. It used to open
+    // an inline confirmation, which existed only because nothing could put a
+    // deleted dose back.
     await page.getByRole("button", { name: "Delete dose" }).first().click();
-    // × only opens an inline confirmation now. Playwright matches a string
-    // name as a case-insensitive substring, and "delete dose" is inside the
-    // confirm's name too, so this one is a regex anchored at ^Confirm: it
-    // cannot match any row's ×, and only the row just opened has a confirm.
-    await page.getByRole("button", { name: /^Confirm delete dose of Vitamin D at / }).click();
     await expect(page.getByText(/dose removed/i)).toBeVisible();
 
     const after = await getInventoryCount(userId!, VITAMIN_D);
@@ -80,13 +78,46 @@ test.describe("dose logging", () => {
 
     const inventoryBefore = await getInventoryCount(userId!, VITAMIN_D);
     await page.getByRole("button", { name: "Delete dose" }).first().click();
-    await page.getByRole("button", { name: /^Confirm delete dose of Vitamin D at / }).click();
     await expect(page.getByText(/dose removed/i)).toBeVisible();
 
     const inventoryAfter = await getInventoryCount(userId!, VITAMIN_D);
     const skippedAfter = await countDoseLogs(userId!, VITAMIN_D, "skipped");
     expect(skippedAfter).toBe(skippedBefore - 1);
     expect(inventoryAfter).toBe(inventoryBefore);
+  });
+
+  test("Undo after a one-tap delete brings the same dose, and its stock, back", async ({
+    page,
+  }) => {
+    const userId = await getUserIdByEmail(SEEDED_EMAIL);
+    expect(userId).not.toBeNull();
+    const medId = await getMedIdByName(userId!, VITAMIN_D);
+
+    await page.goto(`/log?status=taken&medication=${medId}`);
+
+    const before = await getInventoryCount(userId!, VITAMIN_D);
+    const beforeCount = await countDoseLogs(userId!, VITAMIN_D, "taken");
+    expect(beforeCount).toBeGreaterThan(0);
+
+    // By the row's own id: × is named by time of day only, and another day's
+    // dose at the same time would satisfy a check by name.
+    const row = page.locator("[data-dose-id]").first();
+    const doseId = await row.getAttribute("data-dose-id");
+    expect(doseId).not.toBeNull();
+
+    await row.getByRole("button", { name: "Delete dose" }).click();
+    await expect(page.getByText(/dose removed/i)).toBeVisible();
+    await expect(page.locator(`[data-dose-id="${doseId}"]`)).toHaveCount(0);
+    expect(await countDoseLogs(userId!, VITAMIN_D, "taken")).toBe(beforeCount - 1);
+
+    // The offer's button is named "Undo" plus its message (aria-labelledby).
+    await page.getByRole("button", { name: /^Undo Dose removed/ }).click();
+    await expect(page.getByText("Dose restored")).toBeVisible();
+    // A restore puts back the same id.
+    await expect(page.locator(`[data-dose-id="${doseId}"]`)).toHaveCount(1);
+
+    expect(await countDoseLogs(userId!, VITAMIN_D, "taken")).toBe(beforeCount);
+    expect(await getInventoryCount(userId!, VITAMIN_D)).toBe(before);
   });
 
   test("editing a dose's notes persists across reload", async ({ page }) => {

@@ -11,7 +11,7 @@ import {
   SlotAlreadyTakenError,
   SlotTargetChangedError,
 } from "$lib/server/doses";
-import { deleteDoseAction } from "$lib/server/dose-actions";
+import { deleteDoseAction, restoreDoseAction } from "$lib/server/dose-actions";
 import { doseLogSchema, doseEditSchema, doseSkipSchema } from "$lib/utils/validation";
 import { resolveEditedInstant } from "$lib/utils/time";
 import { checkSlotActionTime, type SlotActionTimeProblem } from "$lib/utils/schedule";
@@ -137,6 +137,9 @@ export const actions: Actions = {
   // Shared with /log. The 401 guard, the parse, D8's `forUndo` and the
   // restore handle all live in `deleteDoseAction`.
   deleteDose: (event) => deleteDoseAction(event),
+  // A delete's Undo. Every page posts it to the absolute
+  // `/dashboard?/restoreDose`, so it still works after navigating away.
+  restoreDose: (event) => restoreDoseAction(event),
   editDose: async ({ request, locals }) => {
     if (!locals.user) error(401, "Unauthorized");
 

@@ -1,6 +1,6 @@
 import { error, fail, type ActionFailure } from "@sveltejs/kit";
-import { deleteDose } from "$lib/server/doses";
-import { doseDeleteSchema } from "$lib/utils/validation";
+import { deleteDose, restoreDose } from "$lib/server/doses";
+import { doseDeleteSchema, doseRestoreSchema } from "$lib/utils/validation";
 import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
 
 /**
@@ -9,7 +9,8 @@ import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
  * The dashboard and /log both expose `?/deleteDose`, and each used to spell
  * the action out for itself. They now share one body, so the 401 guard, the
  * parse, D8's create-Undo flag and the restore handle cannot drift apart
- * between the two routes. (Task 3 adds `restoreDoseAction` here.)
+ * between the two routes. `restoreDoseAction`, a delete's Undo, lives here
+ * too, beside the handle it consumes.
  */
 
 /**
@@ -54,4 +55,53 @@ export async function deleteDoseAction(event: {
     doseId,
     restore: { deletedAt: deleted.deletedAt.toISOString(), expiresInMs: DOSE_UNDO_WINDOW_MS },
   };
+}
+
+/** 410: the Undo window has closed, or the dose is gone for good. */
+export const RESTORE_GONE_MESSAGE = "Too late to undo. Log it again if you need it.";
+
+/** 409: a dose of this medication was logged after the delete (D6). */
+export const RESTORE_LOGGED_SINCE_MESSAGE =
+  "A newer entry exists for this medication, so Undo wasn't applied.";
+
+/**
+ * `?/restoreDose`, a delete's Undo. The client posts it to the absolute
+ * `/dashboard?/restoreDose` from any page, including after navigating away.
+ *
+ * - **401 first**, for the same reason as `deleteDoseAction`.
+ * - **The token** is the `restore.deletedAt` that `deleteDoseAction`
+ *   returned, posted back as it was sent. A body that fails
+ *   `doseRestoreSchema` restores nothing.
+ * - **`already_restored` is success.** A retried Undo whose first attempt
+ *   landed finds the dose already back, which is what the user asked for.
+ * - **`gone`** (window closed, purged, wiped, medication deleted) is a 410.
+ *   **`logged_since`** is a 409. `actionErrorMessage` reads either `error`
+ *   string as it stands.
+ */
+export async function restoreDoseAction(event: {
+  locals: App.Locals;
+  request: Request;
+}): Promise<ActionFailure<{ error: string }> | { success: true; doseId: string }> {
+  const { locals, request } = event;
+  if (!locals.user) error(401, "Unauthorized");
+  const user = locals.user;
+
+  const parsed = doseRestoreSchema.safeParse(Object.fromEntries(await request.formData()));
+  if (!parsed.success) return fail(400, { error: "Invalid undo request" });
+
+  const { doseId, deletedAt } = parsed.data;
+  const outcome = await restoreDose(user.id, doseId, new Date(deletedAt));
+  switch (outcome) {
+    case "restored":
+    case "already_restored":
+      return { success: true, doseId };
+    case "gone":
+      return fail(410, { error: RESTORE_GONE_MESSAGE });
+    case "logged_since":
+      return fail(409, { error: RESTORE_LOGGED_SINCE_MESSAGE });
+    default: {
+      const unhandled: never = outcome;
+      throw new Error(`Unhandled restore outcome: ${String(unhandled)}`);
+    }
+  }
 }

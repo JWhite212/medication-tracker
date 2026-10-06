@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { eq, and, gte, lt, lte, asc, desc, sql, isNotNull, max, inArray } from "drizzle-orm";
+import { eq, and, gt, gte, lt, lte, asc, desc, sql, isNotNull, max, inArray } from "drizzle-orm";
 import { db, dbTx } from "$lib/server/db";
 import {
   doseLogs,
@@ -677,6 +677,173 @@ export async function deleteDose(
     await logAudit(userId, "dose_log", doseId, "delete", undefined, tx);
 
     return { doseId, medicationId, deletedAt: now };
+  });
+}
+
+export type RestoreOutcome = "restored" | "already_restored" | "gone" | "logged_since";
+
+/**
+ * A delete's Undo: move the trashed dose back into `dose_logs` under the SAME
+ * id, and take its stock again.
+ *
+ * The token is `(doseId, deletedAt)`, exactly what `deleteDose` returned, so
+ * an out-of-date Undo cannot reverse a newer delete of the same dose (D6).
+ * The outcomes:
+ *
+ * - `restored`: the dose is back.
+ * - `already_restored`: there is no trash row for the token, but the dose is
+ *   live. This is a retried Undo whose first attempt landed, and the action
+ *   answers it as success.
+ * - `gone`: there is no trash row and no live dose (it was purged, wiped, or
+ *   its medication was deleted), or the 10-minute window has closed.
+ * - `logged_since`: a dose of this medication was LOGGED after the delete.
+ *   Restoring then would record two doses for one slot and take stock twice
+ *   (Remove 08:00, Log now at 08:40, Undo). The trash row stays.
+ *
+ * **Lock order (D7).** The medication row is locked first, then the trash
+ * row. The clock is read after the medication lock, so it orders correctly
+ * against every `loggedAt` and `deletedAt` written under that lock.
+ *
+ * **Stock.** It takes back what the delete CREDITED (`inventoryCredited`),
+ * clamped at what is there now. It never uses `inventoryApplied` or
+ * `quantity`. A dose deleted while tracking was off credited nothing, so
+ * restoring it once tracking is back takes nothing. Using `inventoryApplied`
+ * there would take stock that was never given back.
+ *
+ * **Tombstones.** Every tombstone for the dose is deleted, not just the
+ * latest. The Mac app applies upserts before tombstones within one delta,
+ * so a survivor would delete the restored dose there for good.
+ *
+ * **Audit.** The audit row carries no diff, so the dose's notes never reach
+ * the synced, never-purged audit log.
+ *
+ * `now` is for tests. Production callers omit it, and the clock is read after
+ * the lock.
+ */
+export async function restoreDose(
+  userId: string,
+  doseId: string,
+  deletedAt: Date,
+  now?: Date,
+): Promise<RestoreOutcome> {
+  return dbTx.transaction(async (tx): Promise<RestoreOutcome> => {
+    const trashKey = and(
+      eq(doseLogTrash.id, doseId),
+      eq(doseLogTrash.userId, userId),
+      eq(doseLogTrash.deletedAt, deletedAt),
+    );
+
+    // No trash row under this token. If the dose is live, an earlier restore
+    // of it landed; otherwise it is gone for good.
+    const noTrashRow = async (): Promise<RestoreOutcome> => {
+      const [live] = await tx
+        .select({ id: doseLogs.id })
+        .from(doseLogs)
+        .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
+        .limit(1);
+      return live ? "already_restored" : "gone";
+    };
+
+    // 1. Find which medication to lock. This read needs no lock, because a
+    //    dose's medication never changes.
+    const [found] = await tx
+      .select({ medicationId: doseLogTrash.medicationId })
+      .from(doseLogTrash)
+      .where(trashKey)
+      .limit(1);
+    if (!found) return noTrashRow();
+
+    // 2. Lock the medication first (D7), then read the clock.
+    const [med] = await tx
+      .select({ inventoryCount: medications.inventoryCount })
+      .from(medications)
+      .where(and(eq(medications.id, found.medicationId), eq(medications.userId, userId)))
+      .limit(1)
+      .for("update");
+    const at = now ?? new Date();
+
+    // 3. Then lock the trash row. If it has gone, a concurrent restore or a
+    //    cascade took it while this one waited.
+    const [trash] = await tx.select().from(doseLogTrash).where(trashKey).limit(1).for("update");
+    if (!trash) return noTrashRow();
+
+    // 4. The window. "Expired" is `deleted_at <= now − window`, the same
+    //    rule `purgeExpiredTrash` uses. This call already holds the row's
+    //    lock, so it deletes the expired row itself instead of leaving it
+    //    for a purge.
+    if (trash.deletedAt.getTime() <= at.getTime() - DOSE_UNDO_WINDOW_MS) {
+      await tx.delete(doseLogTrash).where(trashKey);
+      return "gone";
+    }
+
+    // 5. The since-delete guard. Both clocks are the app's, and both were
+    //    read under this medication's lock, so for one medication `loggedAt`
+    //    order is commit order. The trash row stays: another Undo of it is
+    //    refused the same way.
+    const [loggedSince] = await tx
+      .select({ id: doseLogs.id })
+      .from(doseLogs)
+      .where(
+        and(
+          eq(doseLogs.userId, userId),
+          eq(doseLogs.medicationId, trash.medicationId),
+          gt(doseLogs.loggedAt, trash.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (loggedSince) return "logged_since";
+
+    // 6. Take it out of the trash.
+    await tx.delete(doseLogTrash).where(trashKey);
+
+    // 7. Take the stock again: what the delete credited, clamped at what is
+    //    there now. Skipped and missed entries never took any.
+    const inventoryApplied =
+      trash.status === "taken"
+        ? await takeFromStock(tx, {
+            userId,
+            medicationId: trash.medicationId,
+            previousCount: med?.inventoryCount ?? null,
+            amount: trash.inventoryCredited,
+            eventType: "dose_restored",
+          })
+        : trash.inventoryApplied;
+
+    // 8. Re-insert the same id with every stored field, the original
+    //    loggedAt included, so that a later restore's since-delete guard does
+    //    not mistake this row for a new log. `updatedAt` moves, so delta sync
+    //    sends the dose again.
+    await tx.insert(doseLogs).values({
+      id: trash.id,
+      userId,
+      medicationId: trash.medicationId,
+      quantity: trash.quantity,
+      inventoryApplied,
+      takenAt: trash.takenAt,
+      loggedAt: trash.loggedAt,
+      notes: trash.notes,
+      sideEffects: trash.sideEffects,
+      status: trash.status,
+      updatedAt: at,
+    });
+
+    // 9. Delete every tombstone for it. The table has no uniqueness, so
+    //    there can be more than one.
+    await tx
+      .delete(syncTombstones)
+      .where(
+        and(
+          eq(syncTombstones.userId, userId),
+          eq(syncTombstones.entityType, "dose_log"),
+          eq(syncTombstones.entityId, doseId),
+        ),
+      );
+
+    // 10. Purge this user's expired trash, then audit with no diff.
+    await purgeExpiredTrash(tx, { now: at, userId });
+    await logAudit(userId, "dose_log", doseId, "restore", undefined, tx);
+
+    return "restored";
   });
 }
 

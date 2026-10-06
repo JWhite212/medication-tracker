@@ -148,12 +148,16 @@ describe("beginDoseWrite is the only door to a dose write's lock", () => {
     expect(filesMatching(/\bOFFLINE_WRITE_TOAST\b/).sort()).toEqual([COPY, OWNER].sort());
   });
 
-  it("the two callers of the gate call it, so they cannot have quietly gone their own way", () => {
+  it("every caller of the gate calls it, so none can have quietly gone its own way", () => {
+    // createDoseWrite and Edit Save write doses; the medications list's reorder
+    // is not a dose write, but it moves the cards a Log tap lands on, so it
+    // takes the same lock through the same gate rather than a copy of it.
     expect(filesMatching(/\bbeginDoseWrite\(/).sort()).toEqual(
       [
         OWNER,
         join("src", "lib", "components", "DoseEditForm.svelte"),
         join("src", "lib", "components", "dose-writes", "dose-write.svelte.ts"),
+        join("src", "routes", "(app)", "medications", "+page.svelte"),
       ].sort(),
     );
   });

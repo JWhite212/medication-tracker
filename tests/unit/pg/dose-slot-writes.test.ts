@@ -12,8 +12,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
  * insert. These tests belong on PGlite (CLAUDE.md, test-seam rule).
  *
  * The `FOR UPDATE` is pinned by its SQL: the query log shows that each
- * slot-anchored write reads the medication row with a lock, and a chip's
- * write does not. Its runtime effect is still unprovable here. PGlite is one
+ * slot-anchored write reads the medication row with a lock, and so does a
+ * chip's write (D7: every stock writer locks the medication first). Its
+ * runtime effect is still unprovable here. PGlite is one
  * backend and serialises transactions with its own mutex, so "concurrent"
  * calls run one after the other with or without the lock. The concurrency
  * case below proves our part: the second call reads the first call's dose
@@ -41,9 +42,10 @@ const TAP = new Date("2026-04-16T13:31:00.000Z");
 const SLOT = new Date("2026-04-16T09:00:00.000Z");
 /**
  * Before every window in this file. Required: the database defaults
- * `startedAt` and `effectiveFrom` to Postgres `now()`, which is the REAL
- * clock, not the faked one. Left to default, the lifecycle and
- * schedule-edit clips would drop every slot in this file.
+ * `startedAt` and `effectiveFrom` to Postgres `now()`, and PGlite's `now()`
+ * follows the faked `Date`. A row seeded here therefore defaults to TAP,
+ * which is after every slot in this file. Left to default, the lifecycle and
+ * schedule-edit clips would drop every slot.
  */
 const LONG_AGO = new Date("2026-01-01T00:00:00.000Z");
 const GUARD = { exactInstantGuard: true } as const;
@@ -254,8 +256,10 @@ describe("Log now — logDoseForSlot", () => {
       quantity: 1,
       inventoryApplied: 1,
     });
+    // `takenAt` is the action's `now`. `loggedAt` is the server clock, read
+    // after the medication lock (D7); the frozen clock holds it at TAP.
     expect(row.takenAt).toEqual(AT_0810);
-    expect(row.loggedAt).toEqual(AT_0810);
+    expect(row.loggedAt).toEqual(TAP);
     expect(await stock()).toBe(9);
     expect(await ledger()).toEqual([
       { eventType: "dose_taken", quantityChange: -1, previousCount: 10, newCount: 9 },
@@ -487,13 +491,17 @@ describe("the medication row lock", () => {
     expect(medicationLocks()).toHaveLength(1);
   });
 
-  it("a chip's dose takes no lock — it names no slot to protect", async () => {
+  it("a chip's dose reads the medication row FOR UPDATE too", async () => {
+    // It used to take no lock, because it names no slot to protect. But its
+    // count read decides `inventoryApplied`: a refill, adjust, delete or
+    // restore committing between that read and the decrement made the dose
+    // record more than left the bottle, and a later delete minted the
+    // difference (spec item 5). D7: every stock writer locks first.
     await seedTrackedMed();
     queryLog.length = 0;
 
     await logDose("u1", "m1", 1);
 
-    expect(queryLog.some((q) => /from "medications"/i.test(q))).toBe(true);
-    expect(medicationLocks()).toEqual([]);
+    expect(medicationLocks()).toHaveLength(1);
   });
 });

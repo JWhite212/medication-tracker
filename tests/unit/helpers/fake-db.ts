@@ -46,11 +46,10 @@ export function createFakeDb() {
   const seeded = new Map<string, Row[]>();
 
   /** Two views of the same traffic, because the existing tests need both.
-      `attempted` is append-only — how far execution got before a throw, which
-      is what `doses-inventory.test.ts` asserts on. `committed` is reverted
-      when a transaction callback throws — what a database would show
-      afterwards, which is what `createMedicationWithSchedules.test.ts`
-      asserts on. */
+      `attempted` is append-only — how far execution got before a throw.
+      `committed` is reverted when a transaction callback throws — what a
+      database would show afterwards, which is what
+      `createMedicationWithSchedules.test.ts` asserts on. */
   const attempted: RecordedCall[] = [];
   const committed: RecordedCall[] = [];
 
@@ -140,8 +139,7 @@ export function createFakeDb() {
       if (!recorded) {
         recorded = true;
         const call: RecordedCall = { op, table, predicate, payload, conflict };
-        // The write was tried, so it is always `attempted` — that is what
-        // `doses-inventory.test.ts` asserts after a simulated failure.
+        // The write was tried, so it is always `attempted`.
         attempted.push(call);
         const failure = takeFailure(op, table);
         if (failure) {

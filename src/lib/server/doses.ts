@@ -55,16 +55,6 @@ export class SlotTargetChangedError extends Error {
   }
 }
 
-async function assertMedicationBelongsToUser(userId: string, medicationId: string): Promise<void> {
-  const [row] = await db
-    .select({ id: medications.id })
-    .from(medications)
-    .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
-    .limit(1);
-
-  if (!row) throw new MedicationNotFoundError(medicationId);
-}
-
 /**
  * The columns a dashboard dose read returns: the dose plus the medication
  * fields its row renders. `inventoryApplied` is deliberately absent — see
@@ -188,7 +178,8 @@ async function takeFromStock(
  * dose cannot drift apart on `inventoryApplied`, the column `deleteDose`
  * gives back. `previousCount` is the caller's own read of
  * `medications.inventoryCount`, taken inside the same transaction before
- * this insert. The caller decides whether that read locks.
+ * this insert, under the medication row lock every caller takes first (D7),
+ * so no other stock writer can commit between that read and this decrement.
  */
 async function insertTakenDose(
   tx: DbTransaction,
@@ -246,7 +237,8 @@ export async function logDose(
   sideEffects?: SideEffect[],
   opts: { exactInstantGuard?: boolean } = {},
 ) {
-  await assertMedicationBelongsToUser(userId, medicationId);
+  // The action's clock. A dose posted without a `takenAt` is recorded at the
+  // moment the request arrived, so this is read before any lock wait.
   const now = new Date();
   const at = takenAt ?? now;
   const guard = opts.exactInstantGuard === true;
@@ -257,23 +249,30 @@ export async function logDose(
   // runCommands' reserve-first idempotency (see commands.ts), which relies
   // on "handler threw" meaning "safe to retry" for every command handler.
   const dose = await dbTx.transaction(async (tx) => {
-    // Snapshot the count BEFORE anything else. It is needed in two places:
-    // the inventory event records both ends of the change, and the dose row
-    // stores how much it ACTUALLY removed — which is not `quantity` whenever
-    // the clamp engages.
-    const medRead = tx
+    // D7: the medication row first, locked, on EVERY path. The count read
+    // here is what `inventoryApplied` is computed from. Unlocked, a
+    // concurrent stock writer (a refill, an adjust, a delete, a restore)
+    // could commit between this read and the decrement below, and the dose
+    // would record an `inventoryApplied` larger than what really left the
+    // bottle, which a later delete then minted back. The lock also makes two
+    // "Took it at 09:00" posts serialise, so the second one's lookup below
+    // sees the first one's row instead of both inserting.
+    //
+    // The read is scoped by user, so it is also the ownership check: another
+    // user's medication is simply not there.
+    const [med] = await tx
       .select({ inventoryCount: medications.inventoryCount })
       .from(medications)
       .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
-      .limit(1);
-    // Under the guard the read LOCKS. Two "Took it at 09:00" posts for one
-    // medication serialise here, so the second one's lookup below sees the
-    // first one's row instead of both inserting. Unguarded callers (the
-    // chips, `/api/v1`) keep the plain read. So does
-    // `tests/unit/doses-inventory.test.ts`, whose fake-db has no select
-    // `.for()` and must not grow one (CLAUDE.md, test-seam rule).
-    const [med] = guard ? await medRead.for("update") : await medRead;
-    const previousCount = med?.inventoryCount ?? null;
+      .limit(1)
+      .for("update");
+    if (!med) throw new MedicationNotFoundError(medicationId);
+    const previousCount = med.inventoryCount;
+
+    // `loggedAt` orders writes to this medication: restore's since-delete
+    // guard compares it with a trash row's `deletedAt`. Read after the lock,
+    // clock order is commit order (D7).
+    const loggedAt = new Date();
 
     if (guard) {
       // "Took it at" names the slot's own instant to the millisecond. A fresh
@@ -310,7 +309,7 @@ export async function logDose(
       medicationId,
       quantity,
       takenAt: at,
-      loggedAt: now,
+      loggedAt,
       notes: notes ?? null,
       sideEffects: sideEffects ?? null,
       previousCount,
@@ -326,7 +325,8 @@ export async function logSkippedDose(
   takenAt?: Date,
   opts: { exactInstantGuard?: boolean } = {},
 ): Promise<string> {
-  await assertMedicationBelongsToUser(userId, medicationId);
+  // The action's clock, read before any lock wait: a skip posted without a
+  // `takenAt` is recorded at the moment the request arrived.
   const now = new Date();
   const at = takenAt ?? now;
 
@@ -334,18 +334,25 @@ export async function logSkippedDose(
   // all-or-nothing (see logDose above for why this matters for
   // runCommands' reserve-first idempotency).
   return dbTx.transaction(async (tx) => {
-    if (opts.exactInstantGuard) {
-      // The dashboard's Skip posts the slot's own instant. Lock the
-      // medication so two Skip taps, or a Skip racing "Took it at" on another
-      // device, serialise. Then look at what that instant already holds.
-      const [locked] = await tx
-        .select({ id: medications.id })
-        .from(medications)
-        .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
-        .limit(1)
-        .for("update");
-      if (!locked) throw new MedicationNotFoundError(medicationId);
+    // D7 on BOTH paths. A skip is a per-dose write like any other, and its
+    // `loggedAt` must be read after the medication lock for the restore's
+    // since-delete guard to see commit order. Under the guard the lock also
+    // makes two Skip taps, or a Skip racing "Took it at" on another device,
+    // serialise. The read is scoped by user, so it is the ownership check
+    // on both paths too.
+    const [locked] = await tx
+      .select({ id: medications.id })
+      .from(medications)
+      .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
+      .limit(1)
+      .for("update");
+    if (!locked) throw new MedicationNotFoundError(medicationId);
 
+    const loggedAt = new Date();
+
+    if (opts.exactInstantGuard) {
+      // The dashboard's Skip posts the slot's own instant. Look at what that
+      // instant already holds.
       const atInstant = await tx
         .select({ id: doseLogs.id, status: doseLogs.status })
         .from(doseLogs)
@@ -381,7 +388,7 @@ export async function logSkippedDose(
       medicationId,
       quantity: 1,
       takenAt: at,
-      loggedAt: now,
+      loggedAt,
       notes: null,
       sideEffects: null,
       status: "skipped",
@@ -436,6 +443,10 @@ export async function logDoseForSlot(
     if (med.isArchived) {
       throw new SlotTargetChangedError(`Medication ${medicationId} is archived`);
     }
+
+    // `takenAt` is the action's `now`: the instant the tap names. `loggedAt`
+    // orders writes to this medication, so it is read after the lock (D7).
+    const loggedAt = new Date();
 
     const schedules = await tx
       .select()
@@ -501,7 +512,7 @@ export async function logDoseForSlot(
       medicationId,
       quantity: 1,
       takenAt: now,
-      loggedAt: now,
+      loggedAt,
       notes: null,
       sideEffects: null,
       previousCount: med.inventoryCount,
@@ -857,39 +868,60 @@ export async function updateDose(
     sideEffects?: SideEffect[] | null;
   },
 ) {
-  const [existing] = await db
-    .select()
-    .from(doseLogs)
-    .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
-    .limit(1);
+  // Everything in one transaction, in D7 order: the medication row, then the
+  // dose row. The dose used to be read BEFORE the transaction, without a
+  // lock, and two things got through that gap. A Remove that committed
+  // there left the UPDATE below with no row, and
+  // `computeChanges(existing, undefined)` threw: a 500 on Save. A Remove
+  // followed by its Undo re-inserted the dose with a recomputed
+  // `inventoryApplied`, and the edit then moved stock by the stale amount.
+  // Every value this edit computes from is now read under both locks.
+  return dbTx.transaction(async (tx) => {
+    // Which medication to lock. `medicationId` never changes, so this read
+    // needs no lock of its own.
+    const [ref] = await tx
+      .select({ medicationId: doseLogs.medicationId })
+      .from(doseLogs)
+      .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
+      .limit(1);
+    if (!ref) return null;
 
-  if (!existing) return null;
+    // The count as it stands before this edit, under the lock that every
+    // other stock writer also takes first.
+    const [med] = await tx
+      .select({ inventoryCount: medications.inventoryCount })
+      .from(medications)
+      .where(and(eq(medications.id, ref.medicationId), eq(medications.userId, userId)))
+      .limit(1)
+      .for("update");
+    const previousCount = med?.inventoryCount ?? null;
 
-  // Only taken doses ever decremented inventory, so only taken doses
-  // get a quantity-diff adjustment. Editing a skipped dose's quantity
-  // is bookkeeping only.
-  const inventoryAffectingChange =
-    existing.status === "taken" &&
-    updates.quantity !== undefined &&
-    updates.quantity !== existing.quantity;
+    // Re-read the dose under its own lock. A delete may have committed while
+    // this transaction waited for the medication, and that has to end here,
+    // before anything is written.
+    const [existing] = await tx
+      .select()
+      .from(doseLogs)
+      .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
+      .limit(1)
+      .for("update");
+    if (!existing) return null;
 
-  // Dose update + (optional) inventory diff in a single transaction
-  // so a partial failure rolls back both.
-  const updated = await dbTx.transaction(async (tx) => {
-    // The inventory arm has to run first: it needs the count as it stands
-    // before this edit, and it decides the `inventoryApplied` the row is
-    // written with.
+    // Only taken doses ever decremented inventory, so only taken doses
+    // get a quantity-diff adjustment. Editing a skipped dose's quantity
+    // is bookkeeping only.
+    const inventoryAffectingChange =
+      existing.status === "taken" &&
+      updates.quantity !== undefined &&
+      updates.quantity !== existing.quantity;
+
+    // The inventory arm is computed first: it decides the `inventoryApplied`
+    // the row is written with. Its write runs after the row's, once the row
+    // is known to still be there.
     let nextApplied: number | undefined;
     let inventoryWrite: (() => Promise<void>) | undefined;
 
     if (inventoryAffectingChange) {
-      const [med] = await tx
-        .select({ inventoryCount: medications.inventoryCount })
-        .from(medications)
-        .where(and(eq(medications.id, existing.medicationId), eq(medications.userId, userId)))
-        .limit(1);
-      const previousCount = med?.inventoryCount ?? null;
-
       // What this dose took, and what it will take instead. Editing moves
       // the APPLIED amount, never the difference of the two quantities: a
       // dose of 3 logged against a stock of 1 only ever removed 1, so
@@ -954,6 +986,12 @@ export async function updateDose(
       .where(and(eq(doseLogs.id, doseId), eq(doseLogs.userId, userId)))
       .returning();
 
+    // Unreachable while the row is locked above. Kept so that a later change
+    // to that read cannot turn a vanished row back into a stock write for a
+    // dose that no longer exists, or into `computeChanges(existing,
+    // undefined)`, which throws.
+    if (!u) return null;
+
     if (inventoryWrite) await inventoryWrite();
 
     const changes = computeChanges(existing, u);
@@ -961,8 +999,6 @@ export async function updateDose(
 
     return u;
   });
-
-  return updated;
 }
 
 export async function getLastDosePerMedication(

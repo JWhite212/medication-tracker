@@ -4,12 +4,9 @@
   import type { SubmitFunction } from "@sveltejs/kit";
   import { showToast } from "$components/ui/Toast.svelte";
   import SideEffectPicker from "$components/SideEffectPicker.svelte";
+  import { beginDoseWrite } from "$components/dose-writes/begin-dose-write";
   import { getDoseWriteLock } from "$components/dose-writes/dose-write-lock.svelte";
-  import {
-    OFFLINE_WRITE_TOAST,
-    STILL_SAVING_TOAST,
-    UNKNOWN_OUTCOME_TOAST,
-  } from "$components/dose-writes/copy";
+  import { UNKNOWN_OUTCOME_TOAST } from "$components/dose-writes/copy";
   import { reloadAfterWrite } from "$components/dose-writes/reload-after-write";
   import { clearUndo, withdrawUndoFor } from "$components/dose-writes/undo-registry.svelte";
   import { formatDateTimeLocal } from "$lib/utils/time";
@@ -28,8 +25,9 @@
 
   // The (app) layout's dose-write lock. Save keeps its own enhance for the
   // inline field errors below, but it is a dose write like any other: it
-  // takes the same lock, so Save and the dialog's Remove exclude each other,
-  // and a Save cannot start while another dose write is still in flight.
+  // starts through the same gate (`beginDoseWrite`), so Save and the dialog's
+  // Remove exclude each other, and a Save cannot start while another dose
+  // write is still in flight.
   const lock = getDoseWriteLock();
 
   let loading = $state(false);
@@ -74,20 +72,9 @@
    * edit away. Reloads go through `reloadAfterWrite()` instead.
    */
   const save: SubmitFunction = ({ cancel }) => {
-    // Offline nothing can be saved, and the reload afterwards would swap the
-    // page for the service worker's Offline page.
-    if (navigator.onLine === false) {
-      cancel();
-      showToast(OFFLINE_WRITE_TOAST, "error");
-      return;
-    }
-    if (!lock.acquire()) {
-      cancel();
-      // Only while another write is actually in flight. A tap refused by the
-      // cooldown alone needs no explanation.
-      if (lock.active) showToast(STILL_SAVING_TOAST, "error");
-      return;
-    }
+    // The gate every dose write passes: offline, then the lock. A refusal has
+    // already cancelled and told the user.
+    if (!beginDoseWrite(cancel, lock)) return;
     // Only once the Save is certain to be sent, so a refused Save never costs
     // the user their Undo. An offer naming this dose would otherwise act on
     // the row as it was before the edit.

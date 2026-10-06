@@ -4,13 +4,8 @@ import { applyAction } from "$app/forms";
 import type { DashboardClock } from "$components/dashboard/dashboard-clock";
 import { showToast } from "$components/ui/Toast.svelte";
 import { actionErrorMessage } from "$lib/utils/form-errors";
-import {
-  OFFLINE_WRITE_TOAST,
-  STALE_TAP_MESSAGE,
-  STILL_SAVING_TOAST,
-  SUCCESS_FALLBACK_TOAST,
-  UNKNOWN_OUTCOME_TOAST,
-} from "./copy";
+import { beginDoseWrite } from "./begin-dose-write";
+import { STALE_TAP_MESSAGE, SUCCESS_FALLBACK_TOAST, UNKNOWN_OUTCOME_TOAST } from "./copy";
 import { getDoseWriteLock } from "./dose-write-lock.svelte";
 import { focusIfLost } from "./focus-after";
 import { reloadAfterWrite, reloadDocumentIfUpdated } from "./reload-after-write";
@@ -20,14 +15,16 @@ import { clearUndo, offerUndo, withdrawUndoFor, type UndoKind } from "./undo-reg
  * The ONE client path for a dose write, on every page: the dashboard's Due
  * cards, chips and Done removals (through DoseActionForm), the /log × and the
  * medications card's Log. Edit Save is the stated exception: it keeps its own
- * enhance for inline field errors, and follows the same rules by hand
+ * enhance for inline field errors, but starts through the same gate
+ * (`beginDoseWrite`) and so cannot disagree about when a write may begin
  * (DoseEditForm).
  *
- * At submit, in this order, and each step can stop the write: the offline
- * gate, the layout's write lock, the dashboard's stale guard, withdrawing the
- * Undo offer for the dose being written (only now, so a refused tap never
- * deletes the user's Undo), then the request. On the result it owns the
- * reload, the toast or Undo offer, focus and the release.
+ * At submit, in this order, and each step can stop the write: the gate
+ * (`beginDoseWrite`: the offline check, then the layout's write lock), the
+ * dashboard's stale guard, withdrawing the Undo offer for the dose being
+ * written (only now, so a refused tap never deletes the user's Undo), then the
+ * request. On the result it owns the reload, the toast or Undo offer, focus
+ * and the release.
  *
  * It never calls enhance's `update()`. That applies a result only while the
  * action's route is the page on screen (kit forms.js), so a failure posted
@@ -101,24 +98,13 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
   const submit: SubmitFunction = ({ cancel }) => {
     const options = getOptions();
 
-    // 1. Nothing can be sent: take no lock and withdraw nothing.
-    if (navigator.onLine === false) {
-      cancel();
-      showToast(OFFLINE_WRITE_TOAST, "error");
-      return;
-    }
+    // 1. The gate every dose write passes, shared with Edit Save: offline
+    // (no lock taken, nothing withdrawn), then one dose write at a time across
+    // every page under the layout. A refusal has already cancelled and told
+    // the user.
+    if (!beginDoseWrite(cancel, lock)) return;
 
-    // 2. One dose write at a time, across every page under the layout.
-    if (!lock.acquire()) {
-      cancel();
-      // A write in flight: say so, or a refused 1–9 press looks like nothing
-      // happened. A tap refused by the cooldown alone is a double tap, and
-      // stays silent.
-      if (lock.active) showToast(STILL_SAVING_TOAST, "error");
-      return;
-    }
-
-    // 3. The dashboard's payload has expired (on the SERVER's clock). Refuse,
+    // 2. The dashboard's payload has expired (on the SERVER's clock). Refuse,
     // reload, and hold the lock through the reload, so nothing is tapped on
     // the old list.
     if (options.staleGuard?.isExpired()) {
@@ -129,7 +115,7 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
       return;
     }
 
-    // 4. The write is now sure to be sent.
+    // 3. The write is now sure to be sent.
     if (options.withdrawsUndoFor) withdrawUndoFor(options.withdrawsUndoFor);
 
     // Where focus was at the tap: the button, or whatever a 1–9 shortcut was

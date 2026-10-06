@@ -149,3 +149,15 @@ describe("QuickLogBar Undo", () => {
     expect(offer!.focusTarget()).toBe(chip());
   });
 });
+
+describe("QuickLogBar chip segments", () => {
+  it("sizes the chip by its content box, so the 1px border cannot clip the 44px segments", () => {
+    // Under border-box the border sat inside h-11 and overflow-hidden cut
+    // each segment down to 42px.
+    const { form } = setup();
+    const li = form.closest("li")!;
+    expect([...li.classList]).toEqual(
+      expect.arrayContaining(["box-content", "h-11", "border", "overflow-hidden"]),
+    );
+  });
+});

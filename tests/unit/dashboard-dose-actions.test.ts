@@ -29,6 +29,7 @@ const updateDose = vi.fn(async () => state.updateResult);
 const logDose = vi.fn(async (..._args: unknown[]) => ({ id: "dose-logged" }));
 const logDoseForSlot = vi.fn(async (..._args: unknown[]) => ({ id: "dose-log-now" }));
 const logSkippedDose = vi.fn(async (..._args: unknown[]) => "dose-skipped");
+const restoreDose = vi.fn(async (..._args: unknown[]) => "restored");
 
 // Declared here, not inline in the factory, so a test can throw the very
 // constructor the action checks with `instanceof`. The factory runs at the
@@ -48,6 +49,7 @@ vi.mock("$lib/server/doses", () => ({
   logDose: (...args: unknown[]) => logDose(...args),
   logDoseForSlot: (...args: unknown[]) => logDoseForSlot(...args),
   logSkippedDose: (...args: unknown[]) => logSkippedDose(...args),
+  restoreDose: (...args: unknown[]) => restoreDose(...args),
   deleteDose: (...args: unknown[]) => deleteDose(...args),
   updateDose: (...args: unknown[]) => updateDose(...(args as [])),
   MedicationNotFoundError,
@@ -91,6 +93,7 @@ beforeEach(() => {
   logDose.mockClear();
   logDoseForSlot.mockClear();
   logSkippedDose.mockClear();
+  restoreDose.mockClear();
   track.mockClear();
   // Date only: each action reads `new Date()` once per request.
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -144,6 +147,20 @@ describe("dashboard deleteDose action", () => {
 
     expect(res).toMatchObject({ status: 400 });
     expect(deleteDose).not.toHaveBeenCalled();
+  });
+});
+
+describe("dashboard restoreDose action", () => {
+  // The outcome mapping is pinned in dose-actions.test.ts; this proves the
+  // route serves the shared helper.
+  it("hands the posted Undo token to restoreDose and answers success", async () => {
+    const res = await actions.restoreDose({
+      request: formRequest({ doseId: "d1", deletedAt: "2026-04-16T19:00:00.000Z" }),
+      locals,
+    } as never);
+
+    expect(res).toEqual({ success: true, doseId: "d1" });
+    expect(restoreDose).toHaveBeenCalledWith("u1", "d1", new Date("2026-04-16T19:00:00.000Z"));
   });
 });
 

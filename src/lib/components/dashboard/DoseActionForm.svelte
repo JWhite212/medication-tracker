@@ -6,14 +6,14 @@
   import { showToast } from "$components/ui/Toast.svelte";
   import { actionErrorMessage } from "$lib/utils/form-errors";
   import { getDashboardClock } from "./dashboard-clock";
-  import { getDoseWriteLock } from "./dose-write-lock.svelte";
   import {
-    NETWORK_FAILURE_TOAST,
+    DELETE_ACTION,
     STALE_TAP_MESSAGE,
     SUCCESS_FALLBACK_TOAST,
-    UNDO_ACTION,
     UNDONE_TOAST,
-  } from "./dose-action";
+    UNKNOWN_OUTCOME_TOAST,
+  } from "$components/dose-writes/copy";
+  import { getDoseWriteLock } from "$components/dose-writes/dose-write-lock.svelte";
 
   type Variant = "primary" | "secondary" | "quiet" | "chip" | "danger";
 
@@ -102,7 +102,7 @@
       const body = new FormData();
       body.set("doseId", doseId);
       try {
-        const response = await fetch(UNDO_ACTION, {
+        const response = await fetch(DELETE_ACTION, {
           method: "POST",
           body,
           headers: { accept: "application/json" },
@@ -112,7 +112,7 @@
         else showToast(actionErrorMessage(result), "error");
       } catch (error) {
         // A network failure never reaches `deserialize`.
-        showToast(actionErrorMessage({ type: "error", error }, NETWORK_FAILURE_TOAST), "error");
+        showToast(actionErrorMessage({ type: "error", error }, UNKNOWN_OUTCOME_TOAST), "error");
       }
       await reload();
     } finally {
@@ -125,9 +125,9 @@
       cancel();
       return;
     }
-    // Server-relative: comparing with raw Date.now() would refuse every tap
-    // near a boundary on a device whose clock runs fast.
-    if (clock.serverNow().getTime() >= clock.nextRefreshAt().getTime()) {
+    // The clock answers on the server's time: comparing with raw Date.now()
+    // would refuse every tap near a boundary on a device whose clock runs fast.
+    if (clock.isExpired()) {
       cancel();
       showToast(STALE_TAP_MESSAGE, "error");
       // Hold the lock through the reload, so nothing is tapped on the old list.
@@ -182,7 +182,7 @@
           else await update();
         } else if (result.type === "error") {
           // Outcome unknown: reload BEFORE releasing, so any retry acts on fresh data.
-          showToast(actionErrorMessage(result, NETWORK_FAILURE_TOAST), "error");
+          showToast(actionErrorMessage(result, UNKNOWN_OUTCOME_TOAST), "error");
           await reload();
         } else {
           await update();

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { invalidateAll } from "$app/navigation";
   import OnboardingWelcome from "$components/OnboardingWelcome.svelte";
   import Modal from "$components/ui/Modal.svelte";
@@ -11,10 +12,6 @@
   import DoneList from "$components/dashboard/DoneList.svelte";
   import LaterList from "$components/dashboard/LaterList.svelte";
   import DoseActionForm from "$components/dashboard/DoseActionForm.svelte";
-  import {
-    createDoseWriteLock,
-    setDoseWriteLock,
-  } from "$components/dashboard/dose-write-lock.svelte";
   import { createDashboardClock, setDashboardClock } from "$components/dashboard/dashboard-clock";
   import { DASHBOARD_HEADING_ID, DONE_HEADING_ID } from "$components/dashboard/dom-ids";
   import type { DateFormat, TimeFormat } from "$lib/utils/time";
@@ -31,11 +28,19 @@
   const doneTitle = $derived(asNeededOnly ? "Logged today" : "Done today");
   const hasDue = $derived(data.earlier.length + data.today.length > 0);
 
-  // One page-wide write lock and one server-relative clock. Every
-  // DoseActionForm, DueCard and chip reads them from context; nothing here
-  // re-implements a timer, a skew or a lock.
-  setDoseWriteLock(createDoseWriteLock());
-  const clock = createDashboardClock(invalidateAll);
+  // One server-relative clock. Every DoseActionForm, DueCard and chip reads
+  // it from context; nothing here re-implements a timer or a skew. The write
+  // lock they also read is the (app) layout's, shared with every page.
+  //
+  // Seeded from the payload this page rendered with, so the stale guard can
+  // answer from the first tap rather than reading NaN until the effect below
+  // runs. The seed arms no timer: during SSR a setTimeout would outlive the
+  // request. `untrack` because the seed is deliberately the FIRST payload
+  // only; the effect adopts every later one through sync().
+  const clock = createDashboardClock(
+    invalidateAll,
+    untrack(() => ({ now: data.now, nextRefreshAt: data.nextRefreshAt })),
+  );
   setDashboardClock(clock);
 
   // The instant visible durations are rendered against. It starts at the

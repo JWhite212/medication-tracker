@@ -6,7 +6,7 @@ import { vi } from "vitest";
 import { flushSync, mount, unmount, type ComponentProps } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
 import DoseActionForm from "$lib/components/dashboard/DoseActionForm.svelte";
-import type { DoseWriteLock } from "$lib/components/dashboard/dose-write-lock.svelte";
+import type { DoseWriteLock } from "$lib/components/dose-writes/dose-write-lock.svelte";
 import type { DashboardClock } from "$lib/components/dashboard/dashboard-clock";
 import { dashboardContext } from "./dashboard-context";
 

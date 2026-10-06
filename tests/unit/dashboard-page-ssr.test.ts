@@ -10,10 +10,20 @@
 // due-card-ssr.test.ts, dashboard-copy.test.ts and dashboard-page-data.test.ts.
 // `$app/*` is not mocked: the appearance page SSR-renders `$app/forms` and
 // `$app/navigation` unmocked, and nothing here runs an effect or a submit.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render } from "svelte/server";
+
+// A spy that keeps the real clock, so the page's wiring can be asserted
+// without changing anything it renders.
+vi.mock("$lib/components/dashboard/dashboard-clock", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/components/dashboard/dashboard-clock")>();
+  return { ...actual, createDashboardClock: vi.fn(actual.createDashboardClock) };
+});
+
 import Page from "../../src/routes/(app)/dashboard/+page.svelte";
+import { createDashboardClock } from "$lib/components/dashboard/dashboard-clock";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
+import { doseWriteContext } from "./helpers/dashboard-context";
 import type {
   DashboardPageData,
   DashboardStatus,
@@ -163,7 +173,11 @@ function laterRow(med: Medication, expectedTime: string): LaterRow {
   };
 }
 
-function renderPage(overrides: Partial<DashboardPageData> = {}) {
+/** `context` is what the (app) layout provides: its dose-write lock. */
+function renderPage(
+  overrides: Partial<DashboardPageData> = {},
+  context: Map<symbol, unknown> = doseWriteContext(),
+) {
   const dash: DashboardPageData = {
     now: NOW,
     nextRefreshAt: "2026-04-16T09:00:00.000Z",
@@ -179,7 +193,7 @@ function renderPage(overrides: Partial<DashboardPageData> = {}) {
     ...overrides,
   };
   // No `form`: the page destructures only `data`, and svelte-check rejects an unknown prop.
-  return render(Page, { props: { data: { ...dash, user, preferences } } });
+  return render(Page, { props: { data: { ...dash, user, preferences } }, context });
 }
 
 /** Whitespace or Svelte hydration comments (`<!--[-->`, `<!---->`). */
@@ -325,5 +339,38 @@ describe("dashboard page composition (SSR)", () => {
     expect(html).toContain("Welcome to MedTracker");
     expect(headingAt(html, 1, "Today")).toBe(-1);
     expect(chipForms(html)).toEqual([]);
+  });
+});
+
+describe("dashboard page wiring (SSR)", () => {
+  // `render()` is lazy: the page's script runs only when `.body` (or `.head`)
+  // is read. Every case here reads it, or it would assert against a page that
+  // never ran, and pass whatever the page did.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("takes the dose-write lock from the (app) layout instead of making its own", () => {
+    // A lock of the page's own would be a second lock: a write or an Undo
+    // still in flight from another page would not hold it.
+    expect(() => renderPage(SCHEDULED, new Map()).body).toThrow(/No dose-write lock in context/);
+  });
+
+  it("seeds its clock with the payload it rendered from", () => {
+    // Cleared first: earlier cases in this file also render the page, and
+    // "last called with" must not be satisfied by one of theirs.
+    vi.mocked(createDashboardClock).mockClear();
+    void renderPage(SCHEDULED).body;
+    expect(createDashboardClock).toHaveBeenCalledOnce();
+    expect(createDashboardClock).toHaveBeenLastCalledWith(expect.any(Function), {
+      now: NOW,
+      nextRefreshAt: "2026-04-16T09:00:00.000Z",
+    });
+  });
+
+  it("leaves no timer pending after a server render", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    void renderPage(SCHEDULED).body;
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

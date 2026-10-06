@@ -15,6 +15,15 @@ const config = {
       $components: "src/lib/components",
       $server: "src/lib/server",
     },
+    // Spec D9 (docs/superpowers/specs/2026-09-25-undoable-dose-actions-design.md).
+    // Polling is what turns `updated.current` true once a new deploy is live.
+    // Dose writes read it on a 409 and reload the document rather than the
+    // data, because a tab running pre-deploy code otherwise keeps posting a
+    // request shape the server now refuses, and an installed PWA can stay open
+    // for days. Only a tab loaded with this setting polls: a tab loaded before
+    // it shipped runs the old client, never learns of a deploy, and must be
+    // reloaded by hand.
+    version: { pollInterval: 300_000 },
     csp: {
       directives: {
         "default-src": ["self"],

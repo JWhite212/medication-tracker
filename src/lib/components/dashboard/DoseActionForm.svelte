@@ -46,6 +46,7 @@
     withdrawsUndoFor?: string;
     /** Where focus goes after success. Never another write button. */
     focusAfter?: () => HTMLElement | null;
+    /** After the reload and the toast, before focus is judged: closing a dialog here is safe (DoseWriteOptions.onSuccess). */
     onSuccess?: () => void;
     /** Rendered inside the button BEFORE the label (a chip's sr-only "Log " and its glyph). */
     children?: Snippet;

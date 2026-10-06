@@ -405,6 +405,51 @@ describe("createDoseWrite, on the result", () => {
     expect(document.activeElement).toBe(search);
   });
 
+  it("after a success, focus moves only if the reload lost it: focusAfter gets it from <body>; focus the user moved during the request stays", async () => {
+    const heading = document.body.appendChild(document.createElement("h1"));
+    heading.tabIndex = -1;
+    const lock = createDoseWriteLock();
+    const { form, button, submit } = mountProbe({
+      lock,
+      props: { options: { focusAfter: () => heading } },
+    });
+
+    // The reload removed what had focus: it fell to <body>.
+    h.invalidateAll.mockImplementationOnce(async () => button.blur());
+    button.focus();
+    let { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, SUCCESS).done;
+    expect(document.activeElement).toBe(heading);
+
+    // Focus the user moved somewhere real during the request stays there.
+    const search = document.body.appendChild(document.createElement("input"));
+    await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS);
+    ({ callback } = await startSubmit(submit, form));
+    search.focus();
+    await finishSubmit(callback!, form, SUCCESS).done;
+    expect(document.activeElement).toBe(search);
+  });
+
+  it("after a success with no focusAfter, the control gets focus back only if the reload lost it", async () => {
+    const lock = createDoseWriteLock();
+    const { form, button, submit } = mountProbe({ lock });
+
+    h.invalidateAll.mockImplementationOnce(async () => button.blur());
+    button.focus();
+    let { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, SUCCESS).done;
+    expect(document.activeElement).toBe(button);
+
+    // The user tabbed on during the request: pulling them back would be the bug.
+    const search = document.body.appendChild(document.createElement("input"));
+    await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS);
+    button.focus();
+    ({ callback } = await startSubmit(submit, form));
+    search.focus();
+    await finishSubmit(callback!, form, SUCCESS).done;
+    expect(document.activeElement).toBe(search);
+  });
+
   it("a 409 once a newer version is deployed reloads the document, not just the data", async () => {
     h.updated.current = true;
     const { form, submit } = mountProbe({ lock: createDoseWriteLock() });

@@ -509,3 +509,60 @@ describe("focus after a delete, and after its Undo (Review Focus #4)", () => {
     expect(document.activeElement).toBe(log.heading);
   });
 });
+
+describe("focus the user moved while a delete was in flight", () => {
+  // A delete can take a while on a slow connection, and nothing stops the user
+  // working elsewhere in the meantime: spec Section 4 moves focus only if it was
+  // LOST. Without the rule the success handler yanked it onto the next row's ✎
+  // mid-word in the search field, or out of an open dialog (aria-modal does not
+  // make the page behind it inert) onto a control behind it.
+  const field = () => {
+    const q = document.createElement("input");
+    q.name = "q";
+    document.body.append(q);
+    return q;
+  };
+  const dialogButton = () => {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    const save = document.createElement("button");
+    save.textContent = "Save";
+    dialog.append(save);
+    document.body.append(dialog);
+    return save;
+  };
+
+  it.each<[string, () => HTMLElement]>([
+    ["the search field", field],
+    ["a button inside an open edit dialog", dialogButton],
+  ])("leaves focus on %s once the delete succeeds", async (_where, makeTarget) => {
+    const log = renderLog([{ dayLabel: null, doses: [A, B] }]);
+    h.invalidateAll.mockImplementationOnce(async () => log.drop("a"));
+    await pressDelete("a");
+    expect(h.sent).toHaveLength(1);
+
+    const target = makeTarget();
+    target.focus();
+    expect(document.activeElement).toBe(target);
+
+    await h.sent[0].finish(deleted("a"));
+    await settle();
+
+    // The delete went through, the page reloaded and the Undo is on offer...
+    expect(rowOf("a")).toBeNull();
+    expect(currentUndo()).toMatchObject({ kind: "restore", doseId: "a" });
+    // ...and focus is exactly where the user put it, not on the next row's ✎.
+    expect(document.activeElement).toBe(target);
+    expect(document.activeElement).not.toBe(editButton("b"));
+  });
+
+  it("still moves focus to the next row's ✎ when the delete itself took it (× removed with the row)", async () => {
+    const log = renderLog([{ dayLabel: null, doses: [A, B] }]);
+    field(); // somewhere real exists, but focus never went there
+
+    await deleteAndReload(log, "a");
+
+    expect(document.activeElement).toBe(editButton("b"));
+  });
+});

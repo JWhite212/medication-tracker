@@ -52,7 +52,11 @@ export interface DoseWriteOptions {
    * "logged at" means when the server answered. null falls back to "Saved".
    */
   buildToast?: (doseId: string | null, respondedAt: Date) => string | null;
-  /** Where focus goes after a success, and after a failure when the reload lost it. Never another dose's write button. */
+  /**
+   * Where focus goes after a result, and only when the result or its reload
+   * lost it: focus the user moved elsewhere during the request is left alone.
+   * Never another dose's write button.
+   */
   focusAfter?: () => HTMLElement | null;
   /** Marked aria-busy while the write is in flight (a Due card). */
   busyContainer?: () => HTMLElement | null;
@@ -128,7 +132,14 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
     pending = true;
     busyElement?.setAttribute("aria-busy", "true");
 
-    /** After a failure: only if the reload lost focus, never over where the user put it. */
+    /**
+     * After any result: only if focus was lost (on <body>, on a node the reload
+     * removed, or inside the toast stack), never over where the user put it. A
+     * write can take seconds on a slow connection and nothing stops them
+     * working elsewhere meanwhile: typing in a search field, or inside a dialog
+     * opened over the page. The caller's `focusAfter` is the first choice and
+     * the control the tap came from the second.
+     */
     const refocusIfLost = () =>
       focusIfLost(
         () => options.focusAfter?.(),
@@ -165,12 +176,7 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
           } else {
             showToast(message, "success");
           }
-          (options.focusAfter
-            ? options.focusAfter()
-            : returnFocus?.isConnected
-              ? returnFocus
-              : null
-          )?.focus();
+          refocusIfLost();
           options.onSuccess?.();
         } else if (result.type === "failure") {
           showToast(actionErrorMessage(result), "error");

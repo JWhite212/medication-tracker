@@ -109,6 +109,15 @@
     if (!snap) return focusAfter();
     return focusTargetAfterResolve(snap.key, snap.following) ?? snap.fallback();
   }
+
+  /**
+   * Every write on this card creates a dose, so its Undo deletes it. Once the
+   * Undo's reload has brought the row back, focus goes where it would after a
+   * resolve: this card, else the card that was below it at the tap, else the
+   * page's h1. The snapshot is a plain value, so this still works after the
+   * reload has unmounted this card.
+   */
+  const createUndo = { kind: "delete" as const, focusTarget: focusAfterResolve };
 </script>
 
 {#snippet actions(row: DueRow, view: RowView)}
@@ -122,7 +131,7 @@
       pendingLabel="Logging…"
       variant="primary"
       buildToast={view.logNowToast}
-      undoable
+      undo={createUndo}
       focusAfter={focusAfterResolve}
     />
   {/if}
@@ -137,7 +146,7 @@
           pendingLabel="Recording…"
           variant="secondary"
           buildToast={view.tookToast}
-          undoable
+          undo={createUndo}
           focusAfter={focusAfterResolve}
         />
       {/if}
@@ -150,7 +159,7 @@
           pendingLabel="Skipping…"
           variant="quiet"
           buildToast={view.skipToast}
-          undoable
+          undo={createUndo}
           focusAfter={focusAfterResolve}
         />
       {/if}

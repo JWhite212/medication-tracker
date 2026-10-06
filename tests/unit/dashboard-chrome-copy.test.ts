@@ -16,13 +16,22 @@ function source(rel: string): string {
 }
 
 describe("Toast", () => {
-  it("gives Undo at least a 44px-tall target with side padding, like every other dose control", () => {
+  it("gives the Undo offer's Undo and Dismiss at least a 44px target, like every other dose control", () => {
     const src = source("src/lib/components/ui/Toast.svelte");
-    const start = src.indexOf("{#if toast.undoAction}");
-    expect(start, "the Undo block moved: update this test").toBeGreaterThan(-1);
-    const block = src.slice(start, src.indexOf("{/if}", start));
-    const classes = /class="([^"]*)"/.exec(block)?.[1].split(" ") ?? [];
-    expect(classes).toEqual(expect.arrayContaining(["min-h-11", "px-3"]));
+    // Each piece starts just after "<button", so its first class="…" is that
+    // button's own: attributes come before children.
+    const buttons = src.split("<button").slice(1);
+    const undo = buttons.find((piece) => piece.includes("aria-labelledby="));
+    const dismiss = buttons.find((piece) => piece.includes('aria-label="Dismiss"'));
+    expect(undo, "the Undo button moved: update this test").toBeDefined();
+    expect(dismiss, "the Dismiss button moved: update this test").toBeDefined();
+    const classes = (piece: string) => /class="([^"]*)"/.exec(piece)?.[1].split(" ") ?? [];
+    expect(classes(undo!)).toEqual(expect.arrayContaining(["min-h-11", "px-3"]));
+    expect(classes(dismiss!)).toEqual(expect.arrayContaining(["size-11"]));
+  });
+
+  it("has no per-toast Undo any more: the one offer lives in the undo registry", () => {
+    expect(source("src/lib/components/ui/Toast.svelte")).not.toContain("undoAction");
   });
 });
 

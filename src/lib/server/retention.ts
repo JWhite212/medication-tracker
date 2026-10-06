@@ -2,6 +2,7 @@ import { lt } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { passwordResetTokens, rateLimits } from "$lib/server/db/schema";
 import { purgeExpiredReminderEvents } from "$lib/server/reminders/retention";
+import { purgeExpiredTrash } from "$lib/server/doses";
 import { logError, logWarn } from "$lib/server/log";
 
 /**
@@ -63,6 +64,16 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
   {
     name: "reminder-events",
     purge: (now) => purgeExpiredReminderEvents(now),
+  },
+  {
+    // Deleted doses kept for Undo, past their ten-minute window. Every
+    // delete and restore already purges its own user's expired rows; this
+    // reaches everyone else's, such as a user who deleted a dose and never
+    // came back. It goes through `purgeExpiredTrash` so the non-blocking
+    // `SKIP LOCKED` purge exists once and `doses.ts` stays the table's owner
+    // (tests/unit/dose-log-trash-owners.test.ts).
+    name: "dose-log-trash",
+    purge: (now) => purgeExpiredTrash(db, { now }),
   },
 ];
 

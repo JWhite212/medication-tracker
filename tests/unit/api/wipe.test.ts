@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { fakeDb } from "../helpers/fake-db";
-import { doseLogs, medications } from "$lib/server/db/schema";
+import { medications } from "$lib/server/db/schema";
+
+/**
+ * `wipeArchivedMedications` on the fake seam.
+ *
+ * `wipeDoseHistory`'s cases live in `tests/unit/pg/dose-trash-wipe.test.ts`.
+ * It now locks the user's medications with a select `.for("update")` before
+ * it deletes anything (D7), and this fake has no select `.for()` and must not
+ * grow one (CLAUDE.md, test-seam rule). On PGlite its order is pinned by the
+ * SQL it sends, and its rollback by what Postgres still holds afterwards.
+ */
 
 type Op = { kind: "delete"; table: string } | { kind: "update"; table: string; values: unknown };
 
@@ -75,62 +85,12 @@ vi.mock("$lib/server/db", async () => {
   };
 });
 
-const { wipeDoseHistory, wipeArchivedMedications } =
-  await import("../../../src/lib/server/api/wipe");
+const { wipeArchivedMedications } = await import("../../../src/lib/server/api/wipe");
 
 beforeEach(() => {
   fakeDb.reset();
   auditCalls.length = 0;
   logAudit.mockClear();
-});
-
-describe("wipeDoseHistory", () => {
-  it("deletes dose logs, bumps syncEpoch, and audits — all inside one transaction — returning the deleted count", async () => {
-    fakeDb.seed(doseLogs, [{ id: "d1" }, { id: "d2" }, { id: "d3" }]);
-
-    const result = await wipeDoseHistory("u1");
-
-    expect(result).toEqual({ deleted: 3 });
-    expect(ops()).toEqual([
-      { kind: "delete", table: "dose_logs" },
-      {
-        kind: "update",
-        table: "users",
-        values: expect.objectContaining({ syncEpoch: expect.anything() }),
-      },
-    ]);
-
-    // The audit call happened, was passed the tx (not the top-level db),
-    // and used the deleted count computed inside the same transaction.
-    expect(logAudit).toHaveBeenCalledTimes(1);
-    expect(auditCalls).toHaveLength(1);
-    const [call] = auditCalls;
-    expect(call.userId).toBe("u1");
-    expect(call.entityType).toBe("dose_log");
-    expect(call.entityId).toBe("*");
-    expect(call.action).toBe("delete");
-    expect(call.changes).toEqual({ deleted: { from: 3, to: 0 } });
-    expect(call.client).not.toBe(undefined);
-    expect(call.client).not.toBe(null);
-  });
-
-  it("returns {deleted: 0} when there is nothing to wipe", async () => {
-    fakeDb.seed(doseLogs, []);
-
-    const result = await wipeDoseHistory("u1");
-
-    expect(result).toEqual({ deleted: 0 });
-    expect(auditCalls[0].changes).toEqual({ deleted: { from: 0, to: 0 } });
-  });
-
-  it("rolls back the epoch bump and audit when the delete throws — nothing durably committed", async () => {
-    fakeDb.failNext("delete", { error: new Error("connection reset") });
-
-    await expect(wipeDoseHistory("u1")).rejects.toThrow("connection reset");
-
-    expect(ops()).toEqual([]);
-    expect(auditCalls).toEqual([]);
-  });
 });
 
 describe("wipeArchivedMedications", () => {

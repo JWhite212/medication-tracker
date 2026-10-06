@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { afterNavigate } from "$app/navigation";
   import Sidebar from "$components/Sidebar.svelte";
   import MobileHeader from "$components/MobileHeader.svelte";
-  import Toast from "$components/ui/Toast.svelte";
+  import Toast, { clearToasts } from "$components/ui/Toast.svelte";
+  import { resetUndoRegistry } from "$components/dose-writes/undo-registry.svelte";
   import { readableForeground } from "$lib/utils/contrast";
   import { buildThemeStyle } from "$lib/appearance/theme-css";
   import { collectFocusable, trapTab } from "$lib/utils/focus-trap";
@@ -21,6 +22,18 @@
   // layout instance, never at module scope, which during SSR is shared by
   // every request the process serves.
   setDoseWriteLock(createDoseWriteLock());
+
+  // Signing out leaves (app), and this is the one place that sees it happen.
+  // The Undo offer and the plain toasts are module state and outlive this
+  // layout, so without this, on a shared device the next person to sign in
+  // would be shown — and could press — the last person's "Dose removed:
+  // <their medication>". Both calls are no-ops during SSR, where Svelte also
+  // runs onDestroy.
+  onDestroy(() => {
+    resetUndoRegistry();
+    clearToasts();
+  });
+
   let sidebarOpen = $state(false);
 
   /** Referenced by the toggle's aria-controls; the overlay is the only element carrying it. */

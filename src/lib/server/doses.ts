@@ -121,12 +121,72 @@ export async function getDosesInRange(
 type DbTransaction = Parameters<Parameters<typeof dbTx.transaction>[0]>[0];
 
 /**
- * The one taken-dose write: the row, the stock decrement, the inventory
- * event and the audit entry, all inside the caller's transaction.
+ * Take `amount` doses from stock, never below zero, and return how many
+ * actually left the bottle.
+ *
+ * This is the only copy of the clamp. A taken dose (`insertTakenDose`) and a
+ * restored one (`restoreDose`) both come through here, so the
+ * `inventoryApplied` a row records is always what this UPDATE removed. A dose
+ * of 3 logged against a stock of 1 removes 1, and a delete that later gave
+ * back 3 would invent the other two.
+ *
+ * `previousCount` is the caller's read of `medications.inventoryCount` inside
+ * the same transaction. NULL means inventory is not tracked: nothing is
+ * taken, no event is written, and 0 is returned.
+ *
+ * The UPDATE subtracts `amount`, not the result. The two give the same count
+ * whenever `previousCount` is still the live value, which it is when the
+ * caller read it under the medication lock (D7). The `GREATEST` keeps the
+ * column non-negative even when it is not.
+ */
+async function takeFromStock(
+  tx: DbTransaction,
+  i: {
+    userId: string;
+    medicationId: string;
+    previousCount: number | null;
+    amount: number;
+    eventType: "dose_taken" | "dose_restored";
+  },
+): Promise<number> {
+  const applied = i.previousCount === null ? 0 : Math.min(i.previousCount, i.amount);
+
+  await tx
+    .update(medications)
+    .set({
+      inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${i.amount})`,
+    })
+    .where(
+      and(
+        eq(medications.id, i.medicationId),
+        eq(medications.userId, i.userId),
+        isNotNull(medications.inventoryCount),
+      ),
+    );
+
+  // An event only when inventory was actually tracked, recording what really
+  // left the bottle after the clamp.
+  if (i.previousCount !== null) {
+    await recordInventoryEvent(tx, {
+      userId: i.userId,
+      medicationId: i.medicationId,
+      eventType: i.eventType,
+      quantityChange: -applied,
+      previousCount: i.previousCount,
+      newCount: i.previousCount - applied,
+    });
+  }
+
+  return applied;
+}
+
+/**
+ * The one taken-dose write: the stock decrement, the inventory event, the
+ * row and the audit entry, all inside the caller's transaction.
  *
  * `logDose` and `logDoseForSlot` both end here, so a Log-now dose and a chip
  * dose cannot drift apart on `inventoryApplied`, the column `deleteDose`
- * restores from. `previousCount` is the caller's own read of
+ * gives back. `previousCount` is the caller's own read of
  * `medications.inventoryCount`, taken inside the same transaction before
  * this insert. The caller decides whether that read locks.
  */
@@ -146,11 +206,15 @@ async function insertTakenDose(
   const { userId, medicationId, quantity, previousCount } = input;
   const id = createId();
 
-  // What will really leave the bottle. `GREATEST(0, …)` cannot take more
-  // than there is, so a dose of 3 logged against a stock of 1 removes 1 —
-  // and a delete that gave back 3 would invent the other two.
-  const inventoryApplied =
-    previousCount === null ? 0 : previousCount - Math.max(0, previousCount - quantity);
+  // What will really leave the bottle: not `quantity` whenever the clamp
+  // engages. The stock moves first, because the row records the result.
+  const inventoryApplied = await takeFromStock(tx, {
+    userId,
+    medicationId,
+    previousCount,
+    amount: quantity,
+    eventType: "dose_taken",
+  });
 
   const [inserted] = await tx
     .insert(doseLogs)
@@ -167,32 +231,6 @@ async function insertTakenDose(
       status: "taken",
     })
     .returning();
-
-  await tx
-    .update(medications)
-    .set({
-      inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${quantity})`,
-    })
-    .where(
-      and(
-        eq(medications.id, medicationId),
-        eq(medications.userId, userId),
-        isNotNull(medications.inventoryCount),
-      ),
-    );
-
-  // Only record an event when inventory was actually tracked.
-  // The actual delta accounts for the GREATEST(0, ...) clamp.
-  if (previousCount !== null) {
-    await recordInventoryEvent(tx, {
-      userId,
-      medicationId,
-      eventType: "dose_taken",
-      quantityChange: -inventoryApplied,
-      previousCount,
-      newCount: previousCount - inventoryApplied,
-    });
-  }
 
   await logAudit(userId, "dose_log", id, "create", undefined, tx);
 

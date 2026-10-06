@@ -17,6 +17,18 @@ vi.mock("$app/navigation", () => ({ afterNavigate: () => {} }));
 vi.mock("$app/stores", () => ({
   page: readable({ url: new URL("http://localhost/dashboard") }),
 }));
+// The layout's Toast reaches `$app/forms` and `$app/state` through the Undo
+// registry (dose-writes/undo-registry.svelte.ts). Nothing here submits or
+// reloads, so inert stand-ins keep SvelteKit's client runtime out of it.
+vi.mock("$app/forms", () => ({
+  deserialize: (text: string) => JSON.parse(text),
+  enhance: () => ({ destroy() {} }),
+}));
+vi.mock("$app/state", () => ({
+  navigating: { to: null, willUnload: null, complete: null },
+  updated: { current: false },
+  page: { url: new URL("http://localhost/dashboard"), data: {} },
+}));
 
 import Layout from "../../src/routes/(app)/+layout.svelte";
 import {

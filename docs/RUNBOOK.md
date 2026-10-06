@@ -107,6 +107,26 @@ git diff <good-sha>..<bad-sha> -- src/lib/server/db/schema.ts drizzle/
 
 If that diff is empty, roll back freely.
 
+**Rolling back past migration `0021` (undoable deletes).** The
+`dose_log_trash` table is additive, so the rolled-back code runs, and
+nothing deleted comes back to life: that code never reads the trash. Two
+things stop until you roll forward again:
+
+- **Trash rows are no longer purged.** The purge lives in the new code's
+  deletes, its restores and its `dose-log-trash` retention policy, so
+  deleted doses' notes and side effects stay on the server for the length
+  of the rollback.
+- **Delete dose history does not clear them.** The old `wipeDoseHistory`
+  does not know the table.
+
+Rolling forward purges every row past the ten-minute window on the next
+`reminder-tick`. If a user deletes their dose history during a rollback,
+clear their trash by hand as well:
+
+```sql
+DELETE FROM dose_log_trash WHERE user_id = '<user id>';
+```
+
 ### Fixing forward
 
 Preferred for anything schema-adjacent. Push a fix to `main`; Vercel
@@ -171,6 +191,18 @@ change it:
   saying data-loss statements are pending, production has a column the code no
   longer declares. Drop it by hand, then redeploy. Never add `--force`: that
   hands unattended deploys permission to delete user data.
+
+**Preview deployments are a standing case of this since migration `0021`.**
+Preview builds do not push the schema (`scripts/vercel-build.mjs` pushes
+for production only, unless `MIGRATE_ON_BUILD=true`). On a preview whose
+database lacks `dose_log_trash`, a web dose delete fails, restore is
+unavailable, and Delete dose history fails on the web and through
+`/api/v1 wipe_dose_history`; the `dose-log-trash` retention policy logs a
+failure on every tick that reaches that database. The Mac app's
+`delete_dose` and the delete behind a create's Undo never touch the trash,
+and everything else is unaffected.
+Redeploy the preview with `MIGRATE_ON_BUILD=true` to push the additive
+table, never with `--force`.
 
 ### 4b. A deploy cannot boot
 

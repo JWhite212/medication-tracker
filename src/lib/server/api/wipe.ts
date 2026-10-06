@@ -56,8 +56,9 @@ export async function wipeDoseHistory(userId: string): Promise<{ deleted: number
 
 export async function wipeArchivedMedications(userId: string): Promise<{ deleted: number }> {
   return dbTx.transaction(async (tx) => {
-    // Cascading FKs on dose_logs and medication_schedules drop the
-    // dependent rows when the medication row goes.
+    // Cascading FKs on dose_logs, medication_schedules and the dose trash
+    // (the Undo copies of deleted doses) drop the dependent rows when the
+    // medication row goes.
     const rows = await tx
       .delete(medications)
       .where(and(eq(medications.userId, userId), eq(medications.isArchived, true)))

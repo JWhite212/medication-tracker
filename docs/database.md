@@ -106,6 +106,40 @@ Indexes:
 - `dose_logs_med_taken_idx (medication_id, taken_at)` — per-medication analytics
 - `dose_logs_user_status_taken_idx (user_id, status, taken_at)` — adherence analytics
 
+### `dose_log_trash`
+
+Deleted doses waiting on an Undo, for ten minutes (`DOSE_UNDO_WINDOW_MS`
+in `src/lib/utils/dose-undo.ts`). Added by migration `0021`; see
+[ADR 0008](adr/0008-undoable-deletes.md).
+
+- `id` is the deleted dose's own id, as the primary key, because a restore
+  puts back the same id.
+- Every `dose_logs` column except `updated_at` is copied, with the same
+  type and nullability. `tests/unit/dose-log-trash-columns.test.ts` fails
+  if the two tables drift.
+- `inventory_credited` (not null) is what the delete actually gave back to
+  `medications.inventory_count`: 0 for a skip or a missed entry, and 0
+  when the count was NULL, because the credit is skipped then. It is
+  **not** a copy of `inventory_applied`. A restore takes back
+  `min(count, inventory_credited)`, so a dose deleted while tracking was
+  off and restored after it came back on takes nothing.
+- `deleted_at` (not null) is the app clock, read after the medication row
+  is locked. The pair `(id, deleted_at)` is the Undo handle, and a restore
+  must present it exactly.
+
+`user_id` and `medication_id` reference their tables with
+`ON DELETE CASCADE`, so account deletion, the archived-medication wipe and
+import replace mode clean up with no extra code. Index
+`dose_log_trash_user_deleted_idx (user_id, deleted_at)` serves the purges.
+
+`src/lib/server/doses.ts` owns the table (`deleteDose`, `restoreDose`,
+`purgeExpiredTrash`), and `src/lib/server/api/wipe.ts` clears it in
+`wipeDoseHistory`. Nothing else may reference it:
+`tests/unit/dose-log-trash-owners.test.ts` scans `src/` in both
+directions. Every purge, on write or in the `dose-log-trash` retention
+policy, is `DELETE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)`, so it
+never waits on a row a delete or restore holds. Nothing exports the trash.
+
 ### `audit_logs`
 
 Append-only audit trail. JSONB `changes` stores diffs for

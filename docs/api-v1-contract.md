@@ -259,6 +259,14 @@ Shape (`SerializedTombstone`):
 `entityType` is one of `"medication" | "dose_log" | "medication_schedule" | "inventory_event"`
 (per the comment on `syncTombstones` in `schema.ts`; not DB-enforced).
 
+**A `dose_log` tombstone can be withdrawn.** The web app's Undo restores a deleted dose with
+the **same id**, within ten minutes of the delete, and deletes every tombstone for it in the
+same transaction. The restored row's `updatedAt` is the restore time, so a client whose
+cursor predates the delete receives the dose and no tombstone, and a client that already
+applied the tombstone receives the dose again in its next delta. Apply a delta's `doseLogs`
+as upserts that can recreate a row the client deleted, then its tombstones, in that order;
+the shipped Mac app already does.
+
 ### Numeric-as-string fields
 
 Drizzle's `numeric` Postgres columns come back as **strings**, and the serializers pass them
@@ -348,7 +356,7 @@ overrides date fields to ISO strings:
   id: string;
   userId: string;
   medicationId: string;
-  eventType: string; // "dose_taken" | "refill" | "dose_deleted" | "manual_adjustment" | "correction" (see InventoryEventType)
+  eventType: string; // "dose_taken" | "dose_deleted" | "dose_quantity_updated" | "dose_restored" | "refill" | "manual_adjustment" | "correction" (see InventoryEventType)
   quantityChange: number; // signed delta
   previousCount: number | null;
   newCount: number | null;
@@ -365,7 +373,7 @@ overrides date fields to ISO strings:
   userId: string;
   entityType: string;
   entityId: string;
-  action: string;
+  action: string; // "create" | "update" | "delete" | "restore" | "failed_login" (see logAudit)
   changes: unknown;
   createdAt: string;
 }
@@ -498,6 +506,13 @@ not repeat", the same as a pre-this-feature client would get.
 - `{ scheduleKind: "interval"; intervalHours: number (0 < n ≤ 72) }`
 - `{ scheduleKind: "fixed_time"; timeOfDay: string ("HH:mm"); daysOfWeek?: number[] (0-6, ≤7 items) | null }`
 - `{ scheduleKind: "prn" }`
+
+**`delete_dose` is not undoable.** Its wire shape is unchanged — `{ doseId }` in,
+`{ deleted: boolean }` out — and it calls `deleteDose(userId, doseId, { keepForUndo: false })`.
+Native clients have no Undo, so the deleted row is not kept in the server's trash. Deleting a
+dose that is already gone returns `{ deleted: false }` and writes nothing, so a repeat can never
+credit stock twice. There is no `/api/v1` restore command: only the web app's Undo, within ten
+minutes of a web delete, brings a dose back (see Tombstones, §3).
 
 ### Wipes bump the sync epoch
 

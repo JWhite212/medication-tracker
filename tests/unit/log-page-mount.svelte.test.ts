@@ -5,29 +5,93 @@
 // (tests/unit/log-pagination-ssr.test.ts) cannot see anything that happens
 // after the first render: focus, timers, or a value that fails to update.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { flushSync, mount, unmount } from "svelte";
+import { flushSync, mount, tick, unmount } from "svelte";
+import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
 
 // Mocked ONCE, with reactive objects the tests repoint, for the same reason as
 // the SSR suite: re-mocking per case reloads svelte's internals.
 const pageState = $state({ url: new URL("https://medtracker.test/log") });
-vi.mock("$app/state", () => ({ page: pageState }));
+vi.mock("$app/state", () => ({
+  page: pageState,
+  // The real idle shapes: reloadAfterWrite reads `navigating` before it
+  // reloads, and a 409 reads `updated`.
+  navigating: { from: null, to: null, type: null, willUnload: null, delta: null, complete: null },
+  updated: { current: false, check: async () => false },
+}));
 
 // There is no router in jsdom, so the page's navigation hooks are collected
 // here and `navigate()` below runs them in the order SvelteKit does: before
 // callbacks, then the new URL and data, then after callbacks.
 type NavigationHook = (navigation: { type: string; to: { url: URL } | null }) => void;
 const hooks = { before: [] as NavigationHook[], after: [] as NavigationHook[] };
+
+// Every dose write that reached `enhance` and was not cancelled, waiting for
+// the test to answer it; and the reload the write runs after its answer.
+type SentWrite = {
+  fields: Record<string, FormDataEntryValue>;
+  finish: (result: ActionResult) => Promise<void>;
+};
+const writes = { sent: [] as SentWrite[], invalidateAll: vi.fn(async () => {}) };
+
 vi.mock("$app/navigation", () => ({
   beforeNavigate: (fn: NavigationHook) => hooks.before.push(fn),
   afterNavigate: (fn: NavigationHook) => hooks.after.push(fn),
+  invalidateAll: () => writes.invalidateAll(),
 }));
 
-// Each dose row's delete form imports `enhance` and the toast store; neither
-// is what these assertions are about.
-vi.mock("$app/forms", () => ({ enhance: () => ({ destroy() {} }) }));
+// SvelteKit's `enhance`, reduced to its two-phase contract: the submit
+// function runs when a form submits, and the callback it returns runs when
+// the test answers. A cancelled submit sends nothing. The GET filter form is
+// not enhanced, so only dose writes arrive here.
+vi.mock("$app/forms", () => ({
+  enhance: (form: HTMLFormElement, submit: SubmitFunction) => {
+    const onSubmit = async (e: SubmitEvent) => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const action = new URL(form.getAttribute("action") ?? "", "https://medtracker.test/log");
+      let cancelled = false;
+      const callback = await submit({
+        action,
+        formData,
+        formElement: form,
+        controller: new AbortController(),
+        submitter: e.submitter,
+        cancel: () => {
+          cancelled = true;
+        },
+      });
+      if (cancelled) return;
+      writes.sent.push({
+        fields: Object.fromEntries(formData),
+        finish: async (result) => {
+          if (typeof callback === "function") {
+            await callback({ action, formData, formElement: form, result, update: async () => {} });
+          }
+        },
+      });
+    };
+    form.addEventListener("submit", onSubmit);
+    return { destroy: () => form.removeEventListener("submit", onSubmit) };
+  },
+  applyAction: async () => {},
+  deserialize: (text: string) => JSON.parse(text),
+}));
+// The Undo registry is a no-op outside the browser, like Toast's own list.
+vi.mock("$app/environment", () => ({
+  browser: true,
+  dev: false,
+  building: false,
+  version: "test",
+}));
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast: () => {} }));
 
 const { default: LogPage } = await import("../../src/routes/(app)/log/+page.svelte");
+// Imported here, not statically at the top: a static import runs before
+// `pageState` exists, and the registry's import chain reaches `$app/state`,
+// whose factory reads it.
+const { currentUndo, resetUndoRegistry } =
+  await import("$lib/components/dose-writes/undo-registry.svelte");
+const { doseWriteContext } = await import("./helpers/dashboard-context");
 
 const preferences = {
   userId: "u1",
@@ -102,11 +166,12 @@ function loadData({
   page = 1,
   hasMore = false,
   filters = NO_FILTERS,
-}: { page?: number; hasMore?: boolean; filters?: Filters } = {}) {
+  doses = [DOSE],
+}: { page?: number; hasMore?: boolean; filters?: Filters; doses?: (typeof DOSE)[] } = {}) {
   return {
     user,
     preferences,
-    doses: [DOSE],
+    doses,
     medications: [{ id: "m1", name: "Ibuprofen", colour: "#ffffff" }],
     page,
     hasMore,
@@ -125,7 +190,8 @@ function mountAt(pathAndQuery: string, data: Data) {
   pageState.url = new URL(pathAndQuery, "https://medtracker.test");
   const reactiveProps = $state({ data });
   props = reactiveProps;
-  app = mount(LogPage, { target, props });
+  // The (app) layout's lock: every dose row's × reads it.
+  app = mount(LogPage, { target, props, context: doseWriteContext() });
   flushSync();
 }
 
@@ -168,6 +234,9 @@ function swallowNavigation(e: Event) {
 beforeEach(() => {
   hooks.before.length = 0;
   hooks.after.length = 0;
+  writes.sent.length = 0;
+  writes.invalidateAll.mockReset();
+  writes.invalidateAll.mockImplementation(async () => {});
   target = document.body.appendChild(document.createElement("div"));
   window.addEventListener("click", swallowNavigation);
 });
@@ -177,9 +246,17 @@ afterEach(() => {
   app = undefined;
   target.remove();
   window.removeEventListener("click", swallowNavigation);
+  resetUndoRegistry();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
+
+/** Let the page's awaits and the enhance mock's finish. */
+async function settle() {
+  flushSync();
+  for (let i = 0; i < 5; i++) await tick();
+  flushSync();
+}
 
 describe("the filter bar's Clear filters link keeps the user's place", () => {
   // It sits inside the GET form and so inherits data-sveltekit-keepfocus.
@@ -315,5 +392,100 @@ describe("pagination hrefs follow the page they are on", () => {
     expect(next.searchParams.get("q")).toBe("felt ok");
     expect(prev.searchParams.has("page")).toBe(false);
     expect(prev.searchParams.get("q")).toBe("felt ok");
+  });
+});
+
+describe("× on the real page: the day it names, and where focus goes (Review Focus #4)", () => {
+  // The page groups by the viewer's today, read from the clock. Only Date is
+  // faked, so the lock's cooldown and the registry's timers stay real.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-04-10T12:00:00Z"));
+  });
+
+  // DOSE is Ibuprofen 200mg on 10 Apr at 08:00 UTC: today.
+  const YESTERDAY = {
+    ...DOSE,
+    id: "d2",
+    takenAt: new Date("2026-04-09T21:30:00Z"),
+    loggedAt: new Date("2026-04-09T21:30:00Z"),
+    updatedAt: new Date("2026-04-09T21:30:00Z"),
+    medication: { ...DOSE.medication, name: "Paracetamol", dosageAmount: "500" },
+  };
+  const OLDER = {
+    ...DOSE,
+    id: "d3",
+    takenAt: new Date("2026-04-07T08:00:00Z"),
+    loggedAt: new Date("2026-04-07T08:00:00Z"),
+    updatedAt: new Date("2026-04-07T08:00:00Z"),
+  };
+
+  const editOf = (id: string) =>
+    target.querySelector<HTMLElement>(`[data-dose-id="${id}"] [data-edit]`);
+
+  /** Press ×, answer the delete, and reload to `remaining` as the server would. */
+  async function deleteOnPage(id: string, remaining: (typeof DOSE)[]) {
+    const x = target.querySelector<HTMLButtonElement>(
+      `[data-dose-id="${id}"] button[aria-label^="Delete dose of"]`,
+    );
+    expect(x, `no × for ${id}`).not.toBeNull();
+    expect(x!.type).toBe("submit");
+    writes.invalidateAll.mockImplementationOnce(async () => {
+      props.data = loadData({ doses: remaining });
+      flushSync();
+    });
+    x!.focus();
+    x!.click();
+    await settle();
+    expect(writes.sent).toHaveLength(1);
+    expect(writes.sent[0].fields).toEqual({ doseId: id });
+    await writes.sent[0].finish({
+      type: "success",
+      status: 200,
+      data: {
+        success: true,
+        doseId: id,
+        restore: { deletedAt: "2026-04-10T12:00:00.000Z", expiresInMs: 600_000 },
+      },
+    });
+    await settle();
+  }
+
+  it("hands focus from the last dose of today to yesterday's first ✎, and names no day", async () => {
+    mountAt("/log", loadData({ doses: [DOSE, YESTERDAY, OLDER] }));
+
+    await deleteOnPage("d1", [YESTERDAY, OLDER]);
+
+    expect(document.activeElement).toBe(editOf("d2"));
+    expect(currentUndo()).toMatchObject({
+      kind: "restore",
+      doseId: "d1",
+      message: "Dose removed: Ibuprofen 200mg at 8:00",
+    });
+  });
+
+  it.each<[string, string]>([
+    ["d2", "Dose removed: Paracetamol 500mg yesterday at 21:30"],
+    ["d3", "Dose removed: Ibuprofen 200mg on Tue 7 Apr at 8:00"],
+  ])("names the day of %s in its Undo offer", async (id, message) => {
+    const all = [DOSE, YESTERDAY, OLDER];
+    mountAt("/log", loadData({ doses: all }));
+
+    await deleteOnPage(
+      id,
+      all.filter((d) => d.id !== id),
+    );
+
+    expect(currentUndo()?.message).toBe(message);
+  });
+
+  it("falls back to the page's h1 when the last dose on the page goes", async () => {
+    mountAt("/log", loadData({ doses: [DOSE] }));
+
+    await deleteOnPage("d1", []);
+
+    const h1 = target.querySelector("h1");
+    expect(h1?.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(h1);
   });
 });

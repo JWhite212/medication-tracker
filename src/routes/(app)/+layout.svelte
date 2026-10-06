@@ -7,8 +7,20 @@
   import { readableForeground } from "$lib/utils/contrast";
   import { buildThemeStyle } from "$lib/appearance/theme-css";
   import { collectFocusable, trapTab } from "$lib/utils/focus-trap";
+  import {
+    createDoseWriteLock,
+    setDoseWriteLock,
+  } from "$components/dose-writes/dose-write-lock.svelte";
 
   let { data, children } = $props();
+
+  // The one dose-write lock for every page under (app) (spec D10). It lives
+  // here, not in a page, because a write or an Undo can outlive the page
+  // that started it, and the page navigated to must read the same lock, or
+  // its controls stay live while that write is in flight. Created once per
+  // layout instance, never at module scope, which during SSR is shared by
+  // every request the process serves.
+  setDoseWriteLock(createDoseWriteLock());
   let sidebarOpen = $state(false);
 
   /** Referenced by the toggle's aria-controls; the overlay is the only element carrying it. */

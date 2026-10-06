@@ -14,7 +14,7 @@
   import StatusMarker from "./StatusMarker.svelte";
   import { getDashboardClock } from "./dashboard-clock";
   import { logToastFromReload } from "./dose-toasts";
-  import { focusTargetAfterResolve } from "./focus-after";
+  import { focusTargetAfterResolve } from "$components/dose-writes/focus-after";
   import type { StatusMarkerState } from "./status-marker";
 
   let {

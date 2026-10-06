@@ -143,3 +143,58 @@ describe("createDashboardClock", () => {
     expect(invalidate).not.toHaveBeenCalled();
   });
 });
+
+describe("a clock seeded from the page payload", () => {
+  // The device reads 12:10 while the server's payload says 12:00.
+  const SEED = { now: "2026-05-01T12:00:00.000Z", nextRefreshAt: "2026-05-01T12:30:00.000Z" };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-01T12:10:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("is expired at once when the payload already was, and arms no timer", () => {
+    const invalidate = vi.fn(async () => {});
+    const clock = createDashboardClock(invalidate, {
+      now: "2026-05-01T12:00:00.000Z",
+      nextRefreshAt: "2026-05-01T12:00:00.000Z",
+    });
+    expect(clock.isExpired()).toBe(true);
+    // A timer armed here would be a setTimeout during SSR, outliving the
+    // request. Only sync(), from the page's effect, may arm one.
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(60 * MIN);
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("tells server time from the seed, and expires on the server's clock, not the device's", () => {
+    const clock = createDashboardClock(
+      vi.fn(async () => {}),
+      SEED,
+    );
+    expect(clock.serverNow().toISOString()).toBe("2026-05-01T12:00:00.000Z");
+    // Device 12:39:59.999 is server 12:29:59.999: not yet.
+    vi.advanceTimersByTime(30 * MIN - 1);
+    expect(clock.isExpired()).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(clock.isExpired()).toBe(true);
+  });
+
+  it("is never expired before it has any payload", () => {
+    expect(createDashboardClock(vi.fn(async () => {})).isExpired()).toBe(false);
+  });
+
+  it("still arms its one refresh timer when sync() adopts the payload after seeding", () => {
+    const invalidate = vi.fn(async () => {});
+    const clock = createDashboardClock(invalidate, SEED);
+    clock.sync(SEED);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(30 * MIN);
+    expect(invalidate).toHaveBeenCalledOnce();
+    clock.dispose();
+  });
+});

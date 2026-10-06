@@ -28,7 +28,7 @@ vi.mock("$app/state", () => ({ page: { data: {} } }));
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast: () => {} }));
 
 import DueCard from "$lib/components/dashboard/DueCard.svelte";
-import { createDoseWriteLock } from "$lib/components/dashboard/dose-write-lock.svelte";
+import { createDoseWriteLock } from "$lib/components/dose-writes/dose-write-lock.svelte";
 import { dashboardContext } from "./helpers/dashboard-context";
 import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
 import {

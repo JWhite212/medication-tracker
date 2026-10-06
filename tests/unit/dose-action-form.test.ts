@@ -27,15 +27,15 @@ vi.mock("$components/ui/Toast.svelte", () => ({
 import {
   createDoseWriteLock,
   DOSE_WRITE_COOLDOWN_MS,
-} from "$lib/components/dashboard/dose-write-lock.svelte";
+} from "$lib/components/dose-writes/dose-write-lock.svelte";
 import type { DashboardClock } from "$lib/components/dashboard/dashboard-clock";
 import {
-  NETWORK_FAILURE_TOAST,
+  DELETE_ACTION,
   STALE_TAP_MESSAGE,
   SUCCESS_FALLBACK_TOAST,
-  UNDO_ACTION,
   UNDONE_TOAST,
-} from "$lib/components/dashboard/dose-action";
+  UNKNOWN_OUTCOME_TOAST,
+} from "$lib/components/dose-writes/copy";
 import { fixedClock } from "./helpers/dashboard-context";
 import {
   finishSubmit,
@@ -176,6 +176,18 @@ describe("DoseActionForm submit", () => {
     expect(lock.busy).toBe(false);
   });
 
+  it("asks the clock whether the list expired, rather than comparing instants itself", async () => {
+    // The instants say an hour is left; only the clock's own answer says otherwise.
+    const refresh = vi.fn(async () => {});
+    const { form, submit } = setup({ clock: { isExpired: () => true, refresh } });
+
+    const { cancel, callback } = await startSubmit(submit, form);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(callback).toBeNull();
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(h.showToast).toHaveBeenCalledWith(STALE_TAP_MESSAGE, "error");
+  });
+
   it("shows the pending label and marks its card aria-busy until the write settles", async () => {
     const { host, form, button, submit } = setup({ insideCard: true });
     const label = button.querySelector('[data-part="label"]');
@@ -303,7 +315,7 @@ describe("DoseActionForm submit", () => {
     await vi.waitFor(() => expect(h.invalidateAll).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(UNDO_ACTION);
+    expect(url).toBe(DELETE_ACTION);
     expect(init?.method).toBe("POST");
     expect((init?.body as FormData).get("doseId")).toBe("d-new");
     expect(h.showToast).toHaveBeenLastCalledWith(UNDONE_TOAST, "success");
@@ -437,14 +449,14 @@ describe("DoseActionForm submit", () => {
     expect(lock.busy).toBe(false);
   });
 
-  it("a network failure says to check Done before retrying, not the browser's own text", async () => {
+  it("a network failure says the outcome is unknown, not the browser's own text", async () => {
     // The write may or may not have landed, and a chip retry would log a
     // second dose.
     const { form, submit } = setup();
     const { callback } = await startSubmit(submit, form);
     await finishSubmit(callback!, form, { type: "error", error: new TypeError("Failed to fetch") })
       .done;
-    expect(h.showToast).toHaveBeenCalledWith(NETWORK_FAILURE_TOAST, "error");
+    expect(h.showToast).toHaveBeenCalledWith(UNKNOWN_OUTCOME_TOAST, "error");
   });
 
   it("Undo that cannot reach the server says so in the same words", async () => {
@@ -463,7 +475,7 @@ describe("DoseActionForm submit", () => {
     undo();
 
     await vi.waitFor(() => expect(h.invalidateAll).toHaveBeenCalledOnce());
-    expect(h.showToast).toHaveBeenLastCalledWith(NETWORK_FAILURE_TOAST, "error");
+    expect(h.showToast).toHaveBeenLastCalledWith(UNKNOWN_OUTCOME_TOAST, "error");
   });
 
   it("any other failure runs update() and releases, without a reload", async () => {

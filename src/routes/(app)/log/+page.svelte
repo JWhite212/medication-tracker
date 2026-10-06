@@ -151,7 +151,12 @@
     const now = new Date();
     const todayKey = formatDateKey(now, data.timezone);
     const yesterdayKey = formatDateKey(new Date(now.getTime() - 86400000), data.timezone);
-    const groups: Array<{ dateKey: string; label: string; doses: typeof data.doses }> = [];
+    const groups: Array<{
+      dateKey: string;
+      label: string;
+      isToday: boolean;
+      doses: typeof data.doses;
+    }> = [];
     const map = new Map<string, typeof data.doses>();
     for (const dose of data.doses) {
       const key = formatDateKey(new Date(dose.takenAt), data.timezone);
@@ -166,6 +171,9 @@
     for (const [dateKey, doses] of map) {
       groups.push({
         dateKey,
+        // Today's rows pass no day to their Undo offer; every other group
+        // passes its heading ("Yesterday", "Tue 7 Apr").
+        isToday: dateKey === todayKey,
         label: formatDateLabel(
           dateKey,
           todayKey,
@@ -184,7 +192,9 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl space-y-6">
-  <h1 class="text-2xl font-bold">Dose History</h1>
+  <!-- tabindex="-1": the last resort for focus after a delete empties the
+       list, and after an Undo whose row did not come back. -->
+  <h1 class="text-2xl font-bold" tabindex="-1">Dose History</h1>
 
   <form
     method="GET"
@@ -306,6 +316,7 @@
               {dose}
               timezone={data.timezone}
               timeFormat={data.preferences.timeFormat as "12h" | "24h"}
+              dayLabel={group.isToday ? null : group.label}
               onedit={(d) => (editingDose = d)}
             />
           {/each}

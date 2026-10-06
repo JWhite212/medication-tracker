@@ -4,12 +4,12 @@
 // and under jsdom the component is compiled for the client, so `render()`
 // from `svelte/server` runs client code and throws `effect_orphan` before an
 // assertion runs. How the `svelte` specifier itself resolves there is
-// explained in tests/unit/timeline-entry-delete-confirm.test.ts.
+// explained in vite.config.ts.
 //
 // Covers the dose row's static markup: what a skipped or missed row dims, when
-// the hover-revealed controls are allowed to hide, and how big they are. The
-// two-step delete is interactive and lives in
-// tests/unit/timeline-entry-delete-confirm.test.ts.
+// the hover-revealed controls are allowed to hide, how big they are, and what
+// × is before the page is live. The one-tap delete, its Undo and focus are
+// interactive and live in tests/unit/timeline-entry-delete.test.ts.
 import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
 import { readFileSync } from "node:fs";
@@ -24,8 +24,17 @@ import type { DoseLogWithMedication } from "$lib/types";
 // on the server and neither is what these assertions are about.
 vi.mock("$app/forms", () => ({ enhance: () => ({ destroy() {} }) }));
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast: () => {} }));
+// The dose-write primitive's reload path imports these; nothing here reloads.
+vi.mock("$app/navigation", () => ({ invalidateAll: async () => {} }));
+vi.mock("$app/state", () => ({
+  page: { data: {} },
+  navigating: { from: null, to: null, type: null, willUnload: null, delta: null, complete: null },
+  updated: { current: false, check: async () => false },
+}));
 
 const { default: TimelineEntry } = await import("../../src/lib/components/TimelineEntry.svelte");
+// × is a dose write, and every dose write reads the (app) layout's lock.
+const { doseWriteContext } = await import("./helpers/dashboard-context");
 
 type Status = DoseLogWithMedication["status"];
 
@@ -59,8 +68,10 @@ function renderRow(status: Status): Document {
       dose: makeDose(status),
       timezone: "UTC",
       timeFormat: "24h" as const,
+      dayLabel: null,
       onedit: () => {},
     },
+    context: doseWriteContext(),
   });
   return new JSDOM(`<!doctype html><html><body>${body}</body></html>`).window.document;
 }
@@ -154,7 +165,7 @@ describe("the row's controls hide only on devices that can hover to reveal them"
     const doc = renderRow("taken");
     const x = doc.querySelector('button[aria-label^="Delete dose of"]');
     expect(x, "no delete button rendered").not.toBeNull();
-    return x!.parentElement!;
+    return x!.closest("form")!.parentElement!;
   };
 
   // A touch tablet is md-wide and cannot hover. Hidden at md by width alone,
@@ -227,7 +238,7 @@ describe("the row's controls are real targets (WCAG 2.5.8, and 2.5.5 on touch)",
   it("positions the controls so their overhang sits above the line below", async () => {
     const x = renderRow("taken").querySelector('button[aria-label^="Delete dose of"]');
     expect(x, "no delete button rendered").not.toBeNull();
-    const atRest = tokens(x!.parentElement!).filter((t) => !t.includes(":"));
+    const atRest = tokens(x!.closest("form")!.parentElement!).filter((t) => !t.includes(":"));
     const rules = await Promise.all(atRest.map(compiledRule));
     expect(rules.some((r) => /position: ?(relative|absolute|sticky)/.test(r ?? ""))).toBe(true);
   });
@@ -245,5 +256,43 @@ describe("a long one-word medication name wraps before it reaches the controls",
     const atRest = tokens(name!).filter((t) => !t.includes(":"));
     const rules = await Promise.all(atRest.map(compiledRule));
     expect(rules.some((r) => /overflow-wrap: ?(break-word|anywhere)/.test(r ?? ""))).toBe(true);
+  });
+});
+
+describe("× before the page is live", () => {
+  // onMount never runs during SSR, so this is exactly what a tap meets before
+  // hydration. A native POST then would delete with no Undo toast to take it
+  // back, so × must not be a submit yet.
+  it("is an inert type=button inside the delete form, and never `disabled`", () => {
+    const doc = renderRow("taken");
+    const x = doc.querySelector<HTMLButtonElement>('button[aria-label^="Delete dose of"]');
+    expect(x, "no delete button rendered").not.toBeNull();
+    expect(x!.getAttribute("type")).toBe("button");
+    expect(x!.hasAttribute("disabled")).toBe(false);
+
+    const form = x!.closest("form");
+    expect(form, "× is not inside a form").not.toBeNull();
+    expect(form!.getAttribute("action")).toBe("?/deleteDose");
+    expect(form!.getAttribute("method")?.toUpperCase()).toBe("POST");
+    const doseId = form!.querySelector<HTMLInputElement>('input[type="hidden"][name="doseId"]');
+    expect(doseId?.value).toBe("dose-taken");
+  });
+
+  it("marks the row with its dose id and its ✎ as the focus target", () => {
+    const doc = renderRow("taken");
+    const row = doc.querySelector('[role="listitem"]');
+    expect(row?.getAttribute("data-dose-id")).toBe("dose-taken");
+    const edit = row?.querySelector("[data-edit]");
+    expect(edit?.tagName).toBe("BUTTON");
+    expect(edit?.getAttribute("aria-label")).toBe("Edit dose of Vitamin D at 8:00");
+  });
+
+  it("asks nothing: no confirmation group, no 'can't be undone', no disclosure state on ×", () => {
+    const doc = renderRow("taken");
+    expect(doc.querySelector('[role="group"]')).toBeNull();
+    expect(doc.body.textContent).not.toMatch(/can't be undone/i);
+    const x = doc.querySelector('button[aria-label^="Delete dose of"]');
+    expect(x?.hasAttribute("aria-expanded")).toBe(false);
+    expect(x?.hasAttribute("aria-controls")).toBe(false);
   });
 });

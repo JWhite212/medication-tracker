@@ -1,103 +1,139 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onMount } from "svelte";
   import { enhance } from "$app/forms";
   import TimeSince from "$components/TimeSince.svelte";
+  import { createDoseWrite } from "$components/dose-writes/dose-write.svelte";
+  import { focusTargetAfterResolve } from "$components/dose-writes/focus-after";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
-  import { showToast } from "$components/ui/Toast.svelte";
+  import { formatDoseLabel } from "$lib/utils/dashboard-copy";
   import type { DoseLogWithMedication } from "$lib/types";
   import { getMedicationBackground } from "$lib/utils/medication-style";
-  import { actionErrorMessage } from "$lib/utils/form-errors";
 
   let {
     dose,
     timezone,
     timeFormat = "12h",
+    dayLabel,
     onedit,
   }: {
     dose: DoseLogWithMedication;
     timezone: string;
     timeFormat?: TimeFormat;
+    /**
+     * This row's day-group heading ("Yesterday", "Tue 23 Sep"), or null for
+     * Today. Only the Undo offer reads it, to say which day's dose went.
+     */
+    dayLabel: string | null;
     onedit?: (dose: DoseLogWithMedication) => void;
   } = $props();
 
-  let deleting = $state(false);
+  // × deletes on the first tap and the toast offers Undo, as every dose
+  // control on the dashboard does. It used to open an inline "This can't be
+  // undone" confirmation instead, which existed only because nothing could
+  // put a deleted dose back. The server's trash now can, for ten minutes.
+  //
+  // × is a submit only once this row has mounted. Before hydration, or with
+  // scripts off, a native POST would delete with no Undo toast to take it
+  // back, so until then × is an inert type="button", as it always was
+  // before JavaScript arrived.
+  let mounted = $state(false);
+  onMount(() => {
+    mounted = true;
+  });
 
-  // × used to submit ?/deleteDose on the first tap: no confirmation and no
-  // undo, on a small target in a list of near-identical rows, so a mis-tap
-  // permanently removed a dose and reversed its inventory adjustment. It now
-  // only opens an inline confirmation, and the dose goes only when that
-  // confirmation's own Delete button is pressed. An Undo toast would be the
-  // lighter touch, but recreating a deleted dose is a server change this
-  // component cannot make on its own.
-  // The cost is that × needs JavaScript, where the old submit button posted
-  // without it: before hydration, or with scripts off, it does nothing. That
-  // fails safe, and the row's edit modal needs JavaScript already. A native
-  // disclosure could keep a scriptless path, but not without rebuilding the
-  // row around it.
-  let confirming = $state(false);
   let row: HTMLDivElement | undefined = $state();
-  let deleteButton: HTMLButtonElement | undefined = $state();
-  let cancelButton: HTMLButtonElement | undefined = $state();
-  let confirmGroup: HTMLDivElement | undefined = $state();
-  const uid = $props.id();
-  const confirmId = `${uid}-delete-confirm`;
 
   // The log page renders one of these per dose — twenty on a default page — and
   // both controls were named by a bare constant, so the button list read
   // "Edit dose, Delete dose" twenty times over with no way to tell which row.
   const takenTime = $derived(formatUserTime(new Date(dose.takenAt), timezone, timeFormat));
 
-  async function openConfirm() {
-    confirming = true;
-    await tick();
-    // Cancel, not Delete: pressing Enter twice on × must not delete either.
-    cancelButton?.focus();
+  /** "Dose removed: Paracetamol 500mg at 8:00", "… yesterday at 8:00", "… on Tue 23 Sep at 8:00". */
+  function removedMessage(label: string, time: string, day: string | null): string {
+    if (day === null) return `Dose removed: ${label} at ${time}`;
+    if (day === "Yesterday") return `Dose removed: ${label} yesterday at ${time}`;
+    return `Dose removed: ${label} on ${day} at ${time}`;
   }
 
-  async function closeConfirm() {
-    // Hand focus back to × only if the confirmation held it, or dropped it on
-    // <body> when its buttons were disabled. A slow request can fail after
-    // the user has moved on, and pulling focus back then would be worse.
-    const active = document.activeElement;
-    const reclaim =
-      !active ||
-      active === document.body ||
-      active === deleteButton ||
-      !!confirmGroup?.contains(active);
-    confirming = false;
-    // After a failed delete, × is still disabled until this flush lands, and
-    // focus() on a disabled button is silently ignored.
-    await tick();
-    if (reclaim) deleteButton?.focus();
-  }
+  // Which rows were rendered below and above this one when × was pressed,
+  // nearest first, across every day group. After the reload this row is gone
+  // and the DOM can no longer say. Taken in the capture phase on the row, so
+  // it lands before enhance's own submit listener on the form reads the
+  // options below.
+  let neighbours: { following: string[]; preceding: string[] } = {
+    following: [],
+    preceding: [],
+  };
 
-  function onConfirmKeydown(e: KeyboardEvent) {
-    if (e.key !== "Escape" || !confirming || deleting) return;
-    closeConfirm();
-  }
-
-  // The row beside this one in its list, next in preference to previous: the
-  // one that will stand in this row's place once it has gone.
-  function neighbourRow(): HTMLElement | undefined {
-    return [row?.nextElementSibling, row?.previousElementSibling].find(
-      (el): el is HTMLElement => el instanceof HTMLElement && el.matches('[role="listitem"]'),
+  function snapshotNeighbours() {
+    const ids = [...document.querySelectorAll<HTMLElement>("[data-dose-id]")].map(
+      (el) => el.dataset.doseId ?? "",
     );
+    const at = ids.indexOf(dose.id);
+    neighbours =
+      at === -1
+        ? { following: [], preceding: [] }
+        : { following: ids.slice(at + 1), preceding: ids.slice(0, at).reverse() };
   }
+
+  const editButtonIn = (el: HTMLElement) => el.querySelector<HTMLElement>("[data-edit]");
+
+  const write = createDoseWrite(() => {
+    // Every value the result handlers use is read NOW, at submit. They run
+    // after the reload, which has usually unmounted this row, and must not
+    // read the props of a destroyed component.
+    const id = dose.id;
+    const message = removedMessage(
+      formatDoseLabel(
+        dose.medication.name,
+        dose.medication.dosageAmount,
+        dose.medication.dosageUnit,
+      ),
+      takenTime,
+      dayLabel,
+    );
+    const { following, preceding } = neighbours;
+    return {
+      undo: {
+        kind: "restore",
+        // A restore brings back the same id, so this finds the restored row.
+        focusTarget: () =>
+          document.querySelector<HTMLElement>(`[data-dose-id="${id}"] [data-edit]`),
+      },
+      withdrawsUndoFor: id,
+      buildToast: () => message,
+      busyContainer: () => row ?? null,
+      // The next row BELOW first (the list is newest-first, so that is the
+      // next dose back in time), crossing into the next day's group; then the
+      // nearest row above; then the page's h1. Always a ✎, never a ×: Enter
+      // on a focused × is another delete.
+      focusAfter: () =>
+        focusTargetAfterResolve(id, following, {
+          attr: "doseId",
+          precedingKeys: preceding,
+          pick: editButtonIn,
+        }) ?? document.querySelector<HTMLElement>("h1"),
+    };
+  });
 </script>
 
 <!-- Clicking the row is a redundant mouse shortcut for the ✎ button inside it,
      which is a real <button> with its own accessible name and is reachable by
      keyboard. A key handler here would be dead code: role="listitem" is not
-     focusable, so it can never receive one. -->
+     focusable, so it can never receive one.
+     data-dose-id, and data-edit on the ✎, are what focus lands on after a
+     delete or its Undo, here and in the rows around it. -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   bind:this={row}
+  data-dose-id={dose.id}
   class="group border-glass-border bg-glass hover:bg-glass-hover rounded-lg border p-4 backdrop-blur-xl transition-colors {onedit
     ? 'cursor-pointer'
     : ''}"
   role="listitem"
   onclick={() => onedit?.(dose)}
+  onsubmitcapture={snapshotNeighbours}
 >
   <!-- Below sm the time drops to its own line under the name. Inline at 320px,
        the time and the controls left the name (a flex-1 item with a zero
@@ -162,29 +198,28 @@
          The hide is gated on (hover: hover), the same query Tailwind v4 wraps
          group-hover in. Gated on width alone, a touch tablet at md width hid
          the controls, and the hover that reveals them never happens there.
-         They also stay shown while a delete is being confirmed: × is that
-         confirmation's toggle, and would otherwise vanish once focus and
-         pointer left the row.
+         They also stay shown while a delete is in flight, so its spinner does
+         not vanish when focus and pointer leave the row.
          Targets are 32px for a mouse and 44px for touch (WCAG 2.5.8, and 2.5.5
          on touch); the negative margin lets them reach into the row's padding
          instead of making every row taller. Below sm on touch they also reach
          down onto the time's line, which is in flow and painted after them, so
          a tap on the bottom of × landed on that line and opened the edit modal.
          Positioning them (relative) lifts them above it.
-         The click handler is a boundary, as on the confirmation below: a tap
-         in the gap between ✎ and × is a near miss of a control, not a tap on
-         the row. -->
+         The click handler is a boundary: a tap in the gap between ✎ and × is a
+         near miss of a control, not a tap on the row. -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       onclick={(e) => e.stopPropagation()}
-      class="relative -my-1 flex items-center gap-1 opacity-100 transition-opacity pointer-coarse:-my-2.5 {confirming
+      class="relative -my-1 flex items-center gap-1 opacity-100 transition-opacity pointer-coarse:-my-2.5 {write.pending
         ? ''
         : 'md:group-focus-within:opacity-100 md:group-hover:opacity-100 md:[@media(hover:hover)]:opacity-0'}"
     >
       {#if onedit}
         <button
           type="button"
+          data-edit
           onclick={(e) => {
             e.stopPropagation();
             onedit?.(dose);
@@ -195,112 +230,32 @@
           ✎
         </button>
       {/if}
-      <button
-        type="button"
-        bind:this={deleteButton}
-        onclick={(e) => {
-          e.stopPropagation();
-          if (confirming) closeConfirm();
-          else openConfirm();
-        }}
-        onkeydown={onConfirmKeydown}
-        class="text-text-muted hover:text-danger-ink aria-expanded:text-danger-ink inline-flex size-8 items-center justify-center text-xs disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:size-11"
-        aria-label="Delete dose of {dose.medication.name} at {takenTime}"
-        aria-expanded={confirming}
-        aria-controls={confirming ? confirmId : undefined}
-        disabled={deleting}
-      >
-        &times;
-      </button>
+      <!-- The form wraps × alone, so no other button in the row can ever
+           submit a delete. display: contents keeps × a flex item of this row
+           of controls, with their size and gap. -->
+      <form method="POST" action="?/deleteDose" class="contents" use:enhance={write.submit}>
+        <input type="hidden" name="doseId" value={dose.id} />
+        <!-- aria-disabled, never `disabled`, which drops keyboard focus to
+             <body>; a busy tap is cancelled in the submit instead. -->
+        <button
+          type={mounted ? "submit" : "button"}
+          onkeydown={write.onkeydown}
+          aria-disabled={write.busy ? "true" : undefined}
+          class="text-text-muted hover:text-danger-ink inline-flex size-8 items-center justify-center text-xs aria-disabled:cursor-not-allowed pointer-coarse:size-11"
+          aria-label="Delete dose of {dose.medication.name} at {takenTime}"
+        >
+          {#if write.pending}
+            <span
+              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+              aria-hidden="true"
+            ></span>
+          {:else}
+            &times;
+          {/if}
+        </button>
+      </form>
     </div>
   </div>
-
-  {#if confirming}
-    <!-- Its own line, inset under the name, and × does not move when it opens:
-         the second tap of a double-tap lands where the first did, which is
-         still ×, and closes this again. Nothing that deletes ever appears
-         under the pointer that opened it. The prompt keeps a line to itself
-         for the same reason; sharing one with the buttons pushed Delete out
-         beneath × at some widths.
-         The click handler is a boundary, not an interaction: without it a tap
-         on the prompt or between the buttons would reach the row and open the
-         edit modal over the question being asked. -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      bind:this={confirmGroup}
-      id={confirmId}
-      role="group"
-      aria-labelledby="{confirmId}-prompt"
-      class="mt-3 space-y-2 pl-7"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={onConfirmKeydown}
-    >
-      <p id="{confirmId}-prompt" class="text-text-secondary text-sm">
-        Delete this dose? This can't be undone.
-      </p>
-      <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          bind:this={cancelButton}
-          onclick={closeConfirm}
-          disabled={deleting}
-          class="border-border-strong text-text-primary hover:bg-surface-overlay inline-flex min-h-8 items-center rounded-lg border px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11"
-        >
-          Cancel
-        </button>
-        <form
-          method="POST"
-          action="?/deleteDose"
-          use:enhance={() => {
-            deleting = true;
-            return async ({ result, update }) => {
-              if (result.type === "success") showToast("Dose removed", "success");
-              else if (result.type === "failure" || result.type === "error")
-                showToast(actionErrorMessage(result), "error");
-              // Taken now, before the update removes this row from the list.
-              const neighbour = result.type === "success" ? neighbourRow() : undefined;
-              await update();
-              deleting = false;
-              if (result.type === "success") {
-                // The row has gone with the dose and taken the focused confirm
-                // button with it. Left there, focus falls to <body> and a
-                // keyboard user starts again from the top of the page, so hand
-                // it to the row now in this one's place. The only row in its
-                // list has no neighbour, and there focus stays where it fell.
-                await tick();
-                const active = document.activeElement;
-                if (!active || active === document.body)
-                  neighbour?.querySelector("button")?.focus();
-              } else {
-                // This attempt is over, so put focus back on × rather than
-                // leave it on a button that was disabled underneath it.
-                closeConfirm();
-              }
-            };
-          }}
-        >
-          <input type="hidden" name="doseId" value={dose.id} />
-          <!-- Not hover:opacity, the usual hover for a fill: it fades the label
-               along with the fill, below 4.5:1 in dark mode, which is the
-               defect this row has just shed. A ring changes neither. -->
-          <button
-            type="submit"
-            class="bg-danger text-danger-fg hover:ring-danger-ink inline-flex min-h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium enabled:hover:ring-2 disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11"
-            aria-label="Confirm delete dose of {dose.medication.name} at {takenTime}"
-            disabled={deleting}
-          >
-            {#if deleting}
-              <span
-                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent align-middle"
-                aria-hidden="true"
-              ></span>
-            {/if}
-            Delete
-          </button>
-        </form>
-      </div>
-    </div>
-  {/if}
 
   {#if dose.sideEffects && dose.sideEffects.length > 0}
     <div class="mt-2 flex flex-wrap gap-1.5 pl-7">

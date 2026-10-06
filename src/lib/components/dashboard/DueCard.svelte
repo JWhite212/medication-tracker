@@ -144,7 +144,7 @@
       {#if row.skipAt !== null}
         <DoseActionForm
           action="?/skipDose"
-          fields={{ medicationId: card.medicationId, takenAt: row.skipAt }}
+          fields={{ medicationId: card.medicationId, forSlot: row.expectedTime }}
           label="Skip"
           srContext={`: ${doseLabel}, ${view.time} dose`}
           pendingLabel="Skipping…"

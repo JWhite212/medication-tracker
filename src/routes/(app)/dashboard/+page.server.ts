@@ -5,7 +5,9 @@ import { loadDashboard } from "$lib/server/dashboard/load";
 import {
   logDose,
   logDoseForSlot,
+  logDoseAtSlot,
   logSkippedDose,
+  skipDoseForSlot,
   updateDose,
   MedicationNotFoundError,
   SlotAlreadyTakenError,
@@ -95,12 +97,20 @@ export const actions: Actions = {
         );
         doseId = row.id;
       } else if (at) {
-        // "Took it at HH:MM": the slot's own instant. The guard refuses an
-        // instant that already holds a taken dose, so a double tap is one row
-        // and one decrement, and a stale page is told to refresh.
-        const row = await logDose(user.id, medicationId, quantity, at, notes, sideEffects, {
-          exactInstantGuard: true,
-        });
+        // "Took it at HH:MM": the slot's own instant. `logDoseAtSlot` locks
+        // the medication, re-derives this row's buttons and writes ×1 only if
+        // the row still offers Took it at this instant. So a double tap, a
+        // second device's stale page or a skip-resolved slot is told to
+        // refresh. The posted `quantity` is not read (spec D9).
+        const row = await logDoseAtSlot(
+          user.id,
+          medicationId,
+          at,
+          notes,
+          sideEffects,
+          now,
+          user.timezone,
+        );
         doseId = row.id;
       } else {
         // A chip: logged now, exactly as before this page had slots.
@@ -170,23 +180,40 @@ export const actions: Actions = {
       return fail(400, { errors: parsed.error.flatten().fieldErrors });
     }
 
-    const { medicationId, takenAt } = parsed.data;
+    const { medicationId, takenAt, forSlot } = parsed.data;
     const now = new Date();
-    const at = takenAt ? new Date(takenAt) : undefined;
-
-    if (at) {
-      const problem = checkSlotActionTime(at, now, user.timezone);
-      if (problem) return slotTimeFailure(problem);
-    }
 
     let doseId: string;
     try {
-      // With an instant, this is the row's own Skip (its `skipAt`), so it is
-      // refused over a taken dose or an existing skip at that instant.
-      // Without one it is the legacy skip-at-now.
-      doseId = at
-        ? await logSkippedDose(user.id, medicationId, at, { exactInstantGuard: true })
-        : await logSkippedDose(user.id, medicationId);
+      if (forSlot) {
+        // The row's own Skip. `skipDoseForSlot` locks the medication,
+        // re-derives the row's buttons and writes the skip at the SERVER's
+        // `min(slot, now)`. There is no `checkSlotActionTime` here: a due-now
+        // slot is legitimately still ahead, and a row that is resolved or off
+        // the dashboard is simply not offered.
+        doseId = await skipDoseForSlot(
+          user.id,
+          medicationId,
+          new Date(forSlot),
+          now,
+          user.timezone,
+        );
+      } else if (takenAt) {
+        // legacy pre-deploy page; see spec D9; delete one release after.
+        // That page posted the row's `skipAt`, which is the slot's own
+        // instant exactly when the slot is past. So checking it as the slot
+        // accepts every past-slot Skip and refuses the rest with a 409.
+        doseId = await skipDoseForSlot(
+          user.id,
+          medicationId,
+          new Date(takenAt),
+          now,
+          user.timezone,
+        );
+      } else {
+        // The legacy skip-at-now.
+        doseId = await logSkippedDose(user.id, medicationId);
+      }
     } catch (err) {
       if (err instanceof MedicationNotFoundError) {
         return fail(404, { error: "Medication not found" });

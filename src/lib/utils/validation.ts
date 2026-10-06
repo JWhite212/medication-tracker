@@ -216,14 +216,29 @@ export const doseLogSchema = z
   });
 
 /**
- * The dashboard's Skip. `takenAt` is the row's `skipAt` — the slot's own
- * instant for a past slot, now for a due-now slot still ahead — posted
- * verbatim. Absent, the skip is recorded at now (the legacy door).
+ * The dashboard's Skip.
+ *
+ * - `forSlot`: the row's own slot instant (`expectedTime`), posted verbatim.
+ *   The server re-derives the row's Skip under the medication lock and writes
+ *   the skip at ITS `min(slot, now)` (`skipDoseForSlot`). The page no longer
+ *   chooses the instant.
+ * - `takenAt` alone: a page loaded before `forSlot` shipped, which posted the
+ *   row's render-time `skipAt`. Accepted for one release, and only where that
+ *   instant is still a slot whose row offers Skip (spec D9).
+ * - Neither: skip at now, the legacy door.
  */
-export const doseSkipSchema = z.object({
-  medicationId: z.string().min(1),
-  takenAt: z.string().datetime().optional(),
-});
+export const doseSkipSchema = z
+  .object({
+    medicationId: z.string().min(1),
+    takenAt: z.string().datetime().optional(),
+    forSlot: z.string().datetime().optional(),
+  })
+  // Mirrors doseLogSchema: two different requests, never both. The path puts
+  // the message in `fieldErrors`, which is all the dashboard action returns.
+  .refine((d) => !(d.takenAt && d.forSlot), {
+    message: "Send takenAt or forSlot, not both",
+    path: ["forSlot"],
+  });
 
 /**
  * Every dose delete and restore names its dose by id. `max(64)` bounds a

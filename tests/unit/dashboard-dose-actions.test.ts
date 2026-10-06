@@ -23,12 +23,14 @@ const state = {
 
 const deleteDose = vi.fn(async (..._args: unknown[]) => state.deleteResult);
 const updateDose = vi.fn(async () => state.updateResult);
-// The writes return what production returns — a row for the two taken
-// writes, an id string for a skip. Each has a distinct id, so the `doseId`
+// The writes return what production returns — a row for each taken write,
+// an id string for each skip. Each has a distinct id, so the `doseId`
 // in a result names the write that produced it.
 const logDose = vi.fn(async (..._args: unknown[]) => ({ id: "dose-logged" }));
 const logDoseForSlot = vi.fn(async (..._args: unknown[]) => ({ id: "dose-log-now" }));
 const logSkippedDose = vi.fn(async (..._args: unknown[]) => "dose-skipped");
+const logDoseAtSlot = vi.fn(async (..._args: unknown[]) => ({ id: "dose-at-slot" }));
+const skipDoseForSlot = vi.fn(async (..._args: unknown[]) => "dose-skipped-for-slot");
 const restoreDose = vi.fn(async (..._args: unknown[]) => "restored");
 
 // Declared here, not inline in the factory, so a test can throw the very
@@ -49,6 +51,8 @@ vi.mock("$lib/server/doses", () => ({
   logDose: (...args: unknown[]) => logDose(...args),
   logDoseForSlot: (...args: unknown[]) => logDoseForSlot(...args),
   logSkippedDose: (...args: unknown[]) => logSkippedDose(...args),
+  logDoseAtSlot: (...args: unknown[]) => logDoseAtSlot(...args),
+  skipDoseForSlot: (...args: unknown[]) => skipDoseForSlot(...args),
   restoreDose: (...args: unknown[]) => restoreDose(...args),
   deleteDose: (...args: unknown[]) => deleteDose(...args),
   updateDose: (...args: unknown[]) => updateDose(...(args as [])),
@@ -93,6 +97,8 @@ beforeEach(() => {
   logDose.mockClear();
   logDoseForSlot.mockClear();
   logSkippedDose.mockClear();
+  logDoseAtSlot.mockClear();
+  skipDoseForSlot.mockClear();
   restoreDose.mockClear();
   track.mockClear();
   // Date only: each action reads `new Date()` once per request.
@@ -241,29 +247,52 @@ describe("dashboard logDose action", () => {
     });
   });
 
-  it("writes Took it at through logDose with the exact-instant guard", async () => {
+  it("writes Took it at through logDoseAtSlot with the request's clock and zone, never the posted quantity", async () => {
+    // Took it at is always ×1 (spec D9): the simulation proved a probe of one
+    // dose, and a larger one could resolve rows it never checked.
     const res = await logDoseAction({
       medicationId: "m1",
-      quantity: "1",
+      quantity: "3",
       takenAt: "2026-04-16T14:00:00.000Z",
     });
 
-    expect(res).toEqual({ success: true, doseId: "dose-logged" });
-    expect(logDose).toHaveBeenCalledWith(
+    expect(res).toEqual({ success: true, doseId: "dose-at-slot" });
+    expect(logDoseAtSlot).toHaveBeenCalledWith(
       "u1",
       "m1",
-      1,
       new Date("2026-04-16T14:00:00.000Z"),
       undefined,
       undefined,
-      { exactInstantGuard: true },
+      NOW,
+      "UTC",
+    );
+    expect(logDose).not.toHaveBeenCalled();
+  });
+
+  it("hands Took it at the posted notes and side effects", async () => {
+    await logDoseAction({
+      medicationId: "m1",
+      quantity: "1",
+      takenAt: "2026-04-16T14:00:00.000Z",
+      notes: "with food",
+      sideEffects: JSON.stringify([{ name: "Nausea", severity: "mild" }]),
+    });
+
+    expect(logDoseAtSlot).toHaveBeenCalledWith(
+      "u1",
+      "m1",
+      new Date("2026-04-16T14:00:00.000Z"),
+      "with food",
+      [{ name: "Nausea", severity: "mild" }],
+      NOW,
+      "UTC",
     );
   });
 
   it("answers 409 with no analytics when Took it at's instant already holds a taken dose", async () => {
     // Only a stale page offers this button there. Answering success would
     // hand its toast an Undo for the other record.
-    logDose.mockRejectedValueOnce(new SlotAlreadyTakenError());
+    logDoseAtSlot.mockRejectedValueOnce(new SlotAlreadyTakenError());
 
     const res = await logDoseAction({
       medicationId: "m1",
@@ -278,6 +307,22 @@ describe("dashboard logDose action", () => {
     expect(track).not.toHaveBeenCalled();
   });
 
+  it("answers 409 with no analytics when Took it at's row no longer offers it — a second device resolved the slot", async () => {
+    logDoseAtSlot.mockRejectedValueOnce(new SlotTargetChangedError());
+
+    const res = await logDoseAction({
+      medicationId: "m1",
+      quantity: "1",
+      takenAt: "2026-04-16T14:00:00.000Z",
+    });
+
+    expect(res).toMatchObject({
+      status: 409,
+      data: { errors: { form: ["What's due has changed. Refresh to see what's due now."] } },
+    });
+    expect(track).not.toHaveBeenCalled();
+  });
+
   it("refuses a takenAt after now with a 400 on the field, writing nothing", async () => {
     const res = await logDoseAction({
       medicationId: "m1",
@@ -288,6 +333,7 @@ describe("dashboard logDose action", () => {
     expect(res).toMatchObject({ status: 400 });
     expect(toastFor(res)).toBe("That time hasn't happened yet.");
     expect(logDose).not.toHaveBeenCalled();
+    expect(logDoseAtSlot).not.toHaveBeenCalled();
   });
 
   it("refuses a takenAt the dashboard no longer shows with a 409, writing nothing", async () => {
@@ -302,6 +348,7 @@ describe("dashboard logDose action", () => {
       "This dose has moved off your dashboard. Refresh to see what's due now.",
     );
     expect(logDose).not.toHaveBeenCalled();
+    expect(logDoseAtSlot).not.toHaveBeenCalled();
   });
 
   it("rejects takenAt and forSlot together with a 400, writing nothing", async () => {
@@ -316,6 +363,7 @@ describe("dashboard logDose action", () => {
     expect(toastFor(res)).toBe("Send takenAt or forSlot, not both");
     expect(logDose).not.toHaveBeenCalled();
     expect(logDoseForSlot).not.toHaveBeenCalled();
+    expect(logDoseAtSlot).not.toHaveBeenCalled();
   });
 
   it("logs a chip dose exactly as before when neither is sent", async () => {
@@ -323,6 +371,7 @@ describe("dashboard logDose action", () => {
 
     expect(res).toEqual({ success: true, doseId: "dose-logged" });
     expect(logDose).toHaveBeenCalledWith("u1", "m1", 2, undefined, undefined, undefined);
+    expect(logDoseAtSlot).not.toHaveBeenCalled();
   });
 });
 
@@ -332,62 +381,67 @@ describe("dashboard skipDose action", () => {
 
     expect(res).toMatchObject({ status: 400 });
     expect(logSkippedDose).not.toHaveBeenCalled();
+    expect(skipDoseForSlot).not.toHaveBeenCalled();
   });
 
-  it("skips at now through the legacy door when no takenAt is sent", async () => {
+  it("skips at now through the legacy door when neither forSlot nor takenAt is sent", async () => {
     const res = await skipDoseAction({ medicationId: "m1" });
 
     expect(res).toEqual({ success: true, doseId: "dose-skipped" });
     expect(logSkippedDose).toHaveBeenCalledWith("u1", "m1");
+    expect(skipDoseForSlot).not.toHaveBeenCalled();
   });
 
-  it("skips the row's own instant with the exact-instant guard", async () => {
-    const res = await skipDoseAction({ medicationId: "m1", takenAt: "2026-04-16T14:00:00.000Z" });
+  it("routes forSlot to skipDoseForSlot with the request's clock and the user's zone", async () => {
+    const res = await skipDoseAction({ medicationId: "m1", forSlot: "2026-04-16T14:00:00.000Z" });
 
-    expect(res).toEqual({ success: true, doseId: "dose-skipped" });
-    expect(logSkippedDose).toHaveBeenCalledWith("u1", "m1", new Date("2026-04-16T14:00:00.000Z"), {
-      exactInstantGuard: true,
-    });
-  });
-
-  it("refuses a takenAt after now with a 400 on the field", async () => {
-    const res = await skipDoseAction({ medicationId: "m1", takenAt: "2026-04-16T19:05:00.001Z" });
-
-    expect(res).toMatchObject({ status: 400 });
-    expect(toastFor(res)).toBe("That time hasn't happened yet.");
-    expect(logSkippedDose).not.toHaveBeenCalled();
-  });
-
-  it("refuses a stale takenAt with a 409", async () => {
-    const res = await skipDoseAction({ medicationId: "m1", takenAt: "2026-04-15T23:59:59.999Z" });
-
-    expect(res).toMatchObject({ status: 409 });
-    expect(toastFor(res)).toBe(
-      "This dose has moved off your dashboard. Refresh to see what's due now.",
+    expect(res).toEqual({ success: true, doseId: "dose-skipped-for-slot" });
+    expect(skipDoseForSlot).toHaveBeenCalledWith(
+      "u1",
+      "m1",
+      new Date("2026-04-16T14:00:00.000Z"),
+      NOW,
+      "UTC",
     );
     expect(logSkippedDose).not.toHaveBeenCalled();
   });
 
-  it("rejects a takenAt that is not an ISO instant", async () => {
-    const res = await skipDoseAction({ medicationId: "m1", takenAt: "2026-04-16T14:00" });
+  it("sends a forSlot still ahead to the server's re-check, not to a 'future' 400", async () => {
+    // A due-now row's slot can be up to an hour ahead. The skip lands at the
+    // server's min(slot, now), so a slot in the future is expected here, and
+    // only the re-derivation may refuse it.
+    const res = await skipDoseAction({ medicationId: "m1", forSlot: "2026-04-16T19:30:00.000Z" });
 
-    expect(res).toMatchObject({ status: 400 });
+    expect(res).toEqual({ success: true, doseId: "dose-skipped-for-slot" });
+    expect(skipDoseForSlot).toHaveBeenCalledWith(
+      "u1",
+      "m1",
+      new Date("2026-04-16T19:30:00.000Z"),
+      NOW,
+      "UTC",
+    );
+  });
+
+  it("hands a pre-deploy page's takenAt-only Skip to skipDoseForSlot as the slot", async () => {
+    const res = await skipDoseAction({ medicationId: "m1", takenAt: "2026-04-16T14:00:00.000Z" });
+
+    expect(res).toEqual({ success: true, doseId: "dose-skipped-for-slot" });
+    expect(skipDoseForSlot).toHaveBeenCalledWith(
+      "u1",
+      "m1",
+      new Date("2026-04-16T14:00:00.000Z"),
+      NOW,
+      "UTC",
+    );
     expect(logSkippedDose).not.toHaveBeenCalled();
   });
 
-  it("answers 409 when the instant already holds a taken dose", async () => {
-    logSkippedDose.mockRejectedValueOnce(new SlotAlreadyTakenError());
+  it("answers a legacy takenAt the row no longer offers with a 409, not the old 400", async () => {
+    // A pre-deploy page's Skip on a slot still ahead posted its render-time
+    // instant, which names no slot. skipDoseForSlot refuses it.
+    skipDoseForSlot.mockRejectedValueOnce(new SlotTargetChangedError());
 
-    const res = await skipDoseAction({ medicationId: "m1", takenAt: "2026-04-16T14:00:00.000Z" });
-
-    expect(res).toMatchObject({ status: 409 });
-    expect(toastFor(res)).toBe("This dose is already logged as taken. Refresh to see it.");
-  });
-
-  it("answers 409 when the instant already holds a skip — the page was stale", async () => {
-    logSkippedDose.mockRejectedValueOnce(new SlotTargetChangedError());
-
-    const res = await skipDoseAction({ medicationId: "m1", takenAt: "2026-04-16T14:00:00.000Z" });
+    const res = await skipDoseAction({ medicationId: "m1", takenAt: "2026-04-16T18:50:00.000Z" });
 
     expect(res).toMatchObject({
       status: 409,
@@ -395,11 +449,47 @@ describe("dashboard skipDose action", () => {
     });
   });
 
-  it("keeps the existing 404 shape for a medication that is gone", async () => {
+  it("answers 409 when the row no longer offers Skip — the page was stale", async () => {
+    skipDoseForSlot.mockRejectedValueOnce(new SlotTargetChangedError());
+
+    const res = await skipDoseAction({ medicationId: "m1", forSlot: "2026-04-16T14:00:00.000Z" });
+
+    expect(res).toMatchObject({ status: 409 });
+    expect(toastFor(res)).toBe("What's due has changed. Refresh to see what's due now.");
+  });
+
+  it("rejects forSlot and takenAt together with a 400, writing nothing", async () => {
+    const res = await skipDoseAction({
+      medicationId: "m1",
+      takenAt: "2026-04-16T14:00:00.000Z",
+      forSlot: "2026-04-16T14:00:00.000Z",
+    });
+
+    expect(res).toMatchObject({ status: 400 });
+    expect(toastFor(res)).toBe("Send takenAt or forSlot, not both");
+    expect(skipDoseForSlot).not.toHaveBeenCalled();
+    expect(logSkippedDose).not.toHaveBeenCalled();
+  });
+
+  it("rejects a forSlot or takenAt that is not an ISO instant", async () => {
+    for (const field of ["forSlot", "takenAt"]) {
+      const res = await skipDoseAction({ medicationId: "m1", [field]: "2026-04-16T14:00" });
+      expect(res, field).toMatchObject({ status: 400 });
+    }
+    expect(skipDoseForSlot).not.toHaveBeenCalled();
+    expect(logSkippedDose).not.toHaveBeenCalled();
+  });
+
+  it("keeps the existing 404 shape for a medication that is gone, on either door", async () => {
+    skipDoseForSlot.mockRejectedValueOnce(new MedicationNotFoundError());
+    expect(
+      await skipDoseAction({ medicationId: "m1", forSlot: "2026-04-16T14:00:00.000Z" }),
+    ).toMatchObject({ status: 404, data: { error: "Medication not found" } });
+
     logSkippedDose.mockRejectedValueOnce(new MedicationNotFoundError());
-
-    const res = await skipDoseAction({ medicationId: "m1" });
-
-    expect(res).toMatchObject({ status: 404, data: { error: "Medication not found" } });
+    expect(await skipDoseAction({ medicationId: "m1" })).toMatchObject({
+      status: 404,
+      data: { error: "Medication not found" },
+    });
   });
 });

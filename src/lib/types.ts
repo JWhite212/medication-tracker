@@ -108,9 +108,12 @@ export type DashboardStatus = {
 };
 
 /**
- * One outstanding slot on a Due card. `tookItAt` / `skipAt` are the exact
- * instants those buttons post, or null when the row does not offer them —
- * decided by simulation in `slotActions`, never by the component.
+ * One outstanding slot on a Due card. `tookItAt` is the exact instant Took it
+ * at posts; `skipAt` is where a Skip would land (`min(slot, now)` at render).
+ * Either is null when the row does not offer that button — decided by
+ * simulation in `slotActions`, never by the component. Skip posts the row's
+ * `expectedTime` as `forSlot`, and the server re-derives where the skip lands
+ * (`skipDoseForSlot`).
  */
 export type DueRow = {
   key: string;

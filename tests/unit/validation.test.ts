@@ -392,6 +392,51 @@ describe("importInventoryEventSchema", () => {
   });
 });
 
+describe("doseSkipSchema forSlot (Skip re-derived on the server)", () => {
+  it("accepts a millisecond-exact forSlot on its own and keeps it verbatim", () => {
+    // The server looks the row up by this exact ISO key in slotActions' map.
+    const result = doseSkipSchema.safeParse({
+      medicationId: "m1",
+      forSlot: "2026-04-16T09:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.forSlot).toBe("2026-04-16T09:00:00.000Z");
+      expect(result.data.takenAt).toBeUndefined();
+    }
+  });
+
+  it("rejects takenAt and forSlot together, on the forSlot field the action returns", () => {
+    // The dashboard action answers with `fieldErrors` only, so a root-level
+    // refine would reach the client as `{}` and a generic toast.
+    const result = doseSkipSchema.safeParse({
+      medicationId: "m1",
+      takenAt: "2026-04-16T09:00:00.000Z",
+      forSlot: "2026-04-16T09:00:00.000Z",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.flatten().fieldErrors.forSlot).toEqual([
+        "Send takenAt or forSlot, not both",
+      ]);
+    }
+  });
+
+  it("rejects a forSlot with no UTC designator — it names no instant", () => {
+    const result = doseSkipSchema.safeParse({ medicationId: "m1", forSlot: "2026-04-16T09:00" });
+    expect(result.success).toBe(false);
+  });
+
+  it("still accepts takenAt on its own — a page loaded before forSlot shipped", () => {
+    const result = doseSkipSchema.safeParse({
+      medicationId: "m1",
+      takenAt: "2026-04-16T09:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.forSlot).toBeUndefined();
+  });
+});
+
 describe("settingsSchema", () => {
   it("accepts valid timezone", () => {
     const result = settingsSchema.safeParse({

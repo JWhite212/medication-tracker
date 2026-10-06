@@ -1,13 +1,26 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import type { ActionResult } from "@sveltejs/kit";
+  import type { SubmitFunction } from "@sveltejs/kit";
   import { enhance } from "$app/forms";
   import { actionErrorMessage } from "$lib/utils/form-errors";
+  import type { TimeFormat } from "$lib/utils/time";
+  import { beginDoseWrite } from "$components/dose-writes/begin-dose-write";
+  import { getDoseWriteLock } from "$components/dose-writes/dose-write-lock.svelte";
   import MedicationCard from "$lib/components/MedicationCard.svelte";
   import EmptyState from "$components/EmptyState.svelte";
   import emptyMedications from "$lib/assets/397d3a76-85b0-43ee-a0c2-981053e4040c.webp";
 
   let { data } = $props();
+
+  // The (app) layout's dose-write lock. A move re-sorts the keyed cards, so it
+  // takes the same lock as a card's Log: a Log tap cannot land on a card that
+  // has just slid under the finger, and a move cannot start while a log is
+  // still in flight. Reorder is not a dose write, so it keeps `update()`, but
+  // it starts through the same gate (`beginDoseWrite`) as every one: offline,
+  // or while a write is in flight, the move is refused and says why.
+  const lock = getDoseWriteLock();
+
+  const timeFormat = $derived(data.preferences.timeFormat as TimeFormat);
 
   let announcement = $state("");
 
@@ -17,33 +30,45 @@
    * makes the browser drop focus to <body> — so a keyboard user lost both the
    * result and their place, mid-task.
    */
-  function reorder(medication: { id: string; name: string }, direction: "up" | "down") {
-    return () =>
-      async ({ result, update }: { result: ActionResult; update: () => Promise<void> }) => {
-        await update();
-        // An expired session (the action's own error(401)) and a throw out of
-        // swapSortOrder both land here. Announcing a position then would state a
-        // move that did not happen — and on an error result `update()` has
-        // already swapped the page for the error boundary, so the focus grab
-        // would reach into a destroyed DOM. Report it through the live region
-        // rather than returning silently, which CLAUDE.md calls out as its own
-        // failure mode.
-        if (result.type !== "success") {
-          announcement = actionErrorMessage(result, "Could not reorder medications.");
-          return;
+  function reorder(
+    medication: { id: string; name: string },
+    direction: "up" | "down",
+  ): SubmitFunction {
+    return ({ cancel }) => {
+      // Refused: the gate has already cancelled the move and told the user.
+      if (!beginDoseWrite(cancel, lock)) return;
+      return async ({ result, update }) => {
+        try {
+          await update();
+          // An expired session (the action's own error(401)) and a throw out of
+          // swapSortOrder both land here. Announcing a position then would state a
+          // move that did not happen — and on an error result `update()` has
+          // already swapped the page for the error boundary, so the focus grab
+          // would reach into a destroyed DOM. Report it through the live region
+          // rather than returning silently, which CLAUDE.md calls out as its own
+          // failure mode.
+          if (result.type !== "success") {
+            announcement = actionErrorMessage(result, "Could not reorder medications.");
+            return;
+          }
+          const index = data.medications.findIndex((m: { id: string }) => m.id === medication.id);
+          announcement = `${medication.name} moved to position ${index + 1} of ${data.medications.length}`;
+          await tick();
+          const same = document.getElementById(`move-${medication.id}-${direction}`);
+          const opposite = document.getElementById(
+            `move-${medication.id}-${direction === "up" ? "down" : "up"}`,
+          );
+          // Prefer the button just pressed; fall back to its sibling when the move
+          // disabled it.
+          const target = same && !(same as HTMLButtonElement).disabled ? same : opposite;
+          target?.focus();
+        } finally {
+          // After the reload and the focus hand-off, so the cards are in their
+          // new places before a Log tap is allowed again.
+          lock.release();
         }
-        const index = data.medications.findIndex((m: { id: string }) => m.id === medication.id);
-        announcement = `${medication.name} moved to position ${index + 1} of ${data.medications.length}`;
-        await tick();
-        const same = document.getElementById(`move-${medication.id}-${direction}`);
-        const opposite = document.getElementById(
-          `move-${medication.id}-${direction === "up" ? "down" : "up"}`,
-        );
-        // Prefer the button just pressed; fall back to its sibling when the move
-        // disabled it.
-        const target = same && !(same as HTMLButtonElement).disabled ? same : opposite;
-        target?.focus();
       };
+    };
   }
 </script>
 
@@ -53,7 +78,9 @@
 
 <div class="space-y-6">
   <div class="flex items-center justify-between">
-    <h1 class="text-2xl font-bold">Medications</h1>
+    <!-- tabindex="-1": the last-resort focus target for an Undo whose card
+         is gone. -->
+    <h1 tabindex="-1" class="text-2xl font-bold">Medications</h1>
     <a
       href="/medications/new"
       class="bg-accent text-accent-fg rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90"
@@ -113,7 +140,7 @@
                unbreakable in the card (it was a long medication name) widened
                it past a 320px screen and pushed the Log button off the edge. -->
           <div class="min-w-0 flex-1">
-            <MedicationCard {medication} />
+            <MedicationCard {medication} timezone={data.user.timezone} {timeFormat} />
           </div>
         </div>
       {/each}

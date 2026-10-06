@@ -289,6 +289,30 @@ describe("Toast's Undo offer", () => {
   });
 });
 
+describe("Toast's plain toasts", () => {
+  it("two refused taps during one write show one 'Still saving…' toast", () => {
+    const { stack } = mountToast();
+    const count = () => (stack.textContent ?? "").split(STILL_SAVING_TOAST).length - 1;
+
+    // What createDoseWrite, or an Undo press, does for each tap refused while
+    // another dose write is in flight.
+    showToast(STILL_SAVING_TOAST, "error");
+    flushSync();
+    vi.advanceTimersByTime(4_000);
+    showToast(STILL_SAVING_TOAST, "error");
+    flushSync();
+
+    expect(count()).toBe(1);
+    // The second tap restarted its five seconds: still up 8s after the first.
+    vi.advanceTimersByTime(4_000);
+    flushSync();
+    expect(count()).toBe(1);
+    vi.advanceTimersByTime(1_000);
+    flushSync();
+    expect(count()).toBe(0);
+  });
+});
+
 describe("the (app) layout", () => {
   const user = {
     id: "u1",

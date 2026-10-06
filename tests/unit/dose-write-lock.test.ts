@@ -18,6 +18,12 @@ vi.mock("$app/forms", () => ({
   deserialize: (text: string) => JSON.parse(text),
 }));
 vi.mock("$app/navigation", () => ({ invalidateAll: () => h.invalidateAll() }));
+// DoseActionForm's reload goes through reloadAfterWrite, which reads $app/state.
+vi.mock("$app/state", () => ({
+  navigating: { to: null, willUnload: null, complete: null },
+  updated: { current: false },
+  page: { data: {} },
+}));
 vi.mock("$components/ui/Toast.svelte", () => ({
   showToast: (...args: unknown[]) => h.showToast(...args),
 }));

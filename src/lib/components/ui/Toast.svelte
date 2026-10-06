@@ -5,7 +5,6 @@
     id: string;
     message: string;
     type: "success" | "error";
-    undoAction?: () => void;
   };
 
   /**
@@ -17,17 +16,24 @@
    * evaluated during SSR on every authenticated page. Module state is
    * per-process on the server, so a showToast() reached during SSR would be
    * visible to whichever user rendered next.
+   *
+   * A plain toast carries no Undo. The one Undo offer lives in
+   * dose-writes/undo-registry.svelte.ts and is rendered above these.
    */
   let toasts = $state<ToastItem[]>([]);
 
-  export function showToast(
-    message: string,
-    type: "success" | "error" = "success",
-    undoAction?: () => void,
-  ) {
+  export function showToast(message: string, type: "success" | "error" = "success") {
     if (!browser) return;
+    // The same words already on screen: give them their five seconds again
+    // instead of stacking a copy. Taps refused during one slow write each
+    // toast "Still saving…", and the live region should say it once.
+    const same = toasts.find((t) => t.message === message && t.type === type);
+    if (same) {
+      scheduleDismiss(same.id);
+      return;
+    }
     const id = crypto.randomUUID();
-    toasts.push({ id, message, type, undoAction });
+    toasts.push({ id, message, type });
     scheduleDismiss(id);
   }
 
@@ -68,24 +74,24 @@
   }
 
   /**
-   * WCAG 2.2.1: a five-second auto-dismiss is a time limit, and the Undo here is
-   * the ONLY way back from a logged or deleted dose. Reaching it by keyboard
-   * means tabbing past the whole page — comfortably more than five seconds — so
-   * hovering or focusing the stack holds it open.
+   * WCAG 2.2.1: a five-second auto-dismiss is a time limit. Reading a toast by
+   * keyboard or screen reader can take longer than that, so hovering or
+   * focusing the stack holds every plain toast open.
    *
    * Pointer and focus are tracked separately because either one alone is reason
    * to keep holding it. A single pause/resume pair let them overwrite each
-   * other: moving the pointer away while an Undo button was focused resumed
-   * every timer, and five seconds later the focused toast — and the only route
-   * back from a logged or deleted dose — vanished from under the keyboard. The
-   * inverse held too, focus leaving while the pointer still hovered.
+   * other: moving the pointer away while a control in the stack was focused
+   * resumed every timer, and five seconds later the toast vanished from under
+   * the keyboard. The inverse held too, focus leaving while the pointer still
+   * hovered.
    *
    * Resuming restarts the full interval rather than the remainder. That is
    * deliberate: it errs towards giving the user more time, never less.
    *
-   * The registry's Undo offer is not one of these toasts and has no 5s timer:
-   * it stays until it is used, dismissed, replaced or withdrawn, capped by its
-   * own deadline (dose-writes/undo-registry.svelte.ts).
+   * The Undo offer — the only way back from a logged or deleted dose — is not
+   * one of these and has no 5s timer at all: it stays until it is used,
+   * dismissed, replaced or withdrawn, capped by its own deadline
+   * (dose-writes/undo-registry.svelte.ts).
    */
   let pointerInside = false;
   let focusInside = false;
@@ -214,19 +220,6 @@
         : 'border-danger-ink/30 bg-danger/10 text-danger-ink'}"
     >
       <span class="text-sm">{toast.message}</span>
-      {#if toast.undoAction}
-        <!-- min-h-11 px-3: Undo is the only one-tap route back from a logged
-             dose and must meet the 44px target every dose control does. -->
-        <button
-          class="min-h-11 px-3 text-sm font-medium underline"
-          onclick={() => {
-            toast.undoAction?.();
-            dismissToast(toast.id);
-          }}
-        >
-          Undo
-        </button>
-      {/if}
     </div>
   {/each}
 </div>

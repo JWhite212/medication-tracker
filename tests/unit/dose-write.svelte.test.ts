@@ -450,6 +450,30 @@ describe("createDoseWrite, on the result", () => {
     expect(document.activeElement).toBe(search);
   });
 
+  it("after a success, a control that onSuccess removes counts as lost: focusAfter takes focus once the DOM it changed has settled", async () => {
+    const heading = document.body.appendChild(document.createElement("h1"));
+    heading.tabIndex = -1;
+    // The edit dialog's Remove: focus sits inside something onSuccess closes.
+    const dialog = document.body.appendChild(document.createElement("div"));
+    const inside = dialog.appendChild(document.createElement("button"));
+    // Svelte applies the DOM change on a microtask, after onSuccess returns.
+    const onSuccess = vi.fn(() => void Promise.resolve().then(() => dialog.remove()));
+    const { form, submit } = mountProbe({
+      lock: createDoseWriteLock(),
+      props: { options: { focusAfter: () => heading, onSuccess } },
+    });
+
+    inside.focus();
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, SUCCESS).done;
+
+    expect(onSuccess).toHaveBeenCalledOnce();
+    expect(dialog.isConnected).toBe(false);
+    // Judged before onSuccess, or before its DOM change landed, `inside` was
+    // still connected, nothing moved, and removing it dropped focus to <body>.
+    expect(document.activeElement).toBe(heading);
+  });
+
   it("a 409 once a newer version is deployed reloads the document, not just the data", async () => {
     h.updated.current = true;
     const { form, submit } = mountProbe({ lock: createDoseWriteLock() });

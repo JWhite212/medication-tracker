@@ -242,7 +242,7 @@ describe("DoseActionForm submit", () => {
     expect(pending?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("on success: reloads first, then offers Undo built from the reloaded data, then focuses, then calls onSuccess", async () => {
+  it("on success: reloads first, then offers Undo built from the reloaded data, then calls onSuccess, then focuses", async () => {
     const order: string[] = [];
     const target = document.createElement("h1");
     target.tabIndex = -1;
@@ -278,7 +278,10 @@ describe("DoseActionForm submit", () => {
     reload.resolve();
     await done;
 
-    expect(order).toEqual(["reload:start", "reload:done", "toast:d-new", "focus", "onSuccess"]);
+    // onSuccess before focus: it can close a dialog over the control that held
+    // focus, and focus is judged only once that has happened (the dashboard
+    // page's Remove test: dashboard-remove-focus.svelte.test.ts).
+    expect(order).toEqual(["reload:start", "reload:done", "toast:d-new", "onSuccess", "focus"]);
     expect(currentUndo()).toMatchObject({
       message: "Metformin 500mg logged at 13:00",
       doseId: "d-new",

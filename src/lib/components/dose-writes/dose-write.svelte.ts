@@ -60,6 +60,15 @@ export interface DoseWriteOptions {
   focusAfter?: () => HTMLElement | null;
   /** Marked aria-busy while the write is in flight (a Due card). */
   busyContainer?: () => HTMLElement | null;
+  /**
+   * The caller's own follow-up to a success, e.g. closing the dialog the
+   * control sat in. It runs after the reload, the toast and the Undo offer,
+   * and BEFORE focus is judged: the primitive then waits a tick for whatever
+   * it unmounted to go, so a control that onSuccess removes counts as lost
+   * focus and `focusAfter` takes it. Judged before, a Remove button inside a
+   * still-open dialog is connected, so nothing moved and closing the dialog
+   * dropped focus to <body>.
+   */
   onSuccess?: () => void;
 }
 
@@ -134,11 +143,11 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
 
     /**
      * After any result: only if focus was lost (on <body>, on a node the reload
-     * removed, or inside the toast stack), never over where the user put it. A
-     * write can take seconds on a slow connection and nothing stops them
-     * working elsewhere meanwhile: typing in a search field, or inside a dialog
-     * opened over the page. The caller's `focusAfter` is the first choice and
-     * the control the tap came from the second.
+     * or `onSuccess` removed, or inside the toast stack), never over where the
+     * user put it. A write can take seconds on a slow connection and nothing
+     * stops them working elsewhere meanwhile: typing in a search field, or
+     * inside a dialog opened over the page. The caller's `focusAfter` is the
+     * first choice and the control the tap came from the second.
      */
     const refocusIfLost = () =>
       focusIfLost(
@@ -176,8 +185,12 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
           } else {
             showToast(message, "success");
           }
-          refocusIfLost();
+          // The caller's follow-up first, then a tick for the DOM it changes
+          // (a dialog closing over the button that held focus), and only then
+          // is focus judged: see `onSuccess`.
           options.onSuccess?.();
+          await tick();
+          refocusIfLost();
         } else if (result.type === "failure") {
           showToast(actionErrorMessage(result), "error");
           // A 409 means the button that failed is stale. A tab still running

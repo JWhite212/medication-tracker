@@ -441,7 +441,11 @@ describe("DoseActionForm submit", () => {
     expect(h.invalidateAll).toHaveBeenCalledOnce();
   });
 
-  it("any other failure toasts and releases without a reload, and never runs update()", async () => {
+  it("any other failure toasts and reloads before releasing the lock too, and never runs update()", async () => {
+    // A 404 means the page shows something that is gone: until the reload
+    // lands, a second tap would get the same refusal.
+    const reload = deferred();
+    h.invalidateAll.mockImplementation(() => reload.promise);
     const { lock, form, submit } = setup();
     const { callback } = await startSubmit(submit, form);
     const { update, done } = finishSubmit(callback!, form, {
@@ -449,10 +453,14 @@ describe("DoseActionForm submit", () => {
       status: 404,
       data: { errors: { form: ["Medication not found"] } },
     });
-    await done;
+    await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS * 3);
     expect(h.showToast).toHaveBeenCalledWith("Medication not found", "error");
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
+    expect(lock.busy).toBe(true);
     expect(update).not.toHaveBeenCalled();
-    expect(h.invalidateAll).not.toHaveBeenCalled();
+
+    reload.resolve();
+    await done;
     vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS);
     expect(lock.busy).toBe(false);
   });

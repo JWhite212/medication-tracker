@@ -213,9 +213,14 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
           refocusIfLost();
         } else if (result.type === "failure") {
           showToast(actionErrorMessage(result), "error");
-          // A 409 means the button that failed is stale. A tab still running
-          // pre-deploy code reloads itself instead of repeating a refused post.
-          if (result.status === 409 && !reloadDocumentIfUpdated()) {
+          // Every refusal reloads before the lock goes: a 404 means the page
+          // shows a dose or medication that is gone (another tab removed
+          // it), and a 409 that the button itself is stale. Without the
+          // reload the row stays on screen and the next tap gets the same
+          // refusal. A 409 in a tab still running pre-deploy code reloads
+          // the whole document instead of repeating a post the server now
+          // refuses.
+          if (!(result.status === 409 && reloadDocumentIfUpdated())) {
             await reloadAfterWrite({ cancelled: sessionEnded });
           }
           if (sessionEnded()) return;

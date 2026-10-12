@@ -474,6 +474,63 @@ describe("createDoseWrite, on the result", () => {
     expect(document.activeElement).toBe(heading);
   });
 
+  it("every failure reloads the data before letting go: a 404 means the page shows something that is gone", async () => {
+    // The /log × on a dose another tab removed: until the reload, the row
+    // is still there, and a second tap would get the same 404.
+    const reload = deferred();
+    h.invalidateAll.mockImplementationOnce(() => reload.promise);
+    const lock = createDoseWriteLock();
+    const { form, submit } = mountProbe({ lock });
+
+    const { callback } = await startSubmit(submit, form);
+    const { done } = finishSubmit(callback!, form, NOT_FOUND);
+    await flushMicrotasks();
+
+    expect(h.showToast).toHaveBeenCalledWith("Medication not found", "error");
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
+    expect(lock.active).toBe(true); // no retry until the page shows what is there
+
+    reload.resolve();
+    await done;
+    expect(lock.active).toBe(false);
+    expect(h.reloadDocumentIfUpdated).not.toHaveBeenCalled();
+  });
+
+  it("after a 404 whose reload removed the control, focus goes to focusAfter; focus somewhere real stays", async () => {
+    const heading = document.body.appendChild(document.createElement("h1"));
+    heading.tabIndex = -1;
+    const lock = createDoseWriteLock();
+    const { form, button, submit } = mountProbe({
+      lock,
+      props: { options: { focusAfter: () => heading } },
+    });
+
+    // The reload took the row, and the control with it.
+    h.invalidateAll.mockImplementationOnce(async () => button.blur());
+    button.focus();
+    let { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, NOT_FOUND).done;
+    expect(document.activeElement).toBe(heading);
+
+    const search = document.body.appendChild(document.createElement("input"));
+    await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS);
+    ({ callback } = await startSubmit(submit, form));
+    search.focus();
+    await finishSubmit(callback!, form, NOT_FOUND).done;
+    expect(document.activeElement).toBe(search);
+  });
+
+  it("a 404 never reloads the document, even once a newer version is deployed: only a 409 says the code is stale", async () => {
+    h.updated.current = true;
+    const { form, submit } = mountProbe({ lock: createDoseWriteLock() });
+
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, NOT_FOUND).done;
+
+    expect(h.reloadDocumentIfUpdated).not.toHaveBeenCalled();
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
+  });
+
   it("a 409 once a newer version is deployed reloads the document, not just the data", async () => {
     h.updated.current = true;
     const { form, submit } = mountProbe({ lock: createDoseWriteLock() });
@@ -698,6 +755,23 @@ describe("createDoseWrite after the (app) layout has gone (a sign-out)", () => {
 
     expect(h.invalidateAll).not.toHaveBeenCalled();
     expect(h.showToast).not.toHaveBeenCalled();
+    expect(lock.active).toBe(false);
+  });
+
+  it("a sign-out while a failure's reload runs: focus is not moved", async () => {
+    const h1 = heading();
+    const lock = createDoseWriteLock();
+    const { form, button, submit } = mountProbe({
+      lock,
+      props: { options: { focusAfter: () => h1 } },
+    });
+    button.focus();
+    const { callback } = await startSubmit(submit, form);
+    h.invalidateAll.mockImplementationOnce(async () => signOut());
+
+    await finishSubmit(callback!, form, NOT_FOUND).done;
+
+    expect(document.activeElement).toBe(document.body);
     expect(lock.active).toBe(false);
   });
 

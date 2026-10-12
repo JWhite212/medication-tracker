@@ -3,7 +3,7 @@
   import { enhance } from "$app/forms";
   import TimeSince from "$components/TimeSince.svelte";
   import { createDoseWrite } from "$components/dose-writes/dose-write.svelte";
-  import { focusTargetAfterResolve } from "$components/dose-writes/focus-after";
+  import { focusTargetAfterResolve, pageHeading } from "$components/dose-writes/focus-after";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { formatDoseLabel, toastForDoseRemoved } from "$lib/utils/dashboard-copy";
   import type { DoseLogWithMedication } from "$lib/types";
@@ -101,14 +101,14 @@
       busyContainer: () => row ?? null,
       // The next row BELOW first (the list is newest-first, so that is the
       // next dose back in time), crossing into the next day's group; then the
-      // nearest row above; then the page's h1. Always a ✎, never a ×: Enter
-      // on a focused × is another delete.
+      // nearest row above; then the page's h1, focused without scrolling.
+      // Always a ✎, never a ×: Enter on a focused × is another delete.
       focusAfter: () =>
         focusTargetAfterResolve(id, following, {
           attr: "doseId",
           precedingKeys: preceding,
           pick: editButtonIn,
-        }) ?? document.querySelector<HTMLElement>("h1"),
+        }) ?? pageHeading(),
     };
   });
 </script>

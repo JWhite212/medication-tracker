@@ -1,7 +1,8 @@
 /**
  * Where focus goes after a dose write resolves a row, and the rule for when
  * to move it at all. Shared by every dose-write surface: the dashboard's Due
- * cards, /log's rows and the Undo offer.
+ * cards, /log's rows and the Undo offer, and by Modal when the control that
+ * opened it has gone.
  */
 
 export interface FocusTargetOptions {
@@ -29,7 +30,7 @@ const ROW_SELECTOR = { cardKey: "[data-card-key]", doseId: "[data-dose-id]" } as
  * The same row if it survived the reload, else the first row that was
  * rendered BELOW it and still exists, else (with `precedingKeys`) the nearest
  * surviving row that was ABOVE it, else null. On null the caller uses its
- * own fallback, the page's h1.
+ * own fallback, the page's h1 (`pageHeading`).
  *
  * `followingKeys` and `precedingKeys` must be captured at the moment of the
  * tap: after the reload the resolved row is gone and the DOM can no longer
@@ -68,13 +69,39 @@ export function isFocusLost(): boolean {
   return active.closest("[data-toast-stack]") !== null;
 }
 
-/** If focus is lost, focus the first candidate that returns an element still in the document. */
+/**
+ * The page's h1: where focus PARKS when nothing nearer to what the user was
+ * doing survives. Every page that can lose focus to a dose write or a dialog
+ * gives it tabindex="-1" (the dashboard, /log, /medications). This is the one
+ * spelling of the lookup (tests/unit/page-heading-owner.test.ts): a caller
+ * names `pageHeading`, never its own `querySelector("h1")`.
+ */
+export function pageHeading(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("h1");
+}
+
+/**
+ * If focus is lost, focus the first candidate that returns an element still
+ * in the document.
+ *
+ * The page heading is focused WITHOUT scrolling, and every other element with
+ * a plain focus(). The heading is a parking spot, not a place the user was:
+ * Chrome focuses a button on a mouse click, so a mouse user who clicked
+ * Dismiss with nothing to return to, or whose kept Undo expired ten minutes
+ * later, had a long /log jump to its top. Anything else — the caller's
+ * focusAfter, the control the tap came from, where focus was before the toast
+ * stack, a dialog's opener — is a return to where the user was, and scrolling
+ * it into view is the point. Decided by WHICH element it is, not by which
+ * candidate named it, so a caller whose own fallback ends at the heading
+ * (/log's row, the dashboard's Due cards) parks it the same way.
+ */
 export function focusIfLost(...candidates: Array<() => HTMLElement | null | undefined>): void {
   if (!isFocusLost()) return;
   for (const candidate of candidates) {
     const el = candidate();
     if (el?.isConnected) {
-      el.focus();
+      if (el === pageHeading()) el.focus({ preventScroll: true });
+      else el.focus();
       return;
     }
   }

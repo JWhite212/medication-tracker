@@ -14,7 +14,7 @@ import {
   UNDONE_TOAST,
 } from "./copy";
 import type { DoseWriteLock } from "./dose-write-lock.svelte";
-import { focusIfLost } from "./focus-after";
+import { focusIfLost, pageHeading } from "./focus-after";
 import { reloadAfterWrite } from "./reload-after-write";
 
 /**
@@ -132,32 +132,26 @@ function patch(id: string, changes: Partial<Pick<UndoOffer, "running" | "note">>
 /**
  * Before an offer goes while a keyboard user is on its Undo or Dismiss: hand
  * focus back to the page, to where it was before it entered the stack, else
- * the page's h1. Removing the focused button would drop focus to <body>, and
- * no focusout fires for that. Only when focus is IN the stack: a deadline
- * must never move focus the user put somewhere else, or that a screen reader
- * is browsing from.
+ * the page's h1, focused without scrolling (a mouse click focuses the button
+ * in Chrome, and the deadline can pass ten minutes into a long /log). Removing
+ * the focused button would drop focus to <body>, and no focusout fires for
+ * that. Only when focus is IN the stack: a deadline must never move focus the
+ * user put somewhere else, or that a screen reader is browsing from.
  */
 function handFocusOutOfStack(): void {
   if (!document.activeElement?.closest("[data-toast-stack]")) return;
-  focusIfLost(
-    () => focusBeforeStack,
-    () => document.querySelector<HTMLElement>("h1"),
-  );
+  focusIfLost(() => focusBeforeStack, pageHeading);
 }
 
 /**
  * Where focus goes when a pressed offer settles, or is dropped after a
  * press, and only if it was lost: the offer's target (the restored row's
  * control, once the reload has rendered it), else where focus was before it
- * entered the stack, else the page's h1. Called while the offer is still
- * mounted, so focus never falls to <body> in between.
+ * entered the stack, else the page's h1, focused without scrolling. Called
+ * while the offer is still mounted, so focus never falls to <body> in between.
  */
 function settleFocus(target: UndoOffer): void {
-  focusIfLost(
-    target.focusTarget,
-    () => focusBeforeStack,
-    () => document.querySelector<HTMLElement>("h1"),
-  );
+  focusIfLost(target.focusTarget, () => focusBeforeStack, pageHeading);
 }
 
 function arm(target: UndoOffer): void {

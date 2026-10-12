@@ -171,6 +171,7 @@ afterEach(() => {
   clearToasts();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 /** TimelineEntry's `day`: null for Today, else the heading and whether it is yesterday by key. */
@@ -517,6 +518,25 @@ describe("focus after a delete, and after its Undo (Review Focus #4)", () => {
     await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS);
     await deleteAndReload(log, "a");
     expect(document.activeElement).toBe(log.heading);
+  });
+
+  it("the h1 is parked without scrolling, even after a tap that focused nothing (Safari focuses no button it taps)", async () => {
+    const log = renderLog([{ day: null, doses: [A] }]);
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    h.invalidateAll.mockImplementationOnce(async () => log.drop("a"));
+
+    // A tap, not a keyboard press: × is activated without ever taking focus.
+    deleteButton("a").click();
+    await settle();
+    expect(h.sent).toHaveLength(1);
+    await h.sent[0].finish(deleted("a"));
+    await settle();
+
+    // The row's own fallback names the h1 whether or not anything was focused
+    // at the tap; parking it must not throw a long list back to its top.
+    expect(document.activeElement).toBe(log.heading);
+    const onHeading = focus.mock.calls.filter((_, i) => focus.mock.contexts[i] === log.heading);
+    expect(onHeading).toEqual([[{ preventScroll: true }]]);
   });
 });
 

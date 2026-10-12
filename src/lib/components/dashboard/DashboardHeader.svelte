@@ -29,7 +29,7 @@
      anyway, and this is not a live region — only the Toast is. -->
 <div class="space-y-1">
   <p class="text-text-secondary text-sm">{eyebrow}</p>
-  <!-- Stable "Today", and tabindex="-1": the last-resort focus target after a row resolves. -->
+  <!-- Stable "Today", and tabindex="-1": the last-resort focus target after a row resolves (`pageHeading`). -->
   <h1 id={DASHBOARD_HEADING_ID} tabindex="-1" class="text-2xl font-bold">Today</h1>
   <p class="text-lg font-semibold">{copy.sentence}</p>
   {#if copy.supporting}

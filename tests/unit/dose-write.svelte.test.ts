@@ -124,6 +124,15 @@ function setOnline(online: boolean) {
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
 }
 
+/**
+ * Every focus() call a `vi.spyOn(HTMLElement.prototype, "focus")` saw on
+ * `el`, by its arguments. jsdom ignores preventScroll, so only the argument
+ * can say whether a move scrolls.
+ */
+function focusCallsOn(spy: { mock: { calls: unknown[][]; contexts: unknown[] } }, el: Element) {
+  return spy.mock.calls.filter((_, i) => spy.mock.contexts[i] === el);
+}
+
 const cleanups: Array<() => void> = [];
 
 function mountProbe(opts: {
@@ -166,6 +175,7 @@ beforeEach(() => {
 afterEach(() => {
   while (cleanups.length) cleanups.pop()!();
   resetUndoRegistry();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, "onLine");
   document.body.innerHTML = "";
@@ -518,6 +528,80 @@ describe("createDoseWrite, on the result", () => {
     search.focus();
     await finishSubmit(callback!, form, NOT_FOUND).done;
     expect(document.activeElement).toBe(search);
+  });
+
+  /**
+   * The /medications card's Log and a Quick Log chip pass no focusAfter. A
+   * 404 for a medication deleted elsewhere reloads, the reload removes the
+   * card or chip the user was on, and with no candidate left focus stayed on
+   * <body>. The page's h1 is the last resort, focused without scrolling: it is
+   * where focus parks, not a place the user was.
+   */
+  it("after a 404 whose reload removed the tapped control, with no focusAfter, focus parks on the page's h1 without scrolling", async () => {
+    const heading = document.body.appendChild(document.createElement("h1"));
+    heading.tabIndex = -1;
+    const lock = createDoseWriteLock();
+    const { form, button, submit } = mountProbe({ lock });
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+
+    // The reload took the card, and the Log with it.
+    h.invalidateAll.mockImplementationOnce(async () => button.remove());
+    button.focus();
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, NOT_FOUND).done;
+
+    expect(document.activeElement).toBe(heading);
+    expect(focusCallsOn(focus, heading)).toEqual([[{ preventScroll: true }]]);
+  });
+
+  it("focusAfter and the surviving tapped control are focused with a plain focus(), which scrolls them into view", async () => {
+    const done = document.body.appendChild(document.createElement("h2"));
+    done.tabIndex = -1;
+    const heading = document.body.appendChild(document.createElement("h1"));
+    heading.tabIndex = -1;
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+
+    // A caller's focusAfter: a return to where the user was, not a parking spot.
+    const withTarget = mountProbe({
+      lock: createDoseWriteLock(),
+      props: { options: { focusAfter: () => done } },
+    });
+    h.invalidateAll.mockImplementationOnce(async () => withTarget.button.remove());
+    withTarget.button.focus();
+    let { callback } = await startSubmit(withTarget.submit, withTarget.form);
+    await finishSubmit(callback!, withTarget.form, NOT_FOUND).done;
+    expect(document.activeElement).toBe(done);
+    expect(focusCallsOn(focus, done)).toEqual([[]]);
+
+    // No focusAfter, and the control survived: it gets focus back.
+    const bare = mountProbe({ lock: createDoseWriteLock() });
+    bare.button.focus();
+    focus.mockClear();
+    h.invalidateAll.mockImplementationOnce(async () => bare.button.blur());
+    ({ callback } = await startSubmit(bare.submit, bare.form));
+    await finishSubmit(callback!, bare.form, NOT_FOUND).done;
+    expect(document.activeElement).toBe(bare.button);
+    expect(focusCallsOn(focus, bare.button)).toEqual([[]]);
+    expect(focusCallsOn(focus, heading)).toEqual([]);
+  });
+
+  it("with focus on <body> at the tap (Safari focuses no button it taps), no focusAfter: nothing was there for the reload to take, so focus is left where it was", async () => {
+    const heading = document.body.appendChild(document.createElement("h1"));
+    heading.tabIndex = -1;
+    const { form, button, submit } = mountProbe({ lock: createDoseWriteLock() });
+    expect(document.activeElement).toBe(document.body);
+
+    h.invalidateAll.mockImplementationOnce(async () => button.remove());
+    let { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, NOT_FOUND).done;
+    expect(document.activeElement).toBe(document.body);
+
+    // A success whose control survives: on iOS every chip log is this case, and
+    // moving a screen reader's cursor to the heading after each one is the bug.
+    const chip = mountProbe({ lock: createDoseWriteLock() });
+    ({ callback } = await startSubmit(chip.submit, chip.form));
+    await finishSubmit(callback!, chip.form, SUCCESS).done;
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("a 404 never reloads the document, even once a newer version is deployed: only a 409 says the code is stale", async () => {

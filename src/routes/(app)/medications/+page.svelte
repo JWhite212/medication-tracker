@@ -78,8 +78,9 @@
 
 <div class="space-y-6">
   <div class="flex items-center justify-between">
-    <!-- tabindex="-1": the last-resort focus target for an Undo whose card
-         is gone. -->
+    <!-- tabindex="-1": the last-resort focus target (`pageHeading`, parked
+         without scrolling) when the card focus was on is gone: after an Undo,
+         or a Log refused for a medication deleted elsewhere. -->
     <h1 tabindex="-1" class="text-2xl font-bold">Medications</h1>
     <a
       href="/medications/new"

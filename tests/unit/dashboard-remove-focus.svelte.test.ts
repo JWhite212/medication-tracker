@@ -1,16 +1,23 @@
-// Where focus lands after the dashboard edit dialog's "Remove this dose": the
-// dose is gone, the reload dropped its Done row, and the dialog has closed
-// over the button that held focus. Mounted as the whole page (jsdom, client
-// svelte) because only there do the dialog, its Remove and the Done list's
-// heading meet; it is a `.svelte.test.ts` so the page's `data` can be a
-// `$state` that the reload really replaces, which is the part a hand-driven
-// `invalidateAll` stub cannot show. dashboard-remove-undo.test.ts leaves the
-// row rendered and covers the offer itself.
+// Where focus lands on the dashboard when a dose write's reload removes the
+// control focus came from. Mounted as the whole page (jsdom, client svelte)
+// because only there do the dialog, its Remove, the Done list's heading, the
+// chips and the page's h1 meet; it is a `.svelte.test.ts` so the page's `data`
+// can be a `$state` that the reload really replaces, which is the part a
+// hand-driven `invalidateAll` stub cannot show. dashboard-remove-undo.test.ts
+// leaves the row rendered and covers the offer itself.
 //
-// This is the case the primitive's lost-focus rule used to miss: it judged
-// focus while the Remove button was still in the open dialog (connected, so
-// not lost) and only then let onSuccess close the dialog, which dropped focus
-// to <body> with nothing left to move it.
+// After the edit dialog's "Remove this dose": the dose is gone, the reload
+// dropped its Done row, and the dialog has closed over the button that held
+// focus. This is the case the primitive's lost-focus rule used to miss: it
+// judged focus while the Remove button was still in the open dialog
+// (connected, so not lost) and only then let onSuccess close the dialog,
+// which dropped focus to <body> with nothing left to move it.
+//
+// After a REFUSED Remove (another device had already removed the dose) the
+// dialog stays open, but its reload drops the Done row whose Edit opened it,
+// so closing the dialog had no opener to return to. And after a Quick Log
+// chip's 404 for a medication deleted elsewhere, the reload drops the chip
+// itself. Both used to leave focus on <body>.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { flushSync, mount, tick, unmount } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
@@ -45,6 +52,7 @@ import Page from "../../src/routes/(app)/dashboard/+page.svelte";
 import { createDoseWriteLock } from "$lib/components/dose-writes/dose-write-lock.svelte";
 import { resetUndoRegistry } from "$lib/components/dose-writes/undo-registry.svelte";
 import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
+import { findQuickLogForm } from "$lib/utils/quick-log";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
 import { doseWriteContext } from "./helpers/dashboard-context";
 import { finishSubmit, startSubmit } from "./helpers/dose-action-form-harness";
@@ -84,6 +92,14 @@ const metformin: Medication = {
   ...BASE_MEDICATION_ROW,
   id: "m1",
   name: "Metformin",
+  lowInventoryEpisodeAt: null,
+};
+
+/** A second medication, so the page still renders (not onboarding) once a reload drops it. */
+const lisinopril: Medication = {
+  ...BASE_MEDICATION_ROW,
+  id: "m2",
+  name: "Lisinopril",
   lowInventoryEpisodeAt: null,
 };
 
@@ -193,7 +209,14 @@ afterEach(() => {
   app = undefined;
   target.remove();
   resetUndoRegistry();
+  vi.restoreAllMocks();
 });
+
+const spyOnFocus = () => vi.spyOn(HTMLElement.prototype, "focus");
+/** Every focus() call on `el`, by its arguments. jsdom ignores preventScroll, so only the argument says. */
+function focusCallsOn(spy: ReturnType<typeof spyOnFocus>, el: Element): unknown[][] {
+  return spy.mock.calls.filter((_, i) => spy.mock.contexts[i] === el);
+}
 
 /** Let the Modal's own focus move (it runs a tick after it opens) land before the user acts. */
 async function settle() {
@@ -253,5 +276,70 @@ describe("after the edit dialog's Remove this dose", () => {
     expect(h.showToast).toHaveBeenCalledWith("Dose not found", "error");
     expect(target.querySelector('[role="dialog"]'), "the dialog stays open").not.toBeNull();
     expect(document.activeElement).toBe(remove);
+  });
+
+  it("a Remove refused because the dose is already gone: its reload drops the row the dialog was opened from, and Escape lands on the Done heading, not <body>", async () => {
+    const { remove, form, submit } = await focusRemoveInDialog();
+    // Another device removed d1 first: this Remove gets a 404, and the reload
+    // every refusal runs drops the Done row whose Edit opened the dialog.
+    h.invalidateAll.mockImplementationOnce(async () => {
+      props.data = { ...WITHOUT_D1, user, preferences };
+    });
+
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, NOT_FOUND).done;
+    flushSync();
+
+    expect(
+      target.querySelector('[role="dialog"]'),
+      "a refusal leaves the dialog open",
+    ).not.toBeNull();
+    expect(target.querySelector('[data-dose-id="d1"]'), "the reload drops the row").toBeNull();
+    expect(document.activeElement, "focus stays on Remove while the dialog is open").toBe(remove);
+
+    const focus = spyOnFocus();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await settle();
+
+    expect(target.querySelector('[role="dialog"]'), "Escape closes the dialog").toBeNull();
+    const heading = document.getElementById("done-heading")!;
+    expect(document.activeElement).toBe(heading);
+    expect(document.activeElement).not.toBe(document.body);
+    // The Done heading is a return to the list the user was working in, not a
+    // parking spot: a plain focus(), which scrolls it into view.
+    expect(focusCallsOn(focus, heading)).toEqual([[]]);
+  });
+});
+
+describe("after a Quick Log chip's 404 removes the chip", () => {
+  it("focus parks on the page's h1, without scrolling, instead of falling to <body>", async () => {
+    props.data = { ...WITH_D1, medications: [metformin, lisinopril], user, preferences };
+    flushSync();
+    const form = findQuickLogForm(target, "m2");
+    const chip = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    const submit = form ? h.submits.get(form) : undefined;
+    if (!form || !chip || !submit) throw new Error("no Lisinopril chip on a use:enhance form");
+    chip.focus();
+    // Lisinopril was deleted in another tab: the log is refused, and the
+    // reload every refusal runs drops its chip.
+    h.invalidateAll.mockImplementationOnce(async () => {
+      props.data = { ...WITH_D1, medications: [metformin], user, preferences };
+    });
+    const focus = spyOnFocus();
+
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, {
+      type: "failure",
+      status: 404,
+      data: { errors: { form: ["Medication not found"] } },
+    }).done;
+    flushSync();
+
+    expect(h.showToast).toHaveBeenCalledWith("Medication not found", "error");
+    expect(findQuickLogForm(target, "m2"), "the reload drops the chip").toBeNull();
+    const heading = target.querySelector("h1")!;
+    expect(heading.textContent).toBe("Today");
+    expect(document.activeElement).toBe(heading);
+    expect(focusCallsOn(focus, heading)).toEqual([[{ preventScroll: true }]]);
   });
 });

@@ -2,9 +2,10 @@ import { tick } from "svelte";
 import type { ActionResult } from "@sveltejs/kit";
 import { browser } from "$app/environment";
 import { deserialize } from "$app/forms";
-import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
+import { DOSE_UNDO_WINDOW_MS, RESTORE_GONE_MESSAGE } from "$lib/utils/dose-undo";
 import { actionErrorMessage } from "$lib/utils/form-errors";
 import {
+  CREATE_UNDO_GONE_MESSAGE,
   DELETE_ACTION,
   RESTORE_ACTION,
   RESTORED_TOAST,
@@ -128,6 +129,37 @@ function patch(id: string, changes: Partial<Pick<UndoOffer, "running" | "note">>
   offer = { ...current, ...changes };
 }
 
+/**
+ * Before an offer goes while a keyboard user is on its Undo or Dismiss: hand
+ * focus back to the page, to where it was before it entered the stack, else
+ * the page's h1. Removing the focused button would drop focus to <body>, and
+ * no focusout fires for that. Only when focus is IN the stack: a deadline
+ * must never move focus the user put somewhere else, or that a screen reader
+ * is browsing from.
+ */
+function handFocusOutOfStack(): void {
+  if (!document.activeElement?.closest("[data-toast-stack]")) return;
+  focusIfLost(
+    () => focusBeforeStack,
+    () => document.querySelector<HTMLElement>("h1"),
+  );
+}
+
+/**
+ * Where focus goes when a pressed offer settles, or is dropped after a
+ * press, and only if it was lost: the offer's target (the restored row's
+ * control, once the reload has rendered it), else where focus was before it
+ * entered the stack, else the page's h1. Called while the offer is still
+ * mounted, so focus never falls to <body> in between.
+ */
+function settleFocus(target: UndoOffer): void {
+  focusIfLost(
+    target.focusTarget,
+    () => focusBeforeStack,
+    () => document.querySelector<HTMLElement>("h1"),
+  );
+}
+
 function arm(target: UndoOffer): void {
   stopTimer();
   timer = setTimeout(
@@ -135,7 +167,9 @@ function arm(target: UndoOffer): void {
       timer = undefined;
       // A running Undo owns its offer until it settles; `keep` drops one
       // whose deadline passed in flight.
-      if (offer?.id === target.id && !offer.running) offer = null;
+      if (offer?.id !== target.id || offer.running) return;
+      handFocusOutOfStack();
+      offer = null;
     },
     Math.max(0, target.deadline - Date.now()),
   );
@@ -187,9 +221,11 @@ export function withdrawUndoFor(doseId: string): void {
   drop(offer.id);
 }
 
-/** The offer's Dismiss button. */
+/** The offer's Dismiss button. Never a running offer, like clearUndo. */
 export function dismissUndo(): void {
-  clearUndo();
+  if (!browser || !offer || offer.running) return;
+  handFocusOutOfStack();
+  drop(offer.id);
 }
 
 /** Toast calls this when focus enters its stack from outside. */
@@ -235,10 +271,12 @@ async function post(target: UndoOffer): Promise<ActionResult> {
 /**
  * Keep the offer for another press, unless its deadline passed while the
  * request was in flight: the deadline timer skips a running offer, so this is
- * where such an offer goes, and its note becomes a plain toast instead.
+ * where such an offer goes, and its note becomes a plain toast instead. Its
+ * focus goes as a settled offer's does, before the button it was on.
  */
 function keep(target: UndoOffer, note: string): UndoOutcome {
   if (Date.now() < target.deadline) return { kind: "kept", note };
+  settleFocus(target);
   drop(target.id);
   return { kind: "settled", message: note, type: "error" };
 }
@@ -262,6 +300,19 @@ export async function runUndo(lock: DoseWriteLock): Promise<UndoOutcome> {
   const target = offer;
   if (!browser || !target || target.running) return { kind: "refused" };
   if (lock.active) return { kind: "refused" };
+  // Past its deadline, though still on screen: the deadline timer is
+  // deferred while a tab is frozen or in the background. Posting now would
+  // delete a dose the user has had for more than the window (a create), or
+  // be refused as too late (a restore), so say that without asking.
+  if (Date.now() >= target.deadline) {
+    settleFocus(target);
+    drop(target.id);
+    return {
+      kind: "settled",
+      message: target.kind === "delete" ? CREATE_UNDO_GONE_MESSAGE : RESTORE_GONE_MESSAGE,
+      type: "error",
+    };
+  }
   if (navigator.onLine === false) {
     patch(target.id, { note: UNDO_OFFLINE_MESSAGE });
     return { kind: "kept", note: UNDO_OFFLINE_MESSAGE };
@@ -305,11 +356,7 @@ export async function runUndo(lock: DoseWriteLock): Promise<UndoOutcome> {
       return keep(target, note);
     }
 
-    focusIfLost(
-      target.focusTarget,
-      () => focusBeforeStack,
-      () => document.querySelector<HTMLElement>("h1"),
-    );
+    settleFocus(target);
     drop(target.id);
     if (result.type === "success") {
       return {

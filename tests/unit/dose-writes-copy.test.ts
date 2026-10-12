@@ -21,6 +21,7 @@ describe("dose-writes copy", () => {
       UNKNOWN_OUTCOME_TOAST:
         "Couldn't confirm that saved — this page will update when the connection is back.",
       STILL_SAVING_TOAST: "Still saving your last change…",
+      CREATE_UNDO_GONE_MESSAGE: "Too late to undo. The dose is still in your log.",
       UNDO_OFFLINE_MESSAGE: "You're offline — Undo will still be here when you're back.",
       UNDO_NETWORK_MESSAGE: "Couldn't reach the server. The undo may not have gone through.",
     });

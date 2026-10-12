@@ -96,9 +96,14 @@
   let pointerInside = false;
   let focusInside = false;
 
+  /** The pointer or focus is in the stack, so no plain toast may time out. */
+  function held(): boolean {
+    return pointerInside || focusInside;
+  }
+
   /** Hold or restart dismissal to match the current pointer and focus state. */
   function updateDismissal() {
-    if (pointerInside || focusInside) {
+    if (held()) {
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
       return;
@@ -116,6 +121,16 @@
   function setFocusInside(inside: boolean) {
     focusInside = inside;
     updateDismissal();
+  }
+
+  /**
+   * Focus was in the stack and is not any more, with no focusout to say so:
+   * the focused Undo or Dismiss was removed with its offer, and the browser
+   * moved focus to <body> silently. Release the hold, or every plain toast
+   * would stay up for good.
+   */
+  function releaseFocusIfGone(stack: HTMLElement) {
+    if (focusInside && !stack.contains(document.activeElement)) setFocusInside(false);
   }
 </script>
 
@@ -149,6 +164,14 @@
     else if (outcome.kind === "refused" && lock.active) showToast(STILL_SAVING_TOAST, "error");
   }
 
+  let stack: HTMLDivElement | undefined = $state();
+  // Whenever the offer changes, once its markup has: if focus was on a
+  // button that went with it, the hold it set is released.
+  $effect(() => {
+    offer;
+    if (stack) releaseFocusIfGone(stack);
+  });
+
   /** Remember where focus came from, so an Undo can hand it back there. */
   function onStackFocusIn(e: FocusEvent & { currentTarget: EventTarget & HTMLDivElement }) {
     const from = e.relatedTarget;
@@ -166,6 +189,7 @@
      data-toast-stack: focus inside it counts as lost (focus-after.ts), so an
      Undo moves it back to the page before its button goes. -->
 <div
+  bind:this={stack}
   class="fixed right-4 bottom-4 z-50 flex flex-col gap-2"
   role="status"
   aria-live="polite"

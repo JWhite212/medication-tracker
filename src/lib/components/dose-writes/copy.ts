@@ -40,6 +40,14 @@ export const UNKNOWN_OUTCOME_TOAST =
 /** A tap refused because another dose write is still in flight (not merely cooling down). */
 export const STILL_SAVING_TOAST = "Still saving your last change…";
 
+/**
+ * A create's Undo pressed after its offer's deadline (a backgrounded tab's
+ * timers ran late). Nothing is sent, so the dose is still logged. A restore
+ * past its deadline says the server's RESTORE_GONE_MESSAGE instead; its "Log
+ * it again" would be wrong here, and could cost a second dose.
+ */
+export const CREATE_UNDO_GONE_MESSAGE = "Too late to undo. The dose is still in your log.";
+
 /** Shown on the Undo offer when Undo is pressed offline. Nothing was sent, and the offer stays. */
 export const UNDO_OFFLINE_MESSAGE = "You're offline — Undo will still be here when you're back.";
 

@@ -186,6 +186,7 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
           if (sessionEnded()) return;
           // Built from the RELOADED data, so it can say what the dose covered.
           const message =
+            // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a value handed to buildToast, never reactive state
             options.buildToast?.(doseId, new Date(respondedAt)) ?? SUCCESS_FALLBACK_TOAST;
           // Whatever offer is left belongs to an earlier write: this one replaces or ends it.
           clearUndo();

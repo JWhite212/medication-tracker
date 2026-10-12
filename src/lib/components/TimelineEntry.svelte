@@ -5,7 +5,7 @@
   import { createDoseWrite } from "$components/dose-writes/dose-write.svelte";
   import { focusTargetAfterResolve } from "$components/dose-writes/focus-after";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
-  import { formatDoseLabel } from "$lib/utils/dashboard-copy";
+  import { formatDoseLabel, toastForDoseRemoved } from "$lib/utils/dashboard-copy";
   import type { DoseLogWithMedication } from "$lib/types";
   import { getMedicationBackground } from "$lib/utils/medication-style";
 
@@ -13,17 +13,20 @@
     dose,
     timezone,
     timeFormat = "12h",
-    dayLabel,
+    day,
     onedit,
   }: {
     dose: DoseLogWithMedication;
     timezone: string;
     timeFormat?: TimeFormat;
     /**
-     * This row's day-group heading ("Yesterday", "Tue 23 Sep"), or null for
-     * Today. Only the Undo offer reads it, to say which day's dose went.
+     * This row's day group, or null for Today. Only the Undo offer reads it,
+     * to say which day's dose went. `isYesterday` is the page's answer from
+     * day KEYS; `label` is the group's heading ("Tue 23 Sep"), used only for
+     * an older day. Yesterday is never recognised by its heading's wording,
+     * so rewording the heading cannot change the toast.
      */
-    dayLabel: string | null;
+    day: { label: string; isYesterday: boolean } | null;
     onedit?: (dose: DoseLogWithMedication) => void;
   } = $props();
 
@@ -47,13 +50,6 @@
   // both controls were named by a bare constant, so the button list read
   // "Edit dose, Delete dose" twenty times over with no way to tell which row.
   const takenTime = $derived(formatUserTime(new Date(dose.takenAt), timezone, timeFormat));
-
-  /** "Dose removed: Paracetamol 500mg at 8:00", "… yesterday at 8:00", "… on Tue 23 Sep at 8:00". */
-  function removedMessage(label: string, time: string, day: string | null): string {
-    if (day === null) return `Dose removed: ${label} at ${time}`;
-    if (day === "Yesterday") return `Dose removed: ${label} yesterday at ${time}`;
-    return `Dose removed: ${label} on ${day} at ${time}`;
-  }
 
   // Which rows were rendered below and above this one when × was pressed,
   // nearest first, across every day group. After the reload this row is gone
@@ -83,14 +79,14 @@
     // after the reload, which has usually unmounted this row, and must not
     // read the props of a destroyed component.
     const id = dose.id;
-    const message = removedMessage(
+    const message = toastForDoseRemoved(
       formatDoseLabel(
         dose.medication.name,
         dose.medication.dosageAmount,
         dose.medication.dosageUnit,
       ),
       takenTime,
-      dayLabel,
+      day === null ? "today" : day.isYesterday ? "yesterday" : { on: day.label },
     );
     const { following, preceding } = neighbours;
     return {

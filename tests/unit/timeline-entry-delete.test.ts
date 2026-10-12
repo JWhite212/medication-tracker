@@ -173,14 +173,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-type Group = { dayLabel: string | null; doses: DoseLogWithMedication[] };
+/** TimelineEntry's `day`: null for Today, else the heading and whether it is yesterday by key. */
+type Day = { label: string; isYesterday: boolean } | null;
+type Group = { day: Day; doses: DoseLogWithMedication[] };
 type MountedRow = {
   component: ReturnType<typeof mount>;
   list: HTMLElement;
   index: number;
   dose: DoseLogWithMedication;
-  dayLabel: string | null;
+  day: Day;
 };
+
+const YESTERDAY: Day = { label: "Yesterday", isYesterday: true };
 
 /**
  * The /log page's structure by hand: an h1 that takes focus, one role="list"
@@ -198,27 +202,22 @@ function renderLog(groups: Group[], lock: DoseWriteLock = createDoseWriteLock())
   const live = new Map<string, MountedRow>();
   const gone = new Map<string, MountedRow>();
 
-  function mountRow(
-    list: HTMLElement,
-    index: number,
-    dose: DoseLogWithMedication,
-    dayLabel: string | null,
-  ) {
+  function mountRow(list: HTMLElement, index: number, dose: DoseLogWithMedication, day: Day) {
     const component = mount(TimelineEntry, {
       target: list,
       anchor: list.children[index] ?? undefined,
-      props: { dose, timezone: "UTC", timeFormat: "24h", dayLabel, onedit },
+      props: { dose, timezone: "UTC", timeFormat: "24h", day, onedit },
       context,
     });
-    live.set(dose.id, { component, list, index, dose, dayLabel });
+    live.set(dose.id, { component, list, index, dose, day });
   }
 
   for (const group of groups) {
     const list = document.createElement("div");
     list.setAttribute("role", "list");
-    list.setAttribute("aria-label", group.dayLabel ?? "Today");
+    list.setAttribute("aria-label", group.day?.label ?? "Today");
     document.body.append(list);
-    group.doses.forEach((dose, index) => mountRow(list, index, dose, group.dayLabel));
+    group.doses.forEach((dose, index) => mountRow(list, index, dose, group.day));
   }
   const toast = mount(Toast, { target: document.body, context });
   flushSync();
@@ -243,7 +242,7 @@ function renderLog(groups: Group[], lock: DoseWriteLock = createDoseWriteLock())
       const row = gone.get(id);
       if (!row) throw new Error(`no dropped row ${id} to restore`);
       gone.delete(id);
-      mountRow(row.list, row.index, row.dose, row.dayLabel);
+      mountRow(row.list, row.index, row.dose, row.day);
       flushSync();
     },
   };
@@ -299,7 +298,7 @@ async function deleteAndReload(log: Log, id: string) {
 
 describe("× deletes on the first tap", () => {
   it("is a submit once mounted, and one tap sends ?/deleteDose with this dose's id, asking nothing first", async () => {
-    renderLog([{ dayLabel: null, doses: [A] }]);
+    renderLog([{ day: null, doses: [A] }]);
     const x = deleteButton("a");
     expect(x.type).toBe("submit");
     // e2e selects × by the substring "Delete dose"; the name must not change.
@@ -316,7 +315,7 @@ describe("× deletes on the first tap", () => {
   });
 
   it("does not open the edit dialog from ×, or from the gap beside it; the row itself still does", async () => {
-    renderLog([{ dayLabel: null, doses: [A] }]);
+    renderLog([{ day: null, doses: [A] }]);
     await pressDelete("a");
     // The wrapper around ✎ and ×'s form: a click on it is one in the gap.
     deleteButton("a").closest("form")!.parentElement!.click();
@@ -328,7 +327,7 @@ describe("× deletes on the first tap", () => {
   });
 
   it("swallows a held Enter on ×, so holding the key cannot run on into the next row", () => {
-    renderLog([{ dayLabel: null, doses: [A] }]);
+    renderLog([{ day: null, doses: [A] }]);
     const x = deleteButton("a");
     const first = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
     const held = new KeyboardEvent("keydown", {
@@ -344,7 +343,7 @@ describe("× deletes on the first tap", () => {
   });
 
   it("shows it is busy with aria-disabled, a spinner and aria-busy on the row, never `disabled`", async () => {
-    renderLog([{ dayLabel: null, doses: [A] }]);
+    renderLog([{ day: null, doses: [A] }]);
     const x = deleteButton("a");
     await pressDelete("a");
 
@@ -367,7 +366,7 @@ describe("× deletes on the first tap", () => {
 
 describe("the (app) layout's one lock", () => {
   it("refuses another row's × while a delete is in flight, and says so", async () => {
-    renderLog([{ dayLabel: null, doses: [A, B] }]);
+    renderLog([{ day: null, doses: [A, B] }]);
     await pressDelete("a");
     await pressDelete("b");
 
@@ -377,7 +376,7 @@ describe("the (app) layout's one lock", () => {
   });
 
   it("refuses another row's × inside the cooldown after a delete, and takes it once the cooldown ends", async () => {
-    const log = renderLog([{ dayLabel: null, doses: [A, B] }]);
+    const log = renderLog([{ day: null, doses: [A, B] }]);
     await deleteAndReload(log, "a");
     // Past a zero-length cooldown, well inside the real one.
     await vi.advanceTimersByTimeAsync(1);
@@ -399,14 +398,25 @@ describe("the (app) layout's one lock", () => {
 });
 
 describe("the Undo offer", () => {
-  it.each<[string | null, string]>([
-    [null, "Dose removed: Vitamin D 1000IU at 8:00"],
-    ["Yesterday", "Dose removed: Vitamin D 1000IU yesterday at 8:00"],
-    ["Wed 15 Apr", "Dose removed: Vitamin D 1000IU on Wed 15 Apr at 8:00"],
+  it.each<[string, Day, string]>([
+    ["Today", null, "Dose removed: Vitamin D 1000IU at 8:00"],
+    ["Yesterday", YESTERDAY, "Dose removed: Vitamin D 1000IU yesterday at 8:00"],
+    [
+      "an older day",
+      { label: "Wed 15 Apr", isYesterday: false },
+      "Dose removed: Vitamin D 1000IU on Wed 15 Apr at 8:00",
+    ],
+    // Yesterday is the page's answer from day keys, not the heading's
+    // wording: a reworded heading still says "yesterday", not "on <heading>".
+    [
+      "a reworded Yesterday heading",
+      { label: "Yesterday, Wed 15 Apr", isYesterday: true },
+      "Dose removed: Vitamin D 1000IU yesterday at 8:00",
+    ],
   ])(
     "offers a restore carrying the server's handle, placing a row under %s by its day",
-    async (dayLabel, message) => {
-      const log = renderLog([{ dayLabel, doses: [A] }]);
+    async (_name, day, message) => {
+      const log = renderLog([{ day, doses: [A] }]);
       await deleteAndReload(log, "a");
 
       expect(currentUndo()).toMatchObject({
@@ -420,7 +430,7 @@ describe("the Undo offer", () => {
   );
 
   it("withdraws an offer for this dose as soon as × sends", async () => {
-    renderLog([{ dayLabel: null, doses: [A] }]);
+    renderLog([{ day: null, doses: [A] }]);
     offerUndo({
       message: "Vitamin D 1000IU logged at 8:00",
       doseId: "a",
@@ -435,7 +445,7 @@ describe("the Undo offer", () => {
   });
 
   it("leaves an offer for a different dose alone", async () => {
-    renderLog([{ dayLabel: null, doses: [A] }]);
+    renderLog([{ day: null, doses: [A] }]);
     offerUndo({
       message: "Omega-3 1000mg logged at 21:30",
       doseId: "c",
@@ -452,8 +462,8 @@ describe("the Undo offer", () => {
 describe("focus after a delete, and after its Undo (Review Focus #4)", () => {
   it("moves from the last dose of a day to the next day's first ✎, and Undo brings it to the restored row's ✎", async () => {
     const log = renderLog([
-      { dayLabel: null, doses: [A] },
-      { dayLabel: "Yesterday", doses: [C, D] },
+      { day: null, doses: [A] },
+      { day: YESTERDAY, doses: [C, D] },
     ]);
 
     await deleteAndReload(log, "a");
@@ -490,8 +500,8 @@ describe("focus after a delete, and after its Undo (Review Focus #4)", () => {
 
   it("goes below first, crossing day groups, then above, then to the h1, never to a ×", async () => {
     const log = renderLog([
-      { dayLabel: null, doses: [A, B] },
-      { dayLabel: "Yesterday", doses: [C] },
+      { day: null, doses: [A, B] },
+      { day: YESTERDAY, doses: [C] },
     ]);
 
     // B is the last of today: the next row down is yesterday's C.
@@ -537,7 +547,7 @@ describe("focus the user moved while a delete was in flight", () => {
     ["the search field", field],
     ["a button inside an open edit dialog", dialogButton],
   ])("leaves focus on %s once the delete succeeds", async (_where, makeTarget) => {
-    const log = renderLog([{ dayLabel: null, doses: [A, B] }]);
+    const log = renderLog([{ day: null, doses: [A, B] }]);
     h.invalidateAll.mockImplementationOnce(async () => log.drop("a"));
     await pressDelete("a");
     expect(h.sent).toHaveLength(1);
@@ -558,11 +568,29 @@ describe("focus the user moved while a delete was in flight", () => {
   });
 
   it("still moves focus to the next row's ✎ when the delete itself took it (× removed with the row)", async () => {
-    const log = renderLog([{ dayLabel: null, doses: [A, B] }]);
+    const log = renderLog([{ day: null, doses: [A, B] }]);
     field(); // somewhere real exists, but focus never went there
 
     await deleteAndReload(log, "a");
 
+    expect(document.activeElement).toBe(editButton("b"));
+  });
+});
+
+describe("a refused delete", () => {
+  it("a 404 (another tab already removed it) reloads the list, and focus lost with the row goes to the next ✎", async () => {
+    const log = renderLog([{ day: null, doses: [A, B] }]);
+    // The reload shows what the server has: the dose is already gone.
+    h.invalidateAll.mockImplementationOnce(async () => log.drop("a"));
+    await pressDelete("a");
+
+    await h.sent[0].finish({ type: "failure", status: 404, data: { error: "Dose not found" } });
+    await settle();
+
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
+    expect(rowOf("a")).toBeNull();
+    expect(stackText()).toContain("Dose not found");
+    expect(currentUndo()).toBeNull();
     expect(document.activeElement).toBe(editButton("b"));
   });
 });

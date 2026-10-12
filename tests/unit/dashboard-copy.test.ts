@@ -4,6 +4,7 @@ import {
   formatDoseLabel,
   formatSlotTime,
   rowStatusLine,
+  toastForDoseRemoved,
   toastForLog,
   toastForSkip,
   toastForTookItAt,
@@ -353,5 +354,17 @@ describe("toast builders", () => {
     expect(
       toastForSkip({ ...clock, label: "Metformin 500mg", slot: at("2026-04-15T22:00:00.000Z") }),
     ).toBe("Metformin 500mg: yesterday 22:00 dose skipped");
+  });
+});
+
+describe("toastForDoseRemoved", () => {
+  // One sentence for a delete's Undo offer, on /log and in the dashboard's
+  // edit dialog. The caller decides the day; nothing here reads a heading.
+  it.each<[Parameters<typeof toastForDoseRemoved>[2], string]>([
+    ["today", "Dose removed: Metformin 500mg at 22:00"],
+    ["yesterday", "Dose removed: Metformin 500mg yesterday at 22:00"],
+    [{ on: "Tue 14 Apr" }, "Dose removed: Metformin 500mg on Tue 14 Apr at 22:00"],
+  ])("names the day %j", (day, message) => {
+    expect(toastForDoseRemoved("Metformin 500mg", "22:00", day)).toBe(message);
   });
 });

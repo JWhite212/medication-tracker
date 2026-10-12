@@ -14,7 +14,7 @@
   import DoseActionForm from "$components/dashboard/DoseActionForm.svelte";
   import { createDashboardClock, setDashboardClock } from "$components/dashboard/dashboard-clock";
   import { DASHBOARD_HEADING_ID, DONE_HEADING_ID } from "$components/dashboard/dom-ids";
-  import { formatDoseLabel } from "$lib/utils/dashboard-copy";
+  import { formatDoseLabel, toastForDoseRemoved } from "$lib/utils/dashboard-copy";
   import { formatUserTime, type DateFormat, type TimeFormat } from "$lib/utils/time";
   import type { DoseLogWithMedication } from "$lib/types";
 
@@ -85,15 +85,20 @@
   const doneHeading = () => document.getElementById(DONE_HEADING_ID);
 
   /**
-   * The edit dialog's Remove toast: "Dose removed: Metformin 500mg at 08:00".
-   * Resolved to a string when the dialog renders, because it is read after
-   * the reload and onSuccess clears editingDose straight after.
+   * The edit dialog's Remove toast: "Dose removed: Metformin 500mg at 08:00",
+   * or "… yesterday at 22:00" for a dose Done carried over from before
+   * today's midnight — the same test the server applies to the row's Edit
+   * label (`takenAt < todayStart`). Resolved to a string when the dialog
+   * renders, because it is read after the reload and onSuccess clears
+   * editingDose straight after.
    */
   function removedToast(dose: DoseLogWithMedication): () => string {
     const med = dose.medication;
     const label = formatDoseLabel(med.name, med.dosageAmount, med.dosageUnit);
-    const at = formatUserTime(new Date(dose.takenAt), data.timezone, timeFormat);
-    const message = `Dose removed: ${label} at ${at}`;
+    const takenAt = new Date(dose.takenAt);
+    const at = formatUserTime(takenAt, data.timezone, timeFormat);
+    const day = takenAt.getTime() < todayStart.getTime() ? "yesterday" : "today";
+    const message = toastForDoseRemoved(label, at, day);
     return () => message;
   }
 </script>

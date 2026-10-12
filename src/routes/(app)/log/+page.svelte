@@ -7,7 +7,7 @@
   import { afterNavigate, beforeNavigate } from "$app/navigation";
   import { page } from "$app/state";
   import type { DoseLogWithMedication } from "$lib/types";
-  import { formatUserDate, isoDayKey, type DateFormat } from "$lib/utils/time";
+  import { formatUserDate, isoDayKey, shiftDayKey, type DateFormat } from "$lib/utils/time";
   import { hrefForPage } from "$lib/utils/search-params";
   import emptyDoseHistory from "$lib/assets/1b27c358-1903-4e2a-bf26-8f1085f94ee6.webp";
 
@@ -148,13 +148,17 @@
   }
 
   const groupedDoses = $derived.by(() => {
-    const now = new Date();
-    const todayKey = formatDateKey(now, data.timezone);
-    const yesterdayKey = formatDateKey(new Date(now.getTime() - 86400000), data.timezone);
+    const todayKey = formatDateKey(new Date(), data.timezone);
+    // The previous day KEY, never `now − 24h`: a civil day is 23 or 25
+    // hours on a DST transition day, and in London that instant is the day
+    // before yesterday for the first hour after the spring-forward day, and
+    // today itself in the last hour of the fall-back day.
+    const yesterdayKey = shiftDayKey(todayKey, -1);
     const groups: Array<{
       dateKey: string;
       label: string;
       isToday: boolean;
+      isYesterday: boolean;
       doses: typeof data.doses;
     }> = [];
     const map = new Map<string, typeof data.doses>();
@@ -172,8 +176,9 @@
       groups.push({
         dateKey,
         // Today's rows pass no day to their Undo offer; every other group
-        // passes its heading ("Yesterday", "Tue 7 Apr").
+        // passes its heading and whether it is yesterday, by key.
         isToday: dateKey === todayKey,
+        isYesterday: dateKey === yesterdayKey,
         label: formatDateLabel(
           dateKey,
           todayKey,
@@ -316,7 +321,7 @@
               {dose}
               timezone={data.timezone}
               timeFormat={data.preferences.timeFormat as "12h" | "24h"}
-              dayLabel={group.isToday ? null : group.label}
+              day={group.isToday ? null : { label: group.label, isYesterday: group.isYesterday }}
               onedit={(d) => (editingDose = d)}
             />
           {/each}

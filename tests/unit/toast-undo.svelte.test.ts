@@ -256,6 +256,60 @@ describe("Toast's Undo offer", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("a keyboard Dismiss puts focus back where it was before the stack, never on <body>", () => {
+    const { stack } = mountToast();
+    const search = document.body.appendChild(document.createElement("input"));
+    show();
+    search.focus();
+    // Tab into the stack: focusin from outside remembers where focus came from.
+    dismissButton(stack).focus();
+
+    dismissButton(stack).click();
+    flushSync();
+
+    expect(stack.querySelector("[data-undo-offer]")).toBeNull();
+    expect(document.activeElement).toBe(search);
+  });
+
+  it("plain toasts start dismissing again once the offer focus was on has gone, even with nowhere to hand focus", () => {
+    // No h1 and nothing focused before the stack: focus falls to <body> with
+    // the removed button, and no focusout fires for that.
+    const { stack } = mountToast();
+    showToast("Metformin 500mg logged at 13:00", "success");
+    show();
+    flushSync();
+    undoButton(stack).focus(); // holds every plain toast open
+    vi.advanceTimersByTime(10_000);
+    flushSync();
+    expect(stack.textContent).toContain("logged at 13:00");
+
+    dismissButton(stack).focus();
+    dismissButton(stack).click();
+    flushSync();
+    expect(document.activeElement).toBe(document.body);
+
+    vi.advanceTimersByTime(5_000);
+    flushSync();
+    expect(stack.textContent).not.toContain("logged at 13:00");
+  });
+
+  it("plain toasts start dismissing again once the offer focus was on reaches its deadline", () => {
+    const { stack } = mountToast();
+    showToast("Metformin 500mg logged at 13:00", "success");
+    show({ ...REMOVAL, expiresInMs: 60_000 }); // deadline 30s away
+    flushSync();
+    undoButton(stack).focus();
+
+    vi.advanceTimersByTime(30_000);
+    flushSync();
+    expect(stack.querySelector("[data-undo-offer]")).toBeNull();
+    expect(stack.textContent).toContain("logged at 13:00");
+
+    vi.advanceTimersByTime(5_000);
+    flushSync();
+    expect(stack.textContent).not.toContain("logged at 13:00");
+  });
+
   it("outlives the five seconds a plain toast gets", () => {
     const { stack } = mountToast();
     showToast("Metformin 500mg logged at 13:00", "success");

@@ -23,8 +23,9 @@ vi.mock("$lib/components/dose-writes/reload-after-write", () => ({
   reloadDocumentIfUpdated: () => false,
 }));
 
-import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
+import { DOSE_UNDO_WINDOW_MS, RESTORE_GONE_MESSAGE } from "$lib/utils/dose-undo";
 import {
+  CREATE_UNDO_GONE_MESSAGE,
   DELETE_ACTION,
   RESTORE_ACTION,
   RESTORED_TOAST,
@@ -68,8 +69,8 @@ const REMOVAL: UndoOfferInput = {
   focusTarget: () => null,
 };
 
-/** RESTORE_GONE_MESSAGE in src/lib/server/dose-actions.ts (server-only, so not imported). */
-const GONE = "Too late to undo. Log it again if you need it.";
+/** The server's 410 for a restore past its window; the client reads the same constant. */
+const GONE = RESTORE_GONE_MESSAGE;
 
 const RESTORED = { type: "success", status: 200, data: { success: true, doseId: "d1" } };
 const DELETED = { type: "success", status: 200, data: { success: true, doseId: "d-new" } };
@@ -472,6 +473,175 @@ describe("runUndo — where focus goes", () => {
     offerUndo({ ...REMOVAL, focusTarget: () => edit });
     await runUndo(createDoseWriteLock());
     expect(document.activeElement).toBe(search);
+  });
+});
+
+/**
+ * The offer's buttons live in the toast stack. When the offer goes while a
+ * keyboard user is on one of them, the browser drops focus to <body> and
+ * fires no focusout, so the registry hands focus back to the page first:
+ * to where it was before it entered the stack, else the page's h1. Only
+ * when focus is in the stack: a timer must never move focus the user put
+ * somewhere else, or that a screen reader is browsing from.
+ */
+describe("an offer that goes while focus is on it", () => {
+  /** A stand-in toast stack holding the offer's button, focused, as Toast renders it. */
+  function focusInStack(): HTMLButtonElement {
+    const stack = document.body.appendChild(document.createElement("div"));
+    stack.setAttribute("data-toast-stack", "");
+    const button = stack.appendChild(document.createElement("button"));
+    button.focus();
+    return button;
+  }
+
+  function pageHeading(): HTMLElement {
+    const heading = document.body.appendChild(document.createElement("h1"));
+    heading.tabIndex = -1;
+    return heading;
+  }
+
+  it("a keyboard Dismiss hands focus back to where it was before the stack", () => {
+    const search = document.body.appendChild(document.createElement("input"));
+    rememberFocusBeforeStack(search);
+    offerUndo(REMOVAL);
+    focusInStack();
+
+    dismissUndo();
+
+    expect(currentUndo()).toBeNull();
+    expect(document.activeElement).toBe(search);
+  });
+
+  it("a keyboard Dismiss with nowhere remembered hands focus to the page's h1", () => {
+    const heading = pageHeading();
+    offerUndo(REMOVAL);
+    focusInStack();
+
+    dismissUndo();
+
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it("the deadline passing while focus is on the offer hands focus to the page's h1", () => {
+    const heading = pageHeading();
+    offerUndo(CREATE);
+    focusInStack();
+
+    vi.advanceTimersByTime(DOSE_UNDO_WINDOW_MS);
+
+    expect(currentUndo()).toBeNull();
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it("the deadline passing never moves focus the user has somewhere else", () => {
+    pageHeading();
+    const search = document.body.appendChild(document.createElement("input"));
+    search.focus();
+    offerUndo(CREATE);
+
+    vi.advanceTimersByTime(DOSE_UNDO_WINDOW_MS);
+
+    expect(currentUndo()).toBeNull();
+    expect(document.activeElement).toBe(search);
+  });
+
+  it("the deadline passing with focus on <body> (a screen reader browsing) leaves it there", () => {
+    pageHeading();
+    offerUndo(CREATE);
+
+    vi.advanceTimersByTime(DOSE_UNDO_WINDOW_MS);
+
+    expect(currentUndo()).toBeNull();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("an Undo lost on the network whose deadline passed in flight hands focus to the page, not <body>", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Load failed");
+      }),
+    );
+    const reload = deferred();
+    h.reloadAfterWrite.mockImplementation(() => reload.promise);
+    const heading = pageHeading();
+    offerUndo({ ...REMOVAL, expiresInMs: 31_000 }); // its deadline is 1s away
+    focusInStack();
+
+    const run = runUndo(createDoseWriteLock());
+    await flushMicrotasks();
+    vi.advanceTimersByTime(2_000);
+    reload.resolve();
+
+    await expect(run).resolves.toMatchObject({ kind: "settled", type: "error" });
+    expect(currentUndo()).toBeNull();
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it("an Undo answered with a 5xx whose deadline passed in flight hands focus to the page, not <body>", async () => {
+    const response = deferred<Response>();
+    stubFetch(response.promise);
+    const heading = pageHeading();
+    offerUndo({ ...REMOVAL, expiresInMs: 31_000 }); // its deadline is 1s away
+    focusInStack();
+
+    const run = runUndo(createDoseWriteLock());
+    await flushMicrotasks();
+    vi.advanceTimersByTime(2_000);
+    response.resolve(
+      respondWith({ type: "error", error: { message: "Something went wrong on our end." } }, 503),
+    );
+
+    await expect(run).resolves.toMatchObject({ kind: "settled", type: "error" });
+    expect(currentUndo()).toBeNull();
+    expect(document.activeElement).toBe(heading);
+  });
+});
+
+describe("runUndo pressed after its deadline", () => {
+  // Timers are deferred in a frozen or backgrounded tab, so the deadline
+  // timer can be late and the offer still on screen past the window.
+  it("posts nothing, drops the offer, says it is too late, and hands focus to the page", async () => {
+    const fetchMock = stubFetch(respondWith(RESTORED));
+    const search = document.body.appendChild(document.createElement("input"));
+    rememberFocusBeforeStack(search);
+    offerUndo(REMOVAL);
+    const stack = document.body.appendChild(document.createElement("div"));
+    stack.setAttribute("data-toast-stack", "");
+    stack.appendChild(document.createElement("button")).focus();
+    // The clock moves past the deadline; the timer that would clear it never ran.
+    vi.setSystemTime(currentUndo()!.deadline);
+    const lock = createDoseWriteLock();
+
+    const outcome = await runUndo(lock);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ kind: "settled", message: RESTORE_GONE_MESSAGE, type: "error" });
+    expect(currentUndo()).toBeNull();
+    expect(lock.busy).toBe(false);
+    expect(document.activeElement).toBe(search);
+  });
+
+  it("a create's Undo past its deadline deletes nothing and says the dose is still logged", async () => {
+    const fetchMock = stubFetch(respondWith(DELETED));
+    offerUndo(CREATE);
+    vi.setSystemTime(currentUndo()!.deadline + 60_000);
+
+    const outcome = await runUndo(createDoseWriteLock());
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ kind: "settled", message: CREATE_UNDO_GONE_MESSAGE, type: "error" });
+    expect(currentUndo()).toBeNull();
+  });
+
+  it("one millisecond inside its deadline still posts", async () => {
+    const fetchMock = stubFetch(respondWith(RESTORED));
+    offerUndo(REMOVAL);
+    vi.setSystemTime(currentUndo()!.deadline - 1);
+
+    await runUndo(createDoseWriteLock());
+
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
 

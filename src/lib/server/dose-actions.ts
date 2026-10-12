@@ -1,7 +1,7 @@
 import { error, fail, type ActionFailure } from "@sveltejs/kit";
 import { deleteDose, restoreDose } from "$lib/server/doses";
 import { doseDeleteSchema, doseRestoreSchema } from "$lib/utils/validation";
-import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
+import { DOSE_UNDO_WINDOW_MS, RESTORE_GONE_MESSAGE } from "$lib/utils/dose-undo";
 
 /**
  * Dose-write form actions that more than one route serves.
@@ -57,8 +57,12 @@ export async function deleteDoseAction(event: {
   };
 }
 
-/** 410: the Undo window has closed, or the dose is gone for good. */
-export const RESTORE_GONE_MESSAGE = "Too late to undo. Log it again if you need it.";
+/**
+ * 410: the Undo window has closed, or the dose is gone for good. Defined in
+ * utils/dose-undo.ts, which the client reads too: an Undo pressed after its
+ * offer's deadline says the same thing without asking.
+ */
+export { RESTORE_GONE_MESSAGE };
 
 /** 409: a dose of this medication was logged after the delete (D6). */
 export const RESTORE_LOGGED_SINCE_MESSAGE =

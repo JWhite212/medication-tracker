@@ -12,3 +12,12 @@
  * `tests/unit/dose-undo.test.ts` holds that line.
  */
 export const DOSE_UNDO_WINDOW_MS = 10 * 60_000;
+
+/**
+ * The 410 a restore gets once its window has closed, and what an Undo
+ * pressed after its offer's deadline says without asking the server. Here,
+ * not in the server module, so the two read the same words: a tab frozen in
+ * the background can keep an offer on screen past its deadline, because its
+ * timers were deferred.
+ */
+export const RESTORE_GONE_MESSAGE = "Too late to undo. Log it again if you need it.";

@@ -527,6 +527,12 @@ The options are read **at submit time**, the same rule as today
      `updated.current`).
   3. `focusAfter` under the only-if-lost rule.
   4. Release.
+
+  _Amended 2026-10-12, during implementation (final review): every failure reloads the data
+  through `reloadAfterWrite()` before the release, not only a 409, so a 404 for a dose another
+  tab removed no longer stays on screen to be tapped again. Only a 409 reloads the document
+  when `updated.current`. Recorded in CLAUDE.md's dose-writes bullets._
+
 - **`error` with a status (5xx, 401).**
   1. Toast `actionErrorMessage(result)`.
   2. `reloadAfterWrite()`.

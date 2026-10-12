@@ -1,7 +1,11 @@
-// DoseActionForm is the ONE use:enhance for every dashboard log, skip, undo
-// and remove. These drive its callback by hand against a really mounted
-// component. SSR markup (names, fields, sizes) is in due-card-ssr.test.ts;
-// the 'error' ordering is in dose-write-lock.test.ts.
+// DoseActionForm is the dashboard's markup over createDoseWrite
+// (dose-writes/dose-write.svelte.ts). These drive its use:enhance callback by
+// hand against a really mounted component, for what DoseActionForm itself
+// decides: its markup, that it passes the dashboard clock as the stale guard,
+// its card's aria-busy, and that its props reach the primitive. The
+// primitive's own rules are in dose-write.svelte.test.ts, pressing an Undo in
+// undo-registry.test.ts, SSR markup in due-card-ssr.test.ts, and the 'error'
+// ordering in dose-write-lock.test.ts.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRawSnippet, flushSync } from "svelte";
 import type { SubmitFunction } from "@sveltejs/kit";
@@ -12,14 +16,21 @@ const h = vi.hoisted(() => ({
   showToast: vi.fn(),
 }));
 
+vi.mock("$app/environment", () => ({ browser: true, dev: true, building: false, version: "test" }));
 vi.mock("$app/forms", () => ({
   enhance: (_form: HTMLFormElement, submit: SubmitFunction) => {
     h.submit = submit;
     return { destroy() {} };
   },
   deserialize: (text: string) => JSON.parse(text),
+  applyAction: async () => {},
 }));
 vi.mock("$app/navigation", () => ({ invalidateAll: () => h.invalidateAll() }));
+vi.mock("$app/state", () => ({
+  navigating: { to: null, willUnload: null, complete: null },
+  updated: { current: false },
+  page: { data: {} },
+}));
 vi.mock("$components/ui/Toast.svelte", () => ({
   showToast: (...args: unknown[]) => h.showToast(...args),
 }));
@@ -27,15 +38,22 @@ vi.mock("$components/ui/Toast.svelte", () => ({
 import {
   createDoseWriteLock,
   DOSE_WRITE_COOLDOWN_MS,
-} from "$lib/components/dashboard/dose-write-lock.svelte";
+} from "$lib/components/dose-writes/dose-write-lock.svelte";
 import type { DashboardClock } from "$lib/components/dashboard/dashboard-clock";
 import {
-  NETWORK_FAILURE_TOAST,
+  DELETE_ACTION,
   STALE_TAP_MESSAGE,
+  STILL_SAVING_TOAST,
   SUCCESS_FALLBACK_TOAST,
-  UNDO_ACTION,
   UNDONE_TOAST,
-} from "$lib/components/dashboard/dose-action";
+  UNKNOWN_OUTCOME_TOAST,
+} from "$lib/components/dose-writes/copy";
+import {
+  currentUndo,
+  offerUndo,
+  resetUndoRegistry,
+  runUndo,
+} from "$lib/components/dose-writes/undo-registry.svelte";
 import { fixedClock } from "./helpers/dashboard-context";
 import {
   finishSubmit,
@@ -47,6 +65,8 @@ import { accessibleName } from "./helpers/dom-names";
 
 const NOW = new Date("2026-05-01T13:00:00.000Z");
 const SUCCESS = { type: "success", status: 200, data: { success: true, doseId: "d-new" } } as const;
+/** A create's Undo: it deletes the new dose. */
+const CREATE_UNDO = { kind: "delete", focusTarget: () => null } as const;
 
 function deferred() {
   let resolve!: () => void;
@@ -69,6 +89,8 @@ beforeEach(() => {
 afterEach(() => {
   destroy?.();
   destroy = null;
+  resetUndoRegistry();
+  document.body.innerHTML = "";
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -144,30 +166,55 @@ describe("DoseActionForm markup", () => {
     const danger = setup({ props: { variant: "danger" } }).button;
     expect([...danger.classList]).toEqual(expect.arrayContaining(["min-h-11", "text-danger-ink"]));
   });
+
+  it("ignores a held Enter: the repeat is defaultPrevented, the first press is not", () => {
+    const { button } = setup();
+    const first = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    const held = new KeyboardEvent("keydown", {
+      key: "Enter",
+      repeat: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    button.dispatchEvent(first);
+    button.dispatchEvent(held);
+    expect(first.defaultPrevented).toBe(false);
+    expect(held.defaultPrevented).toBe(true);
+  });
 });
 
 describe("DoseActionForm submit", () => {
-  it("cancels a submit while the lock is busy, with no toast and no request", async () => {
+  it("refuses a tap while another dose write is in flight, and says it is still saving", async () => {
     const { lock, form, submit } = setup();
     lock.acquire();
+    const { cancel, callback } = await startSubmit(submit, form);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(callback).toBeNull();
+    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error", { coalesce: true });
+  });
+
+  it("refuses a tap during the cooldown silently, with no request", async () => {
+    const { lock, form, submit } = setup();
+    lock.acquire();
+    lock.release();
     const { cancel, callback } = await startSubmit(submit, form);
     expect(cancel).toHaveBeenCalledOnce();
     expect(callback).toBeNull();
     expect(h.showToast).not.toHaveBeenCalled();
   });
 
-  it("refuses a tap on an expired list: cancels, reloads, says so, and stays locked until the reload lands", async () => {
+  it("refuses a tap on an expired list: cancels, says so, reloads, and stays locked until the reload lands", async () => {
     const reload = deferred();
-    const refresh = vi.fn(() => reload.promise);
-    const { lock, form, submit } = setup({ clock: { nextRefreshAt: () => NOW, refresh } });
+    h.invalidateAll.mockImplementation(() => reload.promise);
+    const { lock, form, submit } = setup({ clock: { isExpired: () => true } });
 
     const { cancel, callback } = await startSubmit(submit, form);
     expect(cancel).toHaveBeenCalledOnce();
     expect(callback).toBeNull();
-    expect(refresh).toHaveBeenCalledOnce();
     expect(h.showToast).toHaveBeenCalledWith(STALE_TAP_MESSAGE, "error");
 
     await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS * 3);
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
     expect(lock.busy).toBe(true);
 
     reload.resolve();
@@ -195,7 +242,7 @@ describe("DoseActionForm submit", () => {
     expect(pending?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("on success: reloads first, then toasts from the reloaded data with an Undo, then focuses, then calls onSuccess", async () => {
+  it("on success: reloads first, then offers Undo built from the reloaded data, then calls onSuccess, then focuses", async () => {
     const order: string[] = [];
     const target = document.createElement("h1");
     target.tabIndex = -1;
@@ -211,208 +258,151 @@ describe("DoseActionForm submit", () => {
     const onSuccess = vi.fn(() => {
       order.push("onSuccess");
     });
-    const { lock, form, submit } = setup({
-      props: { buildToast, undoable: true, focusAfter, onSuccess },
-    });
-
-    const { callback } = await startSubmit(submit, form);
     // The reload takes time. Everything after it must wait for it to land,
     // or the builder reads the old page data and drops what the reload says.
     const reload = deferred();
-    const update = vi.fn(async () => {
-      order.push("update:start");
+    h.invalidateAll.mockImplementation(async () => {
+      order.push("reload:start");
       await reload.promise;
-      order.push("update:done");
+      order.push("reload:done");
     });
-    const { done } = finishSubmit(callback!, form, SUCCESS, update);
+    const { lock, form, submit } = setup({
+      props: { buildToast, undo: CREATE_UNDO, focusAfter, onSuccess },
+    });
+
+    const { callback } = await startSubmit(submit, form);
+    const { update, done } = finishSubmit(callback!, form, SUCCESS);
     await flushMicrotasks();
-    expect(order).toEqual(["update:start"]);
+    expect(order).toEqual(["reload:start"]);
 
     reload.resolve();
     await done;
 
-    expect(order).toEqual(["update:start", "update:done", "toast:d-new", "focus", "onSuccess"]);
-    expect(h.showToast).toHaveBeenCalledWith(
-      "Metformin 500mg logged at 13:00",
-      "success",
-      expect.any(Function),
-    );
+    // onSuccess before focus: it can close a dialog over the control that held
+    // focus, and focus is judged only once that has happened (the dashboard
+    // page's Remove test: dashboard-remove-focus.svelte.test.ts).
+    expect(order).toEqual(["reload:start", "reload:done", "toast:d-new", "onSuccess", "focus"]);
+    expect(currentUndo()).toMatchObject({
+      message: "Metformin 500mg logged at 13:00",
+      doseId: "d-new",
+      kind: "delete",
+    });
+    expect(h.showToast).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(target);
     expect(lock.busy).toBe(true);
     vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS);
     expect(lock.busy).toBe(false);
-    target.remove();
   });
 
-  it("with no focusAfter, a chip keeps focus through the reload's focus reset", async () => {
-    // For a success, SvelteKit's applyAction resets focus to <body>. A chip
-    // has nowhere better to send focus than itself, so it takes it back, or
-    // the next Tab after every keyboard log starts from the top of the page.
+  it("with no focusAfter, a chip keeps focus through the reload", async () => {
+    // The reload can re-render focus away; a chip has nowhere better to send
+    // it than itself, or the next Tab after every keyboard log starts from
+    // the top of the page.
     const { form, button, submit } = setup({ props: { variant: "chip", quickLog: true } });
     button.focus();
-    const { callback } = await startSubmit(submit, form);
-    const update = vi.fn(async () => {
+    h.invalidateAll.mockImplementationOnce(async () => {
       document.body.tabIndex = -1;
       document.body.focus();
       document.body.removeAttribute("tabindex");
     });
 
-    await finishSubmit(callback!, form, SUCCESS, update).done;
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, SUCCESS).done;
 
-    expect(update).toHaveBeenCalledOnce();
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
     expect(document.activeElement).toBe(button);
   });
 
   it("still toasts when the reload itself fails — the write did not", async () => {
+    h.invalidateAll.mockRejectedValueOnce(new Error("load failed"));
     const buildToast = vi.fn(() => "Metformin 500mg logged at 13:00");
     const { form, submit } = setup({ props: { buildToast } });
+
     const { callback } = await startSubmit(submit, form);
-    const update = vi.fn(async () => {
-      throw new Error("load failed");
-    });
-    await finishSubmit(callback!, form, SUCCESS, update).done;
-    expect(buildToast).toHaveBeenCalledWith("d-new");
-    expect(h.showToast).toHaveBeenCalledWith(
-      "Metformin 500mg logged at 13:00",
-      "success",
-      undefined,
-    );
+    await finishSubmit(callback!, form, SUCCESS).done;
+
+    // The second argument is when the response arrived; dose-write.svelte.test.ts pins it.
+    expect(buildToast).toHaveBeenCalledWith("d-new", expect.any(Date));
+    expect(h.showToast).toHaveBeenCalledWith("Metformin 500mg logged at 13:00", "success");
   });
 
-  it("falls back to a plain toast with no Undo when there is no builder or no doseId", async () => {
-    const { form, submit } = setup({ props: { undoable: true } });
+  it("falls back to a plain 'Saved' toast, with no offer, when there is no builder or no doseId", async () => {
+    const { form, submit } = setup({ props: { undo: CREATE_UNDO } });
     const { callback } = await startSubmit(submit, form);
     await finishSubmit(callback!, form, { type: "success", status: 200, data: { success: true } })
       .done;
-    expect(h.showToast).toHaveBeenCalledWith(SUCCESS_FALLBACK_TOAST, "success", undefined);
+    expect(h.showToast).toHaveBeenCalledWith(SUCCESS_FALLBACK_TOAST, "success");
+    expect(currentUndo()).toBeNull();
   });
 
-  it("Undo posts the doseId to the absolute deleteDose action, then reloads", async () => {
+  it("its create's Undo, pressed, posts the doseId and forUndo=1 to the absolute deleteDose action", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
-      text: async () => JSON.stringify({ type: "success", status: 200 }),
+      status: 200,
+      text: async () =>
+        JSON.stringify({ type: "success", status: 200, data: { success: true, doseId: "d-new" } }),
     }));
     vi.stubGlobal("fetch", fetchMock);
-    const { form, submit } = setup({ props: { buildToast: () => "logged", undoable: true } });
+    const { lock, form, submit } = setup({
+      props: { buildToast: () => "logged", undo: CREATE_UNDO },
+    });
     const { callback } = await startSubmit(submit, form);
     await finishSubmit(callback!, form, SUCCESS).done;
 
-    const undo = h.showToast.mock.calls[0][2] as () => void;
-    h.invalidateAll.mockClear();
-    undo();
+    const outcome = await runUndo(lock);
 
-    await vi.waitFor(() => expect(h.invalidateAll).toHaveBeenCalledOnce());
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(outcome).toEqual({ kind: "settled", message: UNDONE_TOAST, type: "success" });
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe(UNDO_ACTION);
-    expect(init?.method).toBe("POST");
+    expect(url).toBe(DELETE_ACTION);
     expect((init?.body as FormData).get("doseId")).toBe("d-new");
-    expect(h.showToast).toHaveBeenLastCalledWith(UNDONE_TOAST, "success");
+    expect((init?.body as FormData).get("forUndo")).toBe("1");
   });
 
-  it("holds the lock across Undo's fetch and reload — even over the write it undoes still cooling down — then cools down again", async () => {
-    const fetchStarted = deferred();
-    const fetchMock = vi.fn(async () => {
-      await fetchStarted.promise;
-      return { text: async () => JSON.stringify({ type: "success", status: 200 }) };
+  it("a Remove withdraws its dose's offer when sent, and offers a restore with the response's handle", async () => {
+    const { form, submit } = setup({
+      props: {
+        action: "?/deleteDose",
+        fields: { doseId: "d1" },
+        label: "Remove this dose",
+        srContext: undefined,
+        pendingLabel: "Removing…",
+        variant: "danger",
+        buildToast: () => "Dose removed: Paracetamol 500mg at 8:00",
+        undo: { kind: "restore", focusTarget: () => null },
+        withdrawsUndoFor: "d1",
+      },
     });
-    vi.stubGlobal("fetch", fetchMock);
-    const { lock, form, submit } = setup({ props: { buildToast: () => "logged", undoable: true } });
+    // The offer from logging this dose a moment ago.
+    offerUndo({
+      message: "Paracetamol 500mg logged at 8:00",
+      doseId: "d1",
+      kind: "delete",
+      focusTarget: () => null,
+    });
+
     const { callback } = await startSubmit(submit, form);
-    await finishSubmit(callback!, form, SUCCESS).done;
+    expect(currentUndo()).toBeNull();
 
-    // The write Undo is about to reverse is still cooling down, with 50ms of
-    // its 700ms left: it must not be refused by that, and its own reload
-    // must not inherit that shorter deadline.
-    await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS - 50);
-    expect(lock.busy).toBe(true);
+    await finishSubmit(callback!, form, {
+      type: "success",
+      status: 200,
+      data: {
+        success: true,
+        doseId: "d1",
+        restore: { deletedAt: "2026-05-01T12:59:59.000Z", expiresInMs: 600_000 },
+      },
+    }).done;
 
-    const undo = h.showToast.mock.calls[0][2] as () => void;
-    const invalidateAllDone = deferred();
-    h.invalidateAll.mockReset();
-    h.invalidateAll.mockImplementation(() => invalidateAllDone.promise);
-    undo();
-    await flushMicrotasks();
-    expect(lock.busy).toBe(true); // mid-fetch
-
-    // Past where the original write's own cooldown would have expired
-    // (50ms remained above): a lock that only inherited it would be free by now.
-    await vi.advanceTimersByTimeAsync(100);
-    expect(lock.busy).toBe(true);
-
-    fetchStarted.resolve();
-    await flushMicrotasks();
-    expect(lock.busy).toBe(true); // fetch settled, reload (invalidateAll) still pending
-
-    invalidateAllDone.resolve();
-    await flushMicrotasks();
-    expect(lock.busy).toBe(true); // reload landed; now cooling down fresh
-
-    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 1);
-    expect(lock.busy).toBe(true);
-    vi.advanceTimersByTime(1);
-    expect(lock.busy).toBe(false);
-  });
-
-  it("keeps Undo's hold exclusive: an unrelated write's own release() must not end it early", async () => {
-    // The write whose toast carries the Undo.
-    const first = setup({ props: { buildToast: () => "logged", undoable: true } });
-    const { lock } = first;
-    const { callback: firstCallback } = await startSubmit(first.submit, first.form);
-    await finishSubmit(firstCallback!, first.form, SUCCESS).done;
-    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS);
-    expect(lock.busy).toBe(false); // the first write has fully settled and cooled down
-    const undo = h.showToast.mock.calls[0][2] as () => void;
-
-    // A second, unrelated write on the same page: it takes the lock via acquire().
-    const second = mountDoseActionForm({ lock, clock: fixedClock(NOW) });
-    const secondSubmit = h.submit!;
-    const { callback: secondCallback } = await startSubmit(secondSubmit, second.form);
-    expect(lock.busy).toBe(true);
-
-    // While that second write is still in flight, Undo is tapped on the
-    // first toast — the Undo button has no lock gating, so this is allowed
-    // to overlap with any other write.
-    const fetchStarted = deferred();
-    const fetchMock = vi.fn(async () => {
-      await fetchStarted.promise;
-      return { text: async () => JSON.stringify({ type: "success", status: 200 }) };
+    expect(currentUndo()).toMatchObject({
+      kind: "restore",
+      doseId: "d1",
+      message: "Dose removed: Paracetamol 500mg at 8:00",
+      deletedAt: "2026-05-01T12:59:59.000Z",
+      expiresInMs: 600_000,
     });
-    vi.stubGlobal("fetch", fetchMock);
-    const invalidateAllDone = deferred();
-    h.invalidateAll.mockReset();
-    h.invalidateAll.mockImplementation(() => invalidateAllDone.promise);
-    undo();
-    await flushMicrotasks();
-    expect(lock.busy).toBe(true); // Undo's fetch in flight
-
-    // The unrelated second write settles and calls its own release(). That
-    // must not free the page while Undo's fetch/reload is still outstanding.
-    await finishSubmit(secondCallback!, second.form, SUCCESS).done;
-    expect(lock.busy).toBe(true);
-
-    // Outlast the cooldown a lock that (wrongly) timed itself from the
-    // second write's own completion would already have expired by — while
-    // Undo's fetch/reload is still pending, the lock must still be busy.
-    await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS);
-    expect(lock.busy).toBe(true);
-
-    fetchStarted.resolve();
-    await flushMicrotasks();
-    expect(lock.busy).toBe(true); // fetch settled, Undo's own reload still pending
-
-    invalidateAllDone.resolve();
-    await flushMicrotasks();
-    expect(lock.busy).toBe(true); // Undo's reload landed; now cooling down fresh
-
-    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS - 1);
-    expect(lock.busy).toBe(true);
-    vi.advanceTimersByTime(1);
-    expect(lock.busy).toBe(false);
-
-    second.destroy();
   });
 
-  it("a 409 reloads before releasing the lock, and never runs update()", async () => {
+  it("a 409 toasts, reloads before releasing the lock, and never runs update()", async () => {
     const reload = deferred();
     h.invalidateAll.mockImplementation(() => reload.promise);
     const { lock, form, submit } = setup();
@@ -437,36 +427,25 @@ describe("DoseActionForm submit", () => {
     expect(lock.busy).toBe(false);
   });
 
-  it("a network failure says to check Done before retrying, not the browser's own text", async () => {
-    // The write may or may not have landed, and a chip retry would log a
-    // second dose.
+  it("a network failure says the outcome is unknown and the page will update — not the browser's words", async () => {
+    // The server answers the reachability probe at once.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200 })),
+    );
     const { form, submit } = setup();
     const { callback } = await startSubmit(submit, form);
     await finishSubmit(callback!, form, { type: "error", error: new TypeError("Failed to fetch") })
       .done;
-    expect(h.showToast).toHaveBeenCalledWith(NETWORK_FAILURE_TOAST, "error");
+    expect(h.showToast).toHaveBeenCalledWith(UNKNOWN_OUTCOME_TOAST, "error");
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
   });
 
-  it("Undo that cannot reach the server says so in the same words", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new TypeError("Load failed");
-      }),
-    );
-    const { form, submit } = setup({ props: { buildToast: () => "logged", undoable: true } });
-    const { callback } = await startSubmit(submit, form);
-    await finishSubmit(callback!, form, SUCCESS).done;
-
-    const undo = h.showToast.mock.calls[0][2] as () => void;
-    h.invalidateAll.mockClear();
-    undo();
-
-    await vi.waitFor(() => expect(h.invalidateAll).toHaveBeenCalledOnce());
-    expect(h.showToast).toHaveBeenLastCalledWith(NETWORK_FAILURE_TOAST, "error");
-  });
-
-  it("any other failure runs update() and releases, without a reload", async () => {
+  it("any other failure toasts and reloads before releasing the lock too, and never runs update()", async () => {
+    // A 404 means the page shows something that is gone: until the reload
+    // lands, a second tap would get the same refusal.
+    const reload = deferred();
+    h.invalidateAll.mockImplementation(() => reload.promise);
     const { lock, form, submit } = setup();
     const { callback } = await startSubmit(submit, form);
     const { update, done } = finishSubmit(callback!, form, {
@@ -474,10 +453,14 @@ describe("DoseActionForm submit", () => {
       status: 404,
       data: { errors: { form: ["Medication not found"] } },
     });
-    await done;
+    await vi.advanceTimersByTimeAsync(DOSE_WRITE_COOLDOWN_MS * 3);
     expect(h.showToast).toHaveBeenCalledWith("Medication not found", "error");
-    expect(update).toHaveBeenCalledOnce();
-    expect(h.invalidateAll).not.toHaveBeenCalled();
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
+    expect(lock.busy).toBe(true);
+    expect(update).not.toHaveBeenCalled();
+
+    reload.resolve();
+    await done;
     vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS);
     expect(lock.busy).toBe(false);
   });

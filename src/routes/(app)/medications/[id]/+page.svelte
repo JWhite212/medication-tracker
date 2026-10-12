@@ -14,6 +14,7 @@
   const EVENT_LABELS: Record<string, string> = {
     dose_taken: "Dose taken",
     dose_deleted: "Dose deleted",
+    dose_restored: "Dose restored",
     dose_quantity_updated: "Dose quantity edited",
     manual_adjustment: "Manual adjustment",
     refill: "Refill",

@@ -1,16 +1,25 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { enhance } from "$app/forms";
   import type { MedicationWithStats } from "$lib/types";
   import { getMedicationBackground } from "$lib/utils/medication-style";
   import { expectedWeeklyDoses, adherencePercent } from "$lib/utils/adherence";
-  import { deserialize } from "$app/forms";
-  import { invalidateAll } from "$app/navigation";
-  import type { ActionResult } from "@sveltejs/kit";
-  import { showToast } from "$components/ui/Toast.svelte";
-  import { actionErrorMessage } from "$lib/utils/form-errors";
+  import { formatDoseLabel } from "$lib/utils/dashboard-copy";
+  import { formatUserTime, type TimeFormat } from "$lib/utils/time";
+  import { createDoseWrite } from "$components/dose-writes/dose-write.svelte";
   import TimeSince from "$components/TimeSince.svelte";
   import Sparkline from "$components/Sparkline.svelte";
 
-  let { medication }: { medication: MedicationWithStats } = $props();
+  let {
+    medication,
+    timezone,
+    timeFormat,
+  }: {
+    medication: MedicationWithStats;
+    /** The user's profile zone and clock: the toast says when the dose was logged. */
+    timezone: string;
+    timeFormat: TimeFormat;
+  } = $props();
 
   function refillChipClass(severity: MedicationWithStats["refillSeverity"]): string {
     if (severity === "critical") return "bg-danger/15 text-danger-ink";
@@ -47,58 +56,43 @@
       medication.inventoryCount <= medication.inventoryAlertThreshold,
   );
 
-  let logging = $state(false);
+  let logButton = $state<HTMLButtonElement>();
+
+  // `type="button"` until hydrated. Before then use:enhance is not attached,
+  // and a native post would log a dose with no Undo and navigate the user to
+  // the dashboard. A tap before hydration does nothing, as it always has.
+  let mounted = $state(false);
+  onMount(() => {
+    mounted = true;
+  });
 
   /**
-   * Quick-log from the Medications list.
+   * Quick-log from the Medications list, through the same write path as every
+   * dashboard dose control: the layout's write lock (a second tap, or a tap
+   * during a reorder, is refused), the offline gate, a reload that waits out
+   * a lost connection before anything can be retried, and an Undo that
+   * deletes the dose it logged.
    *
-   * This posts to the dashboard's action from a page that does not own it, so
-   * there is no local form for `use:enhance` to progressively enhance. It
-   * stays a `fetch`, but it now does the two things `enhance` would have done
-   * for it and previously did not.
+   * It used to `fetch` the dashboard's action and ignore the `doseId` it
+   * returned, so there was nothing to undo, and a network failure said only
+   * "try again", which is exactly how a dose gets logged twice.
    *
-   * It never checked `res.ok`. A dose logged against a medication deleted in
-   * another tab returned 404 and the card showed a spinner, then nothing —
-   * no toast, no error, no change. The user had every reason to believe the
-   * dose was recorded.
-   *
-   * And it never invalidated. Even a SUCCESSFUL log left "Last taken", the
-   * supply-days-left chip, the adherence bar and the sparkline showing
-   * pre-log values until the next navigation, so the card actively contradicted
-   * the action the user had just taken.
+   * No `focusAfter`: focus is moved only if the reload lost it, and then to
+   * whatever held it at the tap, which for a keyboard user is this button.
    */
-  async function quickLog(event: Event) {
-    event.preventDefault();
-    event.stopPropagation();
-    // The guard against a second log while the first is in flight lives here
-    // rather than in a native `disabled`. A disabled button cannot keep focus,
-    // so pressing it from the keyboard dropped focus to <body> and nothing put
-    // it back; `aria-disabled` says the same thing and leaves focus alone.
-    if (logging) return;
-    logging = true;
-    try {
-      const form = new FormData();
-      form.set("medicationId", medication.id);
-      form.set("quantity", "1");
-
-      const response = await fetch("/dashboard?/logDose", { method: "POST", body: form });
-      const result = deserialize(await response.text()) as ActionResult;
-
-      if (result.type === "success") {
-        showToast(`${medication.name} logged`, "success");
-        // Re-run this page's load so the card's own stats catch up.
-        await invalidateAll();
-      } else {
-        showToast(actionErrorMessage(result), "error");
-      }
-    } catch (error) {
-      // A network failure never reaches `deserialize`, so it needs its own
-      // arm — otherwise it is the one path that stays silent.
-      showToast(actionErrorMessage({ type: "error", error } as ActionResult), "error");
-    } finally {
-      logging = false;
-    }
-  }
+  const write = createDoseWrite(() => {
+    const label = formatDoseLabel(medication.name, medication.dosageAmount, medication.dosageUnit);
+    const tz = timezone;
+    const tf = timeFormat;
+    return {
+      undo: { kind: "delete", focusTarget: () => logButton ?? null },
+      // Called after the reload, with the time the response arrived: the time
+      // it states is when the log landed, in the user's own zone, never when
+      // a slow reload happened to finish.
+      buildToast: (_doseId, respondedAt) =>
+        `${label} logged at ${formatUserTime(respondedAt, tz, tf)}`,
+    };
+  });
 </script>
 
 <!-- The quick-log button is a flex sibling of the link rather than laid over
@@ -232,21 +226,34 @@
        accepted rather than fixed here: the visible "Log" text is what
        identifies the control, so WCAG 1.4.11 does not require its edge to
        reach 3:1, and raising border-strong is a palette-wide change. -->
-  <button
-    type="button"
-    class="border-border-strong text-accent-ink hover:bg-accent hover:text-accent-fg relative z-10 mt-4 mr-4 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center self-start rounded-lg border px-3 text-sm font-medium transition-colors"
-    aria-label="Log a dose of {medication.name}"
-    aria-disabled={logging}
-    onclick={quickLog}
+  <form
+    method="POST"
+    action="/dashboard?/logDose"
+    use:enhance={write.submit}
+    class="relative z-10 mt-4 mr-4 shrink-0 self-start"
   >
-    <!-- The label only hides while the log is in flight, so the button keeps
-         its width and the name column beside it does not reflow. -->
-    <span class={logging ? "invisible" : ""}>Log</span>
-    {#if logging}
-      <span
-        class="absolute inset-0 m-auto h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-        aria-hidden="true"
-      ></span>
-    {/if}
-  </button>
+    <input type="hidden" name="medicationId" value={medication.id} />
+    <input type="hidden" name="quantity" value="1" />
+    <!-- aria-disabled, never `disabled`: a disabled button cannot keep focus,
+         so pressing it from the keyboard dropped focus to <body>. "false"
+         rather than no attribute at rest, which the targets tests read. -->
+    <button
+      bind:this={logButton}
+      type={mounted ? "submit" : "button"}
+      class="border-border-strong text-accent-ink hover:bg-accent hover:text-accent-fg relative z-10 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border px-3 text-sm font-medium transition-colors aria-disabled:cursor-not-allowed"
+      aria-label="Log a dose of {medication.name}"
+      aria-disabled={write.busy ? "true" : "false"}
+      onkeydown={write.onkeydown}
+    >
+      <!-- The label only hides while the log is in flight, so the button keeps
+           its width and the name column beside it does not reflow. -->
+      <span class={write.pending ? "invisible" : ""}>Log</span>
+      {#if write.pending}
+        <span
+          class="absolute inset-0 m-auto h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+          aria-hidden="true"
+        ></span>
+      {/if}
+    </button>
+  </form>
 </div>

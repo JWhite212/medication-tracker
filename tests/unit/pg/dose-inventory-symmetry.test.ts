@@ -24,6 +24,8 @@ import { pgDb } from "../helpers/pg-db";
 import { medications, doseLogs, inventoryEvents } from "../../../src/lib/server/db/schema";
 import { eq } from "drizzle-orm";
 
+// Every delete below passes keepForUndo: false. These cases are about the
+// stock arithmetic; the trash row is covered by dose-delete-trash.test.ts.
 const { logDose, deleteDose, updateDose } = await import("../../../src/lib/server/doses");
 
 async function stock(): Promise<number | null> {
@@ -71,7 +73,7 @@ describe("log-then-delete is an exact round trip", () => {
     const dose = await logDose("u1", "m1", 3);
     expect(await stock()).toBe(0);
 
-    await deleteDose("u1", dose.id);
+    await deleteDose("u1", dose.id, { keepForUndo: false });
 
     expect(await stock()).toBe(1);
   });
@@ -86,7 +88,7 @@ describe("log-then-delete is an exact round trip", () => {
     const dose = await logDose("u1", "m1", 1);
     expect(await stock()).toBe(0);
 
-    await deleteDose("u1", dose.id);
+    await deleteDose("u1", dose.id, { keepForUndo: false });
 
     expect(await stock()).toBe(0);
   });
@@ -97,8 +99,8 @@ describe("log-then-delete is an exact round trip", () => {
     const second = await logDose("u1", "m1", 1);
     expect(await stock()).toBe(0);
 
-    await deleteDose("u1", first.id);
-    await deleteDose("u1", second.id);
+    await deleteDose("u1", first.id, { keepForUndo: false });
+    await deleteDose("u1", second.id, { keepForUndo: false });
 
     expect(await stock()).toBe(1);
   });
@@ -108,7 +110,7 @@ describe("log-then-delete is an exact round trip", () => {
     const doses = [];
     for (let i = 0; i < 5; i++) doses.push(await logDose("u1", "m1", 10));
 
-    for (const d of doses) await deleteDose("u1", d.id);
+    for (const d of doses) await deleteDose("u1", d.id, { keepForUndo: false });
 
     // Fifty doses of phantom stock, from five logs against nothing.
     expect(await stock()).toBe(0);
@@ -119,7 +121,7 @@ describe("log-then-delete is an exact round trip", () => {
     const dose = await logDose("u1", "m1", 3);
     expect(await stock()).toBe(7);
 
-    await deleteDose("u1", dose.id);
+    await deleteDose("u1", dose.id, { keepForUndo: false });
 
     expect(await stock()).toBe(10);
   });
@@ -150,7 +152,7 @@ describe("editing a dose moves only what it applied", () => {
     await updateDose("u1", dose.id, { quantity: 2 });
     expect(await stock()).toBe(8);
 
-    await deleteDose("u1", dose.id);
+    await deleteDose("u1", dose.id, { keepForUndo: false });
     expect(await stock()).toBe(10);
   });
 
@@ -174,7 +176,7 @@ describe("medications that do not track inventory", () => {
     expect(await appliedFor(dose.id)).toBe(0);
     expect(await ledger()).toHaveLength(0);
 
-    await deleteDose("u1", dose.id);
+    await deleteDose("u1", dose.id, { keepForUndo: false });
     expect(await stock()).toBeNull();
   });
 });
@@ -194,7 +196,7 @@ describe("rows written before the column existed", () => {
       inventoryApplied: null,
     });
 
-    await deleteDose("u1", "legacy");
+    await deleteDose("u1", "legacy", { keepForUndo: false });
 
     expect(await stock()).toBe(7);
   });
@@ -204,7 +206,7 @@ describe("the ledger tells the same story as the column", () => {
   it("sums to the live count, with a contiguous previous/new chain", async () => {
     await seedStock(1);
     const dose = await logDose("u1", "m1", 3);
-    await deleteDose("u1", dose.id);
+    await deleteDose("u1", dose.id, { keepForUndo: false });
 
     const rows = await ledger();
     const start = 1;

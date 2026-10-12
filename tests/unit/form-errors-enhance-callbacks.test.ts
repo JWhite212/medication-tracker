@@ -5,7 +5,10 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vite
 import { flushSync, mount, tick, unmount } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
 import type { DoseLogWithMedication } from "$lib/types";
-import { NO_RESPONSE_MESSAGE, SESSION_EXPIRED_MESSAGE } from "$lib/utils/form-errors";
+import { SESSION_EXPIRED_MESSAGE } from "$lib/utils/form-errors";
+import { UNKNOWN_OUTCOME_TOAST } from "$lib/components/dose-writes/copy";
+import { createDoseWriteLock } from "$lib/components/dose-writes/dose-write-lock.svelte";
+import { doseWriteContext } from "./helpers/dashboard-context";
 
 // `enhance` is replaced by a recorder, so each test can hand the component's
 // own callback exactly the ActionResult it wants and observe what the
@@ -17,10 +20,23 @@ vi.mock("$app/forms", () => ({
     captured.submit = submit;
     return { destroy() {} };
   },
+  applyAction: vi.fn(async () => {}),
 }));
 
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast }));
+
+// DoseEditForm reloads through reloadAfterWrite(), never `update()`: these
+// are what that reads. No navigation in flight, no new deploy, and the Undo
+// registry live (it is a no-op unless `browser`).
+const invalidateAll = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("$app/navigation", () => ({ invalidateAll, goto: vi.fn() }));
+vi.mock("$app/state", () => ({
+  page: { data: {} },
+  navigating: { to: null, willUnload: null, complete: null },
+  updated: { current: false },
+}));
+vi.mock("$app/environment", () => ({ browser: true, dev: false, building: false, version: "t" }));
 
 const { default: DoseEditForm } = await import("../../src/lib/components/DoseEditForm.svelte");
 const { default: MedicationForm } = await import("../../src/lib/components/MedicationForm.svelte");
@@ -59,6 +75,7 @@ let component: Record<string, unknown> | undefined;
 beforeEach(() => {
   captured.submit = undefined;
   showToast.mockReset();
+  invalidateAll.mockClear();
   target = document.createElement("div");
   document.body.append(target);
 });
@@ -67,6 +84,7 @@ afterEach(() => {
   if (component) unmount(component);
   component = undefined;
   target.remove();
+  vi.unstubAllGlobals();
 });
 
 /** Run the component's enhance callback with `result`; returns the `update` spy. */
@@ -90,6 +108,9 @@ async function submit(result: ActionResult) {
   }
   flushSync();
   await tick();
+  // DoseEditForm's write lock cools down on a zero-length timer here (see its
+  // mount below), so a test's next submit is not refused as a double tap.
+  await new Promise((resolve) => setTimeout(resolve, 0));
   return update;
 }
 
@@ -120,7 +141,13 @@ describe("DoseEditForm", () => {
 
   beforeEach(() => {
     onclose = vi.fn();
-    component = mount(DoseEditForm, { target, props: { dose, timezone: "UTC", onclose } });
+    // The (app) layout's lock, which DoseEditForm now takes like every dose
+    // write. No cooldown, so consecutive submits in one test are not refused.
+    component = mount(DoseEditForm, {
+      target,
+      props: { dose, timezone: "UTC", onclose },
+      context: doseWriteContext(createDoseWriteLock({ cooldownMs: 0 })),
+    });
     flushSync();
   });
 
@@ -189,7 +216,10 @@ describe("DoseEditForm", () => {
     expect(showToast).toHaveBeenCalledWith("Dose no longer exists", "error");
     expectFormAlert("Dose no longer exists");
     expect(target.querySelector('[aria-invalid="true"]')).toBeNull();
-    expect(update).toHaveBeenCalledOnce();
+    // Not `update()`: reloadAfterWrite(), so the list behind the dialog
+    // stops showing a dose that is gone.
+    expect(update).not.toHaveBeenCalled();
+    expect(invalidateAll).toHaveBeenCalledOnce();
   });
 
   it("answers a crash in place, with the reference, and keeps the edit open", async () => {
@@ -201,6 +231,8 @@ describe("DoseEditForm", () => {
     expectFormAlert(message);
     // `update()` would replace the page with +error.svelte and discard the edit.
     expect(update).not.toHaveBeenCalled();
+    // Nothing changed on the server, so nothing is reloaded under the edit.
+    expect(invalidateAll).not.toHaveBeenCalled();
     expect(onclose).not.toHaveBeenCalled();
     expect(target.querySelector("form")).not.toBeNull();
   });
@@ -214,10 +246,19 @@ describe("DoseEditForm", () => {
   });
 
   it("answers a request that never got a response without the browser's wording", async () => {
+    // No response, so the edit may have landed: the same sentence as every
+    // other dose write, inside the dialog as well as in the toast. The page
+    // reloads once the server answers the health probe.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true })),
+    );
     const update = await submit(NO_RESPONSE);
 
-    expectFormAlert(NO_RESPONSE_MESSAGE);
+    expect(showToast).toHaveBeenCalledWith(UNKNOWN_OUTCOME_TOAST, "error");
+    expectFormAlert(UNKNOWN_OUTCOME_TOAST);
     expect(update).not.toHaveBeenCalled();
+    expect(invalidateAll).toHaveBeenCalledOnce();
   });
 
   it("ties a side-effects message to the chip group it is about", async () => {
@@ -246,6 +287,8 @@ describe("DoseEditForm", () => {
   it("clears the previous attempt's field messages once a save succeeds", async () => {
     await submit(failure(400, { editErrors: { quantity: ["Too big"] } }));
     expect(field("quantity").getAttribute("aria-invalid")).toBe("true");
+    // The refusal reloaded too; count only the success's own reload below.
+    invalidateAll.mockClear();
 
     const update = await submit({ type: "success", status: 200, data: { success: true } });
 
@@ -253,7 +296,10 @@ describe("DoseEditForm", () => {
     expect(target.querySelector("#quantity-error")).toBeNull();
     expect(showToast).toHaveBeenLastCalledWith("Dose updated", "success");
     expect(onclose).toHaveBeenCalledOnce();
-    expect(update).toHaveBeenCalledOnce();
+    // reloadAfterWrite(), not `update()`: update's reset_focus sent focus to
+    // <body> after the Modal had returned it to the Edit button.
+    expect(update).not.toHaveBeenCalled();
+    expect(invalidateAll).toHaveBeenCalledOnce();
   });
 });
 

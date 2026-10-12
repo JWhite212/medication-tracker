@@ -1,4 +1,4 @@
-// The dashboard's page-wide dose-write lock, and the DoseActionForm path whose
+// The (app) layout's dose-write lock, and the DoseActionForm path whose
 // ORDERING matters most: an 'error' result means the outcome is unknown, so
 // the page must not accept another tap until the reload has landed.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -18,6 +18,12 @@ vi.mock("$app/forms", () => ({
   deserialize: (text: string) => JSON.parse(text),
 }));
 vi.mock("$app/navigation", () => ({ invalidateAll: () => h.invalidateAll() }));
+// DoseActionForm's reload goes through reloadAfterWrite, which reads $app/state.
+vi.mock("$app/state", () => ({
+  navigating: { to: null, willUnload: null, complete: null },
+  updated: { current: false },
+  page: { data: {} },
+}));
 vi.mock("$components/ui/Toast.svelte", () => ({
   showToast: (...args: unknown[]) => h.showToast(...args),
 }));
@@ -25,7 +31,7 @@ vi.mock("$components/ui/Toast.svelte", () => ({
 import {
   createDoseWriteLock,
   DOSE_WRITE_COOLDOWN_MS,
-} from "$lib/components/dashboard/dose-write-lock.svelte";
+} from "$lib/components/dose-writes/dose-write-lock.svelte";
 import { fixedClock } from "./helpers/dashboard-context";
 import { finishSubmit, mountDoseActionForm, startSubmit } from "./helpers/dose-action-form-harness";
 
@@ -52,6 +58,39 @@ describe("createDoseWriteLock", () => {
     expect(lock.acquire()).toBe(true);
     expect(lock.busy).toBe(true);
     expect(lock.acquire()).toBe(false);
+  });
+
+  it("is active only while a holder exists — never during the cooldown, which busy still covers", () => {
+    // `active` is what separates "still saving your last change" (worth a
+    // toast) from a tap that merely came inside the cooldown (not worth one).
+    const lock = createDoseWriteLock();
+    expect(lock.active).toBe(false);
+
+    lock.acquire();
+    expect(lock.active).toBe(true);
+    lock.release();
+    expect(lock.busy).toBe(true);
+    expect(lock.active).toBe(false);
+
+    lock.hold();
+    expect(lock.active).toBe(true);
+    lock.extend();
+    expect(lock.busy).toBe(true);
+    expect(lock.active).toBe(false);
+
+    vi.advanceTimersByTime(DOSE_WRITE_COOLDOWN_MS);
+    expect(lock.busy).toBe(false);
+    expect(lock.active).toBe(false);
+  });
+
+  it("stays active until the last of two overlapping holders lets go", () => {
+    const lock = createDoseWriteLock();
+    lock.acquire();
+    lock.hold();
+    lock.release();
+    expect(lock.active).toBe(true);
+    lock.extend();
+    expect(lock.active).toBe(false);
   });
 
   it("stays busy through the whole cooldown after release, to the millisecond", () => {

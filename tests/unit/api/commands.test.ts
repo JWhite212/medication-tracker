@@ -46,7 +46,18 @@ const updateDose = vi.fn(
     },
   ): Promise<{ id: string } | null> => ({ id: "dose-1" }),
 );
-const deleteDose = vi.fn(async (_userId: string, _doseId: string): Promise<boolean> => true);
+type DeletedDose = { doseId: string; medicationId: string; deletedAt: Date };
+const deleteDose = vi.fn(
+  async (
+    _userId: string,
+    _doseId: string,
+    _opts: { keepForUndo: boolean },
+  ): Promise<DeletedDose | null> => ({
+    doseId: "dose-1",
+    medicationId: "med-1",
+    deletedAt: new Date("2026-01-06T00:00:00Z"),
+  }),
+);
 vi.mock("$lib/server/doses", () => ({
   logDose: (
     userId: string,
@@ -62,7 +73,8 @@ vi.mock("$lib/server/doses", () => ({
     doseId: string,
     updates: { takenAt?: Date; quantity?: number; notes?: string; sideEffects?: unknown },
   ) => updateDose(userId, doseId, updates),
-  deleteDose: (userId: string, doseId: string) => deleteDose(userId, doseId),
+  deleteDose: (userId: string, doseId: string, opts: { keepForUndo: boolean }) =>
+    deleteDose(userId, doseId, opts),
 }));
 
 const refillMedication = vi.fn(
@@ -365,14 +377,21 @@ describe("dispatchCommand — dose + inventory commands (Task 12)", () => {
     );
   });
 
-  it("delete_dose calls deleteDose with the mapped doseId and returns {deleted: boolean}", async () => {
-    deleteDose.mockResolvedValueOnce(true);
-
+  it("delete_dose keeps no trash row (the Mac app has no Undo) and returns {deleted: true}", async () => {
     const result = await dispatchCommand("u1", "delete_dose", { doseId: "dose-1" });
 
     expect(deleteDose).toHaveBeenCalledTimes(1);
-    expect(deleteDose).toHaveBeenCalledWith("u1", "dose-1");
+    expect(deleteDose).toHaveBeenCalledWith("u1", "dose-1", { keepForUndo: false });
+    // The frozen wire shape: a boolean, never the DeletedDose object.
     expect(result).toEqual({ deleted: true });
+  });
+
+  it("delete_dose returns {deleted: false} when deleteDose finds nothing", async () => {
+    deleteDose.mockResolvedValueOnce(null);
+
+    const result = await dispatchCommand("u1", "delete_dose", { doseId: "missing" });
+
+    expect(result).toEqual({ deleted: false });
   });
 
   it("refill calls refillMedication with the mapped args and returns its result verbatim", async () => {

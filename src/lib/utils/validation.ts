@@ -216,14 +216,53 @@ export const doseLogSchema = z
   });
 
 /**
- * The dashboard's Skip. `takenAt` is the row's `skipAt` — the slot's own
- * instant for a past slot, now for a due-now slot still ahead — posted
- * verbatim. Absent, the skip is recorded at now (the legacy door).
+ * The dashboard's Skip.
+ *
+ * - `forSlot`: the row's own slot instant (`expectedTime`), posted verbatim.
+ *   The server re-derives the row's Skip under the medication lock and writes
+ *   the skip at ITS `min(slot, now)` (`skipDoseForSlot`). The page no longer
+ *   chooses the instant.
+ * - `takenAt` alone: a page loaded before `forSlot` shipped, which posted the
+ *   row's render-time `skipAt`. Accepted for one release, and only where that
+ *   instant is still a slot whose row offers Skip (spec D9).
+ * - Neither: skip at now, the legacy door.
  */
-export const doseSkipSchema = z.object({
-  medicationId: z.string().min(1),
-  takenAt: z.string().datetime().optional(),
-});
+export const doseSkipSchema = z
+  .object({
+    medicationId: z.string().min(1),
+    takenAt: z.string().datetime().optional(),
+    forSlot: z.string().datetime().optional(),
+  })
+  // Mirrors doseLogSchema: two different requests, never both. The path puts
+  // the message in `fieldErrors`, which is all the dashboard action returns.
+  .refine((d) => !(d.takenAt && d.forSlot), {
+    message: "Send takenAt or forSlot, not both",
+    path: ["forSlot"],
+  });
+
+/**
+ * Every dose delete and restore names its dose by id. `max(64)` bounds a
+ * hand-edited field the same way the import door bounds ids. Real ids are
+ * 24-character cuid2s.
+ */
+export const doseIdSchema = z.object({ doseId: z.string().min(1).max(64) });
+
+/**
+ * The dashboard's and /log's delete. `forUndo=1` marks the delete behind a
+ * CREATE's Undo. Nobody can undo that one in turn, so it skips the trash and
+ * answers without a restore handle (spec D8). Only the literal "1" is
+ * accepted, so a stray value is a 400 rather than a silent choice between the
+ * two kinds of delete.
+ */
+export const doseDeleteSchema = doseIdSchema.extend({ forUndo: z.literal("1").optional() });
+
+/**
+ * A delete's Undo. `deletedAt` is the ISO instant the delete returned, posted
+ * back verbatim. The restore matches the trash row on `(doseId, deletedAt)` to
+ * the millisecond, so an out-of-date Undo can never reverse a newer delete of
+ * the same dose (spec D6).
+ */
+export const doseRestoreSchema = doseIdSchema.extend({ deletedAt: z.string().datetime() });
 
 /**
  * The shape a `<input type="datetime-local">` submits: `YYYY-MM-DDTHH:mm`,
@@ -608,6 +647,7 @@ export const importInventoryEventSchema = z.object({
   eventType: z.enum([
     "dose_taken",
     "dose_deleted",
+    "dose_restored",
     "dose_quantity_updated",
     "manual_adjustment",
     "refill",

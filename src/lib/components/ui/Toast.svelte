@@ -5,7 +5,6 @@
     id: string;
     message: string;
     type: "success" | "error";
-    undoAction?: () => void;
   };
 
   /**
@@ -17,24 +16,62 @@
    * evaluated during SSR on every authenticated page. Module state is
    * per-process on the server, so a showToast() reached during SSR would be
    * visible to whichever user rendered next.
+   *
+   * A plain toast carries no Undo. The one Undo offer lives in
+   * dose-writes/undo-registry.svelte.ts and is rendered above these.
    */
   let toasts = $state<ToastItem[]>([]);
 
+  /**
+   * `coalesce`: when the same words are already on screen, give them their
+   * five seconds again instead of stacking a copy. Only the "Still saving…"
+   * toast asks for it (beginDoseWrite, and an Undo pressed mid-write): every
+   * tap refused during one slow write toasts it, and the live region should
+   * say it once. Every other repeat stacks, because it is news — a second
+   * "Undone" or "Dose not found" restarting an old toast's timer would never
+   * be announced at all.
+   *
+   * A timer starts only while the stack is not held by the pointer or by
+   * focus (WCAG 2.2.1, below), in both branches: releasing the hold starts
+   * every toast's five seconds afresh.
+   */
   export function showToast(
     message: string,
     type: "success" | "error" = "success",
-    undoAction?: () => void,
+    opts: { coalesce?: boolean } = {},
   ) {
     if (!browser) return;
+    if (opts.coalesce) {
+      const same = toasts.find((t) => t.message === message && t.type === type);
+      if (same) {
+        if (!held()) scheduleDismiss(same.id);
+        return;
+      }
+    }
     const id = crypto.randomUUID();
-    toasts.push({ id, message, type, undoAction });
-    scheduleDismiss(id);
+    toasts.push({ id, message, type });
+    if (!held()) scheduleDismiss(id);
   }
 
   export function dismissToast(id: string) {
     clearTimeout(timers.get(id));
     timers.delete(id);
     toasts = toasts.filter((t) => t.id !== id);
+  }
+
+  /**
+   * Remove every plain toast and stop its timer. The (app) layout calls this,
+   * with resetUndoRegistry(), when it unmounts: signing out leaves (app), and
+   * on a shared device the next person to sign in must not read what the
+   * last one was told. A no-op during SSR, like showToast.
+   */
+  export function clearToasts(): void {
+    if (!browser) return;
+    for (const timer of timers.values()) clearTimeout(timer);
+    timers.clear();
+    toasts = [];
+    pointerInside = false;
+    focusInside = false;
   }
 
   const DISMISS_MS = 5000;
@@ -53,27 +90,36 @@
   }
 
   /**
-   * WCAG 2.2.1: a five-second auto-dismiss is a time limit, and the Undo here is
-   * the ONLY way back from a logged or deleted dose. Reaching it by keyboard
-   * means tabbing past the whole page — comfortably more than five seconds — so
-   * hovering or focusing the stack holds it open.
+   * WCAG 2.2.1: a five-second auto-dismiss is a time limit. Reading a toast by
+   * keyboard or screen reader can take longer than that, so hovering or
+   * focusing the stack holds every plain toast open.
    *
    * Pointer and focus are tracked separately because either one alone is reason
    * to keep holding it. A single pause/resume pair let them overwrite each
-   * other: moving the pointer away while an Undo button was focused resumed
-   * every timer, and five seconds later the focused toast — and the only route
-   * back from a logged or deleted dose — vanished from under the keyboard. The
-   * inverse held too, focus leaving while the pointer still hovered.
+   * other: moving the pointer away while a control in the stack was focused
+   * resumed every timer, and five seconds later the toast vanished from under
+   * the keyboard. The inverse held too, focus leaving while the pointer still
+   * hovered.
    *
    * Resuming restarts the full interval rather than the remainder. That is
    * deliberate: it errs towards giving the user more time, never less.
+   *
+   * The Undo offer — the only way back from a logged or deleted dose — is not
+   * one of these and has no 5s timer at all: it stays until it is used,
+   * dismissed, replaced or withdrawn, capped by its own deadline
+   * (dose-writes/undo-registry.svelte.ts).
    */
   let pointerInside = false;
   let focusInside = false;
 
+  /** The pointer or focus is in the stack, so no plain toast may time out. */
+  function held(): boolean {
+    return pointerInside || focusInside;
+  }
+
   /** Hold or restart dismissal to match the current pointer and focus state. */
   function updateDismissal() {
-    if (pointerInside || focusInside) {
+    if (held()) {
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
       return;
@@ -92,20 +138,85 @@
     focusInside = inside;
     updateDismissal();
   }
+
+  /**
+   * Focus was in the stack and is not any more, with no focusout to say so:
+   * the focused Undo or Dismiss was removed with its offer, and the browser
+   * moved focus to <body> silently. Release the hold, or every plain toast
+   * would stay up for good.
+   */
+  function releaseFocusIfGone(stack: HTMLElement) {
+    if (focusInside && !stack.contains(document.activeElement)) setFocusInside(false);
+  }
+</script>
+
+<script lang="ts">
+  import { STILL_SAVING_TOAST } from "$components/dose-writes/copy";
+  import { getDoseWriteLock } from "$components/dose-writes/dose-write-lock.svelte";
+  import {
+    currentUndo,
+    dismissUndo,
+    rememberFocusBeforeStack,
+    runUndo,
+  } from "$components/dose-writes/undo-registry.svelte";
+
+  /**
+   * The (app) layout's write lock. Context can only be read while a component
+   * initialises, so it is read here; Toast is mounted once, in that layout, and
+   * lives exactly as long as it, so this IS the lock every page under the
+   * layout reads. Offers never carry a lock: an Undo pressed after navigating
+   * holds the lock the page now on screen reads.
+   */
+  const lock = getDoseWriteLock();
+  const offer = $derived(currentUndo());
+
+  async function pressUndo(): Promise<void> {
+    // A second press while the first runs does nothing at all — not even
+    // "Still saving…", which would describe this Undo as someone else's write.
+    const current = currentUndo();
+    if (!current || current.running) return;
+    const outcome = await runUndo(lock);
+    // "abandoned" (the layout went mid-Undo, a sign-out) shows nothing.
+    if (outcome.kind === "settled") showToast(outcome.message, outcome.type);
+    else if (outcome.kind === "refused" && lock.active) {
+      showToast(STILL_SAVING_TOAST, "error", { coalesce: true });
+    }
+  }
+
+  let stack: HTMLDivElement | undefined = $state();
+  // Whenever the offer changes, once its markup has: if focus was on a
+  // button that went with it, the hold it set is released.
+  $effect(() => {
+    offer;
+    if (stack) releaseFocusIfGone(stack);
+  });
+
+  /** Remember where focus came from, so an Undo can hand it back there. */
+  function onStackFocusIn(e: FocusEvent & { currentTarget: EventTarget & HTMLDivElement }) {
+    const from = e.relatedTarget;
+    if (!e.currentTarget.contains(from as Node | null)) {
+      rememberFocusBeforeStack(from instanceof HTMLElement ? from : null);
+    }
+    setFocusInside(true);
+  }
 </script>
 
 <!-- This container IS the live region. The toasts inside previously each carried
      role="alert" as well, nesting an assertive region inside a polite one: the
      inner role won and interrupted whatever was being read. Successes and
-     failures both come through here, so polite is the right register. -->
+     failures both come through here, so polite is the right register.
+     data-toast-stack: focus inside it counts as lost (focus-after.ts), so an
+     Undo moves it back to the page before its button goes. -->
 <div
+  bind:this={stack}
   class="fixed right-4 bottom-4 z-50 flex flex-col gap-2"
   role="status"
   aria-live="polite"
   aria-atomic="false"
+  data-toast-stack
   onmouseenter={() => setPointerInside(true)}
   onmouseleave={() => setPointerInside(false)}
-  onfocusin={() => setFocusInside(true)}
+  onfocusin={onStackFocusIn}
   onfocusout={(e) => {
     // focusout also fires moving BETWEEN controls inside the stack, so treat it
     // as leaving only when focus lands outside the container. contains(null) is
@@ -114,6 +225,36 @@
     setFocusInside(false);
   }}
 >
+  {#if offer}
+    <!-- The ONE Undo offer. Undo's accessible name is its word plus the
+         message, through aria-labelledby ("Undo Dose removed: …"), so the
+         live region holds nothing extra and nothing is announced twice. Both
+         buttons are 44px, like every other dose control. -->
+    <div
+      data-undo-offer
+      class="border-success/30 bg-success/10 text-success flex max-w-sm flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-4 py-3 shadow-lg backdrop-blur-xl"
+    >
+      <span id="undo-message-{offer.id}" class="min-w-0 flex-1 text-sm">{offer.message}</span>
+      <button
+        type="button"
+        class="min-h-11 px-3 text-sm font-medium underline aria-disabled:cursor-not-allowed"
+        aria-labelledby="undo-word-{offer.id} undo-message-{offer.id}"
+        aria-disabled={offer.running ? "true" : undefined}
+        onclick={pressUndo}
+        ><span id="undo-word-{offer.id}">{offer.running ? "Undoing…" : "Undo"}</span></button
+      >
+      <button
+        type="button"
+        class="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-base aria-disabled:cursor-not-allowed"
+        aria-label="Dismiss"
+        aria-disabled={offer.running ? "true" : undefined}
+        onclick={dismissUndo}><span aria-hidden="true">×</span></button
+      >
+      {#if offer.note}
+        <p class="basis-full text-sm">{offer.note}</p>
+      {/if}
+    </div>
+  {/if}
   {#each toasts as toast (toast.id)}
     <div
       class="flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg backdrop-blur-xl {toast.type ===
@@ -122,19 +263,6 @@
         : 'border-danger-ink/30 bg-danger/10 text-danger-ink'}"
     >
       <span class="text-sm">{toast.message}</span>
-      {#if toast.undoAction}
-        <!-- min-h-11 px-3: Undo is the only one-tap route back from a logged
-             dose and must meet the 44px target every dose control does. -->
-        <button
-          class="min-h-11 px-3 text-sm font-medium underline"
-          onclick={() => {
-            toast.undoAction?.();
-            dismissToast(toast.id);
-          }}
-        >
-          Undo
-        </button>
-      {/if}
     </div>
   {/each}
 </div>

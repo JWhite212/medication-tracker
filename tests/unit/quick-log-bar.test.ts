@@ -1,12 +1,14 @@
 // The chip's quantity is a per-tap choice, not a sticky setting. It resets to
 // 1 after a SUCCESSFUL log and is kept after a failure, so a retry sends what
-// the user chose. Live, a chip still read "3×" after a ×3 log.
+// the user chose. Live, a chip still read "3×" after a ×3 log. A chip's log
+// offers an Undo that hands focus back to that chip.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { flushSync, mount, unmount } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
 
 const h = vi.hoisted(() => ({ submit: null as SubmitFunction | null }));
 
+vi.mock("$app/environment", () => ({ browser: true, dev: true, building: false, version: "test" }));
 vi.mock("$app/forms", () => ({
   enhance: (_form: HTMLFormElement, submit: SubmitFunction) => {
     h.submit = submit;
@@ -26,11 +28,14 @@ vi.mock("$app/state", () => ({
       preferences: { timeFormat: "24h" },
     },
   },
+  navigating: { to: null, willUnload: null, complete: null },
+  updated: { current: false },
 }));
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast: () => {} }));
 
 import QuickLogBar from "$lib/components/QuickLogBar.svelte";
 import type { Medication } from "$lib/types";
+import { currentUndo, resetUndoRegistry } from "$lib/components/dose-writes/undo-registry.svelte";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
 import { dashboardContext } from "./helpers/dashboard-context";
 import { finishSubmit, startSubmit } from "./helpers/dose-action-form-harness";
@@ -64,6 +69,7 @@ beforeEach(() => {
 afterEach(() => {
   destroy?.();
   destroy = null;
+  resetUndoRegistry();
   vi.useRealTimers();
 });
 
@@ -128,5 +134,30 @@ describe("QuickLogBar quantity", () => {
 
     expect(quantity()).toBe("3");
     expect(accessibleName(chip())).toContain("×3");
+  });
+});
+
+describe("QuickLogBar Undo", () => {
+  it("offers Undo for the dose it logged, and that Undo sends focus back to the chip", async () => {
+    const { form, submit, chip } = setup();
+
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, SUCCESS).done;
+
+    const offer = currentUndo();
+    expect(offer).toMatchObject({ kind: "delete", doseId: "d-new" });
+    expect(offer!.focusTarget()).toBe(chip());
+  });
+});
+
+describe("QuickLogBar chip segments", () => {
+  it("sizes the chip by its content box, so the 1px border cannot clip the 44px segments", () => {
+    // Under border-box the border sat inside h-11 and overflow-hidden cut
+    // each segment down to 42px.
+    const { form } = setup();
+    const li = form.closest("li")!;
+    expect([...li.classList]).toEqual(
+      expect.arrayContaining(["box-content", "h-11", "border", "overflow-hidden"]),
+    );
   });
 });

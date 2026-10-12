@@ -111,11 +111,16 @@ export async function refillMedication(
   }
 
   return dbTx.transaction(async (tx) => {
+    // Locked (D7): the count written below is ABSOLUTE, so a log, delete or
+    // restore that committed between an unlocked read and this write would
+    // simply be overwritten. A refill that read 6 while a restore took 1
+    // wrote 16, minting a dose.
     const [med] = await tx
       .select({ inventoryCount: medications.inventoryCount })
       .from(medications)
       .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
-      .limit(1);
+      .limit(1)
+      .for("update");
 
     if (!med) throw new MedicationNotFoundError();
 
@@ -164,11 +169,15 @@ export async function adjustInventory(
   }
 
   return dbTx.transaction(async (tx) => {
+    // Locked for the same reason as `refillMedication`'s read: the count
+    // written below is absolute, so an unlocked read lets it overwrite a
+    // concurrent log, delete or restore (D7).
     const [med] = await tx
       .select({ inventoryCount: medications.inventoryCount })
       .from(medications)
       .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
-      .limit(1);
+      .limit(1)
+      .for("update");
 
     if (!med) throw new MedicationNotFoundError();
 

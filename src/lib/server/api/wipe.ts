@@ -1,6 +1,6 @@
 import { dbTx } from "$lib/server/db";
-import { doseLogs, medications, users } from "$lib/server/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { doseLogTrash, doseLogs, medications, users } from "$lib/server/db/schema";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { logAudit } from "$lib/server/audit";
 
 // Bulk wipes used by both the web "Settings > Privacy" data-wipe actions
@@ -18,11 +18,30 @@ import { logAudit } from "$lib/server/audit";
 // bumped without the corresponding rows actually being gone.
 export async function wipeDoseHistory(userId: string): Promise<{ deleted: number }> {
   return dbTx.transaction(async (tx) => {
+    // D7: every medication row first, in ascending id order like any
+    // multi-row lock. Each delete and restore locks its medication before it
+    // touches a dose or a trash row, so holding all of them makes this wipe
+    // wait for any in flight and shuts out any that would start. Without it
+    // a restore could commit after the DELETE below had taken its snapshot,
+    // and bring a dose back into a history the user had just wiped.
+    await tx
+      .select({ id: medications.id })
+      .from(medications)
+      .where(eq(medications.userId, userId))
+      .orderBy(asc(medications.id))
+      .for("update");
+
     const rows = await tx
       .delete(doseLogs)
       .where(eq(doseLogs.userId, userId))
       .returning({ id: doseLogs.id });
     const deleted = rows.length;
+
+    // The Undo copies go too. A wiped history must not be restorable, and
+    // the trash would otherwise keep the deleted doses' notes on the server
+    // until the retention sweep. Not counted in `deleted`, which is the
+    // history the user could see.
+    await tx.delete(doseLogTrash).where(eq(doseLogTrash.userId, userId));
 
     await tx
       .update(users)
@@ -37,8 +56,9 @@ export async function wipeDoseHistory(userId: string): Promise<{ deleted: number
 
 export async function wipeArchivedMedications(userId: string): Promise<{ deleted: number }> {
   return dbTx.transaction(async (tx) => {
-    // Cascading FKs on dose_logs and medication_schedules drop the
-    // dependent rows when the medication row goes.
+    // Cascading FKs on dose_logs, medication_schedules and the dose trash
+    // (the Undo copies of deleted doses) drop the dependent rows when the
+    // medication row goes.
     const rows = await tx
       .delete(medications)
       .where(and(eq(medications.userId, userId), eq(medications.isArchived, true)))

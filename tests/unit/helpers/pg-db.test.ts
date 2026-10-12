@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach } from "vitest";
 import { sql } from "drizzle-orm";
-import { users, doseLogs } from "../../../src/lib/server/db/schema";
+import { users, doseLogs, doseLogTrash, syncTombstones } from "../../../src/lib/server/db/schema";
 import { pgDb } from "./pg-db";
 
 describe("pg-db harness", () => {
@@ -131,5 +131,50 @@ describe("pg-db fixtures", () => {
     await pgDb.reset();
     const rows = await pgDb.db.select().from(users);
     expect(rows).toHaveLength(0);
+  });
+
+  it("seeds a trash row and a tombstone with every NOT NULL column filled", async () => {
+    await pgDb.seedUser();
+    await pgDb.seedMedication();
+    await pgDb.seedTrash({ id: "d1" });
+    const tombstone = await pgDb.seedTombstone({ entityId: "d1" });
+
+    expect(await pgDb.db.select().from(doseLogTrash)).toEqual([
+      {
+        id: "d1",
+        userId: "u1",
+        medicationId: "m1",
+        quantity: 1,
+        inventoryApplied: 1,
+        inventoryCredited: 1,
+        takenAt: new Date("2026-08-01T08:00:00Z"),
+        loggedAt: new Date("2026-08-01T08:00:00Z"),
+        notes: null,
+        sideEffects: null,
+        status: "taken",
+        deletedAt: new Date("2026-08-01T09:00:00Z"),
+      },
+    ]);
+    expect(await pgDb.db.select().from(syncTombstones)).toEqual([
+      {
+        id: tombstone.id,
+        userId: "u1",
+        entityType: "dose_log",
+        entityId: "d1",
+        deletedAt: new Date("2026-08-01T09:00:00Z"),
+      },
+    ]);
+  });
+
+  it("rejects a trash row whose medication does not exist", async () => {
+    await pgDb.seedUser();
+    // Assert on the constraint's name, not just "it threw": a NOT NULL
+    // violation from a broken default would satisfy a bare `rejects.toThrow()`.
+    // Drizzle wraps the driver error, so the Postgres message is on `cause`.
+    const error = await pgDb.seedTrash({ medicationId: "nope" }).then(
+      () => null,
+      (e: unknown) => e as { cause?: { message?: string } },
+    );
+    expect(error?.cause?.message).toContain("dose_log_trash_medication_id_medications_id_fk");
   });
 });

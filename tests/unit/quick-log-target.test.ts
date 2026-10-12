@@ -1,11 +1,12 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { flushSync, mount, unmount } from "svelte";
+import { flushSync, mount, tick, unmount } from "svelte";
 import { findQuickLogForm } from "$lib/utils/quick-log";
 
 vi.mock("$app/navigation", () => ({ goto: vi.fn() }));
 
+import { goto } from "$app/navigation";
 import KeyboardShortcuts from "$lib/components/KeyboardShortcuts.svelte";
 
 function logForm(attrs: string, medicationId: string, extra = ""): string {
@@ -110,5 +111,96 @@ describe("KeyboardShortcuts", () => {
 
   it("describes 1–9 as logging now, by chip position", () => {
     expect(src).toContain("Log a medication now, by its position in the chip list");
+  });
+});
+
+describe("KeyboardShortcuts guards", () => {
+  let destroy: (() => void) | null = null;
+
+  afterEach(() => {
+    destroy?.();
+    destroy = null;
+    vi.restoreAllMocks();
+  });
+
+  function mountWithChip() {
+    document.body.innerHTML = logForm('data-quick-log data-testid="chip-m1"', "m1");
+    const requestSubmit = vi
+      .spyOn(HTMLFormElement.prototype, "requestSubmit")
+      .mockImplementation(() => {});
+    vi.mocked(goto).mockClear();
+    const target = document.createElement("div");
+    document.body.append(target);
+    const component = mount(KeyboardShortcuts, {
+      target,
+      props: { medications: [{ id: "m1", name: "A" }] },
+    });
+    flushSync();
+    destroy = () => unmount(component);
+    return { requestSubmit };
+  }
+
+  /** A keydown from wherever focus is, bubbling to the window like a real one. */
+  function press(key: string, init: KeyboardEventInit = {}) {
+    const from =
+      document.activeElement instanceof HTMLElement ? document.activeElement : document.body;
+    from.dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }),
+    );
+    flushSync();
+  }
+
+  it("ignores a held key's repeats, so holding 1 logs once", () => {
+    // The write lock's 700ms cooldown is all that stood between a held digit
+    // and a second dose.
+    const { requestSubmit } = mountWithChip();
+    press("1", { repeat: true });
+    expect(requestSubmit).not.toHaveBeenCalled();
+    press("1");
+    expect(requestSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("fires nothing behind an open dialog, even with focus on its tabindex=-1 panel", () => {
+    // ui/Modal's panel is tabindex="-1", which isControlFocused() exempts, so
+    // 1 logged a dose and n navigated away behind the edit dialog.
+    const { requestSubmit } = mountWithChip();
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.tabIndex = -1;
+    document.body.append(dialog);
+    dialog.focus();
+    expect(document.activeElement).toBe(dialog);
+
+    press("1");
+    press("n");
+    expect(requestSubmit).not.toHaveBeenCalled();
+    expect(goto).not.toHaveBeenCalled();
+
+    // The dialog was the only reason: once it has gone, 1 logs again.
+    dialog.remove();
+    press("1");
+    expect(requestSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("still lets ? close its own help overlay, and lets nothing else through while it is open", async () => {
+    const { requestSubmit } = mountWithChip();
+    const overlay = () => document.querySelector('[aria-label="Keyboard shortcuts"]');
+
+    press("?");
+    expect(overlay()).not.toBeNull();
+    await tick();
+    await tick();
+    // Focus on the overlay's own tabindex="-1" panel, where a click inside it
+    // leaves it. On the Close button every shortcut is already skipped.
+    const panel = overlay()!.querySelector<HTMLElement>(":scope > div")!;
+    panel.focus();
+    expect(document.activeElement).toBe(panel);
+
+    press("1");
+    expect(requestSubmit).not.toHaveBeenCalled();
+
+    press("?");
+    expect(overlay()).toBeNull();
   });
 });

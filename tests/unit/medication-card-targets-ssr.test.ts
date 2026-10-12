@@ -19,6 +19,7 @@ import type { MedicationWithStats } from "$lib/types";
 import MedicationCard from "../../src/lib/components/MedicationCard.svelte";
 import MedicationsPage from "../../src/routes/(app)/medications/+page.svelte";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
+import { doseWriteContext } from "./helpers/dashboard-context";
 import { JSDOM } from "jsdom";
 
 type ListedMedication = MedicationWithStats & {
@@ -72,8 +73,36 @@ function guaranteedPx(classes: string[], axis: "h" | "w"): number {
 }
 
 describe("the medication card's quick-log button", () => {
-  const html = render(MedicationCard, { props: { medication: medication() } }).body;
+  // The lock is the (app) layout's; every dose control reads it from context.
+  const html = render(MedicationCard, {
+    props: { medication: medication(), timezone: "UTC", timeFormat: "24h" },
+    context: doseWriteContext(),
+  }).body;
   const LABEL = 'aria-label="Log a dose of Paracetamol"';
+
+  it("is a form posting one dose to the dashboard's logDose, the flex item above the card link", () => {
+    // It used to `fetch` the action and ignore the doseId it returned, so it
+    // had no Undo. A real form goes through use:enhance and the shared
+    // dose-write path; the form is now what sits beside the link.
+    const form = html.match(/<form[^>]*>/)?.[0] ?? "";
+    expect(form).toContain('method="POST"');
+    expect(form).toContain('action="/dashboard?/logDose"');
+    expect(baseClasses(form)).toEqual(
+      expect.arrayContaining(["relative", "z-10", "mt-4", "mr-4", "shrink-0", "self-start"]),
+    );
+    const doc = new JSDOM(html).window.document;
+    const hidden = [...doc.querySelectorAll<HTMLInputElement>('form input[type="hidden"]')];
+    expect(Object.fromEntries(hidden.map((i) => [i.name, i.value]))).toEqual({
+      medicationId: "m1",
+      quantity: "1",
+    });
+  });
+
+  it("stays type=button until hydrated, so a tap before then cannot post without its Undo", () => {
+    // Before hydration use:enhance is not attached: a native submit would log
+    // a dose, navigate to /dashboard, and leave nothing to undo.
+    expect(buttonTag(html, LABEL)).toContain('type="button"');
+  });
 
   it("names the action and the medication it acts on", () => {
     // "Quick log X" was the old name. Starting with the visible word keeps
@@ -191,10 +220,12 @@ describe("the medications list's reorder buttons", () => {
     exportFormat: "csv",
     updatedAt: new Date("2026-08-01T00:00:00Z"),
   };
-  // `user` and `preferences` come from the (app) layout load; svelte-check
-  // enforces the merged PageData even though this page reads neither.
+  // `user` and `preferences` come from the (app) layout load. The page reads
+  // both: it passes data.user.timezone and data.preferences.timeFormat to
+  // every card, for the Log toast's "logged at" time.
   const html = render(MedicationsPage, {
     props: { data: { user, preferences, medications, archived: [] } },
+    context: doseWriteContext(),
   }).body;
 
   const buttons = medications.flatMap((m, i) => [
@@ -230,5 +261,9 @@ describe("the medications list's reorder buttons", () => {
 
   it("still has the live region the move is announced through", () => {
     expect(html).toMatch(/<p class="sr-only" role="status">/);
+  });
+
+  it("gives the page heading tabindex=-1, the last place an Undo can put focus", () => {
+    expect(html).toMatch(/<h1\b[^>]*\btabindex="-1"[^>]*>Medications<\/h1>/);
   });
 });

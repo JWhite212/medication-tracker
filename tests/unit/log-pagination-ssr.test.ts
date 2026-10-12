@@ -19,6 +19,8 @@ vi.mock("$app/forms", () => ({ enhance: () => ({ destroy() {} }) }));
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast: () => {} }));
 
 const { default: LogPage } = await import("../../src/routes/(app)/log/+page.svelte");
+// Every dose row's × is a dose write, which reads the (app) layout's lock.
+const { doseWriteContext } = await import("./helpers/dashboard-context");
 
 /**
  * The dose log's pagination has to page through the result set the user is
@@ -132,6 +134,7 @@ function renderAt(
         timezone: "UTC",
       },
     },
+    context: doseWriteContext(),
   }).body;
 }
 

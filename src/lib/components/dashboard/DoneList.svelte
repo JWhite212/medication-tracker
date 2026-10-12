@@ -1,3 +1,25 @@
+<script lang="ts" module>
+  import { focusTargetAfterResolve } from "$components/dose-writes/focus-after";
+  import { DONE_HEADING_ID } from "./dom-ids";
+
+  /**
+   * Where focus goes once an Undo has restored a Done row: that row's Edit,
+   * else the Done heading. A restored skip or missed entry has no Edit — its
+   * only control is Remove, a write — so it gets the heading rather than a
+   * button that would remove it again. Called after the restore's reload, so
+   * the row is looked up by its `data-dose-id`, never held as an element.
+   * Exported for the dashboard's edit-dialog Remove, which restores into this
+   * list too.
+   */
+  export function restoredDoneRowFocus(doseId: string): () => HTMLElement | null {
+    return () =>
+      focusTargetAfterResolve(doseId, [], {
+        attr: "doseId",
+        pick: (row) => row.querySelector<HTMLElement>("[data-edit]"),
+      }) ?? document.getElementById(DONE_HEADING_ID);
+  }
+</script>
+
 <script lang="ts">
   import type { DoneRow, DoseLogWithMedication } from "$lib/types";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
@@ -5,7 +27,6 @@
   import DoseActionForm from "./DoseActionForm.svelte";
   import MedicationGlyph from "./MedicationGlyph.svelte";
   import StatusMarker from "./StatusMarker.svelte";
-  import { DONE_HEADING_ID } from "./dom-ids";
 
   let {
     rows,
@@ -38,8 +59,8 @@
     const covers = row.covers.map((iso) =>
       formatSlotTime(new Date(iso), todayStart, timezone, timeFormat),
     );
-    const removeToast =
-      dose.status === "skipped" ? `${label}: skip undone` : `${label}: missed entry removed`;
+    const skipped = dose.status === "skipped";
+    const removeToast = skipped ? `${label}: skip removed` : `${label}: missed entry removed`;
     return {
       label,
       time,
@@ -51,14 +72,18 @@
         dose.status === "skipped" ? "Skipped" : dose.status === "missed" ? "Missed" : null,
       // Facts only, no verdict: the slots this dose resolved.
       coversText: covers.length > 0 ? `for ${covers.join(", ")}` : null,
-      removeLabel: dose.status === "skipped" ? "Undo skip" : "Remove",
+      // "Remove skip", not "Undo skip": every Undo offer now has a button
+      // named Undo, and "click Undo" must not be ambiguous for voice control.
+      removeLabel: skipped ? "Remove skip" : "Remove",
       removeToast: () => removeToast,
+      restoreFocus: restoredDoneRowFocus(dose.id),
     };
   }
 </script>
 
 <section aria-labelledby={DONE_HEADING_ID}>
-  <!-- tabindex="-1" and always rendered: focus lands here after Remove or Undo skip. -->
+  <!-- tabindex="-1" and always rendered: focus lands here after Remove or
+       Remove skip, and after an Undo restores a row that has no Edit. -->
   <h2
     id={DONE_HEADING_ID}
     tabindex="-1"
@@ -73,7 +98,9 @@
       <ul role="list" class="divide-glass-border divide-y">
         {#each rows as row (row.key)}
           {@const v = view(row)}
-          <li class="flex min-h-11 items-center gap-3 py-1">
+          <!-- data-dose-id and data-edit are how an Undo finds the restored
+               row after the reload has re-rendered it. -->
+          <li data-dose-id={row.dose.id} class="flex min-h-11 items-center gap-3 py-1">
             <span class="text-text-secondary min-w-14 shrink-0 text-sm tabular-nums">
               {#if row.dayLabel === "yesterday"}<span class="block text-xs">Yesterday</span
                 >{/if}{v.time}
@@ -102,6 +129,7 @@
             {#if row.dose.status === "taken"}
               <button
                 type="button"
+                data-edit
                 class="border-border-strong text-text-primary hover:bg-surface-overlay h-11 shrink-0 rounded-lg border px-3 text-sm font-medium"
                 onclick={() => onedit(row.dose)}
                 >Edit<span class="sr-only">: {v.label} dose taken at {v.when}</span></button
@@ -116,6 +144,8 @@
                 pendingLabel="Removing…"
                 variant="quiet"
                 buildToast={v.removeToast}
+                undo={{ kind: "restore", focusTarget: v.restoreFocus }}
+                withdrawsUndoFor={row.dose.id}
                 focusAfter={focusDoneHeading}
               />
             {/if}

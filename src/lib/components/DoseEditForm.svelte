@@ -1,8 +1,18 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
-  import { tick } from "svelte";
+  import { applyAction, enhance } from "$app/forms";
+  import { tick, untrack } from "svelte";
+  import type { SubmitFunction } from "@sveltejs/kit";
   import { showToast } from "$components/ui/Toast.svelte";
   import SideEffectPicker from "$components/SideEffectPicker.svelte";
+  import { beginDoseWrite } from "$components/dose-writes/begin-dose-write";
+  import { getDoseWriteLock } from "$components/dose-writes/dose-write-lock.svelte";
+  import { UNKNOWN_OUTCOME_TOAST } from "$components/dose-writes/copy";
+  import { reloadAfterWrite } from "$components/dose-writes/reload-after-write";
+  import {
+    clearUndo,
+    watchSession,
+    withdrawUndoFor,
+  } from "$components/dose-writes/undo-registry.svelte";
   import { formatDateTimeLocal } from "$lib/utils/time";
   import { actionFieldErrors, unsavedErrorMessage } from "$lib/utils/form-errors";
   import type { DoseLogWithMedication, SideEffect } from "$lib/types";
@@ -16,8 +26,18 @@
     timezone,
     onclose,
   }: { dose: DoseLogWithMedication; timezone: string; onclose: () => void } = $props();
+
+  // The (app) layout's dose-write lock. Save keeps its own enhance for the
+  // inline field errors below, but it is a dose write like any other: it
+  // starts through the same gate (`beginDoseWrite`), so Save and the dialog's
+  // Remove exclude each other, and a Save cannot start while another dose
+  // write is still in flight.
+  const lock = getDoseWriteLock();
+
   let loading = $state(false);
-  let sideEffects = $state<SideEffect[]>(dose.sideEffects ?? []);
+  // Seeded once from the dose this form opened on. `untrack` says so: the
+  // picker owns the value from here on, and a later `dose` must not reset it.
+  let sideEffects = $state<SideEffect[]>(untrack(() => dose.sideEffects ?? []));
   // The action's per-field messages, shown beside their controls. The toast
   // names one problem and then disappears; a rejected date and quantity
   // together need both to stay put next to the fields that caused them.
@@ -48,41 +68,77 @@
       form.querySelector<HTMLElement>('[role="alert"]');
     target?.focus();
   }
+
+  /**
+   * Nothing here calls enhance's `update()`. On success its `reset_focus`
+   * sent focus to <body> after the Modal had returned it to the Edit button;
+   * on an error result it handed the page to +error.svelte and threw the
+   * edit away. Reloads go through `reloadAfterWrite()` instead.
+   *
+   * A result that lands after the (app) layout has gone (a sign-out) shows
+   * nothing and only lets go of the lock, as createDoseWrite's does: on a
+   * shared device it would otherwise speak to the next person.
+   */
+  const save: SubmitFunction = ({ cancel }) => {
+    // The gate every dose write passes: offline, then the lock. A refusal has
+    // already cancelled and, unless only the cooldown refused it, told the
+    // user.
+    if (!beginDoseWrite(cancel, lock)) return;
+    const sessionEnded = watchSession();
+    // Only once the Save is certain to be sent, so a refused Save never costs
+    // the user their Undo. An offer naming this dose would otherwise act on
+    // the row as it was before the edit.
+    withdrawUndoFor(dose.id);
+    loading = true;
+
+    return async ({ formElement, result }) => {
+      try {
+        // Signed out while the request was in flight: show nothing.
+        if (sessionEnded()) return;
+        loading = false;
+        fieldErrors = actionFieldErrors(result);
+        formError = "";
+        if (result.type === "success") {
+          // An edit can move a dose onto a deleted one's slot, so no older
+          // Undo survives it, whichever dose it names.
+          clearUndo();
+          showToast("Dose updated", "success");
+          onclose();
+          await reloadAfterWrite({ cancelled: sessionEnded });
+        } else if (result.type === "redirect") {
+          await applyAction(result);
+        } else if (result.type === "error" && result.status === undefined) {
+          // No response at all: the edit may or may not have landed. Say so
+          // inside the dialog too, where a screen reader can hear it, then
+          // keep the lock until the server answers and the page has reloaded,
+          // so a retry acts on data somebody has checked.
+          showToast(UNKNOWN_OUTCOME_TOAST, "error");
+          formError = UNKNOWN_OUTCOME_TOAST;
+          await focusFirstProblem(formElement);
+          // `cancelled`: a sign-out while it waits stops the probing, and
+          // nothing is reloaded.
+          await reloadAfterWrite({ waitForServer: true, cancelled: sessionEnded });
+        } else {
+          const message = unsavedErrorMessage(result, "Couldn't update dose. Please try again.");
+          showToast(message, "error");
+          const besideAField = INLINE_FIELDS.some((field) => fieldErrors[field]);
+          formError = fieldErrors.form ?? (besideAField ? "" : message);
+          await focusFirstProblem(formElement);
+          // A refusal (a dose deleted in another tab, a rejected field)
+          // reloads, so the list behind the dialog stops showing a dose that
+          // is gone. An expired session or a crash does not: the edit stays
+          // open, unchanged, to retry or cancel.
+          if (result.type === "failure") await reloadAfterWrite({ cancelled: sessionEnded });
+        }
+      } finally {
+        loading = false;
+        lock.release();
+      }
+    };
+  };
 </script>
 
-<form
-  method="POST"
-  action="?/editDose"
-  use:enhance={() => {
-    loading = true;
-    return async ({ formElement, result, update }) => {
-      loading = false;
-      fieldErrors = actionFieldErrors(result);
-      formError = "";
-      if (result.type === "success") {
-        showToast("Dose updated", "success");
-        onclose();
-      } else if (result.type === "failure" || result.type === "error") {
-        const message = unsavedErrorMessage(result, "Couldn't update dose. Please try again.");
-        showToast(message, "error");
-        const besideAField = INLINE_FIELDS.some((field) => fieldErrors[field]);
-        formError = fieldErrors.form ?? (besideAField ? "" : message);
-        // `update()` hands an error result to the nearest +error.svelte, which
-        // replaces the whole page: the modal and the edit in it are thrown
-        // away, and nothing says the dose was not saved. An expired session
-        // or a crash is better answered here, with the edit still open to
-        // retry or cancel.
-        if (result.type === "error") {
-          await focusFirstProblem(formElement);
-          return;
-        }
-      }
-      await update();
-      if (result.type === "failure") await focusFirstProblem(formElement);
-    };
-  }}
-  class="space-y-4"
->
+<form method="POST" action="?/editDose" use:enhance={save} class="space-y-4">
   <input type="hidden" name="doseId" value={dose.id} />
   <!-- The instant this form rendered. On a fall-back day two different
        instants render as the same wall clock, so without this a Save that
@@ -193,10 +249,13 @@
     >
       Cancel
     </button>
+    <!-- aria-disabled, never `disabled`: the attribute drops keyboard focus
+         to <body>. A busy Save is cancelled in `save` instead. min-h-11 is
+         the dose-control floor; compact density rewrites .py-2.5. -->
     <button
       type="submit"
-      disabled={loading}
-      class="bg-accent text-accent-fg flex-1 rounded-lg py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+      aria-disabled={loading || lock.busy ? "true" : undefined}
+      class="bg-accent text-accent-fg min-h-11 flex-1 rounded-lg py-2.5 text-sm font-medium transition-opacity hover:opacity-90 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
     >
       {loading ? "Saving..." : "Save Changes"}
     </button>

@@ -195,7 +195,7 @@ Notes worth keeping in mind:
   deprecated — read `medication_schedules` first. They remain populated
   for compatibility with read paths that haven't migrated yet.
 - `inventory_events` is the audit trail for `medications.inventory_count`.
-  The dose paths (taken, deleted, quantity edited), `refillMedication` and
+  The dose paths (taken, deleted, restored, quantity edited), `refillMedication` and
   `adjustInventory` each write a corresponding event in the same
   transaction as the count change.
 
@@ -212,7 +212,11 @@ Notes worth keeping in mind:
   `logDose` deducts with `GREATEST(0, …)` and cannot take more than there
   is. Deleting a dose gives back exactly `inventory_applied`, so a delete
   is the precise inverse of the log it undoes. NULL means the row predates
-  the column, and readers fall back to `quantity`.
+  the column, and readers fall back to `quantity`. A restore (the web Undo
+  after a delete) takes back `min(count, inventory_credited)`, where
+  `dose_log_trash.inventory_credited` records what the delete actually gave
+  back: 0 when the count was NULL. See
+  [ADR 0008](adr/0008-undoable-deletes.md).
 - `reminder_events.dedupe_key` carries a unique constraint, but
   claiming it is `ON CONFLICT DO UPDATE ... WHERE <retryable>`, not a
   plain insert-or-skip — see the sequence diagram above and

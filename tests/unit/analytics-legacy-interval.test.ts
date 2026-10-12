@@ -23,14 +23,11 @@ const row = {
   quantity: 1,
 };
 
-// Minimal stand-in for the `db.select(...).from(...).leftJoin(...)
-// .where(...).groupBy(...)` chain getPerMedicationStats builds — mirrors
-// the chainable-stub pattern in tests/unit/doses-inventory.test.ts.
-// `.groupBy()` is the terminal call and is awaited directly, so it can
-// resolve a plain Promise rather than needing a `.then()` on the chain.
-// The database comes from the shared seam, which dispatches on real table
-// identity, so the seed goes on `medications` — the aggregate is driven
-// FROM there and joins dose_logs in, not the other way round.
+// The `db.select(...).from(...).leftJoin(...).where(...).groupBy(...)` chain
+// getPerMedicationStats builds is answered by the shared fake in
+// tests/unit/helpers/fake-db.ts, which ignores the grouping and dispatches
+// on real table identity. So the seed goes on `medications` — the aggregate
+// is driven FROM there and joins dose_logs in, not the other way round.
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
 // No medication_schedules rows for this medication, so

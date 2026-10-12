@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { invalidateAll } from "$app/navigation";
   import OnboardingWelcome from "$components/OnboardingWelcome.svelte";
   import Modal from "$components/ui/Modal.svelte";
@@ -8,16 +9,13 @@
   import QuickLogBar from "$components/QuickLogBar.svelte";
   import DashboardHeader from "$components/dashboard/DashboardHeader.svelte";
   import DueCard from "$components/dashboard/DueCard.svelte";
-  import DoneList from "$components/dashboard/DoneList.svelte";
+  import DoneList, { restoredDoneRowFocus } from "$components/dashboard/DoneList.svelte";
   import LaterList from "$components/dashboard/LaterList.svelte";
   import DoseActionForm from "$components/dashboard/DoseActionForm.svelte";
-  import {
-    createDoseWriteLock,
-    setDoseWriteLock,
-  } from "$components/dashboard/dose-write-lock.svelte";
   import { createDashboardClock, setDashboardClock } from "$components/dashboard/dashboard-clock";
   import { DASHBOARD_HEADING_ID, DONE_HEADING_ID } from "$components/dashboard/dom-ids";
-  import type { DateFormat, TimeFormat } from "$lib/utils/time";
+  import { formatDoseLabel, toastForDoseRemoved } from "$lib/utils/dashboard-copy";
+  import { formatUserTime, type DateFormat, type TimeFormat } from "$lib/utils/time";
   import type { DoseLogWithMedication } from "$lib/types";
 
   let { data } = $props();
@@ -31,11 +29,19 @@
   const doneTitle = $derived(asNeededOnly ? "Logged today" : "Done today");
   const hasDue = $derived(data.earlier.length + data.today.length > 0);
 
-  // One page-wide write lock and one server-relative clock. Every
-  // DoseActionForm, DueCard and chip reads them from context; nothing here
-  // re-implements a timer, a skew or a lock.
-  setDoseWriteLock(createDoseWriteLock());
-  const clock = createDashboardClock(invalidateAll);
+  // One server-relative clock. Every DoseActionForm, DueCard and chip reads
+  // it from context; nothing here re-implements a timer or a skew. The write
+  // lock they also read is the (app) layout's, shared with every page.
+  //
+  // Seeded from the payload this page rendered with, so the stale guard can
+  // answer from the first tap rather than reading NaN until the effect below
+  // runs. The seed arms no timer: during SSR a setTimeout would outlive the
+  // request. `untrack` because the seed is deliberately the FIRST payload
+  // only; the effect adopts every later one through sync().
+  const clock = createDashboardClock(
+    invalidateAll,
+    untrack(() => ({ now: data.now, nextRefreshAt: data.nextRefreshAt })),
+  );
   setDashboardClock(clock);
 
   // The instant visible durations are rendered against. It starts at the
@@ -77,6 +83,24 @@
   const headingTarget = () => document.getElementById(DASHBOARD_HEADING_ID);
   /** The Done h2 (tabindex="-1", always rendered): focus after Remove. */
   const doneHeading = () => document.getElementById(DONE_HEADING_ID);
+
+  /**
+   * The edit dialog's Remove toast: "Dose removed: Metformin 500mg at 08:00",
+   * or "… yesterday at 22:00" for a dose Done carried over from before
+   * today's midnight — the same test the server applies to the row's Edit
+   * label (`takenAt < todayStart`). Resolved to a string when the dialog
+   * renders, because it is read after the reload and onSuccess clears
+   * editingDose straight after.
+   */
+  function removedToast(dose: DoseLogWithMedication): () => string {
+    const med = dose.medication;
+    const label = formatDoseLabel(med.name, med.dosageAmount, med.dosageUnit);
+    const takenAt = new Date(dose.takenAt);
+    const at = formatUserTime(takenAt, data.timezone, timeFormat);
+    const day = takenAt.getTime() < todayStart.getTime() ? "yesterday" : "today";
+    const message = toastForDoseRemoved(label, at, day);
+    return () => message;
+  }
 </script>
 
 <svelte:head>
@@ -193,9 +217,11 @@
   title={editingDose ? `Edit dose of ${editingDose.medication.name}` : "Edit dose"}
 >
   {#if editingDose}
-    <!-- Edit stays on DoseEditForm's own enhance: the component is shared
-         with /log. Remove is a separate form so it goes through the page's
-         write lock like every other dose write. -->
+    <!-- Edit keeps DoseEditForm's own enhance for its inline field errors
+         (the component is shared with /log), but its Save starts through
+         beginDoseWrite under the (app) layout's write lock. Remove is a
+         separate DoseActionForm on that same lock, so Save and Remove
+         exclude each other. -->
     <DoseEditForm
       dose={editingDose}
       timezone={data.timezone}
@@ -208,7 +234,9 @@
         label="Remove this dose"
         pendingLabel="Removing…"
         variant="danger"
-        buildToast={() => "Dose removed"}
+        buildToast={removedToast(editingDose)}
+        undo={{ kind: "restore", focusTarget: restoredDoneRowFocus(editingDose.id) }}
+        withdrawsUndoFor={editingDose.id}
         focusAfter={doneHeading}
         onSuccess={() => (editingDose = null)}
       />

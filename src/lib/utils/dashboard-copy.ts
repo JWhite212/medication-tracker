@@ -144,6 +144,24 @@ export function toastForTookItAt(i: {
   return `${i.label} recorded as taken at ${formatSlotTime(i.at, i.todayStart, i.tz, i.timeFormat)}`;
 }
 
+/**
+ * Which day a removed dose was taken, as its Undo offer says it. The caller
+ * decides from day KEYS (/log) or from `todayStart` (the dashboard), never
+ * from the wording of a heading, so rewording one cannot change the toast.
+ */
+export type RemovedDoseDay = "today" | "yesterday" | { on: string };
+
+/**
+ * A delete's Undo offer, on /log and in the dashboard's edit dialog: "Dose
+ * removed: Paracetamol 500mg at 8:00", "… yesterday at 8:00", "… on Tue 23
+ * Sep at 8:00".
+ */
+export function toastForDoseRemoved(label: string, time: string, day: RemovedDoseDay): string {
+  if (day === "today") return `Dose removed: ${label} at ${time}`;
+  if (day === "yesterday") return `Dose removed: ${label} yesterday at ${time}`;
+  return `Dose removed: ${label} on ${day.on} at ${time}`;
+}
+
 /** Skip success toast. */
 export function toastForSkip(i: {
   label: string;

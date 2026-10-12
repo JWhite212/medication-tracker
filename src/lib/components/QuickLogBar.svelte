@@ -5,6 +5,7 @@
   import { getDashboardClock } from "$components/dashboard/dashboard-clock";
   import { logToastFromReload } from "$components/dashboard/dose-toasts";
   import { formatDoseLabel } from "$lib/utils/dashboard-copy";
+  import { findQuickLogForm } from "$lib/utils/quick-log";
   import type { TimeFormat } from "$lib/utils/time";
   import type { Medication } from "$lib/types";
 
@@ -40,7 +41,7 @@
   }
 
   /**
-   * The chip's success toast. DoseActionForm calls it after `update()` and
+   * The chip's success toast. DoseActionForm calls it after the reload and
    * `tick()`, so `page.data` is the RELOADED payload and the sentence states
    * which slots the dose actually covered (`logToastFromReload`, the same
    * helper Log now uses). Every other value is resolved when the chip renders.
@@ -59,6 +60,21 @@
         tf,
       );
   }
+
+  /**
+   * A chip's log is a create, so its Undo deletes the dose, and focus then
+   * goes back to that chip: the control the user was on, whether they tapped
+   * it or pressed its 1–9 key. The chip is keyed by medication, so the one
+   * findQuickLogForm returns after the reload is the same element.
+   */
+  function chipUndo(medId: string) {
+    return {
+      kind: "delete" as const,
+      focusTarget: () =>
+        findQuickLogForm(document, medId)?.querySelector<HTMLElement>('button[type="submit"]') ??
+        null,
+    };
+  }
 </script>
 
 <ul role="list" class="flex flex-wrap gap-2">
@@ -69,8 +85,11 @@
          aria-hidden glyph, never behind text. Gradient, striped and two-tone
          pills ran the name across colour boundaries, and opacity on the
          steppers undid getReadableTextColor's worst-case contrast. -->
+    <!-- box-content: under border-box the 1px border sits inside h-11, and
+         overflow-hidden clipped each 44px segment to 42px. Content-box keeps
+         44px inside and draws the border-strong edge outside it (46px). -->
     <li
-      class="border-border-strong bg-glass text-text-primary flex h-11 items-center overflow-hidden rounded-full border"
+      class="border-border-strong bg-glass text-text-primary box-content flex h-11 items-center overflow-hidden rounded-full border"
     >
       <!-- Rendered at every quantity, so the log segment never moves under the
            thumb. At 1 it is aria-disabled, not `disabled`, so it keeps focus. -->
@@ -95,7 +114,7 @@
         pendingLabel="Logging…"
         variant="chip"
         quickLog
-        undoable
+        undo={chipUndo(med.id)}
         buildToast={chipToast(med, qty)}
         onSuccess={() => setQty(med.id, MIN_QTY)}
       >

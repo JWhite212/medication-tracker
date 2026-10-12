@@ -21,6 +21,12 @@ export interface DashboardClock {
   serverNow(): Date;
   /** When the loaded payload stops being true, on the server's clock. */
   nextRefreshAt(): Date;
+  /**
+   * Whether the loaded payload has stopped being true: the server's clock has
+   * reached `nextRefreshAt`. False before any payload. This is the stale
+   * guard's one question, so no caller compares instants itself.
+   */
+  isExpired(): boolean;
   /** Reload the page data now. Overlapping calls share one reload. */
   refresh(): Promise<void>;
 }
@@ -41,14 +47,26 @@ export interface DashboardClockController extends DashboardClock {
   dispose(): void;
 }
 
-export function createDashboardClock(invalidate: () => Promise<void>): DashboardClockController {
-  let skewMs = 0;
-  let refreshAtMs = Number.NaN;
+/**
+ * `seed` is the payload the page rendered with. It sets the skew and the
+ * refresh instant WITHOUT arming the timer: during SSR a setTimeout would
+ * outlive the request, and before hydration there is nothing to reload. The
+ * page's effect arms the timer with `sync()`, once per payload. Without a
+ * seed the refresh instant is NaN until then, and `isExpired()` answers false.
+ */
+export function createDashboardClock(
+  invalidate: () => Promise<void>,
+  seed?: DashboardClockPayload,
+): DashboardClockController {
+  let skewMs = seed ? skewFrom(seed.now) : 0;
+  let refreshAtMs = seed ? Date.parse(seed.nextRefreshAt) : Number.NaN;
   let firedFor: number | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inFlight: Promise<void> | null = null;
 
   const serverNowMs = () => Date.now() + skewMs;
+  /** A NaN refresh instant (no payload yet) compares false, so an unseeded clock is never expired. */
+  const isExpired = () => serverNowMs() >= refreshAtMs;
 
   function refresh(): Promise<void> {
     inFlight ??= invalidate().finally(() => {
@@ -65,7 +83,7 @@ export function createDashboardClock(invalidate: () => Promise<void>): Dashboard
    * skipped offline stays pending, and `onOnline` runs it.
    */
   function refreshIfExpired(): void {
-    if (!(serverNowMs() >= refreshAtMs) || firedFor === refreshAtMs) return;
+    if (!isExpired() || firedFor === refreshAtMs) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     firedFor = refreshAtMs;
     void refresh().catch(() => {});
@@ -91,6 +109,7 @@ export function createDashboardClock(invalidate: () => Promise<void>): Dashboard
   return {
     serverNow: () => new Date(serverNowMs()),
     nextRefreshAt: () => new Date(refreshAtMs),
+    isExpired,
     refresh,
     sync(payload) {
       skewMs = skewFrom(payload.now);

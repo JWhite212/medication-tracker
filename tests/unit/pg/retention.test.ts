@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { rateLimits, passwordResetTokens } from "../../../src/lib/server/db/schema";
+import { asc } from "drizzle-orm";
+import { rateLimits, passwordResetTokens, doseLogTrash } from "../../../src/lib/server/db/schema";
+import { DOSE_UNDO_WINDOW_MS } from "../../../src/lib/utils/dose-undo";
 
 vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock);
 
@@ -10,13 +12,13 @@ vi.mock("$lib/server/log", () => ({
   logError: (message: string, fields: Record<string, unknown>) => logged.push({ message, fields }),
 }));
 
-import { pgDb } from "../helpers/pg-db";
+import { pgDb, queryLog } from "../helpers/pg-db";
 
 const { runRetention, runRetentionForTick, RETENTION_POLICIES } =
   await import("../../../src/lib/server/retention");
 
 /**
- * Retention is three DELETE predicates, so it belongs on real Postgres —
+ * Retention is four DELETE predicates, so it belongs on real Postgres —
  * `fake-db` records a `where` without evaluating it, and which rows survive
  * is the whole behaviour.
  *
@@ -90,6 +92,61 @@ describe("what each policy deletes", () => {
       RETENTION_POLICIES.map((p) => p.name).sort(),
     );
     expect(results.every((r) => r.ok)).toBe(true);
+  });
+});
+
+describe("the dose-log-trash policy", () => {
+  /** "Expired" is `deleted_at <= now − window`: the cutoff itself is expired. */
+  const cutoff = NOW.getTime() - DOSE_UNDO_WINDOW_MS;
+
+  async function seedTrashForTwoUsers() {
+    await pgDb.seedUser({ id: "u2", email: "u2@example.com" });
+    await pgDb.seedMedication({ id: "m1", userId: "u1" });
+    await pgDb.seedMedication({ id: "m2", userId: "u2" });
+    await pgDb.seedTrash({ id: "u1-at-cutoff", userId: "u1", deletedAt: new Date(cutoff) });
+    await pgDb.seedTrash({ id: "u1-live", userId: "u1", deletedAt: new Date(cutoff + 1) });
+    await pgDb.seedTrash({
+      id: "u2-old",
+      userId: "u2",
+      medicationId: "m2",
+      deletedAt: new Date(cutoff - HOUR),
+    });
+    await pgDb.seedTrash({
+      id: "u2-live",
+      userId: "u2",
+      medicationId: "m2",
+      deletedAt: new Date(NOW.getTime() - 60_000),
+    });
+  }
+
+  it("is registered", () => {
+    expect(RETENTION_POLICIES.map((p) => p.name)).toContain("dose-log-trash");
+  });
+
+  it("purges every user's expired rows, the cutoff included, and keeps live ones", async () => {
+    await seedTrashForTwoUsers();
+
+    const results = await runRetention(NOW);
+
+    expect(results.find((r) => r.policy === "dose-log-trash")?.ok).toBe(true);
+    const remaining = await pgDb.db
+      .select({ id: doseLogTrash.id })
+      .from(doseLogTrash)
+      .orderBy(asc(doseLogTrash.id));
+    expect(remaining.map((row) => row.id)).toEqual(["u1-live", "u2-live"]);
+  });
+
+  it("never waits on a row another transaction holds, and is scoped by time alone", async () => {
+    // A purge that waited could close a lock cycle with a restore, a wipe or
+    // a cascade. One that skips a locked row only purges it on a later tick.
+    queryLog.length = 0;
+
+    await RETENTION_POLICIES.find((p) => p.name === "dose-log-trash")!.purge(NOW);
+
+    const purge = queryLog.filter((q) => q.includes(`"dose_log_trash"`));
+    expect(purge.length).toBeGreaterThan(0);
+    expect(purge.some((q) => /for update skip locked/.test(q))).toBe(true);
+    expect(purge.some((q) => q.includes(`"user_id"`))).toBe(false);
   });
 });
 

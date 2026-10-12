@@ -28,7 +28,7 @@ vi.mock("$app/state", () => ({ page: { data: {} } }));
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast: () => {} }));
 
 import DueCard from "$lib/components/dashboard/DueCard.svelte";
-import { createDoseWriteLock } from "$lib/components/dashboard/dose-write-lock.svelte";
+import { createDoseWriteLock } from "$lib/components/dose-writes/dose-write-lock.svelte";
 import { dashboardContext } from "./helpers/dashboard-context";
 import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
 import {
@@ -170,10 +170,27 @@ describe("DueCard", () => {
     });
   });
 
-  it("Skip posts the shipped skipAt verbatim — for a slot still ahead, that is now", () => {
+  it("Skip posts the row's own slot as forSlot, never an instant — the server decides where it lands", () => {
+    // The top row's skipAt is 13:00 (now: a skip is never future-dated), but
+    // the page no longer chooses that instant. It names the slot, and
+    // skipDoseForSlot writes the skip at the server's min(slot, now).
     const form = formOf(buttonNamed(renderCard(TODAY_CARD), "Skip: Metformin 500mg, 13:30 dose"));
     expect(form.getAttribute("action")).toBe("?/skipDose");
-    expect(hiddenFields(form)).toEqual({ medicationId: "m1", takenAt: "2026-05-01T13:00:00.000Z" });
+    expect(hiddenFields(form)).toEqual({ medicationId: "m1", forSlot: "2026-05-01T13:30:00.000Z" });
+  });
+
+  it("Skip on a past row posts that row's slot as forSlot", () => {
+    const form = formOf(buttonNamed(renderCard(TODAY_CARD), "Skip: Metformin 500mg, 11:00 dose"));
+    expect(hiddenFields(form)).toEqual({ medicationId: "m1", forSlot: "2026-05-01T11:00:00.000Z" });
+  });
+
+  it("offers Skip only where the row's skipAt is set, even though it posts the slot", () => {
+    const card: DueCardData = {
+      ...OVERDUE_CARD,
+      rows: [row("2026-05-01T11:00:00.000Z", { skipAt: null })],
+    };
+    const names = [...renderCard(card).querySelectorAll("button")].map(accessibleName);
+    expect(names).toEqual(["Took it at 11:00: Metformin 500mg"]);
   });
 
   it("puts Log now first in tab order, then Took it at and Skip, row by row", () => {

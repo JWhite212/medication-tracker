@@ -59,7 +59,10 @@ vi.mock("$lib/server/doses", () => ({
   logDose: never("logDose"),
   logDoseForSlot: never("logDoseForSlot"),
   logSkippedDose: never("logSkippedDose"),
+  logDoseAtSlot: never("logDoseAtSlot"),
+  skipDoseForSlot: never("skipDoseForSlot"),
   deleteDose: never("deleteDose"),
+  restoreDose: never("restoreDose"),
   updateDose: never("updateDose"),
   MedicationNotFoundError: FakeError,
   SlotAlreadyTakenError: FakeError,
@@ -176,6 +179,14 @@ const CASES: Case[] = [
     action: "deleteDose",
     actions: dashboard.actions,
     fields: { doseId: "d1" },
+  },
+  // A Zod-valid token, so a guardless action would reach `locals.user`
+  // rather than stop at the 400.
+  {
+    route: "dashboard",
+    action: "restoreDose",
+    actions: dashboard.actions,
+    fields: { doseId: "d1", deletedAt: "2026-08-01T09:00:00.000Z" },
   },
   { route: "dashboard", action: "editDose", actions: dashboard.actions, fields: doseEditFields },
   { route: "dashboard", action: "skipDose", actions: dashboard.actions, fields: { medicationId: "m1" } }, // prettier-ignore

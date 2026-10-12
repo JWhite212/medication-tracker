@@ -132,6 +132,52 @@ export async function seedSchedule(
   return row;
 }
 
+let trashSeq = 0;
+
+/** A deleted dose waiting for its Undo. Seed after the user AND the
+    medication it names: both foreign keys are real here (migration 0021).
+    The defaults describe a taken dose of 1 that took 1 from stock, logged at
+    08:00 UTC on 1 Aug 2026 and deleted at 09:00, crediting 1 back. Pass `id`
+    equal to the dose it stands for when a test restores it. */
+export async function seedTrash(overrides: Partial<typeof schema.doseLogTrash.$inferInsert> = {}) {
+  trashSeq += 1;
+  const row: typeof schema.doseLogTrash.$inferInsert = {
+    id: `t${trashSeq}`,
+    userId: "u1",
+    medicationId: "m1",
+    quantity: 1,
+    inventoryApplied: 1,
+    inventoryCredited: 1,
+    takenAt: new Date("2026-08-01T08:00:00Z"),
+    loggedAt: new Date("2026-08-01T08:00:00Z"),
+    status: "taken",
+    deletedAt: new Date("2026-08-01T09:00:00Z"),
+    ...overrides,
+  };
+  await database.insert(schema.doseLogTrash).values(row);
+  return row;
+}
+
+let tombstoneSeq = 0;
+
+/** A sync tombstone. Seed after the user. `sync_tombstones` has no
+    uniqueness, so a test can seed the duplicate a restore must still clear. */
+export async function seedTombstone(
+  overrides: Partial<typeof schema.syncTombstones.$inferInsert> = {},
+) {
+  tombstoneSeq += 1;
+  const row: typeof schema.syncTombstones.$inferInsert = {
+    id: `tomb${tombstoneSeq}`,
+    userId: "u1",
+    entityType: "dose_log",
+    entityId: "d1",
+    deletedAt: new Date("2026-08-01T09:00:00Z"),
+    ...overrides,
+  };
+  await database.insert(schema.syncTombstones).values(row);
+  return row;
+}
+
 export const pgDb = {
   client,
   db: database,
@@ -142,4 +188,6 @@ export const pgDb = {
   seedDose,
   seedPreferences,
   seedSchedule,
+  seedTrash,
+  seedTombstone,
 };

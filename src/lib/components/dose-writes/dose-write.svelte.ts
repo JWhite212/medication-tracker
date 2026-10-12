@@ -7,7 +7,7 @@ import { actionErrorMessage } from "$lib/utils/form-errors";
 import { beginDoseWrite } from "./begin-dose-write";
 import { STALE_TAP_MESSAGE, SUCCESS_FALLBACK_TOAST, UNKNOWN_OUTCOME_TOAST } from "./copy";
 import { getDoseWriteLock } from "./dose-write-lock.svelte";
-import { focusIfLost } from "./focus-after";
+import { focusIfLost, pageHeading } from "./focus-after";
 import { reloadAfterWrite, reloadDocumentIfUpdated } from "./reload-after-write";
 import {
   clearUndo,
@@ -67,7 +67,8 @@ export interface DoseWriteOptions {
   /**
    * Where focus goes after a result, and only when the result or its reload
    * lost it: focus the user moved elsewhere during the request is left alone.
-   * Never another dose's write button.
+   * Never another dose's write button. Without one, the control the tap came
+   * from, else (if the reload removed it) the page's h1.
    */
   focusAfter?: () => HTMLElement | null;
   /** Marked aria-busy while the write is in flight (a Due card). */
@@ -163,11 +164,21 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
      * stops them working elsewhere meanwhile: typing in a search field, or
      * inside a dialog opened over the page. The caller's `focusAfter` is the
      * first choice and the control the tap came from the second.
+     *
+     * The page's h1, focused without scrolling, is the last resort, and only
+     * when there was a control for the reload to take: a 404 for a medication
+     * deleted elsewhere drops the /medications card or the chip the user was
+     * on, and neither passes a focusAfter, so focus stayed on <body>. With
+     * nothing focused at the tap (Safari focuses no button it taps, so on an
+     * iPhone that is every tap) the write took nothing away, and parking focus
+     * on the heading after every log would drag a screen reader's cursor
+     * there; focus is left where it was, as before.
      */
     const refocusIfLost = () =>
       focusIfLost(
         () => options.focusAfter?.(),
         () => (returnFocus?.isConnected ? returnFocus : null),
+        () => (returnFocus ? pageHeading() : null),
       );
 
     return async ({ result }) => {

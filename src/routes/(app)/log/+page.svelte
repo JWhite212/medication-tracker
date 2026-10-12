@@ -197,8 +197,10 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl space-y-6">
-  <!-- tabindex="-1": the last resort for focus after a delete empties the
-       list, and after an Undo whose row did not come back. -->
+  <!-- tabindex="-1": the last resort for focus (`pageHeading`, parked
+       without scrolling) after a delete empties the list, after an Undo whose
+       row did not come back, and when the edit dialog closes after its row
+       has gone. -->
   <h1 class="text-2xl font-bold" tabindex="-1">Dose History</h1>
 
   <form

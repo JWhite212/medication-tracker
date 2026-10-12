@@ -3,11 +3,12 @@
 // that was above it, else the caller's fallback (the page's h1). Never
 // another write button — a repeated Enter must not log a different
 // medication. And focus moves only if it was lost.
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   focusIfLost,
   focusTargetAfterResolve,
   isFocusLost,
+  pageHeading,
 } from "$lib/components/dose-writes/focus-after";
 import { DASHBOARD_HEADING_ID, DONE_HEADING_ID } from "$lib/components/dashboard/dom-ids";
 
@@ -30,6 +31,7 @@ function renderDoseRows(...ids: string[]) {
 const editOf = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-edit]");
 
 afterEach(() => {
+  vi.restoreAllMocks();
   document.body.innerHTML = "";
 });
 
@@ -144,5 +146,56 @@ describe("focusIfLost", () => {
       () => document.getElementById("target"),
     );
     expect(document.activeElement?.id).toBe("target");
+  });
+});
+
+/**
+ * The page heading is where focus parks when nothing nearer to what the user
+ * was doing survives, and parking must not scroll: a mouse user's Dismiss, or
+ * a kept Undo expiring ten minutes later, threw a long /log back to its top.
+ * Every other candidate is a return to where the user was, and a plain
+ * focus() is what scrolls it into view. jsdom ignores preventScroll, so the
+ * argument is read off a spy.
+ */
+describe("the page heading as the last resort", () => {
+  const spyOnFocus = () => vi.spyOn(HTMLElement.prototype, "focus");
+  /** Every focus() call on `el`, by its arguments. */
+  function focusCallsOn(spy: ReturnType<typeof spyOnFocus>, el: Element): unknown[][] {
+    return spy.mock.calls.filter((_, i) => spy.mock.contexts[i] === el);
+  }
+
+  it("pageHeading is the page's h1, and null on a page with none", () => {
+    document.body.innerHTML = `<h2>Done</h2>`;
+    expect(pageHeading()).toBeNull();
+    document.body.innerHTML = `<h2>Done</h2><h1 tabindex="-1">Dose History</h1>`;
+    expect(pageHeading()?.textContent).toBe("Dose History");
+  });
+
+  it("focusIfLost focuses the heading without scrolling, and any other candidate with a plain focus()", () => {
+    document.body.innerHTML = `<h1 tabindex="-1">Today</h1><h2 id="done" tabindex="-1">Done</h2>`;
+    const spy = spyOnFocus();
+    const heading = pageHeading()!;
+    const done = document.getElementById("done")!;
+
+    focusIfLost(() => null, pageHeading);
+    expect(document.activeElement).toBe(heading);
+    expect(focusCallsOn(spy, heading)).toEqual([[{ preventScroll: true }]]);
+
+    heading.blur();
+    focusIfLost(() => done, pageHeading);
+    expect(document.activeElement).toBe(done);
+    expect(focusCallsOn(spy, done)).toEqual([[]]);
+  });
+
+  it("parks the heading without scrolling however a candidate reached it, so a caller's own fallback cannot scroll it", () => {
+    // DueCard's and /log's focusAfter end at the page heading themselves.
+    document.body.innerHTML = `<h1 id="dashboard-heading" tabindex="-1">Today</h1>`;
+    const spy = spyOnFocus();
+    const heading = document.getElementById("dashboard-heading")!;
+
+    focusIfLost(() => document.getElementById("dashboard-heading"));
+
+    expect(document.activeElement).toBe(heading);
+    expect(focusCallsOn(spy, heading)).toEqual([[{ preventScroll: true }]]);
   });
 });

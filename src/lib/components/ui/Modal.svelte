@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
+  import { focusIfLost, pageHeading } from "$components/dose-writes/focus-after";
   import { collectFocusable, trapTab } from "$lib/utils/focus-trap";
 
   let {
@@ -8,7 +9,19 @@
     onclose,
     title,
     children,
-  }: { open: boolean; onclose: () => void; title: string; children: Snippet } = $props();
+    returnFocus,
+  }: {
+    open: boolean;
+    onclose: () => void;
+    title: string;
+    children: Snippet;
+    /**
+     * Where focus goes on close when the control that opened the dialog has
+     * gone, before the page's h1. The dashboard's edit dialog passes its Done
+     * heading.
+     */
+    returnFocus?: () => HTMLElement | null;
+  } = $props();
 
   let dialogEl: HTMLDivElement | undefined = $state();
   let previouslyFocused = $state<HTMLElement | null>(null);
@@ -28,8 +41,21 @@
       });
     }
     if (!open && previouslyFocused) {
-      previouslyFocused.focus();
+      const opener = previouslyFocused;
       previouslyFocused = null;
+      if (opener.isConnected) {
+        opener.focus();
+      } else {
+        // The control that opened the dialog has gone while it was open: a
+        // write refused because another device had already removed the dose
+        // leaves the dialog up, and its reload drops the row the Edit (or ✎)
+        // sat in. Focusing that detached node left focus on <body>. The
+        // caller's returnFocus, else the page's h1, focused without scrolling;
+        // and only if focus is lost, which with the dialog just gone it is.
+        // untrack: a caller's returnFocus is a lookup, not a dependency of
+        // this effect, whatever state it happens to read.
+        untrack(() => focusIfLost(() => returnFocus?.(), pageHeading));
+      }
     }
   });
 

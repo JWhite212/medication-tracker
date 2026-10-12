@@ -78,7 +78,9 @@
    * "try again", which is exactly how a dose gets logged twice.
    *
    * No `focusAfter`: focus is moved only if the reload lost it, and then to
-   * whatever held it at the tap, which for a keyboard user is this button.
+   * whatever held it at the tap, which for a keyboard user is this button,
+   * else, when the reload removed this card (a 404 for a medication deleted
+   * elsewhere), the page's h1, parked without scrolling.
    */
   const write = createDoseWrite(() => {
     const label = formatDoseLabel(medication.name, medication.dosageAmount, medication.dosageUnit);

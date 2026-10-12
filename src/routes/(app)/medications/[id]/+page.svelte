@@ -39,7 +39,7 @@
 </svelte:head>
 
 <div class="mx-auto max-w-2xl space-y-6">
-  <h1 class="text-2xl font-bold">Edit {data.medication.name}</h1>
+  <h1 tabindex="-1" class="text-2xl font-bold">Edit {data.medication.name}</h1>
 
   <GlassCard>
     <MedicationForm

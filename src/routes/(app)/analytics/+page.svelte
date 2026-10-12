@@ -69,7 +69,7 @@
   <InsightsCard insights={data.insights} />
 
   <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-    <h1 class="text-2xl font-bold">Analytics</h1>
+    <h1 tabindex="-1" class="text-2xl font-bold">Analytics</h1>
     <MedicationFilterSelect
       medications={data.medications}
       selectedIds={data.selectedMedIds}

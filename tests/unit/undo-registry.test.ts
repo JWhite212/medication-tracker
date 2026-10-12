@@ -598,6 +598,96 @@ describe("an offer that goes while focus is on it", () => {
   });
 });
 
+/**
+ * The h1 is where focus PARKS when it has nowhere to return to, and parking
+ * must not scroll. Chrome focuses a button on mouse click, so a mouse user
+ * who clicked Dismiss with nothing remembered, or whose kept Undo expired ten
+ * minutes later, had a long /log page jump to its top. Where focus was before
+ * the stack, and the offer's own target, are returns to where the user was:
+ * a plain focus() scrolls them into view. jsdom ignores preventScroll, so the
+ * argument is read off a spy.
+ */
+describe("the page's h1 as the last resort is focused without scrolling", () => {
+  function pageHeading(): HTMLElement {
+    const heading = document.body.appendChild(document.createElement("h1"));
+    heading.tabIndex = -1;
+    return heading;
+  }
+
+  function focusInStack(): void {
+    const stack = document.body.appendChild(document.createElement("div"));
+    stack.setAttribute("data-toast-stack", "");
+    stack.appendChild(document.createElement("button")).focus();
+  }
+
+  const spyOnFocus = () => vi.spyOn(HTMLElement.prototype, "focus");
+  /** Every focus() call on `el`, by its arguments. */
+  function focusCallsOn(spy: ReturnType<typeof spyOnFocus>, el: Element): unknown[][] {
+    return spy.mock.calls.filter((_, i) => spy.mock.contexts[i] === el);
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("on a mouse Dismiss with nowhere remembered", () => {
+    const heading = pageHeading();
+    offerUndo(REMOVAL);
+    focusInStack();
+    const focus = spyOnFocus();
+
+    dismissUndo();
+
+    expect(document.activeElement).toBe(heading);
+    expect(focusCallsOn(focus, heading)).toEqual([[{ preventScroll: true }]]);
+  });
+
+  it("when a kept offer's deadline passes with focus still on it", () => {
+    const heading = pageHeading();
+    offerUndo(CREATE);
+    focusInStack();
+    const focus = spyOnFocus();
+
+    vi.advanceTimersByTime(DOSE_UNDO_WINDOW_MS);
+
+    expect(document.activeElement).toBe(heading);
+    expect(focusCallsOn(focus, heading)).toEqual([[{ preventScroll: true }]]);
+  });
+
+  it("when a pressed Undo settles with no target and nothing remembered", async () => {
+    stubFetch(respondWith(RESTORED));
+    const heading = pageHeading();
+    offerUndo(REMOVAL);
+    focusInStack();
+    const focus = spyOnFocus();
+
+    await runUndo(createDoseWriteLock());
+
+    expect(document.activeElement).toBe(heading);
+    expect(focusCallsOn(focus, heading)).toEqual([[{ preventScroll: true }]]);
+  });
+
+  it("but where focus was before the stack, and the offer's target, are focused with a plain focus()", async () => {
+    pageHeading();
+    const search = document.body.appendChild(document.createElement("input"));
+    rememberFocusBeforeStack(search);
+    offerUndo(REMOVAL);
+    focusInStack();
+    const focus = spyOnFocus();
+    dismissUndo();
+    expect(document.activeElement).toBe(search);
+    expect(focusCallsOn(focus, search)).toEqual([[]]);
+
+    stubFetch(respondWith(RESTORED));
+    const edit = document.body.appendChild(document.createElement("button"));
+    offerUndo({ ...REMOVAL, focusTarget: () => edit });
+    focusInStack();
+    await runUndo(createDoseWriteLock());
+    expect(document.activeElement).toBe(edit);
+    expect(focusCallsOn(focus, edit)).toEqual([[]]);
+  });
+});
+
 describe("runUndo pressed after its deadline", () => {
   // Timers are deferred in a frozen or backgrounded tab, so the deadline
   // timer can be late and the offer still on screen past the window.

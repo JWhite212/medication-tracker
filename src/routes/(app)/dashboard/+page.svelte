@@ -13,7 +13,8 @@
   import LaterList from "$components/dashboard/LaterList.svelte";
   import DoseActionForm from "$components/dashboard/DoseActionForm.svelte";
   import { createDashboardClock, setDashboardClock } from "$components/dashboard/dashboard-clock";
-  import { DASHBOARD_HEADING_ID, DONE_HEADING_ID } from "$components/dashboard/dom-ids";
+  import { DONE_HEADING_ID } from "$components/dashboard/dom-ids";
+  import { pageHeading } from "$components/dose-writes/focus-after";
   import { formatDoseLabel, toastForDoseRemoved } from "$lib/utils/dashboard-copy";
   import { formatUserTime, type DateFormat, type TimeFormat } from "$lib/utils/time";
   import type { DoseLogWithMedication } from "$lib/types";
@@ -79,9 +80,11 @@
     };
   });
 
-  /** DueCard's last resort after a row resolves: the same card, else the next card, else this h1. */
-  const headingTarget = () => document.getElementById(DASHBOARD_HEADING_ID);
-  /** The Done h2 (tabindex="-1", always rendered): focus after Remove. */
+  /**
+   * The Done h2 (tabindex="-1", always rendered): focus after Remove, and
+   * where the edit dialog returns focus when the Edit that opened it has gone
+   * (a refused Remove's reload dropped its row).
+   */
   const doneHeading = () => document.getElementById(DONE_HEADING_ID);
 
   /**
@@ -162,7 +165,7 @@
                   {todayStart}
                   timezone={data.timezone}
                   {timeFormat}
-                  focusAfter={headingTarget}
+                  focusAfter={pageHeading}
                 />
               {/each}
             </ul>
@@ -179,7 +182,7 @@
                   {todayStart}
                   timezone={data.timezone}
                   {timeFormat}
-                  focusAfter={headingTarget}
+                  focusAfter={pageHeading}
                 />
               {/each}
             </ul>
@@ -211,10 +214,15 @@
   </div>
 {/if}
 
+<!-- returnFocus: a Remove refused because another device had already removed
+     the dose leaves the dialog open, and its reload drops the Done row whose
+     Edit opened it. Closing it then returns focus to the Done heading, the
+     same place a successful Remove sends it. -->
 <Modal
   open={editingDose !== null}
   onclose={() => (editingDose = null)}
   title={editingDose ? `Edit dose of ${editingDose.medication.name}` : "Edit dose"}
+  returnFocus={doneHeading}
 >
   {#if editingDose}
     <!-- Edit keeps DoseEditForm's own enhance for its inline field errors

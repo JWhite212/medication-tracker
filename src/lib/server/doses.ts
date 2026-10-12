@@ -922,21 +922,17 @@ export async function restoreDose(
 
     // 8. Re-insert the same id with every stored field, the original
     //    loggedAt included, so that a later restore's since-delete guard does
-    //    not mistake this row for a new log. `updatedAt` moves, so delta sync
-    //    sends the dose again.
-    await tx.insert(doseLogs).values({
-      id: trash.id,
-      userId,
-      medicationId: trash.medicationId,
-      quantity: trash.quantity,
-      inventoryApplied,
-      takenAt: trash.takenAt,
-      loggedAt: trash.loggedAt,
-      notes: trash.notes,
-      sideEffects: trash.sideEffects,
-      status: trash.status,
-      updatedAt: at,
-    });
+    //    not mistake this row for a new log. Built from the trash row minus
+    //    its two trash-only columns, so this is the exact inverse of
+    //    deleteDose's `{ updatedAt, ...kept }`: a column added to both tables
+    //    comes back without anyone listing it here. Only `inventoryApplied`
+    //    is recomputed, and `updatedAt` moves, so delta sync sends the dose
+    //    again. The two trash-only columns are left out BY NAME: TypeScript
+    //    checks only keys written out, not spread ones, and drizzle drops a
+    //    key that is not a dose_logs column without a word, so neither would
+    //    notice a dose_logs column that one day shares either name.
+    const { inventoryCredited: _credited, deletedAt: _deletedAt, ...row } = trash;
+    await tx.insert(doseLogs).values({ ...row, inventoryApplied, updatedAt: at });
 
     // 9. Delete every tombstone for it. The table has no uniqueness, so
     //    there can be more than one.

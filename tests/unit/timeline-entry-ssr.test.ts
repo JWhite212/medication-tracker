@@ -68,7 +68,7 @@ function renderRow(status: Status): Document {
       dose: makeDose(status),
       timezone: "UTC",
       timeFormat: "24h" as const,
-      dayLabel: null,
+      day: null,
       onedit: () => {},
     },
     context: doseWriteContext(),

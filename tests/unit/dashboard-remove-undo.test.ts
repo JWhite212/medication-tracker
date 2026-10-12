@@ -230,3 +230,38 @@ describe("the edit dialog's Remove this dose", () => {
     expect(currentUndo()).toBeNull();
   });
 });
+
+describe("the edit dialog's Remove on a dose taken before today's midnight", () => {
+  // Done carries last night's late dose over into the morning. Its Edit says
+  // "yesterday", so its Remove toast must too.
+  const LATE = new Date("2026-04-30T22:00:00.000Z");
+  const D0: DoneRow = {
+    ...D1,
+    key: "d0",
+    dose: { ...D1.dose, id: "d0", takenAt: LATE, loggedAt: LATE, updatedAt: LATE },
+    dayLabel: "yesterday",
+  };
+
+  it("names the day: 'Dose removed: … yesterday at 22:00'", async () => {
+    if (app) unmount(app);
+    app = mount(Page, {
+      target,
+      props: { data: { ...DASH, done: [D0, D1], user, preferences } },
+      context: doseWriteContext(createDoseWriteLock()),
+    });
+    flushSync();
+
+    buttonNamed(target, "Edit: Metformin 500mg dose taken at yesterday 22:00").click();
+    flushSync();
+    const form = buttonNamed(target, "Remove this dose").closest("form")!;
+    const submit = h.submits.get(form)!;
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, {
+      ...REMOVED,
+      data: { ...(REMOVED as { data: Record<string, unknown> }).data, doseId: "d0" },
+    } as ActionResult).done;
+    flushSync();
+
+    expect(currentUndo()?.message).toBe("Dose removed: Metformin 500mg yesterday at 22:00");
+  });
+});

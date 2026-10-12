@@ -167,16 +167,23 @@ function loadData({
   hasMore = false,
   filters = NO_FILTERS,
   doses = [DOSE],
-}: { page?: number; hasMore?: boolean; filters?: Filters; doses?: (typeof DOSE)[] } = {}) {
+  timezone = "UTC",
+}: {
+  page?: number;
+  hasMore?: boolean;
+  filters?: Filters;
+  doses?: (typeof DOSE)[];
+  timezone?: string;
+} = {}) {
   return {
-    user,
+    user: { ...user, timezone },
     preferences,
     doses,
     medications: [{ id: "m1", name: "Ibuprofen", colour: "#ffffff" }],
     page,
     hasMore,
     filters,
-    timezone: "UTC",
+    timezone,
   };
 }
 
@@ -424,14 +431,14 @@ describe("× on the real page: the day it names, and where focus goes (Review Fo
     target.querySelector<HTMLElement>(`[data-dose-id="${id}"] [data-edit]`);
 
   /** Press ×, answer the delete, and reload to `remaining` as the server would. */
-  async function deleteOnPage(id: string, remaining: (typeof DOSE)[]) {
+  async function deleteOnPage(id: string, remaining: (typeof DOSE)[], timezone = "UTC") {
     const x = target.querySelector<HTMLButtonElement>(
       `[data-dose-id="${id}"] button[aria-label^="Delete dose of"]`,
     );
     expect(x, `no × for ${id}`).not.toBeNull();
     expect(x!.type).toBe("submit");
     writes.invalidateAll.mockImplementationOnce(async () => {
-      props.data = loadData({ doses: remaining });
+      props.data = loadData({ doses: remaining, timezone });
       flushSync();
     });
     x!.focus();
@@ -487,5 +494,57 @@ describe("× on the real page: the day it names, and where focus goes (Review Fo
     const h1 = target.querySelector("h1");
     expect(h1?.getAttribute("tabindex")).toBe("-1");
     expect(document.activeElement).toBe(h1);
+  });
+
+  // A civil day is 23 or 25 hours on a transition day. "Yesterday" is the
+  // previous day KEY (shiftDayKey), never `now − 24h`: in London that
+  // instant is the day before yesterday for the first hour after the
+  // spring-forward day, and today itself in the last hour of the fall-back
+  // day.
+  describe("across a DST transition (Europe/London)", () => {
+    const LONDON = "Europe/London";
+    const dose = (id: string, takenAt: string, name = "Ibuprofen") => ({
+      ...DOSE,
+      id,
+      takenAt: new Date(takenAt),
+      loggedAt: new Date(takenAt),
+      updatedAt: new Date(takenAt),
+      medication: { ...DOSE.medication, name },
+    });
+    const headings = () => [...target.querySelectorAll("h3")].map((h) => h.textContent?.trim());
+
+    it("in the first hour after the spring-forward day, Sunday is yesterday and Saturday is not", async () => {
+      // Mon 30 Mar 00:30 BST. Sunday 29 Mar was 23 hours long.
+      vi.setSystemTime(new Date("2026-03-29T23:30:00Z"));
+      const sunday = dose("sun", "2026-03-29T08:00:00Z"); // 09:00 BST
+      const saturday = dose("sat", "2026-03-28T08:00:00Z", "Paracetamol"); // 08:00 GMT
+      mountAt("/log", loadData({ doses: [sunday, saturday], timezone: LONDON }));
+      expect(headings()).toEqual(["Yesterday", "Sat 28 Mar"]);
+
+      await deleteOnPage("sun", [saturday], LONDON);
+      expect(currentUndo()?.message).toBe("Dose removed: Ibuprofen 200mg yesterday at 9:00");
+    });
+
+    it("in the first hour after the spring-forward day, Saturday is named by its date", async () => {
+      vi.setSystemTime(new Date("2026-03-29T23:30:00Z"));
+      const sunday = dose("sun", "2026-03-29T08:00:00Z");
+      const saturday = dose("sat", "2026-03-28T08:00:00Z", "Paracetamol");
+      mountAt("/log", loadData({ doses: [sunday, saturday], timezone: LONDON }));
+
+      await deleteOnPage("sat", [sunday], LONDON);
+      expect(currentUndo()?.message).toBe("Dose removed: Paracetamol 200mg on Sat 28 Mar at 8:00");
+    });
+
+    it("in the last hour of the fall-back day, Saturday is still yesterday", async () => {
+      // Sun 25 Oct 23:30 GMT. Sunday was 25 hours long, so now − 24h is
+      // still Sunday.
+      vi.setSystemTime(new Date("2026-10-25T23:30:00Z"));
+      const saturday = dose("sat", "2026-10-24T08:00:00Z"); // 09:00 BST
+      mountAt("/log", loadData({ doses: [saturday], timezone: LONDON }));
+      expect(headings()).toEqual(["Yesterday"]);
+
+      await deleteOnPage("sat", [], LONDON);
+      expect(currentUndo()?.message).toBe("Dose removed: Ibuprofen 200mg yesterday at 9:00");
+    });
   });
 });

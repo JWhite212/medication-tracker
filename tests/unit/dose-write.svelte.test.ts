@@ -211,7 +211,7 @@ describe("createDoseWrite, before anything is sent", () => {
     lock.acquire(); // another write is in flight
     let tap = await startSubmit(submit, form);
     expect(tap.cancel).toHaveBeenCalledOnce();
-    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error");
+    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error", { coalesce: true });
 
     lock.release(); // it settled; its cooldown is running
     h.showToast.mockClear();

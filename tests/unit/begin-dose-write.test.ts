@@ -85,7 +85,7 @@ describe("beginDoseWrite", () => {
 
     expect(cancel).toHaveBeenCalledOnce();
     expect(h.showToast).toHaveBeenCalledOnce();
-    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error");
+    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error", { coalesce: true });
   });
 
   it("refused in the cooldown alone: cancels, and stays silent", () => {

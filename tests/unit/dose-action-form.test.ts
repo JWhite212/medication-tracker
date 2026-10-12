@@ -190,7 +190,7 @@ describe("DoseActionForm submit", () => {
     const { cancel, callback } = await startSubmit(submit, form);
     expect(cancel).toHaveBeenCalledOnce();
     expect(callback).toBeNull();
-    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error");
+    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error", { coalesce: true });
   });
 
   it("refuses a tap during the cooldown silently, with no request", async () => {

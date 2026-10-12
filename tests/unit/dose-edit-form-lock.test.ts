@@ -178,7 +178,7 @@ describe("DoseEditForm under the layout's write lock", () => {
     const busy = await startSubmit(submit, form);
     expect(busy.cancel).toHaveBeenCalledOnce();
     expect(busy.callback).toBeNull();
-    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error");
+    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error", { coalesce: true });
     flushSync();
     expect(save.textContent?.trim()).toBe("Save Changes");
 

@@ -22,19 +22,35 @@
    */
   let toasts = $state<ToastItem[]>([]);
 
-  export function showToast(message: string, type: "success" | "error" = "success") {
+  /**
+   * `coalesce`: when the same words are already on screen, give them their
+   * five seconds again instead of stacking a copy. Only the "Still saving…"
+   * toast asks for it (beginDoseWrite, and an Undo pressed mid-write): every
+   * tap refused during one slow write toasts it, and the live region should
+   * say it once. Every other repeat stacks, because it is news — a second
+   * "Undone" or "Dose not found" restarting an old toast's timer would never
+   * be announced at all.
+   *
+   * A timer starts only while the stack is not held by the pointer or by
+   * focus (WCAG 2.2.1, below), in both branches: releasing the hold starts
+   * every toast's five seconds afresh.
+   */
+  export function showToast(
+    message: string,
+    type: "success" | "error" = "success",
+    opts: { coalesce?: boolean } = {},
+  ) {
     if (!browser) return;
-    // The same words already on screen: give them their five seconds again
-    // instead of stacking a copy. Taps refused during one slow write each
-    // toast "Still saving…", and the live region should say it once.
-    const same = toasts.find((t) => t.message === message && t.type === type);
-    if (same) {
-      scheduleDismiss(same.id);
-      return;
+    if (opts.coalesce) {
+      const same = toasts.find((t) => t.message === message && t.type === type);
+      if (same) {
+        if (!held()) scheduleDismiss(same.id);
+        return;
+      }
     }
     const id = crypto.randomUUID();
     toasts.push({ id, message, type });
-    scheduleDismiss(id);
+    if (!held()) scheduleDismiss(id);
   }
 
   export function dismissToast(id: string) {
@@ -160,8 +176,11 @@
     const current = currentUndo();
     if (!current || current.running) return;
     const outcome = await runUndo(lock);
+    // "abandoned" (the layout went mid-Undo, a sign-out) shows nothing.
     if (outcome.kind === "settled") showToast(outcome.message, outcome.type);
-    else if (outcome.kind === "refused" && lock.active) showToast(STILL_SAVING_TOAST, "error");
+    else if (outcome.kind === "refused" && lock.active) {
+      showToast(STILL_SAVING_TOAST, "error", { coalesce: true });
+    }
   }
 
   let stack: HTMLDivElement | undefined = $state();

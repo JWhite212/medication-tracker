@@ -47,12 +47,14 @@ A server-first SvelteKit app with:
 
 Sessions live in Postgres via Lucia v3, password hashing is Argon2id,
 TOTP secrets are encrypted at rest with AES-256-GCM. Every dose-log
-mutation runs an explicit ownership check on the medication ID —
-the Phase 1 review found a real cross-user dose-injection vector. The
-check is the user-scoped medication `SELECT … FOR UPDATE` that every
-dose write opens with (`logDose`, `logSkippedDose` and the rest): it
-finds no row for a medication the caller does not own, and the row it
-locks is what serialises that medication's dose and stock writes.
+mutation is scoped by `user_id` — the Phase 1 review found a real
+cross-user dose-injection vector. The writes that create a dose
+(`logDose`, `logSkippedDose` and the slot paths) open with the
+user-scoped medication `SELECT … FOR UPDATE`, which finds no row for a
+medication the caller does not own. Delete, update and restore first
+look the dose (or its trash row) up by `(id, user_id)`, and that lookup
+is what refuses a foreign id. Either way, the medication row each write
+then locks is what serialises that medication's dose and stock writes.
 
 ### Re-authentication for sensitive actions
 

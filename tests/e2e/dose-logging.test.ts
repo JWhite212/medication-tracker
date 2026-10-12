@@ -58,7 +58,11 @@ test.describe("dose logging", () => {
     // One tap: × deletes at once and the toast offers Undo. It used to open
     // an inline confirmation, which existed only because nothing could put a
     // deleted dose back.
-    await page.getByRole("button", { name: "Delete dose" }).first().click();
+    const deleteButton = page.getByRole("button", { name: "Delete dose" }).first();
+    // × is an inert type="button" until the row has hydrated, so a click
+    // before then does nothing (TimelineEntry). Wait for the submit.
+    await expect(deleteButton).toHaveAttribute("type", "submit");
+    await deleteButton.click();
     await expect(page.getByText(/dose removed/i)).toBeVisible();
 
     const after = await getInventoryCount(userId!, VITAMIN_D);
@@ -77,7 +81,10 @@ test.describe("dose logging", () => {
     await page.goto(`/log?status=skipped&medication=${medId}`);
 
     const inventoryBefore = await getInventoryCount(userId!, VITAMIN_D);
-    await page.getByRole("button", { name: "Delete dose" }).first().click();
+    const deleteButton = page.getByRole("button", { name: "Delete dose" }).first();
+    // Inert until hydrated: see the test above.
+    await expect(deleteButton).toHaveAttribute("type", "submit");
+    await deleteButton.click();
     await expect(page.getByText(/dose removed/i)).toBeVisible();
 
     const inventoryAfter = await getInventoryCount(userId!, VITAMIN_D);
@@ -105,7 +112,10 @@ test.describe("dose logging", () => {
     const doseId = await row.getAttribute("data-dose-id");
     expect(doseId).not.toBeNull();
 
-    await row.getByRole("button", { name: "Delete dose" }).click();
+    const deleteButton = row.getByRole("button", { name: "Delete dose" });
+    // Inert until hydrated: a click before then would send nothing.
+    await expect(deleteButton).toHaveAttribute("type", "submit");
+    await deleteButton.click();
     await expect(page.getByText(/dose removed/i)).toBeVisible();
     await expect(page.locator(`[data-dose-id="${doseId}"]`)).toHaveCount(0);
     expect(await countDoseLogs(userId!, VITAMIN_D, "taken")).toBe(beforeCount - 1);

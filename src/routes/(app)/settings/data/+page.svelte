@@ -18,7 +18,7 @@
   <div class="flex items-center gap-3">
     <a href="/settings" class="text-text-muted hover:text-text-primary text-sm">← Settings</a>
     <span class="text-text-muted">/</span>
-    <h1 class="text-2xl font-bold">Data Management</h1>
+    <h1 tabindex="-1" class="text-2xl font-bold">Data Management</h1>
   </div>
 
   <div role="status">

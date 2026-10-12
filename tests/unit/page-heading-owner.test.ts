@@ -63,6 +63,27 @@ describe("the page heading as the last resort for focus has one owner", () => {
     expect(filesMatching(H1_LOOKUP)).toEqual([OWNER]);
   });
 
+  // The Undo offer lives in the (app) layout's Toast and survives navigation,
+  // so its Dismiss, its deadline and a settled press can reach pageHeading()
+  // on ANY signed-in page. An h1 without tabindex="-1" cannot take focus():
+  // focusIfLost stops at it as the first connected candidate and focus stays
+  // on <body>. So every h1 an (app) page or a shared component renders opts in.
+  it('every h1 a signed-in page can render takes programmatic focus (tabindex="-1")', () => {
+    const appSources = sources.filter(
+      (s) =>
+        s.file.endsWith(".svelte") &&
+        (s.file.startsWith(join("src", "routes", "(app)")) ||
+          s.file.startsWith(join("src", "lib", "components"))),
+    );
+    const unfocusable = appSources.flatMap((s) =>
+      [...s.text.matchAll(/<h1\b[^>]*>/g)]
+        .filter((m) => !/\btabindex="-1"/.test(m[0]))
+        .map((m) => `${s.file}: ${m[0]}`),
+    );
+    expect(appSources.some((s) => /<h1\b/.test(s.text))).toBe(true);
+    expect(unfocusable).toEqual([]);
+  });
+
   it("the dashboard's h1 is reached as the page heading, never by its id: the id only names it", () => {
     expect(filesMatching(/\bDASHBOARD_HEADING_ID\b/).sort()).toEqual(
       [

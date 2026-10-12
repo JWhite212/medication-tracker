@@ -97,7 +97,7 @@
       >← Data Management</a
     >
     <span class="text-text-muted">/</span>
-    <h1 class="text-2xl font-bold">Import Data</h1>
+    <h1 tabindex="-1" class="text-2xl font-bold">Import Data</h1>
   </div>
 
   {#if imported}

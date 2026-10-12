@@ -13,7 +13,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl space-y-6">
-  <h1 class="text-2xl font-bold">Settings</h1>
+  <h1 tabindex="-1" class="text-2xl font-bold">Settings</h1>
 
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Profile</h2>

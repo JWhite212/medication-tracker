@@ -71,8 +71,9 @@ export function isFocusLost(): boolean {
 
 /**
  * The page's h1: where focus PARKS when nothing nearer to what the user was
- * doing survives. Every page that can lose focus to a dose write or a dialog
- * gives it tabindex="-1" (the dashboard, /log, /medications). This is the one
+ * doing survives. Every h1 a signed-in page renders has tabindex="-1": the
+ * Undo offer survives navigation, so this can be reached on any (app) page,
+ * and an h1 without it cannot take focus(). This is the one
  * spelling of the lookup (tests/unit/page-heading-owner.test.ts): a caller
  * names `pageHeading`, never its own `querySelector("h1")`.
  */

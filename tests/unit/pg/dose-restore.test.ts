@@ -35,7 +35,7 @@ import {
   medications,
   syncTombstones,
 } from "../../../src/lib/server/db/schema";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, getTableColumns } from "drizzle-orm";
 import { DOSE_UNDO_WINDOW_MS } from "../../../src/lib/utils/dose-undo";
 import type { SideEffect } from "../../../src/lib/types";
 
@@ -192,6 +192,44 @@ describe("restoreDose — the round trip", () => {
       expect(await restoredEvents()).toEqual([]);
     },
   );
+
+  it("puts back every column the delete copied, each set away from its default, apart from updatedAt", async () => {
+    // A column added to dose_logs later must come back from the trash too:
+    // the column-mirror test makes the trash keep it, and restore builds the
+    // row from the trash row rather than from a list of names. This fixture
+    // gives every nullable or defaulted column a value of its own, and says
+    // so below, so a new column fails here until it is set.
+    await seedStock(10);
+    await pgDb.seedDose({
+      id: "every",
+      medicationId: "m1",
+      quantity: 3,
+      inventoryApplied: 2,
+      status: "skipped",
+      takenAt: new Date("2026-04-16T07:45:00.000Z"),
+      loggedAt: LOGGED,
+      notes: "before breakfast",
+      sideEffects: [{ name: "headache", severity: "moderate" }],
+    });
+    const before = await doseRow("every");
+    if (!before) throw new Error("fixture: nothing seeded");
+    for (const [key, column] of Object.entries(getTableColumns(doseLogs))) {
+      if (key === "updatedAt") continue;
+      const value = before[key as keyof typeof before];
+      expect(value, `${key} must be set`).not.toBeNull();
+      if (column.hasDefault && typeof column.default !== "object") {
+        expect(value, `${key} must differ from its default`).not.toEqual(column.default);
+      }
+    }
+    expect(before.takenAt).not.toEqual(before.loggedAt);
+    const token = await deleteAt("every", DELETED);
+
+    const stamped = new Date(RESTORE.getTime() + 1_000);
+    vi.setSystemTime(RESTORE);
+    expect(await restoreDose("u1", "every", token, stamped)).toBe("restored");
+
+    expect(await doseRow("every")).toEqual({ ...before, updatedAt: stamped });
+  });
 
   it("answers already_restored to a second restore, and takes stock once", async () => {
     await seedStock(10);

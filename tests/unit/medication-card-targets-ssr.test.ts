@@ -220,8 +220,9 @@ describe("the medications list's reorder buttons", () => {
     exportFormat: "csv",
     updatedAt: new Date("2026-08-01T00:00:00Z"),
   };
-  // `user` and `preferences` come from the (app) layout load; svelte-check
-  // enforces the merged PageData even though this page reads neither.
+  // `user` and `preferences` come from the (app) layout load. The page reads
+  // both: it passes data.user.timezone and data.preferences.timeFormat to
+  // every card, for the Log toast's "logged at" time.
   const html = render(MedicationsPage, {
     props: { data: { user, preferences, medications, archived: [] } },
     context: doseWriteContext(),

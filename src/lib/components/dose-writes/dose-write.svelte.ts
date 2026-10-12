@@ -125,8 +125,8 @@ export function createDoseWrite(getOptions: () => DoseWriteOptions): DoseWrite {
 
     // 1. The gate every dose write passes, shared with Edit Save: offline
     // (no lock taken, nothing withdrawn), then one dose write at a time across
-    // every page under the layout. A refusal has already cancelled and told
-    // the user.
+    // every page under the layout. A refusal has already cancelled and,
+    // unless only the cooldown refused it, told the user.
     if (!beginDoseWrite(cancel, lock)) return;
     // Whether the (app) layout this write starts under has gone, at any
     // point from here on.

@@ -7,7 +7,10 @@ import type { DoseWriteLock } from "./dose-write-lock.svelte";
  * owner of "may this write start at all?". `createDoseWrite` (every dashboard
  * control, the /log × and the medications card's Log) and DoseEditForm's Save
  * (which keeps its own enhance for inline field errors) both call it, so the
- * rules below cannot drift apart between them.
+ * rules below cannot drift apart between them. So does one caller that is
+ * not a dose write: the medications ↑/↓ reorder, because it moves the keyed
+ * cards a Log tap lands on, and a Log tapped mid-reorder could otherwise hit
+ * a different medication.
  *
  * In this order, and each step refuses the write:
  *
@@ -22,8 +25,8 @@ import type { DoseWriteLock } from "./dose-write-lock.svelte";
  *
  * Returns true when the caller now HOLDS the lock and owns releasing it, in a
  * `finally`, whatever the write does next. Returns false when the write was
- * refused: `cancel()` has been called, the user has been told, and nothing is
- * held.
+ * refused: `cancel()` has been called, the user has been told (unless only
+ * the cooldown refused it, which stays silent), and nothing is held.
  *
  * A third rule belongs to the caller, because only it knows what it is
  * writing: withdraw the Undo offer for the dose being written

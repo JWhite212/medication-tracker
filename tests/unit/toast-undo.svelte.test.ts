@@ -373,4 +373,28 @@ describe("the (app) layout", () => {
     expect(second.target.querySelector("[data-undo-offer]")).toBeNull();
     expect(second.target.querySelector("[data-toast-stack]")?.textContent?.trim()).toBe("");
   });
+
+  it("an Undo still in flight at sign-out shows nothing in the next session when it lands", async () => {
+    let respond!: (response: Response) => void;
+    stubFetch(new Promise<Response>((r) => (respond = r)));
+    const first = mountLayout();
+    offerUndo({ ...REMOVAL, message: "Dose removed: Sertraline 50mg at 8:00" });
+    flushSync();
+    const undo = first.target.querySelector<HTMLButtonElement>(
+      "[data-undo-offer] button[aria-labelledby]",
+    )!;
+    undo.click();
+    await vi.advanceTimersByTimeAsync(0);
+
+    first.destroy();
+    const second = mountLayout();
+    cleanups.push(() => second.destroy());
+    respond(respondWith(RESTORED));
+    await vi.advanceTimersByTimeAsync(0);
+    flushSync();
+
+    expect(h.reloadAfterWrite).not.toHaveBeenCalled();
+    expect(currentUndo()).toBeNull();
+    expect(second.target.querySelector("[data-toast-stack]")?.textContent?.trim()).toBe("");
+  });
 });

@@ -56,10 +56,15 @@ function untilRetry(delayMs: number): Promise<void> {
 /**
  * Resolves once the device is online AND `/api/health` answers ok. While
  * offline it only waits for the `online` event and never probes.
+ *
+ * Also resolves, without probing again, once `cancelled()` is true: the
+ * caller's (app) session has ended (undo-registry's `watchSession`), and a
+ * signed-out tab has nothing left to reload.
  */
-export async function waitForServer(): Promise<void> {
+export async function waitForServer(cancelled: () => boolean = () => false): Promise<void> {
   for (let attempt = 0; ; attempt++) {
     while (navigator.onLine === false) await untilOnline();
+    if (cancelled()) return;
     if (await probe()) return;
     await untilRetry(
       HEALTH_PROBE_BACKOFF_MS[Math.min(attempt, HEALTH_PROBE_BACKOFF_MS.length - 1)],
@@ -91,14 +96,21 @@ async function settleNavigation(): Promise<void> {
  * against data nobody has checked. Offline, it waits for the server whether
  * asked to or not, because a reload that fails offline becomes a full
  * navigation, which the service worker answers with its "Offline" page.
+ *
+ * `cancelled` is the caller's `watchSession()` predicate: once the session
+ * that wrote has ended (a sign-out), it stops waiting and reloads nothing.
  */
-export async function reloadAfterWrite(opts: { waitForServer?: boolean } = {}): Promise<void> {
+export async function reloadAfterWrite(
+  opts: { waitForServer?: boolean; cancelled?: () => boolean } = {},
+): Promise<void> {
+  const cancelled = opts.cancelled ?? (() => false);
   await settleNavigation();
   if (opts.waitForServer || navigator.onLine === false) {
-    await waitForServer();
+    await waitForServer(cancelled);
     // The user can navigate while the server is unreachable.
     await settleNavigation();
   }
+  if (cancelled()) return;
   try {
     await invalidateAll();
   } catch {

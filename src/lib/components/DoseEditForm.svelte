@@ -8,7 +8,11 @@
   import { getDoseWriteLock } from "$components/dose-writes/dose-write-lock.svelte";
   import { UNKNOWN_OUTCOME_TOAST } from "$components/dose-writes/copy";
   import { reloadAfterWrite } from "$components/dose-writes/reload-after-write";
-  import { clearUndo, withdrawUndoFor } from "$components/dose-writes/undo-registry.svelte";
+  import {
+    clearUndo,
+    watchSession,
+    withdrawUndoFor,
+  } from "$components/dose-writes/undo-registry.svelte";
   import { formatDateTimeLocal } from "$lib/utils/time";
   import { actionFieldErrors, unsavedErrorMessage } from "$lib/utils/form-errors";
   import type { DoseLogWithMedication, SideEffect } from "$lib/types";
@@ -70,11 +74,17 @@
    * sent focus to <body> after the Modal had returned it to the Edit button;
    * on an error result it handed the page to +error.svelte and threw the
    * edit away. Reloads go through `reloadAfterWrite()` instead.
+   *
+   * A result that lands after the (app) layout has gone (a sign-out) shows
+   * nothing and only lets go of the lock, as createDoseWrite's does: on a
+   * shared device it would otherwise speak to the next person.
    */
   const save: SubmitFunction = ({ cancel }) => {
     // The gate every dose write passes: offline, then the lock. A refusal has
-    // already cancelled and told the user.
+    // already cancelled and, unless only the cooldown refused it, told the
+    // user.
     if (!beginDoseWrite(cancel, lock)) return;
+    const sessionEnded = watchSession();
     // Only once the Save is certain to be sent, so a refused Save never costs
     // the user their Undo. An offer naming this dose would otherwise act on
     // the row as it was before the edit.
@@ -83,6 +93,8 @@
 
     return async ({ formElement, result }) => {
       try {
+        // Signed out while the request was in flight: show nothing.
+        if (sessionEnded()) return;
         loading = false;
         fieldErrors = actionFieldErrors(result);
         formError = "";
@@ -92,7 +104,7 @@
           clearUndo();
           showToast("Dose updated", "success");
           onclose();
-          await reloadAfterWrite();
+          await reloadAfterWrite({ cancelled: sessionEnded });
         } else if (result.type === "redirect") {
           await applyAction(result);
         } else if (result.type === "error" && result.status === undefined) {
@@ -103,7 +115,9 @@
           showToast(UNKNOWN_OUTCOME_TOAST, "error");
           formError = UNKNOWN_OUTCOME_TOAST;
           await focusFirstProblem(formElement);
-          await reloadAfterWrite({ waitForServer: true });
+          // `cancelled`: a sign-out while it waits stops the probing, and
+          // nothing is reloaded.
+          await reloadAfterWrite({ waitForServer: true, cancelled: sessionEnded });
         } else {
           const message = unsavedErrorMessage(result, "Couldn't update dose. Please try again.");
           showToast(message, "error");
@@ -114,7 +128,7 @@
           // reloads, so the list behind the dialog stops showing a dose that
           // is gone. An expired session or a crash does not: the edit stays
           // open, unchanged, to retry or cancel.
-          if (result.type === "failure") await reloadAfterWrite();
+          if (result.type === "failure") await reloadAfterWrite({ cancelled: sessionEnded });
         }
       } finally {
         loading = false;

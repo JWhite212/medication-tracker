@@ -38,6 +38,10 @@ import { reloadAfterWrite } from "./reload-after-write";
  * that is on screen when the button is pressed (Toast reads it from context),
  * which is what makes an Undo pressed after navigating hold the lock the new
  * page's controls read.
+ *
+ * It also owns the session generation (`watchSession`): signing out
+ * unmounts the (app) layout, whose resetUndoRegistry() moves it on, and a
+ * dose write or an Undo still in flight then shows nothing at all.
  */
 
 export type UndoKind = "delete" | "restore";
@@ -70,7 +74,9 @@ export interface UndoOffer extends UndoOfferInput {
 export type UndoOutcome =
   | { kind: "settled"; message: string; type: "success" | "error" }
   | { kind: "kept"; note: string }
-  | { kind: "refused" };
+  | { kind: "refused" }
+  /** The (app) layout that pressed it has gone (a sign-out): show nothing. */
+  | { kind: "abandoned" };
 
 /**
  * A restore's offer goes this long before the server's window closes, so a
@@ -82,6 +88,26 @@ let offer = $state.raw<UndoOffer | null>(null);
 let timer: ReturnType<typeof setTimeout> | undefined;
 /** Where focus was before it entered the toast stack; Toast records it. */
 let focusBeforeStack: HTMLElement | null = null;
+/**
+ * The session generation. resetUndoRegistry() moves it on when the (app)
+ * layout unmounts, which is what signing out does.
+ */
+let generation = 0;
+
+/**
+ * Call when a dose write or an Undo starts. The predicate it returns says,
+ * after any await, whether the (app) layout it started under has gone since
+ * (a sign-out). Once it has, the caller does nothing visible — no offer, no
+ * toast, no focus move — and only lets go of what it holds: on a shared
+ * device, a response that lands after sign-out would otherwise put the last
+ * person's medication, and a live Undo for it, in front of the next one.
+ * Pass it on as reloadAfterWrite's `cancelled`, so a signed-out tab stops
+ * probing the server.
+ */
+export function watchSession(): () => boolean {
+  const started = generation;
+  return () => generation !== started;
+}
 
 function stopTimer(): void {
   clearTimeout(timer);
@@ -176,12 +202,15 @@ export function rememberFocusBeforeStack(el: HTMLElement | null): void {
  * Everything, running or not. The (app) layout calls this when it unmounts:
  * signing out leaves (app), and on a shared device the next person to sign in
  * must never see, or press, the last person's "Dose removed: <medication>".
+ * It also ends the session generation, so a write or an Undo still in flight
+ * cannot put one back (`watchSession`).
  */
 export function resetUndoRegistry(): void {
   if (!browser) return;
   stopTimer();
   offer = null;
   focusBeforeStack = null;
+  generation += 1;
 }
 
 async function post(target: UndoOffer): Promise<ActionResult> {
@@ -221,7 +250,8 @@ function keep(target: UndoOffer, note: string): UndoOutcome {
  * "refused": no offer, one already running, or another dose write in flight
  * (the caller says "Still saving…"). "kept": the offer stays, with a note
  * saying why (offline, lost request, a 5xx). "settled": the offer is gone,
- * and the caller shows `message` as a plain toast.
+ * and the caller shows `message` as a plain toast. "abandoned": the (app)
+ * layout went while it ran (a sign-out), and the caller shows nothing.
  *
  * Focus moves (only if it was lost) AFTER the reload has rendered the page
  * and BEFORE the offer is removed: until then the pressed button is still
@@ -237,6 +267,10 @@ export async function runUndo(lock: DoseWriteLock): Promise<UndoOutcome> {
     return { kind: "kept", note: UNDO_OFFLINE_MESSAGE };
   }
 
+  // After every await below: if the (app) layout has gone, nothing visible.
+  const sessionEnded = watchSession();
+  const abandoned: UndoOutcome = { kind: "abandoned" };
+
   // hold(), not acquire(): the write being undone may still be cooling down,
   // and an Undo must not be refused by that. extend() then starts a fresh
   // cooldown from this Undo's own reload.
@@ -247,17 +281,21 @@ export async function runUndo(lock: DoseWriteLock): Promise<UndoOutcome> {
     try {
       result = await post(target);
     } catch {
+      if (sessionEnded()) return abandoned;
       // The request never completed: it may or may not have landed. Say so
       // at once, but keep the button busy until the server answers and the
       // page has reloaded, so a retry acts on data somebody has checked.
       patch(target.id, { note: UNDO_NETWORK_MESSAGE });
-      await reloadAfterWrite({ waitForServer: true });
+      await reloadAfterWrite({ waitForServer: true, cancelled: sessionEnded });
+      if (sessionEnded()) return abandoned;
       patch(target.id, { running: false });
       return keep(target, UNDO_NETWORK_MESSAGE);
     }
+    if (sessionEnded()) return abandoned;
 
-    await reloadAfterWrite();
+    await reloadAfterWrite({ cancelled: sessionEnded });
     await tick();
+    if (sessionEnded()) return abandoned;
 
     if (result.type === "error" && (result.status ?? 0) >= 500) {
       // Nothing happened on the server that can be relied on; the offer

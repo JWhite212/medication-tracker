@@ -217,9 +217,11 @@
   title={editingDose ? `Edit dose of ${editingDose.medication.name}` : "Edit dose"}
 >
   {#if editingDose}
-    <!-- Edit stays on DoseEditForm's own enhance: the component is shared
-         with /log. Remove is a separate form so it goes through the page's
-         write lock like every other dose write. -->
+    <!-- Edit keeps DoseEditForm's own enhance for its inline field errors
+         (the component is shared with /log), but its Save starts through
+         beginDoseWrite under the (app) layout's write lock. Remove is a
+         separate DoseActionForm on that same lock, so Save and Remove
+         exclude each other. -->
     <DoseEditForm
       dose={editingDose}
       timezone={data.timezone}

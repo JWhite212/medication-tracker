@@ -229,6 +229,22 @@ describe("Toast's Undo offer", () => {
     expect(stack.querySelector("[data-undo-offer]")).not.toBeNull();
   });
 
+  it("two Undo presses refused during one write show one 'Still saving…' toast", async () => {
+    stubFetch(respondWith(RESTORED));
+    const lock = createDoseWriteLock();
+    const { stack } = mountToast(lock);
+    show();
+    lock.acquire();
+
+    undoButton(stack).click();
+    await vi.advanceTimersByTimeAsync(0);
+    undoButton(stack).click();
+    await vi.advanceTimersByTimeAsync(0);
+    flushSync();
+
+    expect((stack.textContent ?? "").split(STILL_SAVING_TOAST).length - 1).toBe(1);
+  });
+
   it("an Undo pressed offline sends nothing, keeps the offer, and says Undo will still be here", async () => {
     const fetchMock = stubFetch(respondWith(RESTORED));
     Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
@@ -344,16 +360,19 @@ describe("Toast's Undo offer", () => {
 });
 
 describe("Toast's plain toasts", () => {
+  const countOf = (stack: HTMLElement, text: string) =>
+    (stack.textContent ?? "").split(text).length - 1;
+
   it("two refused taps during one write show one 'Still saving…' toast", () => {
     const { stack } = mountToast();
-    const count = () => (stack.textContent ?? "").split(STILL_SAVING_TOAST).length - 1;
+    const count = () => countOf(stack, STILL_SAVING_TOAST);
 
     // What createDoseWrite, or an Undo press, does for each tap refused while
     // another dose write is in flight.
-    showToast(STILL_SAVING_TOAST, "error");
+    showToast(STILL_SAVING_TOAST, "error", { coalesce: true });
     flushSync();
     vi.advanceTimersByTime(4_000);
-    showToast(STILL_SAVING_TOAST, "error");
+    showToast(STILL_SAVING_TOAST, "error", { coalesce: true });
     flushSync();
 
     expect(count()).toBe(1);
@@ -364,6 +383,52 @@ describe("Toast's plain toasts", () => {
     vi.advanceTimersByTime(1_000);
     flushSync();
     expect(count()).toBe(0);
+  });
+
+  it("stacks a genuine repeat: two identical toasts that did not ask to coalesce both show", () => {
+    // A second "Undone", or a second "Dose not found", is news: a polite live
+    // region announces a new node, never a timer restarted on an old one.
+    const { stack } = mountToast();
+    showToast("Dose not found", "error");
+    flushSync();
+    showToast("Dose not found", "error");
+    flushSync();
+
+    expect(countOf(stack, "Dose not found")).toBe(2);
+  });
+
+  it("with the pointer held over the stack, a coalesced repeat does not start a timer under it", () => {
+    const { stack } = mountToast();
+    showToast(STILL_SAVING_TOAST, "error", { coalesce: true });
+    flushSync();
+    stack.dispatchEvent(new MouseEvent("mouseenter"));
+
+    showToast(STILL_SAVING_TOAST, "error", { coalesce: true });
+    vi.advanceTimersByTime(10_000);
+    flushSync();
+    expect(countOf(stack, STILL_SAVING_TOAST)).toBe(1);
+
+    stack.dispatchEvent(new MouseEvent("mouseleave"));
+    vi.advanceTimersByTime(5_000);
+    flushSync();
+    expect(countOf(stack, STILL_SAVING_TOAST)).toBe(0);
+  });
+
+  it("a toast that arrives while focus holds the stack waits until it is released", () => {
+    const { stack } = mountToast();
+    show();
+    undoButton(stack).focus();
+
+    showToast("Ibuprofen 200mg logged at 9:00", "success");
+    vi.advanceTimersByTime(10_000);
+    flushSync();
+    expect(stack.textContent).toContain("logged at 9:00");
+
+    const outside = document.body.appendChild(document.createElement("button"));
+    outside.focus();
+    vi.advanceTimersByTime(5_000);
+    flushSync();
+    expect(stack.textContent).not.toContain("logged at 9:00");
   });
 });
 

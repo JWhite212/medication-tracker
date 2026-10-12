@@ -125,7 +125,7 @@ describe("the medications list's reorder under the dose-write lock", () => {
     expect(cancel).toHaveBeenCalledOnce();
     expect(callback).toBeNull();
     expect(h.showToast).toHaveBeenCalledOnce();
-    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error");
+    expect(h.showToast).toHaveBeenCalledWith(STILL_SAVING_TOAST, "error", { coalesce: true });
   });
 
   it("refuses a move in the cooldown after a write, silently: that is a double tap, not a busy lock", async () => {

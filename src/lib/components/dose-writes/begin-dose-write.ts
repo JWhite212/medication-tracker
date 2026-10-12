@@ -39,7 +39,9 @@ export function beginDoseWrite(cancel: () => void, lock: DoseWriteLock): boolean
   }
   if (!lock.acquire()) {
     cancel();
-    if (lock.active) showToast(STILL_SAVING_TOAST, "error");
+    // Coalesced: every tap refused during one slow write says it, and the
+    // live region should say it once (Toast's `coalesce`).
+    if (lock.active) showToast(STILL_SAVING_TOAST, "error", { coalesce: true });
     return false;
   }
   return true;

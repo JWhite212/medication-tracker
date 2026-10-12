@@ -5,7 +5,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const h = vi.hoisted(() => ({
-  reloadAfterWrite: vi.fn(async (_opts?: { waitForServer?: boolean }) => {}),
+  reloadAfterWrite: vi.fn(
+    async (_opts?: { waitForServer?: boolean; cancelled?: () => boolean }) => {},
+  ),
 }));
 
 // Every mutator is a no-op during SSR. These tests are the browser.
@@ -16,7 +18,8 @@ vi.mock("$app/forms", () => ({ deserialize: (text: string) => JSON.parse(text) }
 vi.mock("$lib/components/dose-writes/reload-after-write", () => ({
   HEALTH_PROBE_BACKOFF_MS: [2_000, 4_000, 8_000, 16_000, 30_000],
   waitForServer: async () => {},
-  reloadAfterWrite: (opts?: { waitForServer?: boolean }) => h.reloadAfterWrite(opts),
+  reloadAfterWrite: (opts?: { waitForServer?: boolean; cancelled?: () => boolean }) =>
+    h.reloadAfterWrite(opts),
   reloadDocumentIfUpdated: () => false,
 }));
 
@@ -236,7 +239,7 @@ describe("runUndo", () => {
     expect(body.get("doseId")).toBe("d-new");
     expect(body.get("forUndo")).toBe("1");
     expect(h.reloadAfterWrite).toHaveBeenCalledOnce();
-    expect(h.reloadAfterWrite.mock.calls[0][0]).toBeUndefined();
+    expect(h.reloadAfterWrite.mock.calls[0][0]?.waitForServer).toBeFalsy();
     expect(currentUndo()).toBeNull();
   });
 
@@ -313,7 +316,10 @@ describe("runUndo", () => {
     const run = runUndo(lock);
     await flushMicrotasks();
 
-    expect(h.reloadAfterWrite).toHaveBeenCalledWith({ waitForServer: true });
+    expect(h.reloadAfterWrite).toHaveBeenCalledWith({
+      waitForServer: true,
+      cancelled: expect.any(Function),
+    });
     expect(currentUndo()).toMatchObject({ running: true, note: UNDO_NETWORK_MESSAGE });
     expect(lock.active).toBe(true);
 
@@ -466,5 +472,97 @@ describe("runUndo — where focus goes", () => {
     offerUndo({ ...REMOVAL, focusTarget: () => edit });
     await runUndo(createDoseWriteLock());
     expect(document.activeElement).toBe(search);
+  });
+});
+
+/**
+ * Sign-out unmounts the (app) layout, whose onDestroy calls
+ * resetUndoRegistry(). An Undo still in flight then must not toast, offer or
+ * move focus: on a shared device the next person would see the last one's
+ * medication. runUndo says so with "abandoned", which Toast shows nothing for.
+ */
+describe("runUndo after the (app) layout has gone (a sign-out)", () => {
+  it("a response landing after sign-out reloads nothing, moves no focus and settles nothing", async () => {
+    const response = deferred<Response>();
+    stubFetch(response.promise);
+    const edit = document.body.appendChild(document.createElement("button"));
+    offerUndo({ ...REMOVAL, focusTarget: () => edit });
+    const lock = createDoseWriteLock();
+    const run = runUndo(lock);
+    await flushMicrotasks();
+
+    resetUndoRegistry();
+    response.resolve(respondWith(RESTORED));
+
+    await expect(run).resolves.toEqual({ kind: "abandoned" });
+    expect(h.reloadAfterWrite).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(document.body);
+    expect(currentUndo()).toBeNull();
+    expect(lock.active).toBe(false);
+  });
+
+  it("a sign-out while the reload runs: no focus move and nothing settled", async () => {
+    stubFetch(respondWith(RESTORED));
+    const edit = document.body.appendChild(document.createElement("button"));
+    h.reloadAfterWrite.mockImplementation(async () => resetUndoRegistry());
+    offerUndo({ ...REMOVAL, focusTarget: () => edit });
+
+    await expect(runUndo(createDoseWriteLock())).resolves.toEqual({ kind: "abandoned" });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("a request lost on the network, then a sign-out: the wait for the server is told to stop, and nothing is kept", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Load failed");
+      }),
+    );
+    let cancelled: (() => boolean) | undefined;
+    const reload = deferred();
+    h.reloadAfterWrite.mockImplementation((opts) => {
+      cancelled = opts?.cancelled;
+      return reload.promise;
+    });
+    offerUndo(REMOVAL);
+    const run = runUndo(createDoseWriteLock());
+    await flushMicrotasks();
+    expect(cancelled?.()).toBe(false);
+
+    resetUndoRegistry();
+    expect(cancelled?.()).toBe(true);
+    reload.resolve();
+
+    await expect(run).resolves.toEqual({ kind: "abandoned" });
+    expect(currentUndo()).toBeNull();
+  });
+
+  it("a network failure landing after sign-out does not start waiting for the server", async () => {
+    let fail!: (reason: unknown) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>((_resolve, reject) => (fail = reject))),
+    );
+    offerUndo(REMOVAL);
+    const run = runUndo(createDoseWriteLock());
+    await flushMicrotasks();
+
+    resetUndoRegistry();
+    fail(new TypeError("Load failed"));
+
+    await expect(run).resolves.toEqual({ kind: "abandoned" });
+    expect(h.reloadAfterWrite).not.toHaveBeenCalled();
+  });
+
+  it("an Undo pressed in the next session is not affected by the last one's sign-out", async () => {
+    resetUndoRegistry(); // the previous person signed out
+    stubFetch(respondWith(RESTORED));
+    offerUndo(REMOVAL);
+
+    await expect(runUndo(createDoseWriteLock())).resolves.toEqual({
+      kind: "settled",
+      message: RESTORED_TOAST,
+      type: "success",
+    });
   });
 });

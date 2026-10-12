@@ -294,3 +294,91 @@ describe("DoseEditForm when the outcome is unknown", () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Signing out unmounts the (app) layout, and its onDestroy calls
+ * resetUndoRegistry(). A Save whose response lands after that belongs to the
+ * previous person: no toast, no dialog closing, no reload, no focus move —
+ * only the lock goes.
+ */
+describe("DoseEditForm after the (app) layout has gone (a sign-out)", () => {
+  function signOut() {
+    resetUndoRegistry();
+    for (const fn of teardown.splice(0)) fn();
+  }
+
+  it.each<[string, ActionResult]>([
+    ["a success", SAVED],
+    ["a refusal", { type: "failure", status: 404, data: { error: "Dose not found" } }],
+    ["a crash", { type: "error", status: 500, error: { message: "Something went wrong" } }],
+  ])("%s landing after sign-out shows nothing and lets go of the lock", async (_name, result) => {
+    const { form, submit } = mountEditForm();
+    const { callback } = await startSubmit(submit, form);
+
+    signOut();
+    await finishSubmit(callback!, form, result).done;
+
+    expect(h.showToast).not.toHaveBeenCalled();
+    expect(onclose).not.toHaveBeenCalled();
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+    expect(lock.active).toBe(false);
+  });
+
+  it("an unknown outcome, then a sign-out: it stops probing /api/health and reloads nothing", async () => {
+    const probe = vi.fn(async () => ({ ok: false }));
+    vi.stubGlobal("fetch", probe);
+    const { form, submit } = mountEditForm();
+    const { callback } = await startSubmit(submit, form);
+    const { done } = finishSubmit(callback!, form, NO_RESPONSE);
+    await vi.waitFor(() => expect(probe).toHaveBeenCalledOnce());
+
+    signOut();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await done;
+
+    expect(probe).toHaveBeenCalledOnce();
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+    expect(lock.active).toBe(false);
+  });
+
+  it("a success that lands during the sign-out navigation reloads nothing once it has finished", async () => {
+    const { navigating } = (await import("$app/state")) as unknown as {
+      navigating: { to: unknown; willUnload: boolean | null; complete: Promise<void> | null };
+    };
+    const { form, submit } = mountEditForm();
+    const { callback } = await startSubmit(submit, form);
+    let finishNavigation!: () => void;
+    Object.assign(navigating, {
+      to: { url: new URL("http://localhost/auth/login") },
+      willUnload: false,
+      complete: new Promise<void>((resolve) => (finishNavigation = resolve)),
+    });
+
+    const { done } = finishSubmit(callback!, form, SAVED);
+    await vi.advanceTimersByTimeAsync(0);
+    // The navigation leaves (app): the layout unmounts, then it completes.
+    resetUndoRegistry();
+    Object.assign(navigating, { to: null, willUnload: null, complete: null });
+    finishNavigation();
+    await done;
+
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+    expect(lock.active).toBe(false);
+  });
+
+  it("a refusal whose sign-out lands while its message takes focus reloads nothing", async () => {
+    const { form, submit } = mountEditForm();
+    const { callback } = await startSubmit(submit, form);
+    // The sign-out completes during the tick focusFirstProblem waits.
+    queueMicrotask(() => resetUndoRegistry());
+
+    await finishSubmit(callback!, form, {
+      type: "failure",
+      status: 404,
+      data: { error: "Dose not found" },
+    }).done;
+
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+    expect(lock.active).toBe(false);
+  });
+});

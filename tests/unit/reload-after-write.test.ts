@@ -188,6 +188,28 @@ describe("reloadAfterWrite", () => {
     h.invalidateAll.mockRejectedValueOnce(new Error("load failed"));
     await expect(reloadAfterWrite()).resolves.toBeUndefined();
   });
+
+  it("once its session has ended (a sign-out), stops probing and reloads nothing", async () => {
+    let signedOut = false;
+    fetchMock.mockResolvedValue(response(503));
+    const done = reloadAfterWrite({ waitForServer: true, cancelled: () => signedOut });
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    signedOut = true;
+    await vi.advanceTimersByTimeAsync(2_000);
+    await done;
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+    // The loop has ended: no backoff timer is left to wake it.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("with its session ended and nothing to wait for, still reloads nothing", async () => {
+    await reloadAfterWrite({ cancelled: () => true });
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+  });
 });
 
 describe("waitForServer", () => {

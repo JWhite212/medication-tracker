@@ -569,3 +569,171 @@ describe("createDoseWrite, on the result", () => {
     expect(h.applyAction).toHaveBeenCalledWith(redirect);
   });
 });
+
+/**
+ * Signing out unmounts the (app) layout, whose onDestroy calls
+ * resetUndoRegistry() (and clearToasts()). A write whose response lands
+ * after that belongs to the previous person: it must not offer an Undo, toast
+ * or move focus in the next person's session, only let go of the lock.
+ */
+describe("createDoseWrite after the (app) layout has gone (a sign-out)", () => {
+  /** What the layout's onDestroy does, plus the page unmounting with it. */
+  function signOut() {
+    resetUndoRegistry();
+    while (cleanups.length) cleanups.pop()!();
+  }
+
+  function heading(): HTMLElement {
+    const h1 = document.body.appendChild(document.createElement("h1"));
+    h1.tabIndex = -1;
+    return h1;
+  }
+
+  it("a log whose response lands after sign-out offers no Undo, toasts nothing, moves no focus, and lets go of the lock", async () => {
+    const h1 = heading();
+    const lock = createDoseWriteLock();
+    const { form, submit } = mountProbe({
+      lock,
+      props: {
+        options: {
+          undo: { kind: "delete", focusTarget: () => null },
+          buildToast: () => "Metformin 500mg logged at 08:00",
+          focusAfter: () => h1,
+        },
+      },
+    });
+    const { callback } = await startSubmit(submit, form);
+
+    signOut();
+    await finishSubmit(callback!, form, SUCCESS).done;
+
+    expect(currentUndo()).toBeNull();
+    expect(h.showToast).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(document.body);
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+    expect(lock.active).toBe(false);
+  });
+
+  it.each<[string, ActionResult]>([
+    ["a 404", NOT_FOUND],
+    ["a 409", CONFLICT],
+    ["a 5xx", CRASH],
+  ])("%s landing after sign-out toasts nothing and moves no focus", async (_name, result) => {
+    const h1 = heading();
+    const lock = createDoseWriteLock();
+    const { form, submit } = mountProbe({ lock, props: { options: { focusAfter: () => h1 } } });
+    const { callback } = await startSubmit(submit, form);
+
+    signOut();
+    await finishSubmit(callback!, form, result).done;
+
+    expect(h.showToast).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(document.body);
+    expect(lock.active).toBe(false);
+  });
+
+  it("a sign-out while the success's reload runs: no Undo, no toast", async () => {
+    const lock = createDoseWriteLock();
+    const { form, submit } = mountProbe({
+      lock,
+      props: {
+        options: {
+          undo: { kind: "delete", focusTarget: () => null },
+          buildToast: () => "Metformin 500mg logged at 08:00",
+        },
+      },
+    });
+    const { callback } = await startSubmit(submit, form);
+    // The sign-out navigation completes while the reload waits it out.
+    h.invalidateAll.mockImplementationOnce(async () => resetUndoRegistry());
+
+    await finishSubmit(callback!, form, SUCCESS).done;
+
+    expect(currentUndo()).toBeNull();
+    expect(h.showToast).not.toHaveBeenCalled();
+    expect(lock.active).toBe(false);
+  });
+
+  it("a request lost on the network, then a sign-out: it stops probing /api/health, reloads nothing and moves no focus", async () => {
+    const health = vi.fn(async () => ({ ok: false, status: 503 }));
+    vi.stubGlobal("fetch", health);
+    const h1 = heading();
+    const lock = createDoseWriteLock();
+    const { form, submit } = mountProbe({ lock, props: { options: { focusAfter: () => h1 } } });
+    const { callback } = await startSubmit(submit, form);
+    const { done } = finishSubmit(callback!, form, LOST);
+    await flushMicrotasks();
+    expect(health).toHaveBeenCalledTimes(1);
+    h.showToast.mockClear();
+
+    signOut();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await done;
+
+    expect(health).toHaveBeenCalledTimes(1);
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+    expect(h.showToast).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(document.body);
+    expect(lock.active).toBe(false);
+  });
+
+  it("a success that lands during the sign-out navigation reloads nothing once it has finished", async () => {
+    const lock = createDoseWriteLock();
+    const { form, submit } = mountProbe({ lock });
+    const { callback } = await startSubmit(submit, form);
+    const navigation = deferred();
+    Object.assign(h.navigating, {
+      to: { url: new URL("http://localhost/auth/login") },
+      willUnload: false,
+      complete: navigation.promise,
+    });
+
+    const { done } = finishSubmit(callback!, form, SUCCESS);
+    await flushMicrotasks();
+    // The navigation leaves (app): the layout unmounts, then it completes.
+    signOut();
+    Object.assign(h.navigating, { to: null, willUnload: null, complete: null });
+    navigation.resolve();
+    await done;
+
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+    expect(h.showToast).not.toHaveBeenCalled();
+    expect(lock.active).toBe(false);
+  });
+
+  it("a sign-out landing in the last tick of a success, after onSuccess, moves no focus", async () => {
+    const h1 = heading();
+    const lock = createDoseWriteLock();
+    const { form, submit } = mountProbe({
+      lock,
+      props: { options: { focusAfter: () => h1, onSuccess: () => signOut() } },
+    });
+    const { callback } = await startSubmit(submit, form);
+
+    await finishSubmit(callback!, form, SUCCESS).done;
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("a write in the next session behaves as before", async () => {
+    resetUndoRegistry(); // the previous person signed out
+    const lock = createDoseWriteLock();
+    const { form, submit } = mountProbe({
+      lock,
+      props: {
+        options: {
+          undo: { kind: "delete", focusTarget: () => null },
+          buildToast: () => "Metformin 500mg logged at 08:00",
+        },
+      },
+    });
+    const { callback } = await startSubmit(submit, form);
+    await finishSubmit(callback!, form, SUCCESS).done;
+
+    expect(currentUndo()).toMatchObject({
+      kind: "delete",
+      doseId: "d-new",
+      message: "Metformin 500mg logged at 08:00",
+    });
+  });
+});

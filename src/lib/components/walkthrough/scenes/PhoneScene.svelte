@@ -14,8 +14,9 @@
   // StageCollapse, never through {#if}.
   //
   // The content box is 732px (820 − 72 − 16) and the home indicator covers
-  // its foot, so Later is cut at a whole row (PHONE_LATER_ROWS). The chips and
-  // Refills sit below it, off screen, as they would on a real phone.
+  // its foot, so Later is cut at a whole row (PHONE_LATER_ROWS, a deliberate
+  // prefix; see Task 10 Step 20). The phone draws no chips or Refills: on a
+  // real phone they would be below the fold.
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
   import { formatUserTime, lastLoggedPhrase, type TimeFormat } from "$lib/utils/time";
   import { LOGGED_DOSE, PHONE_NOW, WALKTHROUGH_TZ } from "../demo-data";
@@ -49,8 +50,9 @@
   const dueStays = after.earlier.length + after.today.length > 0;
   /** A prefix of the composer's Later list, cut at a whole row. */
   const laterRows = before.later.slice(0, PHONE_LATER_ROWS);
-  // iOS's status bar clock never shows am/pm, so it is the 24h form of the
-  // story's own clock, whatever the stage's time format.
+  // The status bar shows the device clock, which is independent of the app's
+  // time-format preference; we draw it in 24h. At the story's 10:12 the 24h
+  // and 12h forms (less am/pm) agree.
   const clock = formatUserTime(PHONE_NOW, WALKTHROUGH_TZ, "24h");
   // The overdue push as reminders.ts sends it: the title names the
   // medication, and the body is lastLoggedPhrase over its last event. It was

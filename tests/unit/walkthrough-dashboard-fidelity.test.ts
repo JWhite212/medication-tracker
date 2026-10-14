@@ -826,7 +826,7 @@ describe("the phone scene against the app: rendered text", () => {
         expect(visibleText(found[0]), name).toBe(squash(want.text.join(" ")));
         if (want.rows !== null) expect(drawnRows(found[0]), `${name} rows`).toBe(want.rows);
       }
-      // The chips and Refills sit below the fold on a phone.
+      // The phone draws no chips or Refills; on a real phone they would be below the fold.
       expect(phone.querySelector('[data-stage-section="chips"]')).toBeNull();
     });
 
@@ -842,7 +842,7 @@ describe("the phone scene against the app: rendered text", () => {
       }
     });
 
-    it("tells the time in the status bar as PHONE_NOW, with no am/pm, as iOS does", () => {
+    it("tells the time in the status bar as PHONE_NOW, in the 24h device-clock form", () => {
       const clocks = phoneSurface(CUES.Reminders + 1, timeFormat).querySelectorAll(
         "[data-stage-clock]",
       );

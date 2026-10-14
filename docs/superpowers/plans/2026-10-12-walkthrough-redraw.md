@@ -223,6 +223,7 @@ Two edits to `tests/unit/dashboard-copy.test.ts`.
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
 import { describe, it, expect } from "vitest";
 import {
@@ -241,6 +242,7 @@ import type { TimeFormat } from "$lib/utils/time";
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
 import { describe, it, expect, vi } from "vitest";
 import {
@@ -268,6 +270,7 @@ These tests rely on the file's existing `TZ = "UTC"`, `TODAY_START = 2026-04-16T
 
 They follow the file's rule that every pinned 24h time has a **two-digit hour**, because en-GB prints "9:05", not "09:05". The one 12h case tolerates an optional leading zero.
 
+<!-- prettier-ignore -->
 ```ts
 describe("headerEyebrow", () => {
   // Noon UTC on Thursday 24 September 2026.
@@ -411,12 +414,14 @@ Two edits to `src/lib/utils/dashboard-copy.ts`.
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
 import { formatDuration, formatUserTime, type TimeFormat } from "./time";
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
 import {
   formatDuration,
@@ -431,6 +436,7 @@ import {
 
 Old (unique):
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * Log now / chip success toast, built from the reloaded data: `covers` are
@@ -438,6 +444,7 @@ Old (unique):
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * The header's date eyebrow, "Thu 24 Sept". The date preference decides the
@@ -512,6 +519,7 @@ Two edits to `src/lib/components/dashboard/DashboardHeader.svelte`.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
   import { formatUserDate, type DateFormat, type TimeFormat } from "$lib/utils/time";
   import { dashboardHeaderCopy } from "$lib/utils/dashboard-copy";
@@ -519,15 +527,17 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-import type {(DateFormat, TimeFormat)} from "$lib/utils/time"; import {(dashboardHeaderCopy,
-headerEyebrow)} from "$lib/utils/dashboard-copy";
+  import type { DateFormat, TimeFormat } from "$lib/utils/time";
+  import { dashboardHeaderCopy, headerEyebrow } from "$lib/utils/dashboard-copy";
 ```
 
 (b) Lines 22-24.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
   const eyebrow = $derived(
     formatUserDate(serverNow, timezone, dateFormat, { weekday: true, year: false }),
@@ -536,8 +546,9 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-const eyebrow = $derived(headerEyebrow(serverNow, timezone, dateFormat));
+  const eyebrow = $derived(headerEyebrow(serverNow, timezone, dateFormat));
 ```
 
 Why `import type` and not inline `type` specifiers: once `formatUserDate` goes, both remaining names are types. An import holding only inline `type` specifiers is kept as a side-effect import under `verbatimModuleSyntax`. `DueCard.svelte:4` already uses this form.
@@ -550,6 +561,7 @@ Three edits to `src/lib/components/dashboard/LaterList.svelte`.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
   import { formatDuration, type TimeFormat } from "$lib/utils/time";
   import { formatSlotTime } from "$lib/utils/dashboard-copy";
@@ -557,14 +569,17 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-import type {TimeFormat} from "$lib/utils/time"; import {(formatSlotTime, laterUntil)} from "$lib/utils/dashboard-copy";
+  import type { TimeFormat } from "$lib/utils/time";
+  import { formatSlotTime, laterUntil } from "$lib/utils/dashboard-copy";
 ```
 
 (b) Delete the private `until` function at lines 22-27.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
   } = $props();
 
@@ -578,6 +593,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
   } = $props();
 </script>
@@ -587,14 +603,18 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
-<span class="text-text-secondary shrink-0 text-sm">{until(row)}</span>
+            <span class="text-text-secondary shrink-0 text-sm">{until(row)}</span>
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-<span class="text-text-secondary shrink-0 text-sm">{laterUntil(row.expectedTime, serverNow)}</span>
+            <span class="text-text-secondary shrink-0 text-sm"
+              >{laterUntil(row.expectedTime, serverNow)}</span
+            >
 ```
 
 `LaterRow` is still imported, because the `rows` prop uses it.
@@ -607,45 +627,53 @@ Four edits to `src/lib/components/dashboard/DoneList.svelte`.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
-import {(formatDoseLabel, formatSlotTime)} from "$lib/utils/dashboard-copy";
+  import { formatDoseLabel, formatSlotTime } from "$lib/utils/dashboard-copy";
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-import {(doneCoversLine, doneDoseText, formatDoseLabel)} from "$lib/utils/dashboard-copy";
+  import { doneCoversLine, doneDoseText, formatDoseLabel } from "$lib/utils/dashboard-copy";
 ```
 
 (b) Lines 58-62.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
-const when = row.dayLabel === "yesterday" ? `yesterday ${time}` : time; const covers =
-row.covers.map((iso) => formatSlotTime(new Date(iso), todayStart, timezone, timeFormat), ); const
-skipped = dose.status === "skipped";
+    const when = row.dayLabel === "yesterday" ? `yesterday ${time}` : time;
+    const covers = row.covers.map((iso) =>
+      formatSlotTime(new Date(iso), todayStart, timezone, timeFormat),
+    );
+    const skipped = dose.status === "skipped";
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-const when = row.dayLabel === "yesterday" ? `yesterday ${time}` : time; const skipped = dose.status
-=== "skipped";
+    const when = row.dayLabel === "yesterday" ? `yesterday ${time}` : time;
+    const skipped = dose.status === "skipped";
 ```
 
 (c) Lines 68-70. The dose's fields are spread out explicitly: `dose` is a `DoseLogWithMedication`, and the amount and unit live on `dose.medication`.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
-dose: `${med.dosageAmount}${med.dosageUnit}${dose.status === "taken" && dose.quantity > 1
-  ? ` ×${dose.quantity}`
-  : ""}`,
+      dose: `${med.dosageAmount}${med.dosageUnit}${
+        dose.status === "taken" && dose.quantity > 1 ? ` ×${dose.quantity}` : ""
+      }`,
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
       dose: doneDoseText({
         dosageAmount: med.dosageAmount,
@@ -659,14 +687,16 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
-coversText: covers.length > 0 ? `for ${covers.join(", ")}` : null,
+      coversText: covers.length > 0 ? `for ${covers.join(", ")}` : null,
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-coversText: doneCoversLine(row.covers, todayStart, timezone, timeFormat),
+      coversText: doneCoversLine(row.covers, todayStart, timezone, timeFormat),
 ```
 
 - [ ] **Step 8: DueCard calls `tookItAtLabel`**
@@ -677,28 +707,37 @@ Two edits to `src/lib/components/dashboard/DueCard.svelte`.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
-toastForSkip, toastForTookItAt, } from "$lib/utils/dashboard-copy";
+    toastForSkip,
+    toastForTookItAt,
+  } from "$lib/utils/dashboard-copy";
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-toastForSkip, toastForTookItAt, tookItAtLabel, } from "$lib/utils/dashboard-copy";
+    toastForSkip,
+    toastForTookItAt,
+    tookItAtLabel,
+  } from "$lib/utils/dashboard-copy";
 ```
 
 (b) Line 144, inside the `row.tookItAt !== null` branch.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
-label={`Took it at ${view.time}`}
+          label={`Took it at ${view.time}`}
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-label={tookItAtLabel(view.time)}
+          label={tookItAtLabel(view.time)}
 ```
 
 `srContext` and the button's other props are unchanged. The accessible name stays "Took it at 11:00: Metformin 500mg".
@@ -818,6 +857,7 @@ _`laterUntil`:_
 
 - [ ] **Step 12: Commit**
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/utils/dashboard-copy.ts \
   src/lib/components/dashboard/DashboardHeader.svelte \
@@ -970,6 +1010,7 @@ This task fixes that. It moves the sentence into one client-safe helper, `lastLo
 
 In `tests/unit/time.test.ts`, add `lastLoggedPhrase` to the import. Replace:
 
+<!-- prettier-ignore -->
 ```ts
 import {
   formatTimeSince,
@@ -978,6 +1019,7 @@ import {
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 import {
   formatTimeSince,
@@ -987,6 +1029,7 @@ import {
 
 Then append one test to `describe("formatTimeSince")` and add a new `describe` before `describe("formatTime")`. Replace:
 
+<!-- prettier-ignore -->
 ```ts
   it("formats exact hours", () => {
     const oneHourAgo = new Date("2026-04-15T13:30:00Z");
@@ -999,6 +1042,7 @@ describe("formatTime", () => {
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   it("formats exact hours", () => {
     const oneHourAgo = new Date("2026-04-15T13:30:00Z");
@@ -1058,6 +1102,7 @@ Expected: FAIL, `Tests  8 failed | 33 passed (41)`.
 
 In `src/lib/utils/time.ts`, replace:
 
+<!-- prettier-ignore -->
 ```ts
 export function formatTimeSince(date: Date): string {
   const now = Date.now();
@@ -1076,6 +1121,7 @@ export function formatTimeSince(date: Date): string {
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * "just now", "5m ago", "2h 3m ago" or "1d ago": how long before `now` the
@@ -1133,6 +1179,7 @@ Expected: PASS, `Tests  41 passed (41)`.
 
 In `tests/unit/email.test.ts`, make the Resend mock record what it is handed. Replace:
 
+<!-- prettier-ignore -->
 ```ts
 let nextSendThrows: Error | null = null;
 
@@ -1150,6 +1197,7 @@ vi.mock("resend", () => ({
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 let nextSendThrows: Error | null = null;
 // Every payload handed to `resend.emails.send`, so a test can read the html
@@ -1171,6 +1219,7 @@ vi.mock("resend", () => ({
 
 Reset it per test. Replace:
 
+<!-- prettier-ignore -->
 ```ts
 beforeEach(() => {
   nextSendResult = null;
@@ -1180,6 +1229,7 @@ beforeEach(() => {
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 beforeEach(() => {
   nextSendResult = null;
@@ -1195,6 +1245,7 @@ beforeEach(() => {
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
     const r = await sendReminderEmail("victim@example.test", "Aspirin", "yesterday");
     expect(r.ok).toBe(false);
@@ -1208,6 +1259,7 @@ Replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
     const r = await sendReminderEmail(
       "victim@example.test",
@@ -1281,12 +1333,14 @@ Expected: FAIL, `Tests  6 failed | 12 passed (18)`.
 
 In `src/lib/server/email.ts`, add the import. Replace:
 
+<!-- prettier-ignore -->
 ```ts
 import { dev } from "$app/environment";
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 import { dev } from "$app/environment";
 import { lastLoggedPhrase } from "$lib/utils/time";
@@ -1294,6 +1348,7 @@ import { lastLoggedPhrase } from "$lib/utils/time";
 
 Then replace the whole function:
 
+<!-- prettier-ignore -->
 ```ts
 export async function sendReminderEmail(
   email: string,
@@ -1322,6 +1377,7 @@ export async function sendReminderEmail(
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 export async function sendReminderEmail(
   email: string,
@@ -1363,24 +1419,28 @@ Keep the bespoke fake. Only the two channel mocks, one pin and one new `describe
 
 **1. Import `afterEach`.** Replace:
 
+<!-- prettier-ignore -->
 ```ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 ```
 
 **2. Make the email mock record the sender's new arguments.** Replace:
 
+<!-- prettier-ignore -->
 ```ts
 const sentEmails: Array<{ to: string; medicationName: string; sinceLabel: string }> = [];
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 // The sender's own arguments: it builds the "last logged" clause itself from
 // the anchor and the sweep's tick, so those two instants are what the sweep
@@ -1395,6 +1455,7 @@ const sentEmails: Array<{
 
 and replace:
 
+<!-- prettier-ignore -->
 ```ts
   sendReminderEmail: async (to: string, medicationName: string, sinceLabel: string) => {
     sentEmails.push({ to, medicationName, sinceLabel });
@@ -1404,6 +1465,7 @@ and replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   sendReminderEmail: async (
     to: string,
@@ -1418,12 +1480,14 @@ with:
 
 **3. Make the push mock record `title` and `body`.** Replace:
 
+<!-- prettier-ignore -->
 ```ts
 const sentPushes: Array<{ userId: string; tag: string; renotify?: boolean }> = [];
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 // `title` and `body` are recorded so the copy is tested through the real
 // sweep. With only `tag` and `renotify` here, the body read "Last logged 1d
@@ -1439,6 +1503,7 @@ const sentPushes: Array<{
 
 and replace:
 
+<!-- prettier-ignore -->
 ```ts
   sendPushNotification: async (userId: string, payload: { tag: string; renotify?: boolean }) => {
     if (nextSendPushThrows) {
@@ -1451,6 +1516,7 @@ and replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   sendPushNotification: async (
     userId: string,
@@ -1477,28 +1543,32 @@ with:
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
-expect(sentEmails[0].sinceLabel).not.toBe("never");
+    expect(sentEmails[0].sinceLabel).not.toBe("never");
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
-// Was `sinceLabel` not "never". The sender no longer takes a label or a
-// sentinel: it takes the anchor and builds its own clause. The claim is
-// unchanged — a medication WITH a last event is reported as having one,
-// and it is the aggregate's instant, not null.
-expect(sentEmails[0].lastEventAt).toEqual(lastEventRows[0].lastEventAt);
+    // Was `sinceLabel` not "never". The sender no longer takes a label or a
+    // sentinel: it takes the anchor and builds its own clause. The claim is
+    // unchanged — a medication WITH a last event is reported as having one,
+    // and it is the aggregate's instant, not null.
+    expect(sentEmails[0].lastEventAt).toEqual(lastEventRows[0].lastEventAt);
 ```
 
 **5. Add the copy cases, driven through the real sweep.** Replace:
 
+<!-- prettier-ignore -->
 ```ts
 describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 describe("checkOverdueMedications — the 'last logged' copy", () => {
   // These drive the real sweep, so they read the push the real template
@@ -1594,6 +1664,7 @@ Expected: FAIL, `Tests  6 failed | 20 passed (26)`.
 - `checkOverdueMedications — claim/complete with per-channel status > still reminds when the last handled dose is older than the interval`: `AssertionError: expected '8h 0m ago' to deeply equal <the 8-hours-ago Date>`.
 - The four `checkOverdueMedications — the 'last logged' copy > a reminder '30 seconds' after the last event reads 'Last logged just now'` … `'25 hours' … 'Last logged 1d ago'` cases: `AssertionError: expected { userId: 'u1', …(4) } to match object { title: 'Ibuprofen overdue', …(1) }`. The diff shows the production bug:
 
+  <!-- prettier-ignore -->
   ```
   -   "body": "Last logged just now",
   +   "body": "Last logged just now ago",
@@ -1601,6 +1672,7 @@ Expected: FAIL, `Tests  6 failed | 20 passed (26)`.
 
 - `… > a reminder for a medication never logged reads "Not yet logged"`. The push already passes; the email assertion fails with:
 
+  <!-- prettier-ignore -->
   ```
   -     "lastEventAt": null,
   +     "lastEventAt": "never",
@@ -1612,46 +1684,53 @@ Expected: FAIL, `Tests  6 failed | 20 passed (26)`.
 
 In `src/lib/server/reminders.ts`, swap the import. Replace:
 
+<!-- prettier-ignore -->
 ```ts
 import { formatTimeSince } from "$lib/utils/time";
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 import { lastLoggedPhrase } from "$lib/utils/time";
 ```
 
 **Delete the `"never"` sentinel.** The "logged, not taken" rationale now lives in `lastLoggedPhrase`'s doc comment. Replace:
 
+<!-- prettier-ignore -->
 ```ts
-// "logged", not "taken": the anchor now counts skips, so a reminder can
-// follow a skip and asserting the dose was taken would be false.
-const sinceLabel = row.lastEventAt ? formatTimeSince(new Date(row.lastEventAt)) : "never";
+    // "logged", not "taken": the anchor now counts skips, so a reminder can
+    // follow a skip and asserting the dose was taken would be false.
+    const sinceLabel = row.lastEventAt ? formatTimeSince(new Date(row.lastEventAt)) : "never";
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
-// Both channels word this through `lastLoggedPhrase`, from the anchor and
-// the same tick `now` that found the slot overdue: one clock per tick.
-const lastEventAt = row.lastEventAt ? new Date(row.lastEventAt) : null;
+    // Both channels word this through `lastLoggedPhrase`, from the anchor and
+    // the same tick `now` that found the slot overdue: one clock per tick.
+    const lastEventAt = row.lastEventAt ? new Date(row.lastEventAt) : null;
 ```
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
-out.email = await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
+          out.email = await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
-out.email = await sendReminderEmail(row.userEmail, row.medicationName, lastEventAt, now);
+          out.email = await sendReminderEmail(row.userEmail, row.medicationName, lastEventAt, now);
 ```
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
             body: row.lastEventAt
               ? `Last logged ${formatTimeSince(new Date(row.lastEventAt))} ago`
@@ -1660,6 +1739,7 @@ Replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
             body: lastLoggedPhrase(lastEventAt, now),
 ```
@@ -1764,6 +1844,7 @@ Run each gate:
 
 - [ ] **Step 15: Commit**
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/utils/time.ts src/lib/server/email.ts src/lib/server/reminders.ts tests/unit/time.test.ts tests/unit/email.test.ts tests/unit/reminders.test.ts
 git commit -F - <<'EOF'
@@ -1882,6 +1963,7 @@ EOF
 - **Consumes:** nothing from earlier tasks. From existing code, the rows `getPerMedicationStats` returns (`analytics.ts:196-333`). They carry `takenEvents`, `takenQuantity`, `skippedEvents` and `expectedTotal` among other fields, so they are structurally assignable to `MedicationStatusCounts`.
 - **Produces** (exact, for T4 and anything later):
 
+  <!-- prettier-ignore -->
   ```ts
   // src/lib/server/analytics/status-breakdown.ts — imports nothing
   export type MedicationStatusCounts = {
@@ -1923,6 +2005,7 @@ The `vi.mock` factory below **throws**. That is deliberate and is the module-bou
 
 The factory references no top-level variable, because `vi.mock` is hoisted.
 
+<!-- prettier-ignore -->
 ```ts
 // @vitest-environment node
 import { describe, it, expect, vi } from "vitest";
@@ -2055,6 +2138,7 @@ Run: `npx vitest run tests/unit/analytics-status-breakdown.test.ts`
 
 Expected: FAIL, because the module does not exist yet:
 
+<!-- prettier-ignore -->
 ```
  FAIL  tests/unit/analytics-status-breakdown.test.ts [ tests/unit/analytics-status-breakdown.test.ts ]
 Error: Cannot find module '$lib/server/analytics/status-breakdown' imported from …/tests/unit/analytics-status-breakdown.test.ts
@@ -2070,6 +2154,7 @@ Create `src/lib/server/analytics/status-breakdown.ts`. The file has three parts:
 - **The loop and the return** are `analytics.ts:374-408`, byte for byte.
 - **The doc comment** above the fold keeps the pooling and numerator paragraphs of `analytics.ts:335-363` word for word. The `includeAsNeeded` paragraph stays behind on `getDoseStatusBreakdown` (Step 5), because it is about that function's call, not the arithmetic.
 
+<!-- prettier-ignore -->
 ```ts
 // The status breakdown's arithmetic, with no database: the per-medication
 // fold `getDoseStatusBreakdown` applies to `getPerMedicationStats`' rows, and
@@ -2186,6 +2271,7 @@ Expected: PASS, `Test Files  1 passed (1)` and `Tests  6 passed (6)`.
 
 Then, **before** touching `analytics.ts`, so its line numbers are still the base ones, prove both blocks were copied byte for byte. Both commands must print their marker and no diff lines:
 
+<!-- prettier-ignore -->
 ```bash
 diff <(sed -n 374,408p src/lib/server/analytics.ts) <(sed -n 70,104p src/lib/server/analytics/status-breakdown.ts) && echo LOOP-VERBATIM
 diff <(sed -n 165,177p src/lib/server/analytics.ts) <(sed -n 29,41p src/lib/server/analytics/status-breakdown.ts) && echo RATIOS-VERBATIM
@@ -2201,6 +2287,7 @@ Make three replacements in `src/lib/server/analytics.ts`.
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 import { clampEffectiveDays, isActiveOn, lifecycleEnd } from "$lib/server/analytics/lifecycle";
 import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
@@ -2208,6 +2295,7 @@ import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
 
 With:
 
+<!-- prettier-ignore -->
 ```ts
 import { clampEffectiveDays, isActiveOn, lifecycleEnd } from "$lib/server/analytics/lifecycle";
 import {
@@ -2220,6 +2308,7 @@ import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
 
 **5b: the ratio helpers become a re-export (`:165-177`).** Replace:
 
+<!-- prettier-ignore -->
 ```ts
 // Visual adherence: capped at 100% so the bar never overshoots.
 // Use calculateOveruse() for the over-100 overflow.
@@ -2238,6 +2327,7 @@ export function calculateOveruse(taken: number, expected: number): number {
 
 With:
 
+<!-- prettier-ignore -->
 ```ts
 // Both ratio helpers live in `analytics/status-breakdown.ts`, beside the fold
 // that calls them. `getPerMedicationStats` below calls them too, and the
@@ -2247,6 +2337,7 @@ export { calculateAdherence, calculateOveruse };
 
 **5c: `getDoseStatusBreakdown` returns the fold (`:335-409`).** The `includeAsNeeded` paragraph stays here, reworded only to drop its dangling "therefore", whose antecedent paragraph moved in Step 3. Replace:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * User-level dose status breakdown — "expected but unresolved", aggregated
@@ -2327,6 +2418,7 @@ export async function getDoseStatusBreakdown(
 
 With:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * User-level dose status breakdown — "expected but unresolved", aggregated
@@ -2356,6 +2448,7 @@ export async function getDoseStatusBreakdown(
 
 Run:
 
+<!-- prettier-ignore -->
 ```bash
 npx vitest run tests/unit/analytics-status-breakdown.test.ts tests/unit/analytics.test.ts tests/unit/pg/analytics-denominator.test.ts tests/unit/pg/export-pdf-breakdown.test.ts tests/unit/export-pdf-report.test.ts tests/unit/analytics-page-load.test.ts tests/unit/analytics-legacy-interval.test.ts tests/unit/analytics-lifecycle.test.ts
 ```
@@ -2369,6 +2462,7 @@ Then run `git status --short -- src/lib/server tests`.
 
 Expected: exactly these three lines. No existing test file appears.
 
+<!-- prettier-ignore -->
 ```
  M src/lib/server/analytics.ts
 ?? src/lib/server/analytics/status-breakdown.ts
@@ -2377,6 +2471,7 @@ Expected: exactly these three lines. No existing test file appears.
 
 - [ ] **Step 7: Stage the change, so each mutation can be undone exactly**
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/server/analytics/status-breakdown.ts src/lib/server/analytics.ts tests/unit/analytics-status-breakdown.test.ts
 ```
@@ -2387,6 +2482,7 @@ Each mutation below edits the working tree only. `git checkout -- <file>` then r
 
 In `src/lib/server/analytics/status-breakdown.ts`, in the returned object, change the line `    missedEvents,` to:
 
+<!-- prettier-ignore -->
 ```ts
     missedEvents: expectedTotal - takenEvents,
 ```
@@ -2415,20 +2511,23 @@ Restore: `git checkout -- src/lib/server/analytics/status-breakdown.ts && git di
 
 Change:
 
+<!-- prettier-ignore -->
 ```ts
-surplusTaken += m.expectedTotal > 0 ? Math.max(0, m.takenEvents - m.expectedTotal) : 0;
+    surplusTaken += m.expectedTotal > 0 ? Math.max(0, m.takenEvents - m.expectedTotal) : 0;
 ```
 
 to:
 
+<!-- prettier-ignore -->
 ```ts
-surplusTaken += Math.max(0, m.takenEvents - m.expectedTotal);
+    surplusTaken += Math.max(0, m.takenEvents - m.expectedTotal);
 ```
 
 Run: `npx vitest run tests/unit/analytics-status-breakdown.test.ts`
 
 Expected: FAIL, `Tests  1 failed | 5 passed (6)`. The failing test is `keeps a PRN medication's doses in the counts and out of every ratio`, with this diff:
 
+<!-- prettier-ignore -->
 ```
 -   "overusePercent": 0,
 +   "overusePercent": 50,
@@ -2442,12 +2541,14 @@ Restore: `git checkout -- src/lib/server/analytics/status-breakdown.ts && git di
 
 Change:
 
+<!-- prettier-ignore -->
 ```ts
     overusePercent: calculateOveruse(expectedTotal + surplusTaken, expectedTotal),
 ```
 
 to:
 
+<!-- prettier-ignore -->
 ```ts
     overusePercent: calculateOveruse(creditedTaken, expectedTotal),
 ```
@@ -2465,12 +2566,14 @@ Restore: `git checkout -- src/lib/server/analytics/status-breakdown.ts && git di
 
 Change:
 
+<!-- prettier-ignore -->
 ```ts
     adherencePercent: calculateAdherence(creditedTaken, expectedTotal),
 ```
 
 to:
 
+<!-- prettier-ignore -->
 ```ts
     adherencePercent: calculateAdherence(takenEvents, expectedTotal),
 ```
@@ -2488,14 +2591,16 @@ Restore: `git checkout -- src/lib/server/analytics/status-breakdown.ts && git di
 
 Change:
 
+<!-- prettier-ignore -->
 ```ts
-missedEvents += Math.max(0, m.expectedTotal - m.takenEvents - m.skippedEvents);
+    missedEvents += Math.max(0, m.expectedTotal - m.takenEvents - m.skippedEvents);
 ```
 
 to:
 
+<!-- prettier-ignore -->
 ```ts
-missedEvents += Math.max(0, m.expectedTotal - m.takenEvents);
+    missedEvents += Math.max(0, m.expectedTotal - m.takenEvents);
 ```
 
 Run: `npx vitest run tests/unit/analytics-status-breakdown.test.ts`
@@ -2508,6 +2613,7 @@ Restore: `git checkout -- src/lib/server/analytics/status-breakdown.ts && git di
 
 Insert these two lines at the very top of `src/lib/server/analytics/status-breakdown.ts`. `schedules.ts` imports `db` at its line 3, so this is a transitive reach.
 
+<!-- prettier-ignore -->
 ```ts
 import { getSchedulesForUser } from "$lib/server/schedules";
 export const loadSchedules = getSchedulesForUser;
@@ -2517,6 +2623,7 @@ Run: `npx vitest run tests/unit/analytics-status-breakdown.test.ts`
 
 Expected: FAIL. The suite cannot load, so none of its six tests runs:
 
+<!-- prettier-ignore -->
 ```
  FAIL  tests/unit/analytics-status-breakdown.test.ts [ tests/unit/analytics-status-breakdown.test.ts ]
 Error: [vitest] There was an error when mocking a module. …
@@ -2534,6 +2641,7 @@ Restore: `git checkout -- src/lib/server/analytics/status-breakdown.ts && git di
 
 Run each from the worktree root:
 
+<!-- prettier-ignore -->
 ```bash
 npx vitest run
 npx vitest run
@@ -2551,6 +2659,7 @@ Expected:
 
 - [ ] **Step 15: Commit**
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/server/analytics/status-breakdown.ts src/lib/server/analytics.ts tests/unit/analytics-status-breakdown.test.ts
 git commit -F - <<'EOF'
@@ -2663,6 +2772,8 @@ The task also fixes three false details (spec Section 4):
 
 - Consumes:
   - From Task 3 (`src/lib/server/analytics/status-breakdown.ts`, no db import):
+
+    <!-- prettier-ignore -->
     ```ts
     export type MedicationStatusCounts = {
       takenEvents: number;
@@ -2674,13 +2785,16 @@ The task also fixes three false details (spec Section 4):
       stats: readonly MedicationStatusCounts[],
     ): DoseStatusBreakdown;
     ```
+
   - From Task 2 (`src/lib/utils/time.ts`): `formatTimeSince(date: Date, now: Date = new Date()): string`.
   - Existing, unchanged:
     - `expectedPerDayForSchedules(schedules: MedicationSchedule[]): number` (`$lib/server/analytics`);
     - `clampEffectiveDays(rangeFrom, rangeTo, startedAt, endedAt): number` (`$lib/server/analytics/lifecycle`);
     - `formatUserDate`, `formatUserTime`, `isoDayKey` and `shiftDayKey` (`$lib/utils/time`).
+
 - Produces, from `src/lib/components/walkthrough/demo-data.ts`. Tasks 5, 7 and 8 rely on these exactly:
 
+  <!-- prettier-ignore -->
   ```ts
   export const WALKTHROUGH_TZ = "UTC";
   export const DESKTOP_NOW = new Date("2026-09-24T08:02:00.000Z");
@@ -2739,6 +2853,7 @@ The task also fixes three false details (spec Section 4):
 
 Run:
 
+<!-- prettier-ignore -->
 ```bash
 grep -n "export function foldDoseStatusBreakdown" src/lib/server/analytics/status-breakdown.ts
 grep -n "export function formatTimeSince(date: Date, now" src/lib/utils/time.ts
@@ -2756,6 +2871,7 @@ Expected: `0 errors` and no more than 27 warnings. Note the count; this task mus
 
 Create `tests/unit/walkthrough-demo-facts.test.ts`:
 
+<!-- prettier-ignore -->
 ```ts
 // @vitest-environment node
 //
@@ -3068,6 +3184,7 @@ If the file instead fails to import `$lib/server/analytics/status-breakdown`, Ta
 
 In `src/lib/components/walkthrough/demo-data.ts`, replace:
 
+<!-- prettier-ignore -->
 ```ts
 // The story clock is Thursday 24 September 2026, 08:02. Times are wall-clock
 // strings formatted in UTC, so the video reads the same in every timezone.
@@ -3089,6 +3206,7 @@ export type DemoMedication = {
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 // The story is Thursday 24 September 2026, on two clocks: the desktop scenes
 // at 08:02 (DESKTOP_NOW) and the phone at 10:12 (PHONE_NOW). Every instant is
@@ -3142,6 +3260,7 @@ Make five replacements in `MEDICATIONS`. Each `takeRate` value is unique, so eac
 
 Vitamin D: replace
 
+<!-- prettier-ignore -->
 ```ts
     perDay: 1,
     takeRate: 0.92,
@@ -3149,6 +3268,7 @@ Vitamin D: replace
 
 with
 
+<!-- prettier-ignore -->
 ```ts
     schedule: { kind: "interval", intervalHours: "24" },
     perDay: 1,
@@ -3157,6 +3277,7 @@ with
 
 Lisinopril: replace
 
+<!-- prettier-ignore -->
 ```ts
     perDay: 1,
     takeRate: 0.96,
@@ -3164,6 +3285,7 @@ Lisinopril: replace
 
 with
 
+<!-- prettier-ignore -->
 ```ts
     schedule: { kind: "fixed_time", timesOfDay: ["08:00"] },
     perDay: 1,
@@ -3172,6 +3294,7 @@ with
 
 Metformin: replace
 
+<!-- prettier-ignore -->
 ```ts
     perDay: 2,
     takeRate: 0.88,
@@ -3179,6 +3302,7 @@ Metformin: replace
 
 with
 
+<!-- prettier-ignore -->
 ```ts
     schedule: { kind: "interval", intervalHours: "12" },
     perDay: 2,
@@ -3187,6 +3311,7 @@ with
 
 Ibuprofen: replace
 
+<!-- prettier-ignore -->
 ```ts
     perDay: 3,
     takeRate: 0.7,
@@ -3194,6 +3319,7 @@ Ibuprofen: replace
 
 with
 
+<!-- prettier-ignore -->
 ```ts
     schedule: { kind: "interval", intervalHours: "8" },
     perDay: 3,
@@ -3202,6 +3328,7 @@ with
 
 Magnesium Glycinate: replace
 
+<!-- prettier-ignore -->
 ```ts
     perDay: 1,
     takeRate: 0.85,
@@ -3209,6 +3336,7 @@ Magnesium Glycinate: replace
 
 with
 
+<!-- prettier-ignore -->
 ```ts
     schedule: { kind: "interval", intervalHours: "24" },
     perDay: 1,
@@ -3221,6 +3349,7 @@ Make three replacements in the History section.
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 // ── History ──
 const HISTORY_DAYS = 90;
@@ -3229,6 +3358,7 @@ const HISTORY_DAYS = 90;
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 // ── History ──
 // Doses already logged on the story day (the last of the 90).
@@ -3236,6 +3366,7 @@ with:
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
   const total = sum(daily);
   // Today is only part-way through: three doses were due by 08:02.
@@ -3252,6 +3383,7 @@ Replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   const total = sum(daily);
 
@@ -3267,12 +3399,14 @@ The rest of that `// Placeholder, as in the design…` line is untouched.
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 export const HISTORY = buildHistory();
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 export const HISTORY = buildHistory();
 
@@ -3324,6 +3458,7 @@ export const STATUS_BREAKDOWN: {
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 // ── Dose history ──
 export type LoggedDose
@@ -3331,6 +3466,7 @@ export type LoggedDose
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 // ── Doses ──
 export type DemoDose = {
@@ -3399,6 +3535,7 @@ export type LoggedDose
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 export const LOG_ALL: readonly DoseGroup[] = [
   {
@@ -3418,6 +3555,7 @@ export const LOG_ALL: readonly DoseGroup[] = [
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 // Newest first within each day, as /log orders by takenAt descending.
 export const LOG_ALL: readonly DoseGroup[] = [
@@ -3438,6 +3576,7 @@ export const LOG_ALL: readonly DoseGroup[] = [
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
   return formatUserTime(new Date(Date.UTC(2026, 8, 24, hours, minutes)), "UTC", format);
 }
@@ -3447,6 +3586,7 @@ Replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   return formatUserTime(new Date(Date.UTC(2026, 8, 24, hours, minutes)), WALKTHROUGH_TZ, format);
 }
@@ -3484,6 +3624,7 @@ The scene cannot mount `StatusBreakdownBar`, because the card renders an `<h2>` 
 
 In `src/lib/components/StatusBreakdownBar.svelte`, replace:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   import GlassCard from "$components/ui/GlassCard.svelte";
@@ -3506,6 +3647,7 @@ In `src/lib/components/StatusBreakdownBar.svelte`, replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts" module>
   // Exported so a surface that cannot mount this card still draws the bar by
@@ -3549,6 +3691,7 @@ The markup below the scripts is unchanged. It still reads `takenPct`, `skippedPc
 
 `StatusBreakdownBar` has no unit test of its own. This step proves the move changes no output. It compares the committed component with the edited one over six prop sets, including both empty-card guards.
 
+<!-- prettier-ignore -->
 ```bash
 git show HEAD:src/lib/components/StatusBreakdownBar.svelte > tests/unit/zz-t4-bar-before.svelte
 cat > tests/unit/zz-t4-bar-neutral.test.ts <<'EOF'
@@ -3581,6 +3724,7 @@ Expected: `Tests  1 passed (1)`, then both files are gone. Confirm with `git sta
 
 In `src/lib/components/walkthrough/scenes/AnalyticsScene.svelte`, replace:
 
+<!-- prettier-ignore -->
 ```svelte
   import Sparkline from "$components/Sparkline.svelte";
   import { DISCLAIMER_TEXT } from "$components/MedicalDisclaimer.svelte";
@@ -3595,6 +3739,7 @@ In `src/lib/components/walkthrough/scenes/AnalyticsScene.svelte`, replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
   import Sparkline from "$components/Sparkline.svelte";
   import { DISCLAIMER_TEXT } from "$components/MedicalDisclaimer.svelte";
@@ -3611,13 +3756,15 @@ with:
 
 Replace:
 
+<!-- prettier-ignore -->
 ```svelte
-const skipped = HISTORY.expected - HISTORY.total; const takenPercent = Math.round((HISTORY.total /
-HISTORY.expected) * 1000) / 10;
+  const skipped = HISTORY.expected - HISTORY.total;
+  const takenPercent = Math.round((HISTORY.total / HISTORY.expected) * 1000) / 10;
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
   // StatusBreakdownBar's own segment rule. The card itself cannot be mounted
   // here: it renders an <h2>, and the stage has no headings.
@@ -3631,43 +3778,45 @@ with:
 
 Replace:
 
+<!-- prettier-ignore -->
 ```svelte
-<div class="bg-surface-overlay flex h-3 w-full overflow-hidden rounded-full">
-  <div class="bg-success h-full" style:width="{takenPercent}%"></div>
-  <div class="bg-warning h-full" style:width="{100 - takenPercent}%"></div>
-</div>
-<div class="text-text-secondary flex flex-wrap gap-x-4 gap-y-1 text-xs">
-  {#each [["Taken", HISTORY.total, "bg-success"], ["Skipped", skipped, "bg-warning"], ["Missed", 0, "bg-danger"]] as [label, value, dot] (label)}
-    <span class="flex items-center gap-1.5"
-      ><span class="h-2 w-2 rounded-full {dot}"></span>{label} {value}</span
-    >
-  {/each}
-  <span class="text-text-muted ml-auto">{HISTORY.expected} expected</span>
-</div>
+      <div class="bg-surface-overlay flex h-3 w-full overflow-hidden rounded-full">
+        <div class="bg-success h-full" style:width="{takenPercent}%"></div>
+        <div class="bg-warning h-full" style:width="{100 - takenPercent}%"></div>
+      </div>
+      <div class="text-text-secondary flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {#each [["Taken", HISTORY.total, "bg-success"], ["Skipped", skipped, "bg-warning"], ["Missed", 0, "bg-danger"]] as [label, value, dot] (label)}
+          <span class="flex items-center gap-1.5"
+            ><span class="h-2 w-2 rounded-full {dot}"></span>{label} {value}</span
+          >
+        {/each}
+        <span class="text-text-muted ml-auto">{HISTORY.expected} expected</span>
+      </div>
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
-<div class="bg-surface-overlay flex h-3 w-full overflow-hidden rounded-full">
-  {#if segments.takenPct > 0}
-    <div class="bg-success h-full" style:width="{segments.takenPct}%"></div>
-  {/if}
-  {#if segments.skippedPct > 0}
-    <div class="bg-warning h-full" style:width="{segments.skippedPct}%"></div>
-  {/if}
-  {#if segments.missedPct > 0}
-    <div class="bg-danger h-full" style:width="{segments.missedPct}%"></div>
-  {/if}
-</div>
-<div class="text-text-secondary flex flex-wrap gap-x-4 gap-y-1 text-xs">
-  {#each legend as { label, value, dot } (label)}
-    <span class="flex items-center gap-1.5"
-      ><span class="h-2 w-2 rounded-full {dot}"></span>{label} {value}</span
-    >
-  {/each}
-  <span class="text-text-muted ml-auto">{STATUS_BREAKDOWN.expectedTotal} expected</span>
-</div>
+      <div class="bg-surface-overlay flex h-3 w-full overflow-hidden rounded-full">
+        {#if segments.takenPct > 0}
+          <div class="bg-success h-full" style:width="{segments.takenPct}%"></div>
+        {/if}
+        {#if segments.skippedPct > 0}
+          <div class="bg-warning h-full" style:width="{segments.skippedPct}%"></div>
+        {/if}
+        {#if segments.missedPct > 0}
+          <div class="bg-danger h-full" style:width="{segments.missedPct}%"></div>
+        {/if}
+      </div>
+      <div class="text-text-secondary flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {#each legend as { label, value, dot } (label)}
+          <span class="flex items-center gap-1.5"
+            ><span class="h-2 w-2 rounded-full {dot}"></span>{label} {value}</span
+          >
+        {/each}
+        <span class="text-text-muted ml-auto">{STATUS_BREAKDOWN.expectedTotal} expected</span>
+      </div>
 ```
 
 **What this changes on screen.**
@@ -3680,6 +3829,7 @@ with:
 
 In `src/lib/components/walkthrough/scenes/SecurityScene.svelte`, replace:
 
+<!-- prettier-ignore -->
 ```svelte
   import { useMark } from "../marks";
   import FieldBox from "../parts/FieldBox.svelte";
@@ -3694,6 +3844,7 @@ In `src/lib/components/walkthrough/scenes/SecurityScene.svelte`, replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
   import { formatUserDate } from "$lib/utils/time";
   import { SESSION_EXPIRIES, WALKTHROUGH_TZ } from "../demo-data";
@@ -3803,6 +3954,7 @@ Expected: exactly these five paths, with `tests/unit/zz-t4-*` already gone:
 - `M src/lib/components/walkthrough/scenes/SecurityScene.svelte`
 - `?? tests/unit/walkthrough-demo-facts.test.ts`
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/components/walkthrough/demo-data.ts \
   src/lib/components/walkthrough/scenes/AnalyticsScene.svelte \
@@ -3876,13 +4028,19 @@ Expected: the pre-commit hook (eslint --fix, prettier --write) passes and change
      - restating the three lines in the scene ("arithmetic of its own");
      - adding segment fields to `STATUS_BREAKDOWN` (changing the contract's type).
    - **Header amendment, to apply verbatim when the plan is assembled.** This part cannot edit `header.md`. Under `## File Structure` → **Modify:**, directly after the `src/lib/components/walkthrough/scenes/{AnalyticsScene,SecurityScene}.svelte` (T4) line, add:
+
+     <!-- prettier-ignore -->
      ```markdown
      - `src/lib/components/StatusBreakdownBar.svelte` (T4: the segment rule moves into an exported `statusBreakdownSegments` in `<script module>`, so AnalyticsScene draws the bar by the card's own rule without mounting its `<h2>`; Step 10 proves the markup byte-identical).
      ```
+
    - **Contract amendment, for the same reason.** Under `## T4` in `contract.md`, after the `STATUS_BREAKDOWN` bullet, add:
+
+     <!-- prettier-ignore -->
      ```markdown
      - `src/lib/components/StatusBreakdownBar.svelte` gains, in a `<script module>`, `export function statusBreakdownSegments(counts: { takenEvents: number; skippedEvents: number; missedEvents: number }): { takenPct: number; skippedPct: number; missedPct: number }`. It is the card's existing segment rule, moved unchanged. AnalyticsScene imports it and never mounts the card.
      ```
+
 2. **The spec's "pool missed" mutation is equivalent on this data** (Notes, first bullet). The task keeps it as a recorded run that is expected to pass, and adds mutations 4 and 6, which do fail.
 3. **T4 consumes T2's `formatTimeSince(date, now)`**, though the contract's dependency table lists only T3. The run order (T1→T10) makes it available, and Step 0 checks for it.
 4. **`DEMO_DOSES`' "mag 23 Sep 22:05 if absent" is already present**, as is "vitd 23 Sep 09:05". The list is LOG_ALL's nine rows plus the phone beat: 10 doses.
@@ -3960,6 +4118,7 @@ At `"12h"` the next lines read "… at 9:05 am · in 1 hour" and "… at 2:10 pm
 
 Run:
 
+<!-- prettier-ignore -->
 ```bash
 grep -cE "^export const (WALKTHROUGH_TZ|DESKTOP_NOW|PHONE_NOW|DEMO_STARTED_AT|DEMO_DOSES|LOGGED_DOSE)\b|^export type (DemoSchedule|DemoDose)\b|^  schedule: DemoSchedule;" src/lib/components/walkthrough/demo-data.ts
 ```
@@ -3970,6 +4129,7 @@ Expected: `9`. If it prints anything else, stop: Task 4 has not landed, and this
 
 Create `tests/unit/walkthrough-dashboard-fidelity.test.ts`:
 
+<!-- prettier-ignore -->
 ```ts
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
@@ -4465,6 +4625,7 @@ Run: `npx vitest run tests/unit/walkthrough-dashboard-fidelity.test.ts`
 
 Expected: FAIL, with no tests collected:
 
+<!-- prettier-ignore -->
 ```
 Error: Cannot find module '$lib/components/walkthrough/demo-dashboard' imported from …/tests/unit/walkthrough-dashboard-fidelity.test.ts
  Test Files  1 failed (1)
@@ -4475,6 +4636,7 @@ Error: Cannot find module '$lib/components/walkthrough/demo-dashboard' imported 
 
 Create `src/lib/components/walkthrough/demo-dashboard.ts`. The instants, keys, states, actions and counts are literal, copied from the probe output in the table above. The label fields (name, dose, colours, pattern) come from `MEDICATION_BY_ID` through `label()`, so a colour is never written twice.
 
+<!-- prettier-ignore -->
 ```ts
 // The dashboard as the walkthrough draws it, at the four story moments: the
 // desktop at 08:02 before and after Lisinopril's Log now, and the phone at
@@ -4739,6 +4901,7 @@ Run: `npx vitest run tests/unit/walkthrough-dashboard-fidelity.test.ts --reporte
 
 Expected: PASS, `Tests  14 passed (14)`, with these names under `walkthrough dashboard moments: data`:
 
+<!-- prettier-ignore -->
 ```
 ✓ 'DESKTOP_BEFORE' equals the real composer's output at its moment
 ✓ 'DESKTOP_AFTER' equals the real composer's output at its moment
@@ -4764,6 +4927,7 @@ If a moment test fails, do not edit the expectation to match. Instead:
 
 - [ ] **Step 6: Stage the two new files, so each mutation below is undone with `git checkout --`**
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/components/walkthrough/demo-dashboard.ts tests/unit/walkthrough-dashboard-fidelity.test.ts
 ```
@@ -4774,6 +4938,7 @@ git add src/lib/components/walkthrough/demo-dashboard.ts tests/unit/walkthrough-
 
 In `src/lib/components/walkthrough/demo-dashboard.ts`, inside `DESKTOP_BEFORE`, replace:
 
+<!-- prettier-ignore -->
 ```ts
   done: [DONE_IBUPROFEN_0610, DONE_METFORMIN_0748],
   later: [
@@ -4787,6 +4952,7 @@ In `src/lib/components/walkthrough/demo-dashboard.ts`, inside `DESKTOP_BEFORE`, 
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   done: [DONE_IBUPROFEN_0610, DONE_METFORMIN_0748],
   later: [
@@ -4807,6 +4973,7 @@ Restore: `git checkout -- src/lib/components/walkthrough/demo-dashboard.ts`
 
 In `src/lib/components/walkthrough/demo-dashboard.ts`, inside `DESKTOP_BEFORE`, replace:
 
+<!-- prettier-ignore -->
 ```ts
   earlier: [],
   today: [DUE_LISINOPRIL_0800],
@@ -4814,6 +4981,7 @@ In `src/lib/components/walkthrough/demo-dashboard.ts`, inside `DESKTOP_BEFORE`, 
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   earlier: [DUE_LISINOPRIL_0800],
   today: [],
@@ -4832,12 +5000,14 @@ Restore: `git checkout -- src/lib/components/walkthrough/demo-dashboard.ts`
 
 In `src/lib/components/walkthrough/demo-data.ts`, in `LOGGED_DOSE`, replace:
 
+<!-- prettier-ignore -->
 ```ts
   desktop: "dose-lis-20260924-0802",
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   desktop: "dose-met-20260924-0748",
 ```
@@ -4866,6 +5036,7 @@ Restore: `git checkout -- src/lib/components/walkthrough/demo-dashboard.ts`
 
 In `src/lib/components/walkthrough/demo-dashboard.ts`, inside `DESKTOP_AFTER`, replace:
 
+<!-- prettier-ignore -->
 ```ts
   today: [],
   done: [DONE_IBUPROFEN_0610, DONE_METFORMIN_0748, DONE_LISINOPRIL_0802],
@@ -4873,6 +5044,7 @@ In `src/lib/components/walkthrough/demo-dashboard.ts`, inside `DESKTOP_AFTER`, r
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   today: [],
   done: [
@@ -4895,12 +5067,14 @@ Restore: `git checkout -- src/lib/components/walkthrough/demo-dashboard.ts`
 
 In `src/lib/components/dashboard/dose-toasts.ts`, inside `logToastFromReload`, replace:
 
+<!-- prettier-ignore -->
 ```ts
     covers: row.covers.map((iso) => new Date(iso)),
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
     covers: [],
 ```
@@ -4924,6 +5098,7 @@ Expected:
 
 Run each, in order:
 
+<!-- prettier-ignore -->
 ```bash
 npx vitest run
 npx vitest run
@@ -4941,6 +5116,7 @@ Expected:
 
 - [ ] **Step 15: Commit**
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/components/walkthrough/demo-dashboard.ts tests/unit/walkthrough-dashboard-fidelity.test.ts
 git commit -F - <<'EOF'
@@ -5098,6 +5274,7 @@ Make these ten edits to `tests/unit/walkthrough-timeline.test.ts`, each an exact
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
 import { describe, it, expect } from "vitest";
 import {
@@ -5114,6 +5291,7 @@ import {
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -5142,6 +5320,7 @@ import {
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
 /** Sample every 20ms across the loop. */
 const samples = Array.from({ length: Math.ceil(TOTAL_DURATION / 0.02) }, (_, i) => i * 0.02);
@@ -5149,6 +5328,7 @@ const samples = Array.from({ length: Math.ceil(TOTAL_DURATION / 0.02) }, (_, i) 
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
 /** Sample every 20ms across the loop. */
 const samples = Array.from({ length: Math.ceil(TOTAL_DURATION / 0.02) }, (_, i) => i * 0.02);
@@ -5184,6 +5364,7 @@ function source(rel: string): string {
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
     expect(TOTAL_DURATION).toBe(43.5);
   });
@@ -5192,6 +5373,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
     expect(TOTAL_DURATION).toBe(43.5);
   });
@@ -5228,28 +5410,32 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
-expect(computeFrame(CUES.MyDay + 0.1, MEASURED).kind).toBe("desk");
+    expect(computeFrame(CUES.MyDay + 0.1, MEASURED).kind).toBe("desk");
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
-expect(computeFrame(CUES.Today + 0.1, MEASURED).kind).toBe("desk");
+    expect(computeFrame(CUES.Today + 0.1, MEASURED).kind).toBe("desk");
 ```
 
 **1e. Pages.** A changed pin, for the same reason: same instant, same page.
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
-expect(pageAt(CUES.QuickLog + 1)).toBe("dash");
+    expect(pageAt(CUES.QuickLog + 1)).toBe("dash");
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
-expect(pageAt(CUES.LogNow + 1)).toBe("dash");
+    expect(pageAt(CUES.LogNow + 1)).toBe("dash");
 ```
 
 **1f. The Lisinopril log.** A changed pin: the scene rename only.
@@ -5259,6 +5445,7 @@ expect(pageAt(CUES.LogNow + 1)).toBe("dash");
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
   it("logs Lisinopril exactly once, during Quick Log", () => {
     const before = computeFrame(CUES.QuickLog + 1, MEASURED).dashboard;
@@ -5267,6 +5454,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
   it("logs Lisinopril exactly once, during Log now", () => {
     const before = computeFrame(CUES.LogNow + 1, MEASURED).dashboard;
@@ -5277,12 +5465,14 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
   it("types the new medication a character at a time and never past its end", () => {
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
   // T_LOG and T_TAP are the instants computeFrame animates around, not two
   // numbers that merely agree with it: the click lands on one, the tap on the other.
@@ -5300,28 +5490,32 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
-expect(withCursor(CUES.MyDay + 1)).toBe(false);
-expect(withCursor(CUES.QuickLog + 1)).toBe(true);
+    expect(withCursor(CUES.MyDay + 1)).toBe(false);
+    expect(withCursor(CUES.QuickLog + 1)).toBe(true);
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
-expect(withCursor(CUES.Today + 1)).toBe(false);
-expect(withCursor(CUES.LogNow + 1)).toBe(true);
+    expect(withCursor(CUES.Today + 1)).toBe(false);
+    expect(withCursor(CUES.LogNow + 1)).toBe(true);
 ```
 
 **1i. The caption window.** A changed pin: the scene rename only. The first scene after the title card is still where captions may begin.
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
       if (t < CUES.MyDay || t >= CUES.Outro) {
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
       if (t < CUES.Today || t >= CUES.Outro) {
 ```
@@ -5334,6 +5528,7 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
       expect(caption.opacity).toBeLessThanOrEqual(1);
     }
@@ -5345,6 +5540,7 @@ describe("camera helpers", () => {
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
       expect(caption.opacity).toBeLessThanOrEqual(1);
     }
@@ -5491,6 +5687,7 @@ Make these nine replacements in `src/lib/components/walkthrough/timeline.ts`.
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
   { name: "Title", dur: 2.5 },
   { name: "MyDay", dur: 3.5 },
@@ -5499,6 +5696,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
   { name: "Title", dur: 2.5 },
   { name: "Today", dur: 3.5 },
@@ -5509,6 +5707,7 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
 export const CUES: Readonly<Record<SceneName, number>> = derived.cues;
 export const TOTAL_DURATION = derived.total;
@@ -5516,6 +5715,7 @@ export const TOTAL_DURATION = derived.total;
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
 export const CUES: Readonly<Record<SceneName, number>> = derived.cues;
 export const TOTAL_DURATION = derived.total;
@@ -5531,22 +5731,24 @@ export const T_TAP = CUES.Reminders + 3.0;
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
-// Key moments, all keyed to scene cues.
-const tLog = c.QuickLog + 1.45;
-const tCheck = c.History + 1.3;
-const tDownload = c.Export + 1.5;
-const tTap = c.Reminders + 3.0;
-const A = c.AddMedication;
+  // Key moments, all keyed to scene cues.
+  const tLog = c.QuickLog + 1.45;
+  const tCheck = c.History + 1.3;
+  const tDownload = c.Export + 1.5;
+  const tTap = c.Reminders + 3.0;
+  const A = c.AddMedication;
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
-// Key moments, all keyed to scene cues. The two log beats are T_LOG and T_TAP.
-const tCheck = c.History + 1.3;
-const tDownload = c.Export + 1.5;
-const A = c.AddMedication;
+  // Key moments, all keyed to scene cues. The two log beats are T_LOG and T_TAP.
+  const tCheck = c.History + 1.3;
+  const tDownload = c.Export + 1.5;
+  const A = c.AddMedication;
 ```
 
 **3d. The Today and LogNow shots.**
@@ -5556,6 +5758,7 @@ const A = c.AddMedication;
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
   if (T < c.MyDay || T >= c.Outro) {
     kind = "title";
@@ -5598,6 +5801,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
   if (T < c.Today || T >= c.Outro) {
     kind = "title";
@@ -5638,6 +5842,7 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
         opacity: MOTION.enter(T, tTap - 0.4, 0.2) * (1 - MOTION.enter(T, tTap + 0.1, 0.3)),
         press: T < tTap ? MOTION.enter(T, tTap - 0.15, 0.15) : 1 - MOTION.enter(T, tTap, 0.15),
@@ -5645,6 +5850,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
         opacity: MOTION.enter(T, T_TAP - 0.4, 0.2) * (1 - MOTION.enter(T, T_TAP + 0.1, 0.3)),
         press: T < T_TAP ? MOTION.enter(T, T_TAP - 0.15, 0.15) : 1 - MOTION.enter(T, T_TAP, 0.15),
@@ -5654,6 +5860,7 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
       count: T >= tLog + 0.15 ? 3 : 2,
       lisinoprilDone: MOTION.enter(T, tLog + 0.15, 0.3),
@@ -5666,6 +5873,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
       count: T >= T_LOG + 0.15 ? 3 : 2,
       lisinoprilDone: MOTION.enter(T, T_LOG + 0.15, 0.3),
@@ -5680,6 +5888,7 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
     toast:
       T < tLog + 0.2
@@ -5691,6 +5900,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
     toast:
       T < T_LOG + 0.2
@@ -5704,6 +5914,7 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
       vitaminDDone: MOTION.enter(T, tTap, 0.3),
       toast: T < tTap + 0.15 ? 0 : MOTION.enter(T, tTap + 0.15, 0.3),
@@ -5711,6 +5922,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
       vitaminDDone: MOTION.enter(T, T_TAP, 0.3),
       toast: T < T_TAP + 0.15 ? 0 : MOTION.enter(T, T_TAP + 0.15, 0.3),
@@ -5720,6 +5932,7 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
       T < c.MyDay
         ? 1 + 0.03 * MOTION.drift(T, 0, c.MyDay)
@@ -5727,6 +5940,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
       T < c.Today
         ? 1 + 0.03 * MOTION.drift(T, 0, c.Today)
@@ -5740,6 +5954,7 @@ Make these three replacements in `LOWER_THIRDS`. In 01 and 02, `scene`/`until` c
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
   {
     scene: "MyDay",
@@ -5763,6 +5978,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
   {
     scene: "Today",
@@ -5788,12 +6004,14 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
     line: "Last taken and next due for every medication.",
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
     line: "When each medication was last taken, always current.",
 ```
@@ -5802,12 +6020,14 @@ New:
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
     tech: "Web Push via Vercel Cron, with idempotent dedupe keys",
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
     tech: "Web Push on a half-hourly daytime sweep, with idempotent dedupe keys",
 ```
@@ -5821,6 +6041,7 @@ Insert `REQUIRED_MARKS` between `pressAt` and `computeFrame`'s doc comment.
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * Everything on screen at time T, given element rects measured from the
@@ -5828,6 +6049,7 @@ Old:
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * Every mark key computeFrame reads. A key missing from the measurements is not
@@ -5885,28 +6107,32 @@ export const REQUIRED_MARKS: readonly string[] = [
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
-Forty seconds, ten features, from the first dose of the day to an overdue reminder.
+        Forty seconds, ten features, from the first dose of the day to an overdue reminder.
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-Under a minute, ten features, from the first dose of the day to an overdue reminder.
+        Under a minute, ten features, from the first dose of the day to an overdue reminder.
 ```
 
 `src/lib/components/walkthrough/scenes/DashboardScene.svelte:3` is the scene rename in a comment. The stage still draws the Quick Log bar until T7.
 
 Old:
 
+<!-- prettier-ignore -->
 ```svelte
-// logged from the Quick Log bar during the QuickLog shot.
+  // logged from the Quick Log bar during the QuickLog shot.
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```svelte
-// logged from the Quick Log bar during the LogNow shot.
+  // logged from the Quick Log bar during the LogNow shot.
 ```
 
 - [ ] **Step 7: Run the timeline tests to verify they pass, and that no old name is left**
@@ -5929,6 +6155,7 @@ Create `tests/unit/walkthrough-marks.svelte.test.ts`.
 - **What it mounts.** `FieldBox` is a stage part that takes its mark key as a prop, and T7 and T8 do not touch it. So the test chooses a key no scene uses, and survives the redraw.
 - **Why `flushSync()` before asserting.** Without it the registry is empty: actions run only on flush. This was probed.
 
+<!-- prettier-ignore -->
 ```ts
 // The suite's default jsdom environment: use:mark is an action, and actions run
 // only in a mounted client component, once effects flush.
@@ -5982,12 +6209,14 @@ Make three replacements in `src/lib/components/walkthrough/marks.ts`.
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
 const CONTEXT_KEY = Symbol("walkthrough-marks");
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
 // Exported, like dose-write-lock's DOSE_WRITE_LOCK, so a test can mount a
 // marked component with `context: new Map([[MARKS_CONTEXT, registry]])`.
@@ -5996,26 +6225,30 @@ export const MARKS_CONTEXT = Symbol("walkthrough-marks");
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
-setContext(CONTEXT_KEY, registry);
+  setContext(CONTEXT_KEY, registry);
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
-setContext(MARKS_CONTEXT, registry);
+  setContext(MARKS_CONTEXT, registry);
 ```
 
 Old:
 
+<!-- prettier-ignore -->
 ```ts
-const registry = getContext<MarkRegistry | undefined>(CONTEXT_KEY);
+  const registry = getContext<MarkRegistry | undefined>(CONTEXT_KEY);
 ```
 
 New:
 
+<!-- prettier-ignore -->
 ```ts
-const registry = getContext<MarkRegistry | undefined>(MARKS_CONTEXT);
+  const registry = getContext<MarkRegistry | undefined>(MARKS_CONTEXT);
 ```
 
 Run: `grep -n "CONTEXT_KEY" src/lib/components/walkthrough/marks.ts`. Expected: no output.
@@ -6111,6 +6344,7 @@ After the last undo, check the state:
 
 Run each, from the worktree root:
 
+<!-- prettier-ignore -->
 ```bash
 npx vitest run
 npx vitest run
@@ -6132,6 +6366,7 @@ Expected:
 
 - [ ] **Step 14: Commit**
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/components/walkthrough/timeline.ts src/lib/components/walkthrough/marks.ts src/lib/components/walkthrough/scenes/DashboardScene.svelte src/routes/+page.svelte tests/unit/walkthrough-timeline.test.ts tests/unit/walkthrough-marks.svelte.test.ts
 git commit -m "fix(walkthrough): true captions, renamed scenes, REQUIRED_MARKS" -m "- SCENES: MyDay is now Today and QuickLog is now LogNow. Durations and the
@@ -6293,6 +6528,7 @@ Line ranges are at base `311758f`. T1–T6 shift some of them, so every edit bel
 
 In `tests/unit/walkthrough-timeline.test.ts`, add `BROWSER_BAR`, `T_LOG`, `type Camera` and `type Rect` to the import from `"$lib/components/walkthrough/timeline"`. Add only the names T6 has not already imported. The import then holds these names, among T6's others:
 
+<!-- prettier-ignore -->
 ```ts
 import {
   BROWSER_BAR,
@@ -6319,6 +6555,7 @@ import {
 
 Replace the MEASURED comment and its first eight entries. This old text:
 
+<!-- prettier-ignore -->
 ```ts
 // A plausible measured layout, so framing code runs its real branches rather
 // than the wide-shot fallback.
@@ -6335,6 +6572,7 @@ const MEASURED: Measurements = {
 
 becomes the following. Every entry from `"m.card0"` down stays as it is.
 
+<!-- prettier-ignore -->
 ```ts
 // A plausible measured layout, so framing code runs its real branches rather
 // than the wide-shot fallback. The dashboard rects are the before-log layout
@@ -6354,7 +6592,9 @@ const MEASURED: Measurements = {
 
 Directly after MEASURED's closing `};`, add:
 
+<!-- prettier-ignore -->
 ```ts
+
 /** A MEASURED rect in window space, where computeFrame's R() puts it. */
 function inWindow(key: string, scroll = 0): Rect {
   const r = MEASURED[key]!;
@@ -6370,97 +6610,101 @@ function expectCamera(actual: Camera, expected: Camera): void {
 
 Replace the whole `it` block that asserts `before.count` and `after.lisinoprilDone`. At base it is `it("logs Lisinopril exactly once, during Quick Log", …)`, lines 136-143. After T6 it reads `it("logs Lisinopril exactly once, during Log now", () => {`, with `CUES.LogNow + 1` and `CUES.LogNow + 2.5`: T6 renamed both the title and the cues, so search for the post-T6 title. Replace it with these four tests:
 
+<!-- prettier-ignore -->
 ```ts
-it("logs Lisinopril once, from Log now: pending, then logged, then the Undo offer until the cut", () => {
-  const at = (t: number) => computeFrame(t, MEASURED).dashboard;
-  // The window edges themselves, which the 20ms samples step over.
-  expect(at(T_LOG - 1e-6).pending).toBeNull();
-  expect(at(T_LOG).pending).toBe(0);
-  expect(at(T_LOG + 0.2).pending).toBeCloseTo(96, 6);
-  expect(at(T_LOG + 0.4).pending).toBeNull();
-  expect(at(T_LOG + 0.4).logged).toBe(0);
-  expect(at(T_LOG + 0.7).logged).toBe(1);
-  expect(at(T_LOG + 0.5).offer).toBe(0);
-  expect(at(T_LOG + 0.8).offer).toBe(1);
-  expect(at(CUES.Medications - 1e-6).offer).toBe(1);
-  expect(at(CUES.Medications).offer).toBe(0);
-  // Fully visible long enough to read before the cut.
-  expect(CUES.Medications - (T_LOG + 0.8)).toBeGreaterThanOrEqual(1.5);
-  for (const t of samples) {
-    const d = at(t);
-    expect(d.pending !== null, `pending at ${t}`).toBe(t >= T_LOG && t < T_LOG + 0.4);
-    if (t < T_LOG + 0.4) expect(d.logged, `logged at ${t}`).toBe(0);
-    if (t >= T_LOG + 0.7) expect(d.logged, `logged at ${t}`).toBe(1);
-    if (t < T_LOG + 0.5) expect(d.offer, `offer at ${t}`).toBe(0);
-    if (t >= T_LOG + 0.8 && t < CUES.Medications) expect(d.offer, `offer at ${t}`).toBe(1);
-    if (t >= CUES.Medications) expect(d.offer, `offer at ${t}`).toBe(0);
-  }
-});
-
-// Review Focus 2: a pause can land on any frame, and the loop restarts at
-// T=0, so no part of the log may outlive its window.
-it("never leaves the log half-done: no spinner outside its window, and the seam matches", () => {
-  for (const t of samples) {
-    const d = computeFrame(t, MEASURED).dashboard;
-    if (t < T_LOG || t >= T_LOG + 0.4) expect(d.pending, `pending at ${t}`).toBeNull();
-    for (const v of [d.logged, d.offer]) {
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThanOrEqual(1);
+  it("logs Lisinopril once, from Log now: pending, then logged, then the Undo offer until the cut", () => {
+    const at = (t: number) => computeFrame(t, MEASURED).dashboard;
+    // The window edges themselves, which the 20ms samples step over.
+    expect(at(T_LOG - 1e-6).pending).toBeNull();
+    expect(at(T_LOG).pending).toBe(0);
+    expect(at(T_LOG + 0.2).pending).toBeCloseTo(96, 6);
+    expect(at(T_LOG + 0.4).pending).toBeNull();
+    expect(at(T_LOG + 0.4).logged).toBe(0);
+    expect(at(T_LOG + 0.7).logged).toBe(1);
+    expect(at(T_LOG + 0.5).offer).toBe(0);
+    expect(at(T_LOG + 0.8).offer).toBe(1);
+    expect(at(CUES.Medications - 1e-6).offer).toBe(1);
+    expect(at(CUES.Medications).offer).toBe(0);
+    // Fully visible long enough to read before the cut.
+    expect(CUES.Medications - (T_LOG + 0.8)).toBeGreaterThanOrEqual(1.5);
+    for (const t of samples) {
+      const d = at(t);
+      expect(d.pending !== null, `pending at ${t}`).toBe(t >= T_LOG && t < T_LOG + 0.4);
+      if (t < T_LOG + 0.4) expect(d.logged, `logged at ${t}`).toBe(0);
+      if (t >= T_LOG + 0.7) expect(d.logged, `logged at ${t}`).toBe(1);
+      if (t < T_LOG + 0.5) expect(d.offer, `offer at ${t}`).toBe(0);
+      if (t >= T_LOG + 0.8 && t < CUES.Medications) expect(d.offer, `offer at ${t}`).toBe(1);
+      if (t >= CUES.Medications) expect(d.offer, `offer at ${t}`).toBe(0);
     }
-  }
-  const first = computeFrame(0, MEASURED);
-  const last = computeFrame(TOTAL_DURATION - 1e-6, MEASURED);
-  expect(last.dashboard.pending).toBe(first.dashboard.pending);
-  expect(last.dashboard.offer).toBe(first.dashboard.offer);
-  // `logged` cannot match across the seam: it is 1 at the end of the loop
-  // and 0 at its start. It is 0 from T=0 through 1.2s, while
-  // WalkthroughVideo measures the marks (on mount, then 0.3s and 1.2s
-  // later), so they describe the before-log layout. Both ends are title
-  // frames, so the dashboard is off screen across the jump.
-  expect(first.dashboard.logged).toBe(0);
-  expect(computeFrame(1.2, MEASURED).dashboard.logged).toBe(0);
-  expect([first.kind, last.kind]).toEqual(["title", "title"]);
-});
+  });
 
-it("opens Today on the header and the Due card, then pans to Later and the chips", () => {
-  const open = computeFrame(CUES.Today + 1.0, MEASURED);
-  expect(open.scroll).toBe(0);
-  expectCamera(
-    open.camera,
-    clampCamera(fitCamera(unionRects(inWindow("d.header"), inWindow("d.due")), 28, 1.9)),
-  );
-  // MEASURED's page is 1500px tall, so the pan scrolls its 220px cap.
-  const end = computeFrame(CUES.LogNow - 1e-6, MEASURED);
-  expect(end.scroll).toBe(220);
-  expectCamera(
-    end.camera,
-    clampCamera(fitCamera(unionRects(inWindow("d.later", 220), inWindow("d.chips", 220)), 28, 1.9)),
-  );
-});
+  // Review Focus 2: a pause can land on any frame, and the loop restarts at
+  // T=0, so no part of the log may outlive its window.
+  it("never leaves the log half-done: no spinner outside its window, and the seam matches", () => {
+    for (const t of samples) {
+      const d = computeFrame(t, MEASURED).dashboard;
+      if (t < T_LOG || t >= T_LOG + 0.4) expect(d.pending, `pending at ${t}`).toBeNull();
+      for (const v of [d.logged, d.offer]) {
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+    }
+    const first = computeFrame(0, MEASURED);
+    const last = computeFrame(TOTAL_DURATION - 1e-6, MEASURED);
+    expect(last.dashboard.pending).toBe(first.dashboard.pending);
+    expect(last.dashboard.offer).toBe(first.dashboard.offer);
+    // `logged` cannot match across the seam: it is 1 at the end of the loop
+    // and 0 at its start. It is 0 from T=0 through 1.2s, while
+    // WalkthroughVideo measures the marks (on mount, then 0.3s and 1.2s
+    // later), so they describe the before-log layout. Both ends are title
+    // frames, so the dashboard is off screen across the jump.
+    expect(first.dashboard.logged).toBe(0);
+    expect(computeFrame(1.2, MEASURED).dashboard.logged).toBe(0);
+    expect([first.kind, last.kind]).toEqual(["title", "title"]);
+  });
 
-it("taps Log now, holds on the header, Due and Done through the update, then frames the offer", () => {
-  const hold = clampCamera(
-    fitCamera(unionRects(inWindow("d.header"), inWindow("d.due"), inWindow("d.done")), 28, 2.0),
-  );
-  for (const t of [CUES.LogNow, T_LOG, T_LOG + 0.7]) {
-    const frame = computeFrame(t, MEASURED);
-    expect(frame.scroll).toBe(0);
-    expectCamera(frame.camera, hold);
-  }
-  expectCamera(
-    computeFrame(T_LOG + 1.3, MEASURED).camera,
-    clampCamera(fitCamera(inWindow("o.offer"), 40, 2.0)),
-  );
-  const logNow = inWindow("d.logNow");
-  const tap = computeFrame(T_LOG + 0.1, MEASURED).cursor;
-  expect(tap?.x).toBeCloseTo(logNow.x + logNow.w * 0.5, 6);
-  expect(tap?.y).toBeCloseTo(logNow.y + logNow.h * 0.55, 6);
-  expect(tap?.ripple).not.toBeNull();
-});
+  it("opens Today on the header and the Due card, then pans to Later and the chips", () => {
+    const open = computeFrame(CUES.Today + 1.0, MEASURED);
+    expect(open.scroll).toBe(0);
+    expectCamera(
+      open.camera,
+      clampCamera(fitCamera(unionRects(inWindow("d.header"), inWindow("d.due")), 28, 1.9)),
+    );
+    // MEASURED's page is 1500px tall, so the pan scrolls its 220px cap.
+    const end = computeFrame(CUES.LogNow - 1e-6, MEASURED);
+    expect(end.scroll).toBe(220);
+    expectCamera(
+      end.camera,
+      clampCamera(
+        fitCamera(unionRects(inWindow("d.later", 220), inWindow("d.chips", 220)), 28, 1.9),
+      ),
+    );
+  });
+
+  it("taps Log now, holds on the header, Due and Done through the update, then frames the offer", () => {
+    const hold = clampCamera(
+      fitCamera(unionRects(inWindow("d.header"), inWindow("d.due"), inWindow("d.done")), 28, 2.0),
+    );
+    for (const t of [CUES.LogNow, T_LOG, T_LOG + 0.7]) {
+      const frame = computeFrame(t, MEASURED);
+      expect(frame.scroll).toBe(0);
+      expectCamera(frame.camera, hold);
+    }
+    expectCamera(
+      computeFrame(T_LOG + 1.3, MEASURED).camera,
+      clampCamera(fitCamera(inWindow("o.offer"), 40, 2.0)),
+    );
+    const logNow = inWindow("d.logNow");
+    const tap = computeFrame(T_LOG + 0.1, MEASURED).cursor;
+    expect(tap?.x).toBeCloseTo(logNow.x + logNow.w * 0.5, 6);
+    expect(tap?.y).toBeCloseTo(logNow.y + logNow.h * 0.55, 6);
+    expect(tap?.ripple).not.toBeNull();
+  });
 ```
 
 In `it("keeps every progress value within 0..1", …)`, replace these four lines:
 
+<!-- prettier-ignore -->
 ```ts
         f.dashboard.lisinoprilDone,
         f.dashboard.entry,
@@ -6470,6 +6714,7 @@ In `it("keeps every progress value within 0..1", …)`, replace these four lines
 
 with these two. `f.phone.vitaminDDone` and `f.phone.toast` stay until T8.
 
+<!-- prettier-ignore -->
 ```ts
         f.dashboard.logged,
         f.dashboard.offer,
@@ -6497,37 +6742,40 @@ Expected: FAIL, with:
 
 In `src/lib/components/walkthrough/timeline.ts`, replace:
 
+<!-- prettier-ignore -->
 ```ts
-dashboard: {
-  count: number;
-  lisinoprilDone: number;
-  labelGone: number;
-  entry: number;
-  pillHover: boolean;
-  pillPress: number;
-  flash: number;
-  pulse: number;
-}
-toast: number;
+  dashboard: {
+    count: number;
+    lisinoprilDone: number;
+    labelGone: number;
+    entry: number;
+    pillHover: boolean;
+    pillPress: number;
+    flash: number;
+    pulse: number;
+  };
+  toast: number;
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
-dashboard: {
-  /** Log now's spinner angle in degrees on [T_LOG, T_LOG + 0.4), else null. */
-  pending: number | null;
-  /** 0 → 1 as the log's reload lands: Due collapses, the header crossfades, Done grows. */
-  logged: number;
-  /** The Undo offer's opacity: 0 → 1 after the log, and exactly 0 from the cut to Medications. */
-  offer: number;
-}
+  dashboard: {
+    /** Log now's spinner angle in degrees on [T_LOG, T_LOG + 0.4), else null. */
+    pending: number | null;
+    /** 0 → 1 as the log's reload lands: Due collapses, the header crossfades, Done grows. */
+    logged: number;
+    /** The Undo offer's opacity: 0 → 1 after the log, and exactly 0 from the cut to Medications. */
+    offer: number;
+  };
 ```
 
 - [ ] **Step 4: Update `REQUIRED_MARKS`**
 
 Replace T6's whole `REQUIRED_MARKS` declaration, from `export const REQUIRED_MARKS` through its closing `];`, with the following. Keep T6's doc comment above it.
 
+<!-- prettier-ignore -->
 ```ts
 export const REQUIRED_MARKS: readonly string[] = [
   "d.page",
@@ -6574,6 +6822,7 @@ In `computeFrame`, replace everything from the line `const dPage = M["d.page"];`
 
 The replacement is:
 
+<!-- prettier-ignore -->
 ```ts
   const dPage = M["d.page"];
 
@@ -6632,6 +6881,7 @@ The replacement is:
 
 In the object `computeFrame` returns, replace this, from `dashboard: {` through the end of the `toast:` ternary:
 
+<!-- prettier-ignore -->
 ```ts
     dashboard: {
       count: T >= T_LOG + 0.15 ? 3 : 2,
@@ -6655,6 +6905,7 @@ In the object `computeFrame` returns, replace this, from `dashboard: {` through 
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
     dashboard: {
       // Log now reads "Logging…" for 0.4s. Its spinner turns with T rather
@@ -6686,6 +6937,7 @@ The values these pins rely on, which the probe measured:
 
 Open `tests/unit/walkthrough-dashboard-fidelity.test.ts`, which T5 wrote under `// @vitest-environment node`. Merge these imports into its existing import statements. Add only the names T5 does not already import, and never add a second import line for a module T5 already imports from.
 
+<!-- prettier-ignore -->
 ```ts
 import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
@@ -6713,6 +6965,7 @@ T5 already imports `formatDoseLabel`, `LOGGED_DOSE` and `WALKTHROUGH_TZ`, and ha
 
 `ComposedPayload`, `MOMENTS`, `composeMoment` and `expectedOfferText` are T5's exports in this same file; do not import them. This half builds its payloads and its offer text only through them, so the file has one construction of each. Then append this at the end of the file:
 
+<!-- prettier-ignore -->
 ```ts
 // ── T7: the desktop scene, rendered ──────────────────────────────────────
 //
@@ -6997,6 +7250,7 @@ Expected: FAIL. The file does not load, with `Failed to resolve import "$lib/com
 
 Create `src/lib/components/walkthrough/stage-dashboard.ts`:
 
+<!-- prettier-ignore -->
 ```ts
 // What the dashboard scenes need beyond the StageMoments themselves: the
 // date format the stage renders labels in, the Done row a beat logs, the
@@ -7059,6 +7313,7 @@ export const STAGE_REFILLS = MEDICATIONS.filter((m) => m.refillWatch).map((m) =>
 
 Create `src/lib/components/walkthrough/parts/dashboard/StageCollapse.svelte`:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // Draws its content at `factor` × its natural height, without measuring
@@ -7090,6 +7345,7 @@ Create `src/lib/components/walkthrough/parts/dashboard/StageCollapse.svelte`:
 
 Create `src/lib/components/walkthrough/parts/dashboard/StageDashboardHeader.svelte`:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // DashboardHeader.svelte as a picture: the date eyebrow, "Today", the
@@ -7153,6 +7409,7 @@ Create `src/lib/components/walkthrough/parts/dashboard/StageDashboardHeader.svel
 
 Create `src/lib/components/walkthrough/parts/dashboard/StageDueCard.svelte`:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // DueCard.svelte as a picture: the same grid, glyph, marker and copy, with
@@ -7310,6 +7567,7 @@ Create `src/lib/components/walkthrough/parts/dashboard/StageDueCard.svelte`:
 
 Create `src/lib/components/walkthrough/parts/dashboard/StageDoneList.svelte`:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // DoneList.svelte as a picture: "Done today" over one glass card of
@@ -7421,6 +7679,7 @@ Create `src/lib/components/walkthrough/parts/dashboard/StageDoneList.svelte`:
 
 Create `src/lib/components/walkthrough/parts/dashboard/StageLaterList.svelte`:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // LaterList.svelte as a picture: "Later today" over 40px read-only lines,
@@ -7488,6 +7747,7 @@ Create `src/lib/components/walkthrough/parts/dashboard/StageLaterList.svelte`:
 
 Create `src/lib/components/walkthrough/parts/dashboard/StageChips.svelte`:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // QuickLogBar.svelte as a picture, under the page's "Log something else"
@@ -7546,6 +7806,7 @@ The stage cannot mount `RefillsCard`: the card renders a link and an `<h2>`, and
 
 Replace the whole of `src/lib/components/RefillsCard.svelte` with:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts" module>
   import type { RefillForecastEntry } from "$lib/types";
@@ -7624,6 +7885,7 @@ The probe ran this file through Prettier (unchanged), svelte-check (0 errors, 27
 
 `RefillsCard` has no unit test of its own. This step compares the committed card, which T7 has not touched at `HEAD`, with the edited one. It covers the empty-list guard, the demo's one watch row, and a list that reaches every severity and every branch of `refillDaysLabel`.
 
+<!-- prettier-ignore -->
 ```bash
 git show HEAD:src/lib/components/RefillsCard.svelte > tests/unit/zz-t7-refills-before.svelte
 cat > tests/unit/zz-t7-refills-neutral.test.ts <<'EOF'
@@ -7677,6 +7939,7 @@ Expected: `Tests  1 passed (1)`. The probe ran these three prop sets against the
 
 Prove the throwaway can fail before trusting it. In `RefillsCard.svelte`'s `refillDaysLabel`, change `return "1 day left";` to `return "1 days left";`, re-run `npx vitest run tests/unit/zz-t7-refills-neutral.test.ts`, and see it FAIL (the bodies differ at entry `d`). Undo that one edit by hand, never with `git checkout --` or `git restore`, which would discard Step 17. Re-run to see PASS. Then delete both throwaway files:
 
+<!-- prettier-ignore -->
 ```bash
 rm tests/unit/zz-t7-refills-before.svelte tests/unit/zz-t7-refills-neutral.test.ts
 git status --short tests/unit src/lib/components/RefillsCard.svelte
@@ -7688,6 +7951,7 @@ Expected: no `zz-t7-` file is listed. `src/lib/components/RefillsCard.svelte` is
 
 Create `src/lib/components/walkthrough/parts/dashboard/StageRefills.svelte`:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // RefillsCard.svelte as a picture, last on the page as it is in the app.
@@ -7740,6 +8004,7 @@ The import stays on four lines: on one line it is 109 characters, and Prettier b
 
 Create `src/lib/components/walkthrough/parts/dashboard/StageUndoOffer.svelte`:
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // The one Undo offer from ui/Toast.svelte as a picture: the message, an
@@ -7774,6 +8039,7 @@ Create `src/lib/components/walkthrough/parts/dashboard/StageUndoOffer.svelte`:
 
 Replace the whole of `src/lib/components/walkthrough/scenes/DashboardScene.svelte` with the following. This deletes the Quick Log `LABELS` map, `flashShadow` and the `formatDueIn` import.
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // routes/(app)/dashboard/+page.svelte at DESKTOP_NOW (08:02): the header,
@@ -7887,6 +8153,7 @@ Replace the whole of `src/lib/components/walkthrough/scenes/DashboardScene.svelt
 
 In `src/lib/components/walkthrough/WalkthroughStage.svelte`, replace:
 
+<!-- prettier-ignore -->
 ```svelte
   import { PAGES, SITE_HOST } from "./demo-data";
   import { STAGE_H, STAGE_W, WIN_H, WIN_W, activeCaption, type Frame } from "./timeline";
@@ -7897,6 +8164,7 @@ In `src/lib/components/walkthrough/WalkthroughStage.svelte`, replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
   import { LOGGED_DOSE, PAGES, SITE_HOST } from "./demo-data";
   import { DESKTOP_AFTER } from "./demo-dashboard";
@@ -7911,6 +8179,7 @@ If T4 already changed the `./demo-data` import line, add `LOGGED_DOSE` to it ins
 
 Replace:
 
+<!-- prettier-ignore -->
 ```svelte
   const camera = $derived(frame.camera);
 </script>
@@ -7918,6 +8187,7 @@ Replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
   const camera = $derived(frame.camera);
   // The desktop beat's Undo offer, as Log now's reload would word it.
@@ -7927,12 +8197,14 @@ with:
 
 Replace:
 
+<!-- prettier-ignore -->
 ```svelte
     <div class="absolute inset-0" style:visibility={frame.kind === "desk" ? "visible" : "hidden"}>
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
     <div
       class="absolute inset-0"
@@ -7943,17 +8215,23 @@ with:
 
 Replace:
 
+<!-- prettier-ignore -->
 ```svelte
-<StageToast text="Lisinopril logged" progress={frame.toast} markKey="o.toast" />
+                <StageToast text="Lisinopril logged" progress={frame.toast} markKey="o.toast" />
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
-<!-- Where Toast's stack sits: fixed right-4 bottom-4 in the app -->
-<div class="absolute right-4 bottom-4 z-50 flex flex-col gap-2">
-  <StageUndoOffer message={desktopOffer} opacity={frame.dashboard.offer} mark="o.offer" />
-</div>
+                <!-- Where Toast's stack sits: fixed right-4 bottom-4 in the app -->
+                <div class="absolute right-4 bottom-4 z-50 flex flex-col gap-2">
+                  <StageUndoOffer
+                    message={desktopOffer}
+                    opacity={frame.dashboard.offer}
+                    mark="o.offer"
+                  />
+                </div>
 ```
 
 `PhoneScene` keeps importing `StageToast` itself, so the file stays until T8 deletes it.
@@ -7985,6 +8263,7 @@ These are illustrative. No test pins any of them: every assertion compares again
 
 In `src/lib/utils/time.ts`, replace:
 
+<!-- prettier-ignore -->
 ```ts
  * THE duration formatter. Every "how long" on screen goes through it, so no
  * caller can print "504h 20m" for three weeks again. `formatDueIn` did,
@@ -7993,6 +8272,7 @@ In `src/lib/utils/time.ts`, replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
  * THE duration formatter. Every "how long" on screen goes through it, so no
  * caller can print "504h 20m" for three weeks again, as the dashboard's old
@@ -8001,6 +8281,7 @@ with:
 
 Then delete this whole block, together with the blank line after it:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * "Due in 2h 15m" / "Overdue 21d" / "Due now". Positive ms is time until
@@ -8075,6 +8356,7 @@ Before moving on, run `git diff --stat` and confirm that only this task's intend
 
 Run, from the worktree root:
 
+<!-- prettier-ignore -->
 ```bash
 npx prettier --write src/lib/components/walkthrough src/lib/components/RefillsCard.svelte tests/unit/walkthrough-timeline.test.ts tests/unit/walkthrough-dashboard-fidelity.test.ts tests/unit/time.test.ts src/lib/utils/time.ts
 npx vitest run
@@ -8095,6 +8377,7 @@ The probe type-checked every new part with svelte-check (0 errors, 0 warnings), 
 
 - [ ] **Step 28: Commit**
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/components/walkthrough/stage-dashboard.ts \
   src/lib/components/walkthrough/parts/dashboard/StageCollapse.svelte \
@@ -8233,6 +8516,7 @@ Line ranges are at base `311758f`. T4, T6 and T7 shift several of them, so every
 
 Run, from the worktree root:
 
+<!-- prettier-ignore -->
 ```bash
 grep -c "export function lastLoggedPhrase" src/lib/utils/time.ts
 grep -c "export const PHONE_LATER_ROWS" src/lib/components/walkthrough/demo-dashboard.ts
@@ -8260,6 +8544,7 @@ Make three edits to `tests/unit/walkthrough-timeline.test.ts`. The file already 
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 // and the chips at 734-920. The offer sits at the shell's bottom right.
 const MEASURED: Measurements = {
@@ -8267,6 +8552,7 @@ const MEASURED: Measurements = {
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 // and the chips at 734-920. The offer sits at the shell's bottom right.
 // p.vitdLog is in phone space: the Vitamin D card's 48px Log now, at the
@@ -8276,18 +8562,21 @@ const MEASURED: Measurements = {
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
   "p.vitdLog": { x: 330, y: 400, w: 40, h: 20 },
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   "p.vitdLog": { x: 253, y: 275, w: 120, h: 48 },
 ```
 
 **2b. The progress test.** In `it("keeps every progress value within 0..1", …)`, replace:
 
+<!-- prettier-ignore -->
 ```ts
         f.phone.vitaminDDone,
         f.phone.toast,
@@ -8295,6 +8584,7 @@ with:
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
         f.phone.logged,
         f.phone.offer,
@@ -8302,12 +8592,14 @@ with:
 
 **2c. Three new tests.** Insert them directly above `it("types the new medication a character at a time and never past its end", …)`, which T6 left directly below its `clicks to log at T_LOG on the desktop and taps at T_TAP on the phone` test. Replace:
 
+<!-- prettier-ignore -->
 ```ts
   it("types the new medication a character at a time and never past its end", () => {
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   it("logs Vitamin D once, from the phone's Log now: pending, then logged, then the Undo offer until the Outro", () => {
     const at = (t: number) => computeFrame(t, MEASURED).phone;
@@ -8397,6 +8689,7 @@ Make five replacements in `src/lib/components/walkthrough/timeline.ts`: one each
 
 **4a. The `Frame` type's head**, as T7 left it. Replace:
 
+<!-- prettier-ignore -->
 ```ts
 export type Frame = {
   kind: ShotKind;
@@ -8416,6 +8709,7 @@ export type Frame = {
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * One log beat, the desktop's (around T_LOG) or the phone's (around T_TAP).
@@ -8441,6 +8735,7 @@ export type Frame = {
 
 **4b. The `Frame` type's phone slice.** Replace:
 
+<!-- prettier-ignore -->
 ```ts
   phone: {
     bannerY: number;
@@ -8453,6 +8748,7 @@ export type Frame = {
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
   phone: LogBeat & {
     bannerY: number;
@@ -8463,12 +8759,14 @@ with:
 
 **4c. `logBeat`, above `pressAt`.** Replace:
 
+<!-- prettier-ignore -->
 ```ts
 /** Press-in over 150ms before a click, release over 150ms after it. */
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * One log beat from its tap: Log now reads "Logging…" for 0.4s, the reload
@@ -8491,6 +8789,7 @@ function logBeat(T: number, tap: number, cut: number): LogBeat {
 
 **4d. The returned beats.** In the object `computeFrame` returns, replace T7's dashboard object:
 
+<!-- prettier-ignore -->
 ```ts
     dashboard: {
       // Log now reads "Logging…" for 0.4s. Its spinner turns with T rather
@@ -8505,6 +8804,7 @@ function logBeat(T: number, tap: number, cut: number): LogBeat {
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
     // Lisinopril, from Log now on the desktop. The offer goes at the cut to Medications.
     dashboard: logBeat(T, T_LOG, c.Medications),
@@ -8514,6 +8814,7 @@ The desktop's values are unchanged: `logBeat` computes the same three expression
 
 Then replace the phone's two old fields:
 
+<!-- prettier-ignore -->
 ```ts
       vitaminDDone: MOTION.enter(T, T_TAP, 0.3),
       toast: T < T_TAP + 0.15 ? 0 : MOTION.enter(T, T_TAP + 0.15, 0.3),
@@ -8522,6 +8823,7 @@ Then replace the phone's two old fields:
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
       // Vitamin D, from Log now on the phone. The offer goes at the cut to the Outro.
       ...logBeat(T, T_TAP, c.Outro),
@@ -8549,36 +8851,42 @@ The values these pins rely on, which the probe measured on the real `CUES`:
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 import { formatUserTime, type TimeFormat } from "$lib/utils/time";
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 import { formatUserTime, lastLoggedPhrase, type TimeFormat } from "$lib/utils/time";
 ```
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 import { T_LOG, computeFrame, type Frame } from "$lib/components/walkthrough/timeline";
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 import { CUES, T_LOG, T_TAP, computeFrame, type Frame } from "$lib/components/walkthrough/timeline";
 ```
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 import DashboardScene from "$lib/components/walkthrough/scenes/DashboardScene.svelte";
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 import DashboardScene from "$lib/components/walkthrough/scenes/DashboardScene.svelte";
 import PhoneScene from "$lib/components/walkthrough/scenes/PhoneScene.svelte";
@@ -8588,6 +8896,7 @@ import PhoneScene from "$lib/components/walkthrough/scenes/PhoneScene.svelte";
 
 **6b. The phone render half.** Append this at the end of the file, after T7's `describe("the desktop stage for a visitor far from the story", …)`, separated by one blank line:
 
+<!-- prettier-ignore -->
 ```ts
 // ── T8: the phone scene, rendered ────────────────────────────────────────
 //
@@ -8748,6 +9057,7 @@ describe("the phone stage for a visitor far from the story", () => {
 
 **6c. Where `p.vitdLog` sits.** jsdom runs actions, which SSR does not, so this check lives in T6's jsdom file. In `tests/unit/walkthrough-marks.svelte.test.ts`, replace:
 
+<!-- prettier-ignore -->
 ```ts
 import { MARKS_CONTEXT, createMarkRegistry } from "$lib/components/walkthrough/marks";
 import FieldBox from "$lib/components/walkthrough/parts/FieldBox.svelte";
@@ -8755,6 +9065,7 @@ import FieldBox from "$lib/components/walkthrough/parts/FieldBox.svelte";
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 import { MARKS_CONTEXT, PHONE_ROOT, createMarkRegistry } from "$lib/components/walkthrough/marks";
 import { PHONE_BEFORE } from "$lib/components/walkthrough/demo-dashboard";
@@ -8765,6 +9076,7 @@ import PhoneScene from "$lib/components/walkthrough/scenes/PhoneScene.svelte";
 
 Then append this at the end of the file, after T6's `describe("MARKS_CONTEXT", …)`, separated by one blank line. It reuses T6's module-level `target` and `app`, which the file's `afterEach` tears down:
 
+<!-- prettier-ignore -->
 ```ts
 describe("the phone's marks", () => {
   // timeline.ts puts the fingertip at the centre of p.vitdLog's rect, so the
@@ -8811,6 +9123,7 @@ Expected: FAIL, `12 failed`, every other test passing (`12 failed | 26 passed (3
 
 In `src/lib/components/walkthrough/stage-dashboard.ts`, replace T7's header comment and `./demo-data` import:
 
+<!-- prettier-ignore -->
 ```ts
 // What the dashboard scenes need beyond the StageMoments themselves: the
 // date format the stage renders labels in, the Done row a beat logs, the
@@ -8820,6 +9133,7 @@ In `src/lib/components/walkthrough/stage-dashboard.ts`, replace T7's header comm
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 // What the dashboard scenes need beyond the StageMoments themselves: the
 // date format the stage renders labels in, the Done row a beat logs, the
@@ -8830,18 +9144,21 @@ with:
 
 Replace:
 
+<!-- prettier-ignore -->
 ```ts
 import { MEDICATIONS, WALKTHROUGH_TZ } from "./demo-data";
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 import { DEMO_DOSES, MEDICATIONS, WALKTHROUGH_TZ } from "./demo-data";
 ```
 
 Then append, after `STAGE_REFILLS`'s closing `}));`, separated by one blank line:
 
+<!-- prettier-ignore -->
 ```ts
 /**
  * A medication's latest event in DEMO_DOSES strictly before `before`, taken
@@ -8867,6 +9184,7 @@ Replace the whole of `src/lib/components/walkthrough/scenes/PhoneScene.svelte` w
 - **What is unchanged:** the device frame, the dynamic island, the status bar's icons, the mobile header, the banner's layout, the fingertip and the home indicator.
 - **What is new:** the content between the mobile header and the home indicator, the offer, the banner's title and body, and the status bar's time.
 
+<!-- prettier-ignore -->
 ```svelte
 <script lang="ts">
   // The dashboard as a phone shows it (MobileHeader.svelte over
@@ -9134,12 +9452,14 @@ Replace the whole of `src/lib/components/walkthrough/scenes/PhoneScene.svelte` w
 
 In `src/lib/components/walkthrough/WalkthroughStage.svelte`, replace:
 
+<!-- prettier-ignore -->
 ```svelte
     <div class="absolute inset-0" style:visibility={frame.kind === "phone" ? "visible" : "hidden"}>
 ```
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
     <div
       class="absolute inset-0"
@@ -9178,6 +9498,7 @@ At `CUES.Reminders + 1.5` the banner's `bannerY` is `-0`, which `toBe(0)` would 
 
 Delete the four old parts, which only the old `PhoneScene` used:
 
+<!-- prettier-ignore -->
 ```bash
 git rm src/lib/components/walkthrough/parts/MyDaySection.svelte \
   src/lib/components/walkthrough/parts/SummaryAndRefills.svelte \
@@ -9187,6 +9508,7 @@ git rm src/lib/components/walkthrough/parts/MyDaySection.svelte \
 
 In `src/lib/components/walkthrough/demo-data.ts`, delete the My Day block. Its only readers were `MyDaySection` and the old scenes. Replace:
 
+<!-- prettier-ignore -->
 ```ts
 // ── My Day ──
 export type DayGroupKey = "morning" | "afternoon" | "evening" | "night";
@@ -9219,12 +9541,14 @@ export function daySlots(lisinopril: SlotStatus, vitaminD: SlotStatus): DaySlot[
 
 with:
 
+<!-- prettier-ignore -->
 ```ts
 // ── Doses ──
 ```
 
 Then run:
 
+<!-- prettier-ignore -->
 ```bash
 grep -rnE "MyDaySection|SummaryAndRefills|StatusMark\b|StageToast|DAY_GROUPS|daySlots|DayGroupKey|\bSlotStatus\b|\bDaySlot\b|vitaminDDone" src tests
 ```
@@ -9299,6 +9623,7 @@ Apply each mutation alone, run the named command, and see each named test FAIL w
 
 After the last undo, run `git status --short`. Expected, exactly:
 
+<!-- prettier-ignore -->
 ```
  M src/lib/components/walkthrough/WalkthroughStage.svelte
  M src/lib/components/walkthrough/demo-data.ts
@@ -9320,6 +9645,7 @@ Then run `npx vitest run tests/unit/walkthrough`. Expected: PASS.
 
 Run, from the worktree root:
 
+<!-- prettier-ignore -->
 ```bash
 npx prettier --write src/lib/components/walkthrough tests/unit/walkthrough-timeline.test.ts tests/unit/walkthrough-dashboard-fidelity.test.ts tests/unit/walkthrough-marks.svelte.test.ts
 npx vitest run
@@ -9341,6 +9667,7 @@ Expected:
 
 The four deletions are already staged by Step 12's `git rm`.
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/components/walkthrough/timeline.ts \
   src/lib/components/walkthrough/stage-dashboard.ts \
@@ -9507,6 +9834,7 @@ Create `tests/unit/walkthrough-stage.svelte.test.ts`.
 - **`flushSync()` before every assertion.** Actions run only when effects flush; without it the registry is empty (probed: size 0 straight after `mount`).
 - **`context` is a `mount` option.** `new Map([[MARKS_CONTEXT, registry]])` is how T6's `walkthrough-marks.svelte.test.ts` provides a registry.
 
+<!-- prettier-ignore -->
 ```ts
 // WalkthroughStage, mounted for real (jsdom, client svelte), to hold the
 // contract between the scenes and the timeline that no other test can see.
@@ -9723,6 +10051,7 @@ T7's own probe mounted its stage at these seven moments and saw the same eight d
 
 **If Step 2 made you edit any file under `src/`, `git add` it now**, before the first mutation:
 
+<!-- prettier-ignore -->
 ```bash
 git add <each src/ file Step 2 made you change>
 ```
@@ -9813,6 +10142,7 @@ Create `tests/unit/walkthrough-video.svelte.test.ts`. jsdom lacks three APIs the
 - **`ResizeObserver`.** `bind:clientWidth` constructs one (`svelte/src/internal/client/dom/elements/bindings/size.js:99-107`). Without the stub, mount throws `ReferenceError: ResizeObserver is not defined` (probed).
 - **`IntersectionObserver`** and **`matchMedia`**: absent in jsdom.
 
+<!-- prettier-ignore -->
 ```ts
 // WalkthroughVideo, mounted for real (jsdom, client svelte), for the one
 // behaviour no other test can reach: a visitor who prefers reduced motion
@@ -10006,6 +10336,7 @@ Restore: `git restore src/lib/components/walkthrough/WalkthroughVideo.svelte`.
 
 Create `tests/unit/walkthrough-video-ssr.test.ts`:
 
+<!-- prettier-ignore -->
 ```ts
 // @vitest-environment node
 //
@@ -10088,6 +10419,7 @@ The probe also found what the comparison has to step around. 7 elements carry a 
 
 In `src/lib/components/walkthrough/WalkthroughVideo.svelte`, replace:
 
+<!-- prettier-ignore -->
 ```svelte
   let {
     // The app's default accent, so the video matches what a new account sees.
@@ -10096,6 +10428,7 @@ In `src/lib/components/walkthrough/WalkthroughVideo.svelte`, replace:
 
 with:
 
+<!-- prettier-ignore -->
 ```svelte
   let {
     // The app's default accent, so the video matches what a new account sees.
@@ -10130,6 +10463,7 @@ Restore: `git restore src/routes/+page.svelte`. T6 committed its change to this 
 
 Then run `git status --short`. Expected, exactly:
 
+<!-- prettier-ignore -->
 ```
  M src/lib/components/walkthrough/WalkthroughVideo.svelte
 ?? tests/unit/walkthrough-stage.svelte.test.ts
@@ -10143,6 +10477,7 @@ Each `src/` file Step 2's rules made you fix adds one `M  <path>` line, staged s
 
 Run, from the worktree root:
 
+<!-- prettier-ignore -->
 ```bash
 npx vitest run
 npx vitest run
@@ -10160,6 +10495,7 @@ Expected:
 
 - [ ] **Step 13: Commit**
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/components/walkthrough/WalkthroughVideo.svelte \
   tests/unit/walkthrough-stage.svelte.test.ts \
@@ -10228,6 +10564,7 @@ If Step 2's rules made you change a T7 or T8 file, it is already staged (Step 3)
   - **What this task uses instead:** the accent test is `tests/unit/walkthrough-video-ssr.test.ts`, following the repo's `*-ssr.test.ts` naming. The reduced-motion test keeps `tests/unit/walkthrough-video.svelte.test.ts`.
   - **The header fix.** Under **Create**, replace the line ``- `tests/unit/walkthrough-video.svelte.test.ts` (T9: reduced motion and accent).`` with these two:
 
+    <!-- prettier-ignore -->
     ```markdown
     - `tests/unit/walkthrough-video.svelte.test.ts` (T9: reduced motion, jsdom).
     - `tests/unit/walkthrough-video-ssr.test.ts` (T9: the accent, `// @vitest-environment node`).
@@ -10312,6 +10649,7 @@ The only source edits this task may make are the two tunings Section 5 allows, `
 
 Run, from `/Users/jamiewhite/Documents/Personal/Projects/medication-tracker/.claude/worktrees/affectionate-noether-23a5d8`:
 
+<!-- prettier-ignore -->
 ```bash
 test ! -e .env || { echo 'STOP: a .env already exists in this worktree; move it aside first'; exit 1; }
 git status --short
@@ -10330,6 +10668,7 @@ Write N and M down. They are T9's end state. This task adds no test, so both fin
 
 - [ ] **Step 2: Confirm the hooks the browser check relies on are in the code**
 
+<!-- prettier-ignore -->
 ```bash
 grep -n "origin = performance.now() - untrack(() => time) \* 1000;" src/lib/components/walkthrough/WalkthroughVideo.svelte
 grep -n "requestAnimationFrame(function step" src/lib/components/walkthrough/WalkthroughVideo.svelte
@@ -10361,12 +10700,14 @@ Edit `CLAUDE.md`, under `## Reusable Components`.
 
 old_string (line 68, unique):
 
+<!-- prettier-ignore -->
 ```markdown
 - **`InsightsCard.svelte`** / **`StatusBreakdownBar.svelte`** / **`RefillsCard.svelte`** — analytics + dashboard surfaces; render nothing when their dataset is empty (don't wrap them in `{#if}` at the call site).
 ```
 
 new_string:
 
+<!-- prettier-ignore -->
 ```markdown
 - **`InsightsCard.svelte`** / **`StatusBreakdownBar.svelte`** / **`RefillsCard.svelte`** — analytics + dashboard surfaces; render nothing when their dataset is empty (don't wrap them in `{#if}` at the call site).
 - **The landing-page walkthrough (`src/lib/components/walkthrough/`) draws the dashboard; it never mounts it.** Its stage parts (`parts/dashboard/Stage*.svelte`) copy the real components' layout classes and reuse only their pure leaves — `MedicationGlyph`, `StatusMarker` and the copy helpers in `utils/dashboard-copy.ts` and `utils/time.ts`. The real `DueCard`, `DoseActionForm` and `QuickLogBar` are focusable and need the write lock, the dashboard clock, `use:enhance` and `$app/state`, and `DashboardHeader`, `DoneList` and `LaterList` render headings, landmarks, fixed ids and `tabindex="-1"` targets that would be duplicated across the desktop and the phone. The stage is `aria-hidden` and holds nothing focusable, and its motion comes only from `Frame` values, which are pure functions of T: no part carries an `animate-*` or `transition-*` class. **Three tests keep it honest, because a stale or broken scene fails silently.** `tests/unit/walkthrough-demo-facts.test.ts` holds the other scenes' hand-written facts — History's order, the Medications "Last taken" timers, the session expiry dates and the Analytics fold — to the one dose list, `DEMO_DOSES`. `tests/unit/walkthrough-dashboard-fidelity.test.ts` runs the real `composeDashboardPageData` at each story moment in `demo-dashboard.ts` (desktop and phone, before and after the log). It asserts that the scenes' data equals the composer's output and that their rendered text equals the copy helpers'. So a change to the dashboard's rules or wording fails there, instead of leaving the landing page advertising the old app — which is what happened when #170 rebuilt the dashboard and the walkthrough kept drawing the deleted one. Every key `computeFrame` reads must be listed in `REQUIRED_MARKS` (`timeline.ts`) and registered from mount, at every T, on exactly one element under its own root. `walkthrough-timeline.test.ts` records the reads through a `Proxy`, and `tests/unit/walkthrough-stage.svelte.test.ts` mounts the stage, checks the registry across the loop and fails on any focusable element. A missing mark throws nothing: the camera falls back to the wide shot and the cursor to the window centre. Marks are also measured only while the stage mounts, with T still on the title card, so an element drawn later is never measured. That is why a collapse or a new row is drawn with height, opacity or transform, never with an `{#if}` whose condition changes with T around a marked element; a payload-fixed condition such as `StageDueCard`'s `{#if row.logNow}` cannot change the registered set and is allowed.
@@ -10378,12 +10719,14 @@ First, the `### Added` walkthrough entry (line 23). It is in `[Unreleased]`, so 
 
 old_string (unique):
 
+<!-- prettier-ignore -->
 ```markdown
 ten features on the demo account: My Day, Quick Log, the medications list,
 ```
 
 new_string:
 
+<!-- prettier-ignore -->
 ```markdown
 ten features on the demo account: Today, Log now, the medications list,
 ```
@@ -10394,6 +10737,7 @@ Then the Changed line. Edit `CHANGELOG.md`.
 
 old_string (unique; the end of line 40 and the next heading):
 
+<!-- prettier-ignore -->
 ```markdown
 `delete_dose` is unchanged and is not undoable.
 
@@ -10402,9 +10746,9 @@ old_string (unique; the end of line 40 and the next heading):
 
 new_string:
 
+<!-- prettier-ignore -->
 ```markdown
 `delete_dose` is unchanged and is not undoable.
-
 - **The landing-page walkthrough shows the dashboard as it ships.** It was still drawing the dashboard from before the due-now rebuild — coloured Quick Log pills, a My Day timeline grouped by time of day, a summary strip — which is exactly what that rebuild took out. The desktop and phone scenes now show Today: the status header, a Due card whose Log now is the tap, Done today, Later today, the neutral "Log something else" chips and the single Undo offer. Every string on them comes from the helper the app itself renders it with, and a test checks them against the real dashboard composer. Captions and figures that had become false are corrected with it. No page groups doses by time of day or shows a next-due time, and reminders run on a half-hourly daytime sweep rather than Vercel Cron alone. The Analytics bar counts an untaken dose as Missed rather than Skipped, Dose History lists each day newest first, and session expiry dates are formatted as the app formats them. The accent is the one a new account gets, and the loop is described as "under a minute" rather than forty seconds.
 
 ### Fixed
@@ -10416,6 +10760,7 @@ Edit `CHANGELOG.md`.
 
 old_string (unique; the end of the last Fixed bullet and the next release heading):
 
+<!-- prettier-ignore -->
 ```markdown
 instead of as bright white OS widgets on a near-black page.
 
@@ -10424,9 +10769,9 @@ instead of as bright white OS widgets on a near-black page.
 
 new_string:
 
+<!-- prettier-ignore -->
 ```markdown
 instead of as bright white OS widgets on a near-black page.
-
 - Overdue reminders no longer say "ago ago". The push body and the email both appended " ago" to a phrase that already ended in it. A reminder read "Last logged 1d ago ago", or "Last logged just now ago" for a dose logged moments earlier. Both now take the phrase from one helper, `lastLoggedPhrase` in `src/lib/utils/time.ts`, measured against the sweep's own clock. They read "Last logged 1d ago", "Last logged just now", or "Not yet logged" when nothing has been logged. The email for a medication never logged changes from "not logged yet" to "not yet logged" to match. Nothing could have caught it before: the push test checked a hand-written payload and the email test discarded what was sent. Both now assert on the real text.
 
 ## [0.4.0] — Phase 4: polish, scheduling, demo, docs
@@ -10434,6 +10779,7 @@ instead of as bright white OS widgets on a near-black page.
 
 - [ ] **Step 6: Check the docs format and diff**
 
+<!-- prettier-ignore -->
 ```bash
 npx prettier --check CLAUDE.md CHANGELOG.md
 git diff --stat
@@ -10464,6 +10810,7 @@ Read these before starting. Each one was found by running this check against bas
 
 - [ ] **Step 8: Write the throwaway `.env`**
 
+<!-- prettier-ignore -->
 ```bash
 lsof -nP -iTCP:5173 -sTCP:LISTEN
 test ! -e .env || { echo 'STOP: a .env already exists in this worktree; move it aside first'; exit 1; }
@@ -10513,11 +10860,12 @@ The stub has to be in place before the player starts, so that T begins at exactl
 
 `javascript_tool`:
 
+<!-- prettier-ignore -->
 ```js
 ({
   title: document.title,
   walkthrough: !!document.querySelector('section[aria-labelledby="walkthrough-heading"] figure'),
-});
+})
 ```
 
 Expected: `{ "title": "MedTracker — Personal Medication Tracker", "walkthrough": true }`.
@@ -10534,11 +10882,11 @@ Why this proves there was no session cookie:
 
 `javascript_tool`, exactly:
 
+<!-- prettier-ignore -->
 ```js
 (() => {
   const TOTAL = 43.5;
-  if (window.__wt)
-    return "ERROR: already installed on this page load - navigate to a fresh /?wt=N and rerun";
+  if (window.__wt) return "ERROR: already installed on this page load - navigate to a fresh /?wt=N and rerun";
   const fig = document.querySelector('section[aria-labelledby="walkthrough-heading"] figure');
   if (!fig) return "ERROR: walkthrough figure not found";
   const box = fig.firstElementChild;
@@ -10551,15 +10899,7 @@ Why this proves there was no session cookie:
   const realRaf = window.requestAnimationFrame.bind(window);
   const realCaf = window.cancelAnimationFrame.bind(window);
   const STEP_HANDLE = -424242;
-  const s = {
-    origin: NaN,
-    lastT: 0,
-    step: null,
-    inSeek: false,
-    starts: 0,
-    served: false,
-    realAtStart: NaN,
-  };
+  const s = { origin: NaN, lastT: 0, step: null, inSeek: false, starts: 0, served: false, realAtStart: NaN };
   // The player reads performance.now() once per start or resume, in its own
   // $effect: origin = performance.now() - time * 1000. That one read, and only
   // that one, gets a virtual clock standing at the current T, so origin is
@@ -10591,23 +10931,18 @@ Why this proves there was no session cookie:
   // A hidden Browser pane reports "hidden", which pauses the player. Present
   // it as visible and tell the player.
   if (document.visibilityState !== "visible") {
-    Object.defineProperty(document, "visibilityState", {
-      get: () => "visible",
-      configurable: true,
-    });
+    Object.defineProperty(document, "visibilityState", { get: () => "visible", configurable: true });
     document.dispatchEvent(new Event("visibilitychange"));
   }
   window.__wt = s;
   window.__seek = async (T) => {
-    if (!s.step)
-      return "ERROR: the player is not running - is the stage in view, hydrated and not paused?";
+    if (!s.step) return "ERROR: the player is not running - is the stage in view, hydrated and not paused?";
     if (s.origin !== 0) {
       return "ERROR: the player's start did not read the virtual clock - no WalkthroughVideo.svelte frame was found in performance.now()'s caller";
     }
     // The player's own arithmetic with origin 0: ((now - 0) / 1000) % 43.5.
     const t = ((T * 1000) / 1000) % TOTAL;
-    if (t !== T % TOTAL)
-      return `ERROR: T=${T} does not survive the player's arithmetic; it would show T=${t}`;
+    if (t !== T % TOTAL) return `ERROR: T=${T} does not survive the player's arithmetic; it would show T=${t}`;
     s.inSeek = true;
     try {
       s.step(T * 1000);
@@ -10621,13 +10956,11 @@ Why this proves there was no session cookie:
     // exactness proof; the two checks above are.
     const got = parseFloat(fill.style.width);
     const want = (t / TOTAL) * 100;
-    return Math.abs(got - want) < 1e-3
-      ? `T=${T}`
-      : `ERROR: progress ${got}% but T=${T} needs ${want}%`;
+    return Math.abs(got - want) < 1e-3 ? `T=${T}` : `ERROR: progress ${got}% but T=${T} needs ${want}%`;
   };
   box.scrollIntoView({ block: "center" });
   return "installed";
-})();
+})()
 ```
 
 Expected: `"installed"`. Any `ERROR:` string says what to fix. Most often it is a page that already scrolled near the player: run Step 10 again with `?wt=2`, and use a shorter viewport if it repeats.
@@ -10645,6 +10978,7 @@ How it works:
 
 `javascript_tool`, exactly:
 
+<!-- prettier-ignore -->
 ```js
 (() => {
   if (!window.__wt) return "ERROR: install the seek stub first";
@@ -10684,8 +11018,7 @@ How it works:
   const opacity = (el) => {
     if (getComputedStyle(el).visibility !== "visible") return 0;
     let o = 1;
-    for (let n = el; n && n !== box; n = n.parentElement)
-      o *= parseFloat(getComputedStyle(n).opacity);
+    for (let n = el; n && n !== box; n = n.parentElement) o *= parseFloat(getComputedStyle(n).opacity);
     return o;
   };
   // Elements that hold text directly, the root included.
@@ -10693,34 +11026,26 @@ How it works:
     [root, ...all("*", root)].filter((e) =>
       [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== ""),
     );
-  const shownLeaves = (root) =>
-    leaves(root).filter((e) => opacity(e) >= 0.99 && area(visibleRect(e)) > 0);
+  const shownLeaves = (root) => leaves(root).filter((e) => opacity(e) >= 0.99 && area(visibleRect(e)) > 0);
   // Font size as drawn on screen: CSS size times every scale above it.
   const renderedPx = (e) =>
     e.offsetHeight > 0
-      ? parseFloat(getComputedStyle(e).fontSize) *
-        (e.getBoundingClientRect().height / e.offsetHeight)
+      ? parseFloat(getComputedStyle(e).fontSize) * (e.getBoundingClientRect().height / e.offsetHeight)
       : NaN;
   const captionRect = () => {
     const outer = stage.querySelector(".pointer-events-none.bottom-16");
     return outer && opacity(outer) > 0 ? outer.firstElementChild.getBoundingClientRect() : null;
   };
   const windowLayer = () =>
-    all("div").find(
-      (d) => /translate\(/.test(d.style.transform) && /scale\(/.test(d.style.transform),
-    );
+    all("div").find((d) => /translate\(/.test(d.style.transform) && /scale\(/.test(d.style.transform));
   const section = (name, where) => {
-    const els = all(`[data-stage-section="${name}"]`).filter(
-      (e) => (where === "phone") === inPhone(e),
-    );
+    const els = all(`[data-stage-section="${name}"]`).filter((e) => (where === "phone") === inPhone(e));
     if (els.length !== 1) throw new Error(`${els.length} "${name}" sections on the ${where}`);
     return els[0];
   };
   // The 44px-or-taller box around the first shown "Log now" / "Logging…" label in a section.
   const logNowBox = (root) => {
-    let el = leaves(root).find(
-      (e) => opacity(e) >= 0.5 && /^(Log now|Logging…)$/.test(e.textContent.trim()),
-    );
+    let el = leaves(root).find((e) => opacity(e) >= 0.5 && /^(Log now|Logging…)$/.test(e.textContent.trim()));
     while (el && el !== root && el.offsetHeight < 44) el = el.parentElement;
     return el ?? null;
   };
@@ -10730,11 +11055,7 @@ How it works:
     const cap = captionRect();
     const btn = button.getBoundingClientRect();
     const m = windowLayer()?.style.transform.match(/scale\(([\d.]+)\)/);
-    const out = {
-      T: round(window.__wt.lastT),
-      cameraScale: m ? round(+m[1]) : null,
-      captionShown: !!cap,
-    };
+    const out = { T: round(window.__wt.lastT), cameraScale: m ? round(+m[1]) : null, captionShown: !!cap };
     for (const name of names) {
       const el = section(name, where);
       const r = el.getBoundingClientRect();
@@ -10779,11 +11100,7 @@ How it works:
       .map((t) => t.match(/rotate\(\s*([-\d.e]+)/))
       .find(Boolean);
     return {
-      label: b
-        ? shownLeaves(b)
-            .map((e) => e.textContent.trim())
-            .join(" ")
-        : null,
+      label: b ? shownLeaves(b).map((e) => e.textContent.trim()).join(" ") : null,
       widthPx: b ? b.offsetWidth : null,
       spinnerDeg: rotated ? round(parseFloat(rotated[1])) : null,
     };
@@ -10797,16 +11114,9 @@ How it works:
     if (!svg || !win || !b) return { cursor: !!svg, logNow: !!b, onTarget: false };
     const w = win.getBoundingClientRect();
     const k = w.width / 1440;
-    const tip = {
-      x: w.left + (parseFloat(svg.style.left) + 3) * k,
-      y: w.top + (parseFloat(svg.style.top) + 2) * k,
-    };
+    const tip = { x: w.left + (parseFloat(svg.style.left) + 3) * k, y: w.top + (parseFloat(svg.style.top) + 2) * k };
     const r = b.getBoundingClientRect();
-    return {
-      cursor: true,
-      logNow: true,
-      onTarget: tip.x >= r.left && tip.x <= r.right && tip.y >= r.top && tip.y <= r.bottom,
-    };
+    return { cursor: true, logNow: true, onTarget: tip.x >= r.left && tip.x <= r.right && tip.y >= r.top && tip.y <= r.bottom };
   };
 
   // Review Focus 5: Log now inside the phone's content box and above the home
@@ -10838,22 +11148,12 @@ How it works:
       }))
       .filter((r) => r.top < clipBottom - 0.5 && r.bottom > clipBottom + 0.5);
     const logNowInside = !!ln && ln.top >= contentTop - 0.5 && ln.bottom <= indicatorTop + 0.5;
-    return {
-      contentTop,
-      clipBottom,
-      indicatorTop,
-      logNow: ln,
-      logNowInside,
-      cutRows,
-      pass: logNowInside && cutRows.length === 0,
-    };
+    return { contentTop, clipBottom, indicatorTop, logNow: ln, logNowInside, cutRows, pass: logNowInside && cutRows.length === 0 };
   };
 
   // Every CSS animation or transition running anywhere in the stage. Must be [].
   window.__wtAnimations = () =>
-    stage
-      .getAnimations({ subtree: true })
-      .map((a) => a.animationName ?? a.transitionProperty ?? "animation");
+    stage.getAnimations({ subtree: true }).map((a) => a.animationName ?? a.transitionProperty ?? "animation");
 
   // Focusable elements in the stage. Must be 0.
   window.__wtFocusable = () =>
@@ -10905,7 +11205,7 @@ How it works:
   };
 
   return "tools installed";
-})();
+})()
 ```
 
 Expected: `"tools installed"`.
@@ -10915,6 +11215,7 @@ Expected: `"tools installed"`.
 1. Call `computer` with `{ "action": "screenshot", "scale": 0.3 }`. In a hidden pane this is what lets IntersectionObserver deliver.
 2. Then `javascript_tool`:
 
+<!-- prettier-ignore -->
 ```js
 for (let i = 0; i < 50 && !window.__wt.step; i++) await new Promise((r) => setTimeout(r, 100));
 // The player remeasures its marks 300ms and 1200ms after mounting; let both land while T is still 0.
@@ -10928,7 +11229,7 @@ const fig = document.querySelector('section[aria-labelledby="walkthrough-heading
   label: fig.querySelector("button").getAttribute("aria-label"),
   figureWidth: Math.round(fig.getBoundingClientRect().width),
   progress: fig.firstElementChild.querySelector(":scope > div.h-1 > div").style.width,
-});
+})
 ```
 
 Expected: `{ "starts": 1, "origin": 0, "realAtStart": <a few thousand ms>, "running": true, "label": "Pause walkthrough", "figureWidth": 1024, "progress": "0%" }`. On base 311758f this returned `starts: 1`, `origin: 0`, `realAtStart: 6813.600000023842`, `running: true`, `"Pause walkthrough"`, `figureWidth: 1024` and `"0%"`.
@@ -10945,6 +11246,7 @@ Production measures the marks while T is between 0 and 1.2s. Here they are measu
 
 `javascript_tool`, exactly:
 
+<!-- prettier-ignore -->
 ```js
 await (async () => {
   if (!window.__wtReport) return "ERROR: install the tools first";
@@ -10978,9 +11280,7 @@ await (async () => {
     `Missed ${sb.missedEvents}`,
     `${sb.expectedTotal} expected`,
   ];
-  want.security = demo.SESSION_EXPIRIES.map(
-    (d) => `Expires ${time.formatUserDate(d, TZ, "DD/MM/YYYY")}`,
-  );
+  want.security = demo.SESSION_EXPIRIES.map((d) => `Expires ${time.formatUserDate(d, TZ, "DD/MM/YYYY")}`);
 
   const stage = document.querySelector(
     'section[aria-labelledby="walkthrough-heading"] figure > div > div[aria-hidden="true"]',
@@ -10990,11 +11290,8 @@ await (async () => {
       .filter((e) => [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== ""))
       .map((e) => e.textContent.trim());
   const card = (title) =>
-    [...stage.querySelectorAll("p")]
-      .find((p) => p.textContent.trim() === title)
-      ?.closest(".rounded-xl");
-  const phoneFrame = () =>
-    [...stage.querySelectorAll("div")].find((d) => d.classList.contains("rounded-[48px]"));
+    [...stage.querySelectorAll("p")].find((p) => p.textContent.trim() === title)?.closest(".rounded-xl");
+  const phoneFrame = () => [...stage.querySelectorAll("div")].find((d) => d.classList.contains("rounded-[48px]"));
   const has = (shown, list) => list.every((w) => shown.includes(w));
   const state = { logNowWidth: null, doneRows: null };
 
@@ -11006,189 +11303,124 @@ await (async () => {
       if (s.onCamera < 0.999) f.push(`${n} is not fully on camera (${s.onCamera})`);
       if (s.opacity < 0.999) f.push(`${n} opacity is ${s.opacity}`);
       if (s.coveredText.length) f.push(`${n} text is covered: ${s.coveredText.join(" | ")}`);
-      if (minPx > 0 && !(s.minPxPrimary >= minPx))
-        f.push(`${n} primary text is ${s.minPxPrimary}px, below ${minPx}px`);
+      if (minPx > 0 && !(s.minPxPrimary >= minPx)) f.push(`${n} primary text is ${s.minPxPrimary}px, below ${minPx}px`);
     }
   };
 
   const SHOTS = {
-    todayOpening: [
-      CUES.Today + 1.1,
-      (f, px) => {
-        const r = __wtReport(["header", "due"]);
-        framed(f, r, ["header", "due"], px.desk);
-        if (!has(r.header.text, want.deskBefore))
-          f.push(`header shows ${JSON.stringify(r.header.text)}`);
-        return r;
-      },
-    ],
-    panEnd: [
-      CUES.LogNow - 0.05,
-      (f, px) => {
-        const r = __wtReport(["chips"]);
-        framed(f, r, ["chips"], px.desk);
-        return r;
-      },
-    ],
-    beforeTap: [
-      T_LOG - 0.1,
-      (f, px) => {
-        const r = __wtReport(["header", "due", "done", "offer"]);
-        framed(f, r, ["header", "due", "done"], px.desk);
-        if (r.offer.opacity !== 0) f.push(`offer opacity ${r.offer.opacity} before the tap`);
-        const ln = __wtLogNow("desk");
-        if (ln.label !== "Log now" || ln.spinnerDeg !== null)
-          f.push(`Log now reads ${JSON.stringify(ln)}`);
-        if (!__wtCursorOnLogNow().onTarget) f.push("the cursor tip is not on Log now");
-        state.logNowWidth = ln.widthPx;
-        state.doneRows = r.done.text.length;
-        return { ...r, logNow: ln };
-      },
-    ],
-    spinner: [
-      T_LOG + 0.2,
-      (f, px) => {
-        const r = __wtReport(["due"]);
-        framed(f, r, ["due"], px.desk);
-        const ln = __wtLogNow("desk");
-        const deg = ((360 * (window.__wt.lastT - T_LOG)) / 0.75) % 360;
-        if (ln.label !== "Logging…") f.push(`pending label is ${JSON.stringify(ln.label)}`);
-        if (!(Math.abs(ln.spinnerDeg - deg) < 0.05))
-          f.push(`spinner at ${ln.spinnerDeg}deg, expected ${deg}`);
-        if (ln.widthPx !== state.logNowWidth)
-          f.push(`Log now is ${ln.widthPx}px wide, was ${state.logNowWidth}px`);
-        return { ...r, logNow: ln };
-      },
-    ],
-    afterUpdate: [
-      T_LOG + 0.7,
-      (f, px) => {
-        const r = __wtReport(["header", "due", "done"]);
-        framed(f, r, ["header", "done"], px.desk);
-        if (r.due.visibleHeightPx >= 1) f.push(`Due section still ${r.due.visibleHeightPx}px tall`);
-        if (!has(r.header.text, want.deskAfter))
-          f.push(`header shows ${JSON.stringify(r.header.text)}`);
-        if (want.deskBefore[0] !== want.deskAfter[0] && r.header.text.includes(want.deskBefore[0]))
-          f.push("old header still shown");
-        if (!(r.done.text.length > state.doneRows))
-          f.push(`Done shows ${r.done.text.length} strings, ${state.doneRows} before the tap`);
-        return r;
-      },
-    ],
-    offerFraming: [
-      T_LOG + 1.5,
-      (f, px) => {
-        const r = __wtReport(["offer"]);
-        framed(f, r, ["offer"], px.desk);
-        if (!r.offer.text.includes("Undo")) f.push(`offer reads ${JSON.stringify(r.offer.text)}`);
-        return r;
-      },
-    ],
-    offerHeld: [
-      CUES.Medications - 0.05,
-      (f, px) => {
-        const r = __wtReport(["offer"]);
-        framed(f, r, ["offer"], px.desk);
-        if (r.offer.opacity !== 1) f.push(`offer opacity ${r.offer.opacity} just before the cut`);
-        return r;
-      },
-    ],
-    medicationsCut: [
-      CUES.Medications,
-      (f) => {
-        const r = __wtReport(["offer"]);
-        if (r.offer.opacity !== 0) f.push(`offer opacity ${r.offer.opacity} at the cut`);
-        return r;
-      },
-    ],
-    historyYesterday: [
-      CUES.History + 1.2,
-      (f, px) => {
-        const h = __wtHistoryYesterday();
-        if (!h.newestFirst) f.push(`Yesterday is not newest first: ${h.times.join(", ")}`);
-        for (const t of h.firstTwo) {
-          if (t.onCamera < 0.999 || t.underCaption > 0)
-            f.push(`${t.text} is off camera or under the caption`);
-          if (px.desk > 0 && !(t.px >= px.desk)) f.push(`${t.text} renders at ${t.px}px`);
-        }
-        return h;
-      },
-    ],
-    analytics: [
-      CUES.Analytics + 1.0,
-      (f) => {
-        const c = card("Dose Status Breakdown");
-        const shown = c ? texts(c) : [];
-        if (!has(shown, want.analytics))
-          f.push(`bar reads ${JSON.stringify(shown)}, expected ${JSON.stringify(want.analytics)}`);
-        const missed =
-          c && [...c.querySelectorAll(".bg-danger")].some((e) => parseFloat(e.style.width) > 0);
-        if (sb.missedEvents > 0 && !missed) f.push("no red Missed segment is drawn");
-        return { windowY: __wtWindowY(/^Dose Status Breakdown$/), shown };
-      },
-    ],
-    security: [
-      CUES.Security + 1.5,
-      (f) => {
-        const c = card("Active Sessions");
-        const shown = c ? texts(c) : [];
-        if (!has(shown, want.security))
-          f.push(
-            `sessions read ${JSON.stringify(shown)}, expected ${JSON.stringify(want.security)}`,
-          );
-        return { windowY: __wtWindowY(/^Expires /), shown };
-      },
-    ],
-    phoneBanner: [
-      CUES.Reminders + 1.5,
-      (f) => {
-        const shown = texts(phoneFrame());
-        if (!shown.includes(want.banner))
-          f.push(`banner body is not ${JSON.stringify(want.banner)}`);
-        return { banner: want.banner };
-      },
-    ],
-    phoneBefore: [
-      T_TAP - 0.3,
-      (f, px) => {
-        const r = __wtReport(["header", "due"], "phone");
-        framed(f, r, ["header", "due"], px.phone);
-        if (!has(r.header.text, want.phoneBefore))
-          f.push(`phone header shows ${JSON.stringify(r.header.text)}`);
-        const g = __wtPhone();
-        if (!g.pass) f.push(`phone geometry: ${JSON.stringify(g)}`);
-        return { ...r, geometry: g };
-      },
-    ],
-    phoneAfter: [
-      T_TAP + 1.0,
-      (f, px) => {
-        const r = __wtReport(["header", "due", "done", "offer"], "phone");
-        framed(f, r, ["header", "done", "offer"], px.phone);
-        if (r.due.visibleHeightPx >= 1)
-          f.push(`phone Due card still ${r.due.visibleHeightPx}px tall`);
-        if (!has(r.header.text, want.phoneAfter))
-          f.push(`phone header shows ${JSON.stringify(r.header.text)}`);
-        if (!r.offer.text.includes("Undo"))
-          f.push(`phone offer reads ${JSON.stringify(r.offer.text)}`);
-        // The collapse moves everything below the card up by about 120px, so a
-        // Later row that sat wholly below the clip edge before the tap can
-        // straddle it now. Log now itself is collapsed here, so only the cut
-        // check applies.
-        const g = __wtPhone();
-        if (g.cutRows.length) f.push(`phone rows cut after the tap: ${JSON.stringify(g.cutRows)}`);
-        return { ...r, geometry: g };
-      },
-    ],
-    phoneOfferHeld: [
-      CUES.Outro - 0.05,
-      (f) => {
-        const r = __wtReport(["offer"], "phone");
-        if (r.offer.opacity !== 1)
-          f.push(`phone offer opacity ${r.offer.opacity} just before the Outro`);
-        return r;
-      },
-    ],
+    todayOpening: [CUES.Today + 1.1, (f, px) => {
+      const r = __wtReport(["header", "due"]);
+      framed(f, r, ["header", "due"], px.desk);
+      if (!has(r.header.text, want.deskBefore)) f.push(`header shows ${JSON.stringify(r.header.text)}`);
+      return r;
+    }],
+    panEnd: [CUES.LogNow - 0.05, (f, px) => {
+      const r = __wtReport(["chips"]);
+      framed(f, r, ["chips"], px.desk);
+      return r;
+    }],
+    beforeTap: [T_LOG - 0.1, (f, px) => {
+      const r = __wtReport(["header", "due", "done", "offer"]);
+      framed(f, r, ["header", "due", "done"], px.desk);
+      if (r.offer.opacity !== 0) f.push(`offer opacity ${r.offer.opacity} before the tap`);
+      const ln = __wtLogNow("desk");
+      if (ln.label !== "Log now" || ln.spinnerDeg !== null) f.push(`Log now reads ${JSON.stringify(ln)}`);
+      if (!__wtCursorOnLogNow().onTarget) f.push("the cursor tip is not on Log now");
+      state.logNowWidth = ln.widthPx;
+      state.doneRows = r.done.text.length;
+      return { ...r, logNow: ln };
+    }],
+    spinner: [T_LOG + 0.2, (f, px) => {
+      const r = __wtReport(["due"]);
+      framed(f, r, ["due"], px.desk);
+      const ln = __wtLogNow("desk");
+      const deg = ((360 * (window.__wt.lastT - T_LOG)) / 0.75) % 360;
+      if (ln.label !== "Logging…") f.push(`pending label is ${JSON.stringify(ln.label)}`);
+      if (!(Math.abs(ln.spinnerDeg - deg) < 0.05)) f.push(`spinner at ${ln.spinnerDeg}deg, expected ${deg}`);
+      if (ln.widthPx !== state.logNowWidth) f.push(`Log now is ${ln.widthPx}px wide, was ${state.logNowWidth}px`);
+      return { ...r, logNow: ln };
+    }],
+    afterUpdate: [T_LOG + 0.7, (f, px) => {
+      const r = __wtReport(["header", "due", "done"]);
+      framed(f, r, ["header", "done"], px.desk);
+      if (r.due.visibleHeightPx >= 1) f.push(`Due section still ${r.due.visibleHeightPx}px tall`);
+      if (!has(r.header.text, want.deskAfter)) f.push(`header shows ${JSON.stringify(r.header.text)}`);
+      if (want.deskBefore[0] !== want.deskAfter[0] && r.header.text.includes(want.deskBefore[0])) f.push("old header still shown");
+      if (!(r.done.text.length > state.doneRows)) f.push(`Done shows ${r.done.text.length} strings, ${state.doneRows} before the tap`);
+      return r;
+    }],
+    offerFraming: [T_LOG + 1.5, (f, px) => {
+      const r = __wtReport(["offer"]);
+      framed(f, r, ["offer"], px.desk);
+      if (!r.offer.text.includes("Undo")) f.push(`offer reads ${JSON.stringify(r.offer.text)}`);
+      return r;
+    }],
+    offerHeld: [CUES.Medications - 0.05, (f, px) => {
+      const r = __wtReport(["offer"]);
+      framed(f, r, ["offer"], px.desk);
+      if (r.offer.opacity !== 1) f.push(`offer opacity ${r.offer.opacity} just before the cut`);
+      return r;
+    }],
+    medicationsCut: [CUES.Medications, (f) => {
+      const r = __wtReport(["offer"]);
+      if (r.offer.opacity !== 0) f.push(`offer opacity ${r.offer.opacity} at the cut`);
+      return r;
+    }],
+    historyYesterday: [CUES.History + 1.2, (f, px) => {
+      const h = __wtHistoryYesterday();
+      if (!h.newestFirst) f.push(`Yesterday is not newest first: ${h.times.join(", ")}`);
+      for (const t of h.firstTwo) {
+        if (t.onCamera < 0.999 || t.underCaption > 0) f.push(`${t.text} is off camera or under the caption`);
+        if (px.desk > 0 && !(t.px >= px.desk)) f.push(`${t.text} renders at ${t.px}px`);
+      }
+      return h;
+    }],
+    analytics: [CUES.Analytics + 1.0, (f) => {
+      const c = card("Dose Status Breakdown");
+      const shown = c ? texts(c) : [];
+      if (!has(shown, want.analytics)) f.push(`bar reads ${JSON.stringify(shown)}, expected ${JSON.stringify(want.analytics)}`);
+      const missed = c && [...c.querySelectorAll(".bg-danger")].some((e) => parseFloat(e.style.width) > 0);
+      if (sb.missedEvents > 0 && !missed) f.push("no red Missed segment is drawn");
+      return { windowY: __wtWindowY(/^Dose Status Breakdown$/), shown };
+    }],
+    security: [CUES.Security + 1.5, (f) => {
+      const c = card("Active Sessions");
+      const shown = c ? texts(c) : [];
+      if (!has(shown, want.security)) f.push(`sessions read ${JSON.stringify(shown)}, expected ${JSON.stringify(want.security)}`);
+      return { windowY: __wtWindowY(/^Expires /), shown };
+    }],
+    phoneBanner: [CUES.Reminders + 1.5, (f) => {
+      const shown = texts(phoneFrame());
+      if (!shown.includes(want.banner)) f.push(`banner body is not ${JSON.stringify(want.banner)}`);
+      return { banner: want.banner };
+    }],
+    phoneBefore: [T_TAP - 0.3, (f, px) => {
+      const r = __wtReport(["header", "due"], "phone");
+      framed(f, r, ["header", "due"], px.phone);
+      if (!has(r.header.text, want.phoneBefore)) f.push(`phone header shows ${JSON.stringify(r.header.text)}`);
+      const g = __wtPhone();
+      if (!g.pass) f.push(`phone geometry: ${JSON.stringify(g)}`);
+      return { ...r, geometry: g };
+    }],
+    phoneAfter: [T_TAP + 1.0, (f, px) => {
+      const r = __wtReport(["header", "due", "done", "offer"], "phone");
+      framed(f, r, ["header", "done", "offer"], px.phone);
+      if (r.due.visibleHeightPx >= 1) f.push(`phone Due card still ${r.due.visibleHeightPx}px tall`);
+      if (!has(r.header.text, want.phoneAfter)) f.push(`phone header shows ${JSON.stringify(r.header.text)}`);
+      if (!r.offer.text.includes("Undo")) f.push(`phone offer reads ${JSON.stringify(r.offer.text)}`);
+      // The collapse moves everything below the card up by about 120px, so a
+      // Later row that sat wholly below the clip edge before the tap can
+      // straddle it now. Log now itself is collapsed here, so only the cut
+      // check applies.
+      const g = __wtPhone();
+      if (g.cutRows.length) f.push(`phone rows cut after the tap: ${JSON.stringify(g.cutRows)}`);
+      return { ...r, geometry: g };
+    }],
+    phoneOfferHeld: [CUES.Outro - 0.05, (f) => {
+      const r = __wtReport(["offer"], "phone");
+      if (r.offer.opacity !== 1) f.push(`phone offer opacity ${r.offer.opacity} just before the Outro`);
+      return r;
+    }],
   };
 
   window.__wtMinPx = { desk: 9, phone: 8 };
@@ -11205,7 +11437,7 @@ await (async () => {
     return { name, T, pass: failures.length === 0, failures, details };
   };
   return { shots: Object.keys(SHOTS), want };
-})();
+})()
 ```
 
 Expected: an object `{ shots, want }`. `shots` lists these 15 names:
@@ -11305,6 +11537,7 @@ Record `windowY` in the report. If `windowY` is 984 or less, the element can now
 3. Call `computer` with `{ "action": "left_click", "ref": "<ref>", "action_summary": "Pauses the walkthrough" }`.
 4. Then `javascript_tool`:
 
+<!-- prettier-ignore -->
 ```js
 const fig = document.querySelector('section[aria-labelledby="walkthrough-heading"] figure');
 const btn = fig.querySelector("button");
@@ -11318,7 +11551,7 @@ await new Promise((r) => setTimeout(r, 600));
   frozen: before === JSON.stringify({ logNow: __wtLogNow("desk"), progress: fill.style.width }),
   animations: __wtAnimations(),
   progress: fill.style.width,
-});
+})
 ```
 
 Expected: `{ "label": "Play walkthrough", "running": false, "focused": true, "frozen": true, "animations": [], "progress": "17.5862%" }`.
@@ -11337,6 +11570,7 @@ Next:
 2. Call `computer` with `{ "action": "left_click", "ref": "<ref>", "action_summary": "Resumes the walkthrough" }`.
 3. Then `javascript_tool`:
 
+<!-- prettier-ignore -->
 ```js
 const { T_LOG } = await import("/src/lib/components/walkthrough/timeline.ts");
 const fig = document.querySelector('section[aria-labelledby="walkthrough-heading"] figure');
@@ -11347,7 +11581,7 @@ const fig = document.querySelector('section[aria-labelledby="walkthrough-heading
   origin: window.__wt.origin,
   seek: await __seek(T_LOG + 0.4),
   logNow: __wtLogNow("desk"),
-});
+})
 ```
 
 Expected:
@@ -11384,6 +11618,7 @@ Review Focus 5: `phoneBefore` must pass here, and its `details.geometry` must eq
 
 Call `preview_stop` with the server id from Step 9. Call `resize_window` with `{ "preset": "desktop" }`. Then:
 
+<!-- prettier-ignore -->
 ```bash
 grep -qx '# walkthrough-check throwaway' .env && rm .env
 test ! -e .env && echo "env removed"
@@ -11418,6 +11653,7 @@ When it passes:
 3. Run `npx vitest run tests/unit/walkthrough-dashboard-fidelity.test.ts tests/unit/walkthrough-stage.svelte.test.ts tests/unit/walkthrough-timeline.test.ts`. Expected: all PASS.
 4. Commit on its own. Before running it, replace `<new>` with the real number and pick the true value in each `<a|b>` choice; add the pinning test's path to `git add` if one changed:
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/components/walkthrough/demo-dashboard.ts
 git commit -m "fix(walkthrough): show <new> Later rows on the phone so no row is cut" -m "The <phoneBefore|phoneAfter> browser check at T_TAP <- 0.3|+ 1.0> found a Later row cut through its text by the phone content box's clip edge at the <1024|375>px container. One fewer row keeps every visible row whole, as spec Section 3 requires of PHONE_LATER_ROWS."
@@ -11438,6 +11674,7 @@ git commit -m "fix(walkthrough): show <new> Later rows on the phone so no row is
    2. Mutation proof: put the old cap back in `timeline.ts`. `npx vitest run tests/unit/walkthrough-timeline.test.ts` must FAIL on that assertion. Restore the new cap; it must PASS, including "keeps every desktop shot inside the browser window".
    3. Commit on its own. Replace `<shot>`, `<old>`, `<new>` and the measured sizes with the real values before running it:
 
+<!-- prettier-ignore -->
 ```bash
 git add src/lib/components/walkthrough/timeline.ts tests/unit/walkthrough-timeline.test.ts
 git commit -m "fix(walkthrough): let the <shot> framing zoom to <new>" -m "At the 1024px landing container its primary text measured <before>px, under the 9px floor the shipped shots clear. Raising the cap from <old> to <new> brings it to <after>px with the same framed rects."
@@ -11447,6 +11684,7 @@ git commit -m "fix(walkthrough): let the <shot> framing zoom to <new>" -m "At th
 
 Run each from the worktree root, after Step 19, so that no `.env` exists. The build in particular must not depend on one, as in CI.
 
+<!-- prettier-ignore -->
 ```bash
 test ! -e .env && echo "no .env"
 npx vitest run 2>&1 | tail -5
@@ -11468,6 +11706,7 @@ Expected:
 
 - [ ] **Step 23: Commit the docs**
 
+<!-- prettier-ignore -->
 ```bash
 git add CLAUDE.md CHANGELOG.md
 git commit -m "docs: record how the walkthrough stays true to the dashboard" -m "CLAUDE.md gains one Reusable Components bullet. The walkthrough draws the dashboard from scene-only parts and never mounts the real components. The fidelity test pins its data and text to composeDashboardPageData and the copy helpers. REQUIRED_MARKS and the stage mount test make a missing or misplaced mark fail, instead of silently sending the camera to the wide shot." -m "CHANGELOG [Unreleased] records the redrawn walkthrough under Changed and the 'Last logged ... ago ago' reminder copy under Fixed, and the unreleased Added entry for the walkthrough names its Today and Log now scenes instead of My Day and Quick Log."

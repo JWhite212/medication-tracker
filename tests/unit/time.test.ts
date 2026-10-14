@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatTimeSince,
+  lastLoggedPhrase,
   formatTime,
   formatUserDate,
   startOfDay,
@@ -44,6 +45,42 @@ describe("formatTimeSince", () => {
   it("formats exact hours", () => {
     const oneHourAgo = new Date("2026-04-15T13:30:00Z");
     expect(formatTimeSince(oneHourAgo)).toBe("1h 0m ago");
+  });
+
+  it("measures from the now it is given, not from the clock", () => {
+    // The faked clock says 14:30, which would make this "5m ago". The
+    // reminder sweep and the walkthrough each pass their own instant, so the
+    // parameter has to win.
+    const fiveMinutesBeforeTheClock = new Date("2026-04-15T14:25:00Z");
+    const tenMinutesAfterIt = new Date("2026-04-15T14:35:00Z");
+    expect(formatTimeSince(fiveMinutesBeforeTheClock, tenMinutesAfterIt)).toBe("10m ago");
+  });
+});
+
+describe("lastLoggedPhrase", () => {
+  // No fake timers, on purpose: every case passes `now`, so a version that
+  // fell back to the wall clock would measure from whenever the suite runs
+  // and fail all of them.
+  const NOW = new Date("2026-09-24T10:12:00.000Z");
+  const SECOND = 1_000;
+  const MINUTE = 60 * SECOND;
+  const HOUR = 60 * MINUTE;
+  const before = (ms: number) => new Date(NOW.getTime() - ms);
+
+  // Each pair straddles one of formatTimeSince's unit boundaries.
+  it.each([
+    { gap: "59s", ms: 59 * SECOND, expected: "Last logged just now" },
+    { gap: "60s", ms: 60 * SECOND, expected: "Last logged 1m ago" },
+    { gap: "59m", ms: 59 * MINUTE, expected: "Last logged 59m ago" },
+    { gap: "60m", ms: 60 * MINUTE, expected: "Last logged 1h 0m ago" },
+    { gap: "23h59m", ms: 23 * HOUR + 59 * MINUTE, expected: "Last logged 23h 59m ago" },
+    { gap: "24h", ms: 24 * HOUR, expected: "Last logged 1d ago" },
+  ])("$gap before now reads $expected", ({ ms, expected }) => {
+    expect(lastLoggedPhrase(before(ms), NOW)).toBe(expected);
+  });
+
+  it('reads "Not yet logged" when nothing has ever been logged', () => {
+    expect(lastLoggedPhrase(null, NOW)).toBe("Not yet logged");
   });
 });
 

@@ -6,11 +6,15 @@ let nextSendResult: {
   error: { name: string; message: string } | null;
 } | null = null;
 let nextSendThrows: Error | null = null;
+// Every payload handed to `resend.emails.send`, so a test can read the html
+// the recipient would actually get rather than only the result.
+const sentPayloads: Array<{ to: string; subject: string; html: string }> = [];
 
 vi.mock("resend", () => ({
   Resend: class {
     emails = {
-      send: async () => {
+      send: async (payload: { to: string; subject: string; html: string }) => {
+        sentPayloads.push(payload);
         if (nextSendThrows) throw nextSendThrows;
         return nextSendResult;
       },
@@ -39,6 +43,7 @@ const {
 beforeEach(() => {
   nextSendResult = null;
   nextSendThrows = null;
+  sentPayloads.length = 0;
 });
 
 describe("isEmailConfigured", () => {
@@ -85,11 +90,58 @@ describe("EmailResult mapping", () => {
       data: null,
       error: { name: "validation_error", message: "Invalid recipient" },
     };
-    const r = await sendReminderEmail("victim@example.test", "Aspirin", "yesterday");
+    const r = await sendReminderEmail(
+      "victim@example.test",
+      "Aspirin",
+      new Date("2026-09-23T10:12:00.000Z"),
+      new Date("2026-09-24T10:12:00.000Z"),
+    );
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.message).not.toContain("victim@example.test");
       expect(r.message).not.toContain("<p>");
     }
+  });
+});
+
+describe("sendReminderEmail copy", () => {
+  // The clause is `lastLoggedPhrase` with its first letter lower-cased. These
+  // read the html actually handed to Resend: the template once added its own
+  // " ago" to a label that already ended in one.
+  const NOW = new Date("2026-09-24T10:12:00.000Z");
+  const MINUTE = 60_000;
+
+  it.each([
+    { gap: "30 seconds", ms: 30_000, clause: "last logged just now" },
+    { gap: "5 minutes", ms: 5 * MINUTE, clause: "last logged 5m ago" },
+    { gap: "2 hours 3 minutes", ms: (2 * 60 + 3) * MINUTE, clause: "last logged 2h 3m ago" },
+    { gap: "25 hours", ms: 25 * 60 * MINUTE, clause: "last logged 1d ago" },
+  ])("$gap after the last event says $clause", async ({ ms, clause }) => {
+    nextSendResult = { data: { id: "msg_r" }, error: null };
+
+    const r = await sendReminderEmail(
+      "u@example.test",
+      "Ibuprofen",
+      new Date(NOW.getTime() - ms),
+      NOW,
+    );
+
+    expect(r).toEqual({ ok: true, id: "msg_r" });
+    expect(sentPayloads).toHaveLength(1);
+    expect(sentPayloads[0].to).toBe("u@example.test");
+    // The whole first paragraph, full stop included, so nothing can follow
+    // the clause.
+    expect(sentPayloads[0].html).toContain(`<p><strong>Ibuprofen</strong> is due — ${clause}.</p>`);
+  });
+
+  it('says "not yet logged" when nothing has ever been logged', async () => {
+    nextSendResult = { data: { id: "msg_r" }, error: null };
+
+    await sendReminderEmail("u@example.test", "Ibuprofen", null, NOW);
+
+    expect(sentPayloads).toHaveLength(1);
+    expect(sentPayloads[0].html).toContain(
+      "<p><strong>Ibuprofen</strong> is due — not yet logged.</p>",
+    );
   });
 });

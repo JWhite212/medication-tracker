@@ -9,7 +9,7 @@ import {
 } from "$lib/server/db/schema";
 import { sendReminderEmail, sendLowInventoryEmail, isEmailConfigured } from "./email";
 import { sendPushNotification, hasPushSubscriptions } from "./push";
-import { formatTimeSince } from "$lib/utils/time";
+import { lastLoggedPhrase } from "$lib/utils/time";
 import { lowInventoryTag, overdueTag } from "$lib/utils/push-payload";
 import {
   computeOverdueSlot,
@@ -165,9 +165,9 @@ export async function checkOverdueMedications() {
 
     const emailConfigured =
       channels.overdueEmail && emailGloballyConfigured && row.userEmailVerified;
-    // "logged", not "taken": the anchor now counts skips, so a reminder can
-    // follow a skip and asserting the dose was taken would be false.
-    const sinceLabel = row.lastEventAt ? formatTimeSince(new Date(row.lastEventAt)) : "never";
+    // Both channels word this through `lastLoggedPhrase`, from the anchor and
+    // the same tick `now` that found the slot overdue: one clock per tick.
+    const lastEventAt = row.lastEventAt ? new Date(row.lastEventAt) : null;
 
     // Intent passes the raw push opt-in, NOT the post-probe value: the
     // probe runs inside the callback below and may itself throw. Using
@@ -187,7 +187,7 @@ export async function checkOverdueMedications() {
         // (e.g. the subscription lookup hitting a DB blip) doesn't
         // poison an already-successful email send.
         if (emailConfigured) {
-          out.email = await sendReminderEmail(row.userEmail, row.medicationName, sinceLabel);
+          out.email = await sendReminderEmail(row.userEmail, row.medicationName, lastEventAt, now);
         }
         // Push is configured when the user has opted in AND has an
         // active subscription on at least one device.
@@ -198,9 +198,7 @@ export async function checkOverdueMedications() {
         if (pushConfigured) {
           out.push = await sendPushNotification(row.userId, {
             title: `${row.medicationName} overdue`,
-            body: row.lastEventAt
-              ? `Last logged ${formatTimeSince(new Date(row.lastEventAt))} ago`
-              : "Not yet logged",
+            body: lastLoggedPhrase(lastEventAt, now),
             url: "/dashboard",
             tag: overdueTag(row.medicationId),
             // Same tag as the previous nag, so the tray holds one entry

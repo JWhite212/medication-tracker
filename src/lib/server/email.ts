@@ -5,6 +5,7 @@ import { env } from "$env/dynamic/private";
 // own URL).
 import { env as publicEnv } from "$env/dynamic/public";
 import { dev } from "$app/environment";
+import { lastLoggedPhrase } from "$lib/utils/time";
 
 export type EmailErrorReason =
   | "not_configured"
@@ -158,22 +159,23 @@ export async function sendReminderEmail(
   email: string,
   medicationName: string,
   /**
-   * How long since the dose was last HANDLED — taken or skipped — or
-   * "never". The caller's anchor counts skips, so the copy below says
-   * "logged" rather than "taken": a reminder can follow a skip, and
-   * claiming the dose was taken would be false.
+   * When the dose was last HANDLED — taken or skipped — or null when nothing
+   * ever was (a fixed-time schedule reminds without an anchor).
    */
-  lastLogged: string,
+  lastEventAt: Date | null,
+  /** The sweep's tick instant, the same one that found the slot overdue. */
+  now: Date,
 ): Promise<EmailResult> {
-  // A fixed-time schedule reminds even when nothing was ever logged, so the
-  // caller can pass "never" — which does not read as a duration.
-  const since =
-    lastLogged === "never" ? "not logged yet" : `last logged ${escHtml(lastLogged)} ago`;
+  // The push body's sentence, mid-sentence here: "is due — last logged 5m
+  // ago." `lastLoggedPhrase` owns the wording, including its "ago", so the
+  // template adds nothing after it.
+  const phrase = lastLoggedPhrase(lastEventAt, now);
+  const since = phrase.charAt(0).toLowerCase() + phrase.slice(1);
   return safeSend({
     from: env.EMAIL_FROM ?? FROM_FALLBACK,
     to: email,
     subject: `Reminder: ${medicationName}`,
-    html: `<p><strong>${escHtml(medicationName)}</strong> is due — ${since}.</p>
+    html: `<p><strong>${escHtml(medicationName)}</strong> is due — ${escHtml(since)}.</p>
            <p>Log in to record your dose.</p>`,
   });
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
   // routes/(app)/dashboard/+page.svelte at 08:02: Lisinopril is due now and is
-  // logged from the Quick Log bar during the QuickLog shot.
+  // logged from the Quick Log bar during the LogNow shot.
   import { getMedicationBackground, getReadableTextColor } from "$lib/utils/medication-style";
   import { formatDueIn, type TimeFormat } from "$lib/utils/time";
   import { MEDICATIONS, MEDICATION_BY_ID, daySlots, storyClock } from "../demo-data";

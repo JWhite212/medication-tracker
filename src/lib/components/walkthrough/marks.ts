@@ -8,7 +8,9 @@ import { getContext, setContext } from "svelte";
 import type { Action } from "svelte/action";
 import type { Rect } from "./timeline";
 
-const CONTEXT_KEY = Symbol("walkthrough-marks");
+// Exported, like dose-write-lock's DOSE_WRITE_LOCK, so a test can mount a
+// marked component with `context: new Map([[MARKS_CONTEXT, registry]])`.
+export const MARKS_CONTEXT = Symbol("walkthrough-marks");
 
 export type MarkRegistry = Map<string, HTMLElement>;
 
@@ -25,12 +27,12 @@ export function createMarkRegistry(): MarkRegistry {
 }
 
 export function provideMarks(registry: MarkRegistry): void {
-  setContext(CONTEXT_KEY, registry);
+  setContext(MARKS_CONTEXT, registry);
 }
 
 /** Returns an action that registers its node under the given key. */
 export function useMark(): Action<HTMLElement, string | undefined> {
-  const registry = getContext<MarkRegistry | undefined>(CONTEXT_KEY);
+  const registry = getContext<MarkRegistry | undefined>(MARKS_CONTEXT);
   return (node, key) => {
     let current = key;
     if (registry && current) registry.set(current, node);

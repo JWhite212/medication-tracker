@@ -96,7 +96,7 @@
         See it in action
       </h2>
       <p class="text-text-secondary mx-auto mt-2 max-w-lg">
-        Forty seconds, ten features, from the first dose of the day to an overdue reminder.
+        Under a minute, ten features, from the first dose of the day to an overdue reminder.
       </p>
       <div class="mt-8">
         <WalkthroughVideo />

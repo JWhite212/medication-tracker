@@ -1,12 +1,22 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { render } from "svelte/server";
+import WalkthroughVideo from "$lib/components/walkthrough/WalkthroughVideo.svelte";
+import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
+import { ssrDocument } from "./helpers/axe-ssr";
+import { textOf } from "./helpers/dom-names";
 import {
   CUES,
   LOWER_THIRDS,
+  REQUIRED_MARKS,
   SCENES,
   STAGE_H,
   STAGE_W,
   TOTAL_DURATION,
+  T_LOG,
+  T_TAP,
   WIN_H,
   WIN_W,
   activeCaption,
@@ -30,6 +40,32 @@ const CY = 421;
 
 /** Sample every 20ms across the loop. */
 const samples = Array.from({ length: Math.ceil(TOTAL_DURATION / 0.02) }, (_, i) => i * 0.02);
+
+/**
+ * The measurements, wrapped so every key read off them lands in `read`. Reads
+ * are recorded rather than grepped from timeline.ts, because a key built at
+ * runtime ("m.card" + i) never appears in the source as a literal.
+ */
+function recordingMeasurements(base: Measurements, read: Set<string>): Measurements {
+  return new Proxy(base, {
+    get(target, key, receiver) {
+      if (typeof key === "string") read.add(key);
+      return Reflect.get(target, key, receiver);
+    },
+    has(target, key) {
+      if (typeof key === "string") read.add(key);
+      return Reflect.has(target, key);
+    },
+  });
+}
+
+/** A repo file's text with whitespace squashed, so prettier's wrapping cannot matter. */
+function source(rel: string): string {
+  return readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8").replace(
+    /\s+/g,
+    " ",
+  );
+}
 
 // A plausible measured layout, so framing code runs its real branches rather
 // than the wide-shot fallback.
@@ -74,6 +110,32 @@ describe("walkthrough scenes", () => {
     expect(TOTAL_DURATION).toBeCloseTo(expected, 6);
     expect(TOTAL_DURATION).toBe(43.5);
   });
+
+  // Spec D2: the same twelve scenes, durations and 43.5s loop. Two are renamed
+  // for what they now show, the Today page and its Log now button.
+  it("keeps twelve scenes and their durations, named for what each one shows", () => {
+    expect(SCENES.map((s) => [s.name, s.dur])).toEqual([
+      ["Title", 2.5],
+      ["Today", 3.5],
+      ["LogNow", 4],
+      ["Medications", 3.5],
+      ["Timers", 3.5],
+      ["AddMedication", 4],
+      ["History", 3.5],
+      ["Analytics", 4],
+      ["Security", 3.5],
+      ["Export", 3.5],
+      ["Reminders", 5],
+      ["Outro", 3],
+    ]);
+  });
+
+  it("keys the two log beats to their own scenes", () => {
+    expect(T_LOG).toBeCloseTo(CUES.LogNow + 1.45, 9);
+    expect(T_TAP).toBeCloseTo(CUES.Reminders + 3.0, 9);
+    expect(T_LOG).toBeLessThan(CUES.Medications);
+    expect(T_TAP).toBeLessThan(CUES.Outro);
+  });
 });
 
 describe("computeFrame", () => {
@@ -86,7 +148,7 @@ describe("computeFrame", () => {
 
   it("follows the shot list: title, desktop, phone, title", () => {
     expect(computeFrame(0, MEASURED).kind).toBe("title");
-    expect(computeFrame(CUES.MyDay + 0.1, MEASURED).kind).toBe("desk");
+    expect(computeFrame(CUES.Today + 0.1, MEASURED).kind).toBe("desk");
     expect(computeFrame(CUES.Export + 1, MEASURED).kind).toBe("desk");
     expect(computeFrame(CUES.Reminders + 0.1, MEASURED).kind).toBe("phone");
     expect(computeFrame(CUES.Outro + 0.1, MEASURED).kind).toBe("title");
@@ -94,7 +156,7 @@ describe("computeFrame", () => {
 
   it("shows each desktop page during its own scenes", () => {
     const pageAt = (t: number) => computeFrame(t, MEASURED).page;
-    expect(pageAt(CUES.QuickLog + 1)).toBe("dash");
+    expect(pageAt(CUES.LogNow + 1)).toBe("dash");
     expect(pageAt(CUES.Medications + 1)).toBe("meds");
     expect(pageAt(CUES.Timers + 1)).toBe("meds");
     expect(pageAt(CUES.AddMedication + 1)).toBe("add");
@@ -133,13 +195,22 @@ describe("computeFrame", () => {
     }
   });
 
-  it("logs Lisinopril exactly once, during Quick Log", () => {
-    const before = computeFrame(CUES.QuickLog + 1, MEASURED).dashboard;
-    const after = computeFrame(CUES.QuickLog + 2.5, MEASURED).dashboard;
+  it("logs Lisinopril exactly once, during Log now", () => {
+    const before = computeFrame(CUES.LogNow + 1, MEASURED).dashboard;
+    const after = computeFrame(CUES.LogNow + 2.5, MEASURED).dashboard;
     expect(before.count).toBe(2);
     expect(before.lisinoprilDone).toBe(0);
     expect(after.count).toBe(3);
     expect(after.lisinoprilDone).toBeCloseTo(1, 3);
+  });
+
+  // T_LOG and T_TAP are the instants computeFrame animates around, not two
+  // numbers that merely agree with it: the click lands on one, the tap on the other.
+  it("clicks to log at T_LOG on the desktop and taps at T_TAP on the phone", () => {
+    expect(computeFrame(T_LOG - 0.01, MEASURED).cursor?.ripple).toBeNull();
+    expect(computeFrame(T_LOG, MEASURED).cursor?.ripple?.p).toBe(0);
+    expect(computeFrame(T_TAP - 0.2, MEASURED).phone.touch?.press).toBe(0);
+    expect(computeFrame(T_TAP, MEASURED).phone.touch?.press).toBe(1);
   });
 
   it("types the new medication a character at a time and never past its end", () => {
@@ -155,8 +226,8 @@ describe("computeFrame", () => {
 
   it("only shows a cursor on the shots that click something", () => {
     const withCursor = (t: number) => computeFrame(t, MEASURED).cursor !== null;
-    expect(withCursor(CUES.MyDay + 1)).toBe(false);
-    expect(withCursor(CUES.QuickLog + 1)).toBe(true);
+    expect(withCursor(CUES.Today + 1)).toBe(false);
+    expect(withCursor(CUES.LogNow + 1)).toBe(true);
     expect(withCursor(CUES.Medications + 1)).toBe(false);
     expect(withCursor(CUES.AddMedication + 1)).toBe(true);
     expect(withCursor(CUES.History + 1)).toBe(true);
@@ -206,7 +277,7 @@ describe("lower thirds", () => {
   it("never shows a caption on the title card or across a cut", () => {
     for (const t of samples) {
       const caption = activeCaption(t);
-      if (t < CUES.MyDay || t >= CUES.Outro) {
+      if (t < CUES.Today || t >= CUES.Outro) {
         expect(caption).toBeNull();
         continue;
       }
@@ -216,6 +287,110 @@ describe("lower thirds", () => {
       expect(caption.opacity).toBeGreaterThanOrEqual(0);
       expect(caption.opacity).toBeLessThanOrEqual(1);
     }
+  });
+
+  // Spec Section 1's table, verbatim. Captions 03 and 05-09 were checked and are true.
+  it("says what the redrawn walkthrough shows", () => {
+    const byNumber = new Map(LOWER_THIRDS.map((l) => [l.number, l]));
+    expect(byNumber.get("01")).toMatchObject({
+      scene: "Today",
+      until: "LogNow",
+      title: "Today",
+      line: "What's due now, what's done and what's next.",
+      tech: "Every row on the page decided by one matcher, on the server",
+    });
+    expect(byNumber.get("02")).toMatchObject({
+      scene: "LogNow",
+      until: "Medications",
+      title: "Log now",
+      line: "One tap to log, and Undo for ten minutes.",
+      tech: "Single-fire writes, re-checked under a row lock on the server",
+    });
+    expect(byNumber.get("04")).toMatchObject({
+      title: "Live timers",
+      line: "When each medication was last taken, always current.",
+      tech: "Recomputed every minute, with a visibilitychange catch-up",
+    });
+    expect(byNumber.get("10")).toMatchObject({
+      title: "Reminders",
+      line: "Overdue reminders by push and email.",
+      tech: "Web Push on a half-hourly daytime sweep, with idempotent dedupe keys",
+    });
+  });
+
+  // Review Focus 3. Each phrase was true once and is not now: since #170 the
+  // dashboard has no "My Day" grouping and calls its chips "Log something
+  // else", no page has shown a next-due time since 0b8c95f, and the reminder
+  // sweep is GitHub Actions' reminder-tick, with Vercel Cron a daily backstop.
+  it("never names a feature the app no longer has", () => {
+    for (const item of LOWER_THIRDS) {
+      const said = `${item.title} ${item.line} ${item.tech}`.toLowerCase();
+      for (const stale of ["my day", "quick log", "next due", "vercel cron"]) {
+        expect(said, `caption ${item.number} says "${stale}"`).not.toContain(stale);
+      }
+    }
+  });
+
+  // Two captions make claims about the code. Each is tied to the thing it
+  // describes, so changing that thing fails here until the caption follows.
+  it("keeps its claims about the Undo window and the reminder sweep true", () => {
+    const logNow = LOWER_THIRDS.find((l) => l.number === "02");
+    expect(logNow?.line).toContain("Undo for ten minutes");
+    expect(DOSE_UNDO_WINDOW_MS).toBe(10 * 60_000);
+    const reminders = LOWER_THIRDS.find((l) => l.number === "10");
+    expect(reminders?.tech).toContain("half-hourly daytime sweep");
+    expect(source(".github/workflows/reminder-tick.yml")).toContain('cron: "*/30 6-22 * * *"');
+  });
+});
+
+describe("REQUIRED_MARKS", () => {
+  // A mark computeFrame reads but nobody registered sends the camera to the
+  // wide shot and the cursor to the window centre, silently. The list is the
+  // contract between computeFrame and the stage's use:mark registrations, so it
+  // must be exactly the keys computeFrame reads: measured or not, because a key
+  // read only on the fallback path is still a key the frame depends on.
+  it("lists exactly the mark keys computeFrame reads, over the whole loop", () => {
+    const read = new Set<string>();
+    const bases: Measurements[] = [MEASURED, {}];
+    for (const base of bases) {
+      const measurements = recordingMeasurements(base, read);
+      for (const t of samples) computeFrame(t, measurements);
+    }
+    expect([...read].sort()).toEqual([...REQUIRED_MARKS].sort());
+  });
+
+  it("lists each key once", () => {
+    expect(new Set(REQUIRED_MARKS).size).toBe(REQUIRED_MARKS.length);
+  });
+
+  // Otherwise a framing test could be running on the wide-shot fallback.
+  it("is exactly what the MEASURED fixture measures", () => {
+    expect(Object.keys(MEASURED).sort()).toEqual([...REQUIRED_MARKS].sort());
+  });
+});
+
+describe("the screen-reader text", () => {
+  // Review Focus 3: the sr-only figcaption is the walkthrough for anyone not
+  // watching it, and it is built from LOWER_THIRDS. Rendered, not read from
+  // source, so a change to how the list is built is caught too.
+  it("lists every lower third as its title and line, in order", () => {
+    const doc = ssrDocument(render(WalkthroughVideo).body);
+    const items = [...doc.querySelectorAll("figcaption ol > li")].map(textOf);
+    expect(items).toEqual(LOWER_THIRDS.map((l) => `${l.title}: ${l.line}`));
+  });
+});
+
+describe("the landing page", () => {
+  // The sentence under "See it in action" claims the loop's length and feature count.
+  it("says the walkthrough is under a minute and ten features, which it is", () => {
+    const intro = /See it in action <\/h2> <p[^>]*> (.*?) <\/p>/.exec(
+      source("src/routes/+page.svelte"),
+    )?.[1];
+    expect(intro).toBe(
+      "Under a minute, ten features, from the first dose of the day to an overdue reminder.",
+    );
+    expect(TOTAL_DURATION).toBeLessThan(60);
+    expect(LOWER_THIRDS).toHaveLength(10);
   });
 });
 

@@ -14,8 +14,8 @@ export type Measurements = Partial<Record<string, Rect>>;
 // so there is exactly one place that decides when anything happens.
 export const SCENES = [
   { name: "Title", dur: 2.5 },
-  { name: "MyDay", dur: 3.5 },
-  { name: "QuickLog", dur: 4 },
+  { name: "Today", dur: 3.5 },
+  { name: "LogNow", dur: 4 },
   { name: "Medications", dur: 3.5 },
   { name: "Timers", dur: 3.5 },
   { name: "AddMedication", dur: 4 },
@@ -44,6 +44,12 @@ function deriveCues(): { cues: Record<SceneName, number>; total: number } {
 const derived = deriveCues();
 export const CUES: Readonly<Record<SceneName, number>> = derived.cues;
 export const TOTAL_DURATION = derived.total;
+
+// The two log beats. The desktop cursor clicks to log Lisinopril at T_LOG, and
+// the phone's fingertip taps to log Vitamin D at T_TAP. Exported so the tests
+// and the scenes key off the same instants computeFrame animates around.
+export const T_LOG = CUES.LogNow + 1.45;
+export const T_TAP = CUES.Reminders + 3.0;
 
 // ── Motion ──
 // The only three easing helpers in the piece. `enter` eases out (things
@@ -159,22 +165,22 @@ export type LowerThird = {
 
 export const LOWER_THIRDS: readonly LowerThird[] = [
   {
-    scene: "MyDay",
-    until: "QuickLog",
+    scene: "Today",
+    until: "LogNow",
     delay: 0.9,
     number: "01",
-    title: "My Day",
-    line: "Today's doses, grouped by time of day.",
-    tech: "Interval, fixed-time and as-needed schedules",
+    title: "Today",
+    line: "What's due now, what's done and what's next.",
+    tech: "Every row on the page decided by one matcher, on the server",
   },
   {
-    scene: "QuickLog",
+    scene: "LogNow",
     until: "Medications",
     delay: 0.15,
     number: "02",
-    title: "Quick Log",
-    line: "Log a dose with a single tap.",
-    tech: "Server-first SvelteKit form actions",
+    title: "Log now",
+    line: "One tap to log, and Undo for ten minutes.",
+    tech: "Single-fire writes, re-checked under a row lock on the server",
   },
   {
     scene: "Medications",
@@ -191,7 +197,7 @@ export const LOWER_THIRDS: readonly LowerThird[] = [
     delay: 0.15,
     number: "04",
     title: "Live timers",
-    line: "Last taken and next due for every medication.",
+    line: "When each medication was last taken, always current.",
     tech: "Recomputed every minute, with a visibilitychange catch-up",
   },
   {
@@ -246,7 +252,7 @@ export const LOWER_THIRDS: readonly LowerThird[] = [
     number: "10",
     title: "Reminders",
     line: "Overdue reminders by push and email.",
-    tech: "Web Push via Vercel Cron, with idempotent dedupe keys",
+    tech: "Web Push on a half-hourly daytime sweep, with idempotent dedupe keys",
   },
 ];
 
@@ -324,6 +330,52 @@ function pressAt(T: number, click: number): number {
 }
 
 /**
+ * Every mark key computeFrame reads. A key missing from the measurements is not
+ * an error: the camera falls back to the wide shot and the cursor to the window
+ * centre. So tests/unit/walkthrough-timeline.test.ts records every key
+ * computeFrame actually reads over the whole loop, and fails unless the set is
+ * exactly this list. A change that reads a new key lists it here and registers
+ * it in the stage with use:mark.
+ */
+export const REQUIRED_MARKS: readonly string[] = [
+  // Dashboard, and the toast in the app shell's overlay
+  "d.page",
+  "d.strip",
+  "d.morning",
+  "d.evening",
+  "d.night",
+  "d.quick",
+  "d.lisPill",
+  "o.toast",
+  // Medications
+  "m.card0",
+  "m.card1",
+  "m.card2",
+  "m.card3",
+  // Add medication
+  "a.h1",
+  "a.name",
+  "a.dose",
+  "a.amount",
+  "a.unit",
+  "a.category",
+  // History
+  "l.h1",
+  "l.form",
+  "l.check",
+  // Analytics
+  "n.stats",
+  "n.heatTitle",
+  "n.heatGrid",
+  // Security and export
+  "s.twofa",
+  "x.export",
+  "x.download",
+  // Phone
+  "p.vitdLog",
+];
+
+/**
  * Everything on screen at time T, given element rects measured from the
  * rendered app shell (keys prefixed "d.", "m.", "a.", "l.", "n.", "s.", "x.",
  * "o.") and phone ("p."). Missing rects fall back to the wide shot, so the
@@ -340,11 +392,9 @@ export function computeFrame(T: number, M: Measurements): Frame {
   const at = (r: Rect | null, fx = 0.5, fy = 0.5): Point =>
     r ? { x: r.x + r.w * fx, y: r.y + r.h * fy } : { x: 720, y: 492 };
 
-  // Key moments, all keyed to scene cues.
-  const tLog = c.QuickLog + 1.45;
+  // Key moments, all keyed to scene cues. The two log beats are T_LOG and T_TAP.
   const tCheck = c.History + 1.3;
   const tDownload = c.Export + 1.5;
-  const tTap = c.Reminders + 3.0;
   const A = c.AddMedication;
 
   const dPage = M["d.page"];
@@ -359,20 +409,20 @@ export function computeFrame(T: number, M: Measurements): Frame {
   let camera = WIDE;
   let cursorPath: { keys: Array<readonly [number, Point]>; clicks: number[] } | null = null;
 
-  if (T < c.MyDay || T >= c.Outro) {
+  if (T < c.Today || T >= c.Outro) {
     kind = "title";
   } else if (T >= c.Reminders) {
     kind = "phone";
-  } else if (T < c.MyDay + 0.9) {
-    camera = lerpCam(WIDE, zoom(WIDE, 1.04), MOTION.drift(T, c.MyDay, 0.9));
-  } else if (T < c.QuickLog) {
+  } else if (T < c.Today + 0.9) {
+    camera = lerpCam(WIDE, zoom(WIDE, 1.04), MOTION.drift(T, c.Today, 0.9));
+  } else if (T < c.LogNow) {
     // Open on the summary and morning group, then pan down the timeline.
-    const myDayScroll = dPage ? Math.max(0, Math.min(dPage.h - 900, 220)) : 0;
-    const p = MOTION.move(T, c.MyDay + 1.1, c.QuickLog - c.MyDay - 1.2);
-    scroll = myDayScroll * p;
+    const todayScroll = dPage ? Math.max(0, Math.min(dPage.h - 900, 220)) : 0;
+    const p = MOTION.move(T, c.Today + 1.1, c.LogNow - c.Today - 1.2);
+    scroll = todayScroll * p;
     const from = fitCamera(unionRects(R("d.strip"), R("d.morning")), 28, 1.9);
     const to = fitCamera(
-      unionRects(R("d.evening", myDayScroll), R("d.night", myDayScroll)),
+      unionRects(R("d.evening", todayScroll), R("d.night", todayScroll)),
       28,
       1.9,
     );
@@ -380,20 +430,16 @@ export function computeFrame(T: number, M: Measurements): Frame {
   } else if (T < c.Medications) {
     scroll = quickScroll;
     const base = fitCamera(unionRects(R("d.quick", quickScroll), R("o.toast")), 30, 2.0);
-    camera = lerpCam(
-      base,
-      zoom(base, 1.05),
-      MOTION.drift(T, c.QuickLog, c.Medications - c.QuickLog),
-    );
+    camera = lerpCam(base, zoom(base, 1.05), MOTION.drift(T, c.LogNow, c.Medications - c.LogNow));
     const pill = at(R("d.lisPill", quickScroll), 0.42, 0.62);
     cursorPath = {
       keys: [
-        [c.QuickLog, { x: pill.x + 230, y: pill.y + 170 }],
-        [c.QuickLog + 1.05, pill],
-        [tLog + 0.35, pill],
-        [tLog + 1.3, { x: pill.x + 70, y: pill.y + 95 }],
+        [c.LogNow, { x: pill.x + 230, y: pill.y + 170 }],
+        [c.LogNow + 1.05, pill],
+        [T_LOG + 0.35, pill],
+        [T_LOG + 1.3, { x: pill.x + 70, y: pill.y + 95 }],
       ],
-      clicks: [tLog],
+      clicks: [T_LOG],
     };
   } else if (T < c.Timers) {
     page = "meds";
@@ -510,8 +556,8 @@ export function computeFrame(T: number, M: Measurements): Frame {
     ? {
         x: phoneLog.x + phoneLog.w / 2,
         y: phoneLog.y + phoneLog.h / 2,
-        opacity: MOTION.enter(T, tTap - 0.4, 0.2) * (1 - MOTION.enter(T, tTap + 0.1, 0.3)),
-        press: T < tTap ? MOTION.enter(T, tTap - 0.15, 0.15) : 1 - MOTION.enter(T, tTap, 0.15),
+        opacity: MOTION.enter(T, T_TAP - 0.4, 0.2) * (1 - MOTION.enter(T, T_TAP + 0.1, 0.3)),
+        press: T < T_TAP ? MOTION.enter(T, T_TAP - 0.15, 0.15) : 1 - MOTION.enter(T, T_TAP, 0.15),
       }
     : null;
 
@@ -522,23 +568,23 @@ export function computeFrame(T: number, M: Measurements): Frame {
     camera,
     cursor,
     dashboard: {
-      count: T >= tLog + 0.15 ? 3 : 2,
-      lisinoprilDone: MOTION.enter(T, tLog + 0.15, 0.3),
-      labelGone: MOTION.enter(T, tLog + 0.15, 0.3),
-      entry: MOTION.enter(T, tLog + 0.2, 0.4),
-      pillHover: T >= c.QuickLog + 1.0 && T < tLog + 0.45,
-      pillPress: pressAt(T, tLog),
-      flash: T >= tLog && T < tLog + 0.6 ? MOTION.enter(T, tLog, 0.6) : 0,
+      count: T >= T_LOG + 0.15 ? 3 : 2,
+      lisinoprilDone: MOTION.enter(T, T_LOG + 0.15, 0.3),
+      labelGone: MOTION.enter(T, T_LOG + 0.15, 0.3),
+      entry: MOTION.enter(T, T_LOG + 0.2, 0.4),
+      pillHover: T >= c.LogNow + 1.0 && T < T_LOG + 0.45,
+      pillPress: pressAt(T, T_LOG),
+      flash: T >= T_LOG && T < T_LOG + 0.6 ? MOTION.enter(T, T_LOG, 0.6) : 0,
       // Tailwind's animate-pulse (2s cycle) on the "Due now" label, driven by
       // T so it stays frame-accurate and pauses with the video.
       pulse: kind === "desk" && page === "dash" ? 0.75 + 0.25 * Math.cos(Math.PI * T) : 1,
     },
     toast:
-      T < tLog + 0.2
+      T < T_LOG + 0.2
         ? 0
-        : T < tLog + 5.2
-          ? MOTION.enter(T, tLog + 0.2, 0.3)
-          : 1 - MOTION.enter(T, tLog + 5.2, 0.3),
+        : T < T_LOG + 5.2
+          ? MOTION.enter(T, T_LOG + 0.2, 0.3)
+          : 1 - MOTION.enter(T, T_LOG + 5.2, 0.3),
     medicationsLoad: Math.max(0, Math.min(3, T - c.Medications)),
     tick: MOTION.enter(T, c.Timers + 1.6, 0.35),
     addForm: {
@@ -556,15 +602,15 @@ export function computeFrame(T: number, M: Measurements): Frame {
     phone: {
       // Slides down from above the status bar, then back up out of view.
       bannerY: -150 * (1 - MOTION.enter(T, R0 + 0.5, 0.45)) - 170 * MOTION.move(T, R0 + 2.3, 0.35),
-      vitaminDDone: MOTION.enter(T, tTap, 0.3),
-      toast: T < tTap + 0.15 ? 0 : MOTION.enter(T, tTap + 0.15, 0.3),
+      vitaminDDone: MOTION.enter(T, T_TAP, 0.3),
+      toast: T < T_TAP + 0.15 ? 0 : MOTION.enter(T, T_TAP + 0.15, 0.3),
       touch,
       scale: 1.08 + 0.04 * MOTION.drift(T, R0, c.Outro - R0),
     },
     // The outro ends at 1.0, exactly where the title starts, so the loop is seamless.
     titleScale:
-      T < c.MyDay
-        ? 1 + 0.03 * MOTION.drift(T, 0, c.MyDay)
+      T < c.Today
+        ? 1 + 0.03 * MOTION.drift(T, 0, c.Today)
         : 0.97 + 0.03 * MOTION.drift(T, c.Outro, TOTAL_DURATION - c.Outro),
     outroExtras:
       T >= c.Outro

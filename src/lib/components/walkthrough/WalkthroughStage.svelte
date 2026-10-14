@@ -172,7 +172,11 @@
     </div>
 
     <!-- Phone -->
-    <div class="absolute inset-0" style:visibility={frame.kind === "phone" ? "visible" : "hidden"}>
+    <div
+      class="absolute inset-0"
+      data-stage-surface="phone"
+      style:visibility={frame.kind === "phone" ? "visible" : "hidden"}
+    >
       <div
         class="absolute h-[874px] w-[402px]"
         style:left="{1330 - 201}px"

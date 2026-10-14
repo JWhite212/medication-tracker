@@ -17,7 +17,7 @@ import {
   rowStatusLine,
   tookItAtLabel,
 } from "$lib/utils/dashboard-copy";
-import { formatUserTime, type TimeFormat } from "$lib/utils/time";
+import { formatUserTime, lastLoggedPhrase, type TimeFormat } from "$lib/utils/time";
 import { logToastFromReload } from "$lib/components/dashboard/dose-toasts";
 import type { DoseLogWithMedication, Medication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
@@ -39,8 +39,9 @@ import {
   type StageMoment,
 } from "$lib/components/walkthrough/demo-dashboard";
 import { WALKTHROUGH_DATE_FORMAT } from "$lib/components/walkthrough/stage-dashboard";
-import { T_LOG, computeFrame, type Frame } from "$lib/components/walkthrough/timeline";
+import { CUES, T_LOG, T_TAP, computeFrame, type Frame } from "$lib/components/walkthrough/timeline";
 import DashboardScene from "$lib/components/walkthrough/scenes/DashboardScene.svelte";
+import PhoneScene from "$lib/components/walkthrough/scenes/PhoneScene.svelte";
 import WalkthroughStage from "$lib/components/walkthrough/WalkthroughStage.svelte";
 import { ssrDocument } from "./helpers/axe-ssr";
 
@@ -754,6 +755,162 @@ describe("the desktop stage for a visitor far from the story", () => {
       renderDashboardScene(computeFrame(T_LOG + 0.2, {}).dashboard, "24h"),
       renderDashboardScene(computeFrame(T_LOG + 1.0, {}).dashboard, "12h"),
       renderStage(T_LOG + 1.0, "24h"),
+    ];
+    const here = renderAll();
+    const zone = process.env.TZ;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2027-03-01T09:30:00+13:00"));
+      process.env.TZ = "Pacific/Auckland";
+      // The zone change took: this runtime now reads local time in Auckland.
+      expect(new Date(0).getHours()).toBe(12);
+      const there = renderAll();
+      there.forEach((body, i) => expect(body === here[i], `render ${i}`).toBe(true));
+    } finally {
+      vi.useRealTimers();
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
+  });
+});
+
+// ── T8: the phone scene, rendered ────────────────────────────────────────
+//
+// The desktop's check, at PHONE_NOW: every section the phone draws reads
+// what the real helpers say over the composer's own payload, before and
+// after the fingertip's tap. The phone draws Later only as far as
+// PHONE_LATER_ROWS and draws no chips, so its oracle is the desktop's with
+// Later cut to that prefix and the chips left out. Each check reads the
+// phone layer of the whole stage, so a section drawn on the wrong surface,
+// or twice, fails.
+
+const PHONE_BEFORE_PAYLOAD = composeMoment(MOMENTS[2]);
+const PHONE_AFTER_PAYLOAD = composeMoment(MOMENTS[3]);
+
+type PhoneSectionName = Exclude<SectionName, "chips">;
+
+function expectedPhoneSections(
+  p: ComposedPayload,
+  timeFormat: TimeFormat,
+): Record<PhoneSectionName, { text: string[]; rows: number | null }> {
+  const all = expectedSections({ ...p, later: p.later.slice(0, PHONE_LATER_ROWS) }, timeFormat);
+  return { header: all.header, due: all.due, done: all.done, later: all.later };
+}
+
+/** The phone layer of the whole stage at T. */
+function phoneSurface(T: number, timeFormat: TimeFormat): Element {
+  const phone = ssrDocument(renderStage(T, timeFormat)).querySelector(
+    '[data-stage-surface="phone"]',
+  );
+  expect(phone, "the phone surface is rendered").not.toBeNull();
+  return phone!;
+}
+
+function renderPhoneScene(state: Frame["phone"], timeFormat: TimeFormat): string {
+  return render(PhoneScene, { props: { state, timeFormat } }).body;
+}
+
+/** The medication the phone's tap logs. */
+const PHONE_TAPPED = DEMO_DOSES.find((d) => d.id === LOGGED_DOSE.phone)!.medicationId;
+
+describe("the phone scene against the app: rendered text", () => {
+  describe.each(["24h", "12h"] as const)("in %s time", (timeFormat) => {
+    it.each([
+      { moment: "before the tap", T: T_TAP - 0.1, payload: PHONE_BEFORE_PAYLOAD },
+      { moment: "after the tap", T: T_TAP + 1.0, payload: PHONE_AFTER_PAYLOAD },
+    ])("$moment, every section reads what the helpers say", ({ T, payload }) => {
+      const phone = phoneSurface(T, timeFormat);
+      for (const [name, want] of Object.entries(expectedPhoneSections(payload, timeFormat))) {
+        const found = phone.querySelectorAll(`[data-stage-section="${name}"]`);
+        expect(found, `${name} is drawn once`).toHaveLength(1);
+        expect(visibleText(found[0]), name).toBe(squash(want.text.join(" ")));
+        if (want.rows !== null) expect(drawnRows(found[0]), `${name} rows`).toBe(want.rows);
+      }
+      // The chips and Refills sit below the fold on a phone.
+      expect(phone.querySelector('[data-stage-section="chips"]')).toBeNull();
+    });
+
+    it("hides the Undo offer before the tap, then words it as Log now's reload would", () => {
+      const message = expectedOfferText(PHONE_AFTER_PAYLOAD, LOGGED_DOSE.phone, timeFormat);
+      for (const [T, want] of [
+        [T_TAP - 0.1, ""],
+        [T_TAP + 1.0, squash(`${message} Undo ×`)],
+      ] as const) {
+        const offers = phoneSurface(T, timeFormat).querySelectorAll('[data-stage-section="offer"]');
+        expect(offers, `one offer on the phone at ${T}`).toHaveLength(1);
+        expect(visibleText(offers[0]), `offer at ${T}`).toBe(want);
+      }
+    });
+
+    it("tells the time in the status bar as PHONE_NOW, with no am/pm, as iOS does", () => {
+      const clocks = phoneSurface(CUES.Reminders + 1, timeFormat).querySelectorAll(
+        "[data-stage-clock]",
+      );
+      expect(clocks).toHaveLength(1);
+      expect(visibleText(clocks[0])).toBe(formatUserTime(PHONE_NOW, WALKTHROUGH_TZ, "24h"));
+    });
+  });
+
+  it("words the overdue push as the sweep would, from the tapped medication's last event", () => {
+    // Vitamin D's last event in the 10:12 input, by getLastDosePerMedication's
+    // rule: the anchor the reminder sweep reports, not the dose the tap logs.
+    const lastEventAt =
+      buildInputs(PHONE_NOW, MOMENTS[2].include).lastDoses.find(
+        (d) => d.medicationId === PHONE_TAPPED,
+      )?.lastEventAt ?? null;
+    // A real event, so the banner is not the "Not yet logged" branch.
+    expect(lastEventAt).not.toBeNull();
+    const T = CUES.Reminders + 1.5;
+    // The banner is fully in at T, where it is read.
+    expect(computeFrame(T, {}).phone.bannerY).toBeCloseTo(0, 9);
+    const bodies = phoneSurface(T, "24h").querySelectorAll("[data-stage-banner]");
+    expect(bodies).toHaveLength(1);
+    expect(visibleText(bodies[0])).toBe(lastLoggedPhrase(lastEventAt, PHONE_NOW));
+  });
+
+  it("reads Logging… while the tap is pending, the spinner turned by Frame, not by CSS", () => {
+    const T = T_TAP + 0.2;
+    const pending = computeFrame(T, {}).phone.pending;
+    expect(pending).not.toBeNull();
+    const due = phoneSurface(T, "24h").querySelector('[data-stage-section="due"]')!;
+    const text = visibleText(due);
+    expect(text).toContain("Logging…");
+    expect(text).not.toContain("Log now");
+    const spinners = [...due.querySelectorAll<HTMLElement>("span")].filter(
+      (el) => drawn(el) && el.style.transform.startsWith("rotate("),
+    );
+    expect(spinners.map((el) => el.style.transform)).toEqual([`rotate(${pending}deg)`]);
+  });
+
+  it("draws no control, heading, list or landmark, and no animate-* or transition-* class", () => {
+    for (const T of [CUES.Reminders + 1.5, T_TAP - 0.1, T_TAP + 0.2, T_TAP + 1.0]) {
+      const phone = phoneSurface(T, "24h");
+      expect(phone.querySelector('[data-stage-section="due"]')).not.toBeNull();
+      expect(
+        [...phone.querySelectorAll(FORBIDDEN)].map((el) => el.tagName),
+        `at ${T}`,
+      ).toEqual([]);
+      const moving = [...phone.querySelectorAll("*")]
+        .flatMap((el) => [...el.classList])
+        .filter(
+          (c) => c.startsWith("animate-") || c === "transition" || c.startsWith("transition-"),
+        );
+      expect(moving, `at ${T}`).toEqual([]);
+    }
+  });
+});
+
+// Review Focus 1, on the phone: the banner's "1d ago", the status bar and
+// every row must read the same for a visitor in Auckland on 1 March 2027 as
+// for one in London on the story day.
+describe("the phone stage for a visitor far from the story", () => {
+  it("renders byte-identical markup in Auckland on 1 March 2027", () => {
+    const renderAll = () => [
+      renderPhoneScene(computeFrame(CUES.Reminders + 1.5, {}).phone, "24h"),
+      renderPhoneScene(computeFrame(T_TAP - 0.1, {}).phone, "24h"),
+      renderPhoneScene(computeFrame(T_TAP + 0.2, {}).phone, "12h"),
+      renderPhoneScene(computeFrame(T_TAP + 1.0, {}).phone, "12h"),
+      renderStage(T_TAP + 1.0, "24h"),
     ];
     const here = renderAll();
     const zone = process.env.TZ;

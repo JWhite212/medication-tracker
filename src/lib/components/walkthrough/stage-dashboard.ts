@@ -1,11 +1,12 @@
 // What the dashboard scenes need beyond the StageMoments themselves: the
 // date format the stage renders labels in, the Done row a beat logs, the
-// Undo offer's message for it, and the Refills rows. Nothing here reads a
-// clock or the visitor's zone; every instant comes from a moment.
+// Undo offer's message for it, the Refills rows, and the last event the
+// phone's overdue push reports. Nothing here reads a clock or the visitor's
+// zone; every instant comes from a moment or from DEMO_DOSES.
 
 import type { DateFormat, TimeFormat } from "$lib/utils/time";
 import { formatDoseLabel, toastForLog } from "$lib/utils/dashboard-copy";
-import { MEDICATIONS, WALKTHROUGH_TZ } from "./demo-data";
+import { DEMO_DOSES, MEDICATIONS, WALKTHROUGH_TZ } from "./demo-data";
 import type { StageDone, StageMoment } from "./demo-dashboard";
 
 /** The default preference (`user_preferences.dateFormat`), which a new account sees. */
@@ -53,3 +54,19 @@ export const STAGE_REFILLS = MEDICATIONS.filter((m) => m.refillWatch).map((m) =>
   daysUntilRefill: m.supplyDays,
   severity: "watch" as const,
 }));
+
+/**
+ * A medication's latest event in DEMO_DOSES strictly before `before`, taken
+ * or skipped, which is what the reminder sweep's `lastEventAt` holds, or null
+ * when it has none. The phone's push banner is sent before the tap, so it
+ * reads this at PHONE_NOW and never sees the dose the tap logs.
+ */
+export function lastEventBefore(medicationId: string, before: Date): Date | null {
+  let latest: Date | null = null;
+  for (const dose of DEMO_DOSES) {
+    if (dose.medicationId !== medicationId) continue;
+    if (dose.takenAt.getTime() >= before.getTime()) continue;
+    if (latest === null || dose.takenAt.getTime() > latest.getTime()) latest = dose.takenAt;
+  }
+  return latest;
+}

@@ -432,7 +432,11 @@ export function computeFrame(T: number, M: Measurements): Frame {
   } else if (T < c.LogNow) {
     // Open on the header and Lisinopril's due-now card, then pan down through
     // Done and Later to the chips, which are on screen here and never tapped.
-    const todayScroll = dPage ? Math.max(0, Math.min(dPage.h - 900, 220)) : 0;
+    // Scroll until the end frame clears the window's bottom edge: clamped
+    // there, it pushes the chips down under the lower third.
+    const unscrolled = fitCamera(unionRects(R("d.later"), R("d.chips")), 28, 1.9);
+    const clearOfBottom = unscrolled.y - (WIN_H - (STAGE_H - CY) / unscrolled.s);
+    const todayScroll = dPage ? Math.max(0, Math.min(dPage.h - 900, clearOfBottom)) : 0;
     const p = MOTION.move(T, c.Today + 1.1, c.LogNow - c.Today - 1.2);
     scroll = todayScroll * p;
     const from = fitCamera(unionRects(R("d.header"), R("d.due")), 28, 1.9);

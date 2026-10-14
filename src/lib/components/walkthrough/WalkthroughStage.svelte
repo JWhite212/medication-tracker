@@ -82,9 +82,10 @@
                 </div>
               {/snippet}
               <!-- Every page stays mounted so its elements can be measured up front -->
+              <!-- pb-36 is stage-only room, so the Today pan can end above the lower third -->
               <div
                 use:mark={"d.page"}
-                class="absolute top-0 left-0 w-full p-8"
+                class="absolute top-0 left-0 w-full p-8 pb-36"
                 style:visibility={frame.page === "dash" ? "inherit" : "hidden"}
                 style:transform={frame.page === "dash" && frame.scroll
                   ? `translateY(${-frame.scroll}px)`

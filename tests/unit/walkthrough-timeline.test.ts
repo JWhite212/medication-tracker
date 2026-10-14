@@ -40,6 +40,9 @@ import {
 // Stage point shots centre on; mirrors CX/CY in timeline.ts.
 const CX = 960;
 const CY = 421;
+// Height of the stage band fitCamera frames into, centred on CY; mirrors
+// SAFE_H in timeline.ts. Its bottom edge, 786, is above the lower third.
+const SAFE_H = 730;
 
 /** Sample every 20ms across the loop. */
 const samples = Array.from({ length: Math.ceil(TOTAL_DURATION / 0.02) }, (_, i) => i * 0.02);
@@ -106,6 +109,20 @@ const MEASURED: Measurements = {
   "x.export": { x: 528, y: 120, w: 672, h: 380 },
   "x.download": { x: 553, y: 380, w: 140, h: 42 },
   "p.vitdLog": { x: 253, y: 275, w: 120, h: 48 },
+};
+
+// The stage's real Today layout, read in Chrome with the same offset walk as
+// marks.ts's measureMarks, on the landing page's dev server (1280x720, T held
+// at 0 by a seek stub), on 2026-10-14 after the d.page wrapper gained its
+// bottom room. Unlike MEASURED's 1500px page, this one has only just enough
+// height for the Today pan to end where it should.
+const TODAY_IN_BROWSER: Measurements = {
+  "d.page": { x: 256, y: 0, w: 1184, h: 1171 },
+  "d.header": { x: 512, y: 32, w: 672, h: 112 },
+  "d.due": { x: 512, y: 168, w: 672, h: 122 },
+  "d.done": { x: 512, y: 314, w: 672, h: 139 },
+  "d.later": { x: 512, y: 477, w: 672, h: 234 },
+  "d.chips": { x: 512, y: 735, w: 672, h: 186 },
 };
 
 /** A MEASURED rect in window space, where computeFrame's R() puts it. */
@@ -273,15 +290,40 @@ describe("computeFrame", () => {
       open.camera,
       clampCamera(fitCamera(unionRects(inWindow("d.header"), inWindow("d.due")), 28, 1.9)),
     );
-    // MEASURED's page is 1500px tall, so the pan scrolls its 220px cap.
+    // MEASURED's page is 1500px tall, so the pan scrolls as far as its end
+    // frame needs: Later and the chips centre at window y 782 at s = 1.46,
+    // and the lowest unclamped centre is 984 - 659 / 1.46 = 532.63.
     const end = computeFrame(CUES.LogNow - 1e-6, MEASURED);
-    expect(end.scroll).toBe(220);
+    expect(end.scroll).toBeCloseTo(249.37, 2);
     expectCamera(
       end.camera,
       clampCamera(
-        fitCamera(unionRects(inWindow("d.later", 220), inWindow("d.chips", 220)), 28, 1.9),
+        fitCamera(
+          unionRects(inWindow("d.later", end.scroll), inWindow("d.chips", end.scroll)),
+          28,
+          1.9,
+        ),
       ),
     );
+  });
+
+  // Pinned to the window's bottom edge, the pan's end frame put the last chip
+  // row under Caption 01. The page scrolls until the frame no longer needs
+  // the clamp, so the chips land where fitCamera centred them.
+  it("ends the Today pan on Later and the chips, clear of the lower third", () => {
+    const end = computeFrame(CUES.LogNow - 0.05, TODAY_IN_BROWSER);
+    const at = (key: string): Rect => {
+      const r = TODAY_IN_BROWSER[key]!;
+      return { x: r.x, y: r.y + BROWSER_BAR - end.scroll, w: r.w, h: r.h };
+    };
+    const fitted = fitCamera(unionRects(at("d.later"), at("d.chips")), 28, 1.9);
+    expect(end.camera.y).toBeCloseTo(fitted.y, 6);
+    expect(end.camera.s).toBeCloseTo(fitted.s, 6);
+    const chips = at("d.chips");
+    const top = CY + (chips.y - end.camera.y) * end.camera.s;
+    const bottom = CY + (chips.y + chips.h - end.camera.y) * end.camera.s;
+    expect(top).toBeGreaterThanOrEqual(CY - SAFE_H / 2);
+    expect(bottom).toBeLessThanOrEqual(CY + SAFE_H / 2);
   });
 
   it("taps Log now, holds on the header, Due and Done through the update, then frames the offer", () => {

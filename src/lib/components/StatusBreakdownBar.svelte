@@ -1,3 +1,21 @@
+<script lang="ts" module>
+  // Exported so a surface that cannot mount this card still draws the bar by
+  // the same rule: the landing-page walkthrough has no headings, and this
+  // card renders an <h2>.
+  export function statusBreakdownSegments(counts: {
+    takenEvents: number;
+    skippedEvents: number;
+    missedEvents: number;
+  }): { takenPct: number; skippedPct: number; missedPct: number } {
+    const { takenEvents, skippedEvents, missedEvents } = counts;
+    const total = Math.max(takenEvents + skippedEvents + missedEvents, 1);
+    const takenPct = Math.round((takenEvents / total) * 1000) / 10;
+    const skippedPct = Math.round((skippedEvents / total) * 1000) / 10;
+    const missedPct = Math.max(0, 100 - takenPct - skippedPct);
+    return { takenPct, skippedPct, missedPct };
+  }
+</script>
+
 <script lang="ts">
   import GlassCard from "$components/ui/GlassCard.svelte";
 
@@ -10,10 +28,9 @@
 
   let { takenEvents, skippedEvents, missedEvents, expectedTotal }: Props = $props();
 
-  const total = $derived(Math.max(takenEvents + skippedEvents + missedEvents, 1));
-  const takenPct = $derived(Math.round((takenEvents / total) * 1000) / 10);
-  const skippedPct = $derived(Math.round((skippedEvents / total) * 1000) / 10);
-  const missedPct = $derived(Math.max(0, 100 - takenPct - skippedPct));
+  const { takenPct, skippedPct, missedPct } = $derived(
+    statusBreakdownSegments({ takenEvents, skippedEvents, missedEvents }),
+  );
 </script>
 
 {#if expectedTotal > 0 || takenEvents + skippedEvents > 0}

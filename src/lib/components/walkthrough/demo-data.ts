@@ -3,10 +3,33 @@
 // analytics and sparklines are generated from a seeded PRNG so every visitor
 // (and every prerender) sees the same numbers.
 //
-// The story clock is Thursday 24 September 2026, 08:02. Times are wall-clock
-// strings formatted in UTC, so the video reads the same in every timezone.
+// The story is Thursday 24 September 2026, on two clocks: the desktop scenes
+// at 08:02 (DESKTOP_NOW) and the phone at 10:12 (PHONE_NOW). Every instant is
+// UTC and every string is formatted in WALKTHROUGH_TZ, never the visitor's
+// zone, so the video reads the same everywhere.
 
 import { formatUserTime, type TimeFormat } from "$lib/utils/time";
+
+// ── Story clocks ──
+/** The zone every walkthrough string is formatted in. */
+export const WALKTHROUGH_TZ = "UTC";
+/** The desktop scenes. Lisinopril's 08:00 dose is due, and is logged now. */
+export const DESKTOP_NOW = new Date("2026-09-24T08:02:00.000Z");
+/** The phone scene. Vitamin D's 09:05 dose is overdue, and is logged now. */
+export const PHONE_NOW = new Date("2026-09-24T10:12:00.000Z");
+/** Days of history behind the analytics shot, ending at DESKTOP_NOW. */
+const HISTORY_DAYS = 90;
+/**
+ * When every demo medication, and each of its schedules, began: the start of
+ * the 90-day analytics window. Any later and the lifecycle and schedule-edit
+ * clips would drop slots from the dashboard and days from the denominator.
+ */
+export const DEMO_STARTED_AT = new Date(DESKTOP_NOW.getTime() - HISTORY_DAYS * 86_400_000);
+
+/** A medication's schedule rows, as scripts/seed-demo.ts writes them. */
+export type DemoSchedule =
+  | { kind: "interval"; intervalHours: string }
+  | { kind: "fixed_time"; timesOfDay: string[] };
 
 export type DemoMedication = {
   id: "vitd" | "lis" | "met" | "ibu" | "mag";
@@ -18,6 +41,9 @@ export type DemoMedication = {
   colour: string;
   colourSecondary: string | null;
   pattern: string;
+  /** The same schedule scripts/seed-demo.ts gives this medication. */
+  schedule: DemoSchedule;
+  /** Expected doses a day under `schedule`, by the analytics denominator's rule. */
   perDay: number;
   /** Chance each expected dose was taken, used only to generate history. */
   takeRate: number;
@@ -39,6 +65,7 @@ export const MEDICATIONS: readonly DemoMedication[] = [
     colour: "#f59e0b",
     colourSecondary: null,
     pattern: "solid",
+    schedule: { kind: "interval", intervalHours: "24" },
     perDay: 1,
     takeRate: 0.92,
     supplyDays: 60,
@@ -55,6 +82,7 @@ export const MEDICATIONS: readonly DemoMedication[] = [
     colour: "#3b82f6",
     colourSecondary: null,
     pattern: "solid",
+    schedule: { kind: "fixed_time", timesOfDay: ["08:00"] },
     perDay: 1,
     takeRate: 0.96,
     supplyDays: 27,
@@ -71,6 +99,7 @@ export const MEDICATIONS: readonly DemoMedication[] = [
     colour: "#10b981",
     colourSecondary: "#06b6d4",
     pattern: "stripes",
+    schedule: { kind: "interval", intervalHours: "12" },
     perDay: 2,
     takeRate: 0.88,
     supplyDays: 28,
@@ -87,6 +116,7 @@ export const MEDICATIONS: readonly DemoMedication[] = [
     colour: "#ef4444",
     colourSecondary: null,
     pattern: "solid",
+    schedule: { kind: "interval", intervalHours: "8" },
     perDay: 3,
     takeRate: 0.7,
     supplyDays: 8,
@@ -104,6 +134,7 @@ export const MEDICATIONS: readonly DemoMedication[] = [
     colour: "#8b5cf6",
     colourSecondary: null,
     pattern: "solid",
+    schedule: { kind: "interval", intervalHours: "24" },
     perDay: 1,
     takeRate: 0.85,
     supplyDays: 90,
@@ -120,7 +151,6 @@ export const MEDICATION_BY_ID = Object.fromEntries(MEDICATIONS.map((m) => [m.id,
 >;
 
 // ── History ──
-const HISTORY_DAYS = 90;
 // Doses already logged on the story day (the last of the 90).
 const TAKEN_TODAY: Record<MedicationId, number> = { vitd: 0, lis: 1, met: 1, ibu: 1, mag: 0 };
 
@@ -158,15 +188,12 @@ function buildHistory() {
     Math.min(100, Math.round((count / expectedPerDay) * 100)),
   );
   const total = sum(daily);
-  // Today is only part-way through: three doses were due by 08:02.
-  const expected = expectedPerDay * (HISTORY_DAYS - 1) + 3;
 
   return {
     daily,
     dailyAdherence,
     max: Math.max(...daily),
     total,
-    expected,
     // Placeholder, as in the design: the streak is not derived from the history.
     streak: 12,
     averageAdherence: Math.round(
@@ -194,6 +221,35 @@ function buildHistory() {
 }
 
 export const HISTORY = buildHistory();
+
+/**
+ * The analytics page's Dose Status Breakdown over `getPerMedicationStats`'
+ * default 90-day window, read at DESKTOP_NOW. A literal on purpose: the real
+ * fold (`foldDoseStatusBreakdown`, PER MEDICATION) lives under $lib/server,
+ * which this client module cannot import, and arithmetic here would be a
+ * second owner of it. walkthrough-demo-facts.test.ts folds the demo's
+ * per-medication counts through the real function and holds this to it.
+ *
+ * What the numbers say: every medication started at DEMO_STARTED_AT, so each
+ * expects `perDay × 90`, 720 in all. 602 were taken, and the 118 untaken are
+ * Missed, never Skipped: Skipped counts explicit skips, and the demo history
+ * has none. 83.6 is `calculateAdherence(602, 720)`.
+ *
+ * AnalyticsScene renders these fields and does no arithmetic of its own.
+ */
+export const STATUS_BREAKDOWN: {
+  takenEvents: number;
+  skippedEvents: number;
+  missedEvents: number;
+  expectedTotal: number;
+  adherencePercent: number;
+} = {
+  takenEvents: 602,
+  skippedEvents: 0,
+  missedEvents: 118,
+  expectedTotal: 720,
+  adherencePercent: 83.6,
+};
 
 export type HeatmapCell = { row: number; count: number };
 
@@ -255,6 +311,57 @@ export function daySlots(lisinopril: SlotStatus, vitaminD: SlotStatus): DaySlot[
   ];
 }
 
+// ── Doses ──
+export type DemoDose = {
+  id: string;
+  medicationId: MedicationId;
+  takenAt: Date;
+  quantity: number;
+  status: "taken" | "skipped";
+};
+
+/** One taken unit at `iso` ("2026-09-24T08:02Z"), id'd `dose-<med>-<yyyymmdd>-<hhmm>`. */
+function demoDose(medicationId: MedicationId, iso: string): DemoDose {
+  const day = iso.slice(0, 10).replace(/-/g, "");
+  const time = iso.slice(11, 16).replace(":", "");
+  return {
+    id: `dose-${medicationId}-${day}-${time}`,
+    medicationId,
+    takenAt: new Date(iso),
+    quantity: 1,
+    status: "taken",
+  };
+}
+
+/**
+ * Every dose the story depends on, oldest first: the History scene's
+ * Yesterday and Today groups, plus Vitamin D at PHONE_NOW, which the phone
+ * logs on screen. Yesterday's Vitamin D 09:05 and Magnesium 22:05, and
+ * today's Ibuprofen 06:10 and Metformin 07:48, are also the interval anchors
+ * the dashboard projects today's slots from.
+ *
+ * LOG_ALL and each MEDICATIONS[].lastTaken stay hand-written;
+ * walkthrough-demo-facts.test.ts holds both to this list.
+ */
+export const DEMO_DOSES: readonly DemoDose[] = [
+  demoDose("lis", "2026-09-23T08:01Z"),
+  demoDose("vitd", "2026-09-23T09:05Z"),
+  demoDose("ibu", "2026-09-23T14:12Z"),
+  demoDose("met", "2026-09-23T19:51Z"),
+  demoDose("mag", "2026-09-23T22:05Z"),
+  demoDose("ibu", "2026-09-23T22:14Z"),
+  demoDose("ibu", "2026-09-24T06:10Z"),
+  demoDose("met", "2026-09-24T07:48Z"),
+  demoDose("lis", "2026-09-24T08:02Z"),
+  demoDose("vitd", "2026-09-24T10:12Z"),
+];
+
+/** The dose each log beat writes: the desktop's Log now and the phone's tap. */
+export const LOGGED_DOSE = {
+  desktop: "dose-lis-20260924-0802",
+  phone: "dose-vitd-20260924-1012",
+} as const;
+
 // ── Dose history ──
 export type LoggedDose = { id: MedicationId; time: string; since: string; sideEffect?: string };
 export type DoseGroup = { label: string; doses: LoggedDose[] };
@@ -267,6 +374,7 @@ const DAY_LABEL = new Intl.DateTimeFormat("en-GB", {
 });
 const septemberDay = (day: number) => DAY_LABEL.format(new Date(Date.UTC(2026, 8, day)));
 
+// Newest first within each day, as /log orders by takenAt descending.
 export const LOG_ALL: readonly DoseGroup[] = [
   {
     label: "Today",
@@ -279,8 +387,8 @@ export const LOG_ALL: readonly DoseGroup[] = [
   {
     label: "Yesterday",
     doses: [
-      { id: "mag", time: "22:05", since: "9h 57m ago" },
       { id: "ibu", time: "22:14", since: "9h 48m ago" },
+      { id: "mag", time: "22:05", since: "9h 57m ago" },
       { id: "met", time: "19:51", since: "12h 11m ago" },
       { id: "ibu", time: "14:12", since: "17h 50m ago", sideEffect: "Upset stomach" },
       { id: "vitd", time: "09:05", since: "22h 57m ago" },
@@ -307,8 +415,18 @@ export const LOG_WITH_SIDE_EFFECTS: readonly DoseGroup[] = [
 /** Format an "HH:MM" wall-clock string on the story day. */
 export function storyClock(hhmm: string, format: TimeFormat): string {
   const [hours, minutes] = hhmm.split(":").map(Number);
-  return formatUserTime(new Date(Date.UTC(2026, 8, 24, hours, minutes)), "UTC", format);
+  return formatUserTime(new Date(Date.UTC(2026, 8, 24, hours, minutes)), WALKTHROUGH_TZ, format);
 }
+
+// ── Security ──
+/**
+ * The Security scene's session expiries, current session first. The scene
+ * prints them through formatUserDate, as the real page does.
+ */
+export const SESSION_EXPIRIES: readonly Date[] = [
+  new Date("2026-10-22T08:00Z"),
+  new Date("2026-10-15T20:30Z"),
+];
 
 // ── Pages shown in the fake browser ──
 export type NavKey = "dash" | "meds" | "log" | "ana" | "set";

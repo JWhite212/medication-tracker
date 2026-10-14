@@ -8,6 +8,7 @@ import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
 import { ssrDocument } from "./helpers/axe-ssr";
 import { textOf } from "./helpers/dom-names";
 import {
+  BROWSER_BAR,
   CUES,
   LOWER_THIRDS,
   REQUIRED_MARKS,
@@ -25,7 +26,9 @@ import {
   fitCamera,
   trackPath,
   unionRects,
+  type Camera,
   type Measurements,
+  type Rect,
 } from "$lib/components/walkthrough/timeline";
 import {
   HEATMAP_WEEKS,
@@ -68,16 +71,19 @@ function source(rel: string): string {
 }
 
 // A plausible measured layout, so framing code runs its real branches rather
-// than the wide-shot fallback.
+// than the wide-shot fallback. The dashboard rects are the before-log layout
+// in the 1440x900 shell: the header at 32-144, the Due card at 168-290
+// (Log now at its right edge), Done today at 314-452, Later today at 476-710
+// and the chips at 734-920. The offer sits at the shell's bottom right.
 const MEASURED: Measurements = {
   "d.page": { x: 288, y: 0, w: 1152, h: 1500 },
-  "d.strip": { x: 528, y: 88, w: 672, h: 54 },
-  "d.morning": { x: 528, y: 290, w: 672, h: 170 },
-  "d.evening": { x: 528, y: 580, w: 672, h: 80 },
-  "d.night": { x: 528, y: 672, w: 672, h: 110 },
-  "d.quick": { x: 528, y: 810, w: 672, h: 150 },
-  "d.lisPill": { x: 720, y: 850, w: 120, h: 36 },
-  "o.toast": { x: 1250, y: 830, w: 170, h: 46 },
+  "d.header": { x: 528, y: 32, w: 672, h: 112 },
+  "d.due": { x: 528, y: 168, w: 672, h: 122 },
+  "d.logNow": { x: 1083, y: 181, w: 104, h: 48 },
+  "d.done": { x: 528, y: 314, w: 672, h: 138 },
+  "d.later": { x: 528, y: 476, w: 672, h: 234 },
+  "d.chips": { x: 528, y: 734, w: 672, h: 186 },
+  "o.offer": { x: 1040, y: 770, w: 384, h: 114 },
   "m.card0": { x: 320, y: 110, w: 1080, h: 150 },
   "m.card1": { x: 320, y: 272, w: 1080, h: 150 },
   "m.card2": { x: 320, y: 434, w: 1080, h: 150 },
@@ -99,6 +105,18 @@ const MEASURED: Measurements = {
   "x.download": { x: 553, y: 380, w: 140, h: 42 },
   "p.vitdLog": { x: 330, y: 400, w: 40, h: 20 },
 };
+
+/** A MEASURED rect in window space, where computeFrame's R() puts it. */
+function inWindow(key: string, scroll = 0): Rect {
+  const r = MEASURED[key]!;
+  return { x: r.x, y: r.y + BROWSER_BAR - scroll, w: r.w, h: r.h };
+}
+
+function expectCamera(actual: Camera, expected: Camera): void {
+  expect(actual.x).toBeCloseTo(expected.x, 6);
+  expect(actual.y).toBeCloseTo(expected.y, 6);
+  expect(actual.s).toBeCloseTo(expected.s, 6);
+}
 
 describe("walkthrough scenes", () => {
   it("derives cues from the scene list, in order, with no gaps", () => {
@@ -195,13 +213,93 @@ describe("computeFrame", () => {
     }
   });
 
-  it("logs Lisinopril exactly once, during Log now", () => {
-    const before = computeFrame(CUES.LogNow + 1, MEASURED).dashboard;
-    const after = computeFrame(CUES.LogNow + 2.5, MEASURED).dashboard;
-    expect(before.count).toBe(2);
-    expect(before.lisinoprilDone).toBe(0);
-    expect(after.count).toBe(3);
-    expect(after.lisinoprilDone).toBeCloseTo(1, 3);
+  it("logs Lisinopril once, from Log now: pending, then logged, then the Undo offer until the cut", () => {
+    const at = (t: number) => computeFrame(t, MEASURED).dashboard;
+    // The window edges themselves, which the 20ms samples step over.
+    expect(at(T_LOG - 1e-6).pending).toBeNull();
+    expect(at(T_LOG).pending).toBe(0);
+    expect(at(T_LOG + 0.2).pending).toBeCloseTo(96, 6);
+    expect(at(T_LOG + 0.4).pending).toBeNull();
+    expect(at(T_LOG + 0.4).logged).toBe(0);
+    expect(at(T_LOG + 0.7).logged).toBe(1);
+    expect(at(T_LOG + 0.5).offer).toBe(0);
+    expect(at(T_LOG + 0.8).offer).toBe(1);
+    expect(at(CUES.Medications - 1e-6).offer).toBe(1);
+    expect(at(CUES.Medications).offer).toBe(0);
+    // Fully visible long enough to read before the cut.
+    expect(CUES.Medications - (T_LOG + 0.8)).toBeGreaterThanOrEqual(1.5);
+    for (const t of samples) {
+      const d = at(t);
+      expect(d.pending !== null, `pending at ${t}`).toBe(t >= T_LOG && t < T_LOG + 0.4);
+      if (t < T_LOG + 0.4) expect(d.logged, `logged at ${t}`).toBe(0);
+      if (t >= T_LOG + 0.7) expect(d.logged, `logged at ${t}`).toBe(1);
+      if (t < T_LOG + 0.5) expect(d.offer, `offer at ${t}`).toBe(0);
+      if (t >= T_LOG + 0.8 && t < CUES.Medications) expect(d.offer, `offer at ${t}`).toBe(1);
+      if (t >= CUES.Medications) expect(d.offer, `offer at ${t}`).toBe(0);
+    }
+  });
+
+  // Review Focus 2: a pause can land on any frame, and the loop restarts at
+  // T=0, so no part of the log may outlive its window.
+  it("never leaves the log half-done: no spinner outside its window, and the seam matches", () => {
+    for (const t of samples) {
+      const d = computeFrame(t, MEASURED).dashboard;
+      if (t < T_LOG || t >= T_LOG + 0.4) expect(d.pending, `pending at ${t}`).toBeNull();
+      for (const v of [d.logged, d.offer]) {
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+    }
+    const first = computeFrame(0, MEASURED);
+    const last = computeFrame(TOTAL_DURATION - 1e-6, MEASURED);
+    expect(last.dashboard.pending).toBe(first.dashboard.pending);
+    expect(last.dashboard.offer).toBe(first.dashboard.offer);
+    // `logged` cannot match across the seam: it is 1 at the end of the loop
+    // and 0 at its start. It is 0 from T=0 through 1.2s, while
+    // WalkthroughVideo measures the marks (on mount, then 0.3s and 1.2s
+    // later), so they describe the before-log layout. Both ends are title
+    // frames, so the dashboard is off screen across the jump.
+    expect(first.dashboard.logged).toBe(0);
+    expect(computeFrame(1.2, MEASURED).dashboard.logged).toBe(0);
+    expect([first.kind, last.kind]).toEqual(["title", "title"]);
+  });
+
+  it("opens Today on the header and the Due card, then pans to Later and the chips", () => {
+    const open = computeFrame(CUES.Today + 1.0, MEASURED);
+    expect(open.scroll).toBe(0);
+    expectCamera(
+      open.camera,
+      clampCamera(fitCamera(unionRects(inWindow("d.header"), inWindow("d.due")), 28, 1.9)),
+    );
+    // MEASURED's page is 1500px tall, so the pan scrolls its 220px cap.
+    const end = computeFrame(CUES.LogNow - 1e-6, MEASURED);
+    expect(end.scroll).toBe(220);
+    expectCamera(
+      end.camera,
+      clampCamera(
+        fitCamera(unionRects(inWindow("d.later", 220), inWindow("d.chips", 220)), 28, 1.9),
+      ),
+    );
+  });
+
+  it("taps Log now, holds on the header, Due and Done through the update, then frames the offer", () => {
+    const hold = clampCamera(
+      fitCamera(unionRects(inWindow("d.header"), inWindow("d.due"), inWindow("d.done")), 28, 2.0),
+    );
+    for (const t of [CUES.LogNow, T_LOG, T_LOG + 0.7]) {
+      const frame = computeFrame(t, MEASURED);
+      expect(frame.scroll).toBe(0);
+      expectCamera(frame.camera, hold);
+    }
+    expectCamera(
+      computeFrame(T_LOG + 1.3, MEASURED).camera,
+      clampCamera(fitCamera(inWindow("o.offer"), 40, 2.0)),
+    );
+    const logNow = inWindow("d.logNow");
+    const tap = computeFrame(T_LOG + 0.1, MEASURED).cursor;
+    expect(tap?.x).toBeCloseTo(logNow.x + logNow.w * 0.5, 6);
+    expect(tap?.y).toBeCloseTo(logNow.y + logNow.h * 0.55, 6);
+    expect(tap?.ripple).not.toBeNull();
   });
 
   // T_LOG and T_TAP are the instants computeFrame animates around, not two
@@ -240,10 +338,8 @@ describe("computeFrame", () => {
     for (const t of samples) {
       const f = computeFrame(t, MEASURED);
       for (const v of [
-        f.dashboard.lisinoprilDone,
-        f.dashboard.entry,
-        f.dashboard.flash,
-        f.toast,
+        f.dashboard.logged,
+        f.dashboard.offer,
         f.tick,
         f.history.filtered,
         f.heat,

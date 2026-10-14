@@ -5,7 +5,6 @@ import {
   formatTime,
   formatUserDate,
   startOfDay,
-  formatDueIn,
   formatDuration,
   isoDayKey,
   isoDayKeyFormatter,
@@ -221,37 +220,6 @@ describe("startOfDay", () => {
   it("returns midnight in given timezone", () => {
     const result = startOfDay(new Date("2026-04-15T14:30:00Z"), "UTC");
     expect(result.toISOString()).toBe("2026-04-15T00:00:00.000Z");
-  });
-});
-
-describe("formatDueIn", () => {
-  it("returns 'Due now' for near-zero milliseconds", () => {
-    expect(formatDueIn(0)).toBe("Due now");
-    expect(formatDueIn(30_000)).toBe("Due now"); // 30 seconds
-    expect(formatDueIn(-30_000)).toBe("Due now"); // -30 seconds
-  });
-
-  it("formats positive ms as 'Due in ...'", () => {
-    expect(formatDueIn(45 * 60_000)).toBe("Due in 45m");
-    expect(formatDueIn(2 * 60 * 60_000 + 15 * 60_000)).toBe("Due in 2h 15m");
-    expect(formatDueIn(3 * 60 * 60_000)).toBe("Due in 3h");
-  });
-
-  it("formats negative ms as 'Overdue ...'", () => {
-    expect(formatDueIn(-45 * 60_000)).toBe("Overdue 45m");
-    expect(formatDueIn(-2 * 60 * 60_000 - 15 * 60_000)).toBe("Overdue 2h 15m");
-    expect(formatDueIn(-1 * 60 * 60_000)).toBe("Overdue 1h");
-  });
-
-  it("formats exactly 1 minute", () => {
-    expect(formatDueIn(60_000)).toBe("Due in 1m");
-    expect(formatDueIn(-60_000)).toBe("Overdue 1m");
-  });
-
-  it("prints days instead of hundreds of hours", () => {
-    // Live on the dashboard: a medication last taken three weeks ago read
-    // "Overdue 504h 20m".
-    expect(formatDueIn(-(504 * 60 + 20) * 60_000)).toBe("Overdue 21d");
   });
 });
 

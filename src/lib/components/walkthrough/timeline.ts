@@ -47,7 +47,9 @@ export const TOTAL_DURATION = derived.total;
 
 // The two log beats. The desktop cursor clicks to log Lisinopril at T_LOG, and
 // the phone's fingertip taps to log Vitamin D at T_TAP. Exported so the tests
-// and the scenes key off the same instants computeFrame animates around.
+// key off the same instants computeFrame animates around; the scenes never
+// read them and see the beats only through Frame (logBeat's
+// pending/logged/offer, the cursor click and the phone touch).
 export const T_LOG = CUES.LogNow + 1.45;
 export const T_TAP = CUES.Reminders + 3.0;
 
@@ -151,7 +153,8 @@ export function trackPath(T: number, keys: ReadonlyArray<readonly [number, Point
 }
 
 // ── Lower thirds ──
-// Feature number, one plain line and one technical fact from the README.
+// Feature number, one plain line and one technical claim about the code
+// (pinned in walkthrough-timeline.test.ts where it can drift).
 // `delay` is how long after the scene's cue the caption appears.
 export type LowerThird = {
   scene: SceneName;

@@ -151,4 +151,21 @@ describe("WalkthroughVideo and reduced motion", () => {
     expect(playButton(target).getAttribute("aria-label")).toBe("Pause walkthrough");
     expect(requestFrame).toHaveBeenCalled();
   });
+
+  it("hides the whole stage from assistive tech, but not the caption or the pause button", () => {
+    // The stage test mounts WalkthroughStage below the wrapper that carries
+    // aria-hidden, so only this mount can see it. Without it a screen reader
+    // reads both dashboard copies, every StatusMarker and Sparkline label and
+    // the lower thirds, on top of the figcaption that already says it all.
+    const { target } = mountPlayer({ reducedMotion: false });
+    const figure = target.querySelector("figure")!;
+    const sections = figure.querySelectorAll("[data-stage-section]");
+    // Not vacuous: the full stage is mounted.
+    expect(sections.length).toBeGreaterThan(0);
+    for (const el of [...sections, ...figure.querySelectorAll('[role="img"]')]) {
+      expect(el.closest('[aria-hidden="true"]'), el.outerHTML.slice(0, 80)).not.toBeNull();
+    }
+    expect(figure.querySelector("figcaption")!.closest('[aria-hidden="true"]')).toBeNull();
+    expect(playButton(target).closest('[aria-hidden="true"]')).toBeNull();
+  });
 });

@@ -1,14 +1,19 @@
 <script lang="ts">
   // routes/(app)/settings/security/+page.svelte with two-factor enabled.
+  import { formatUserDate } from "$lib/utils/time";
+  import { SESSION_EXPIRIES, WALKTHROUGH_TZ } from "../demo-data";
   import { useMark } from "../marks";
   import FieldBox from "../parts/FieldBox.svelte";
 
   const mark = useMark();
   const card = "border-glass-border bg-glass rounded-xl border p-6";
-  const SESSIONS = [
-    { n: 1, expires: "22/10/2026", current: true },
-    { n: 2, expires: "15/10/2026", current: false },
-  ];
+  // The real page formats each expiry with the user's dateFormat; the demo
+  // account keeps the default.
+  const SESSIONS = SESSION_EXPIRIES.map((expiresAt, i) => ({
+    n: i + 1,
+    expires: formatUserDate(expiresAt, WALKTHROUGH_TZ, "DD/MM/YYYY"),
+    current: i === 0,
+  }));
 </script>
 
 <div class="mx-auto flex max-w-2xl flex-col gap-6">

@@ -4,11 +4,13 @@
   // activity heatmap week by week.
   import Sparkline from "$components/Sparkline.svelte";
   import { DISCLAIMER_TEXT } from "$components/MedicalDisclaimer.svelte";
+  import { statusBreakdownSegments } from "$components/StatusBreakdownBar.svelte";
   import {
     ADHERENCE_TRENDS,
     HEATMAP_WEEKS,
     HISTORY,
     MEDICATIONS,
+    STATUS_BREAKDOWN,
     heatmapIntensity,
   } from "../demo-data";
   import { useMark } from "../marks";
@@ -22,8 +24,14 @@
   const entrance = (i: number) => MOTION.enter(load, 0.05 + i * 0.12, 0.5);
   const count = $derived(MOTION.enter(load, 0.1, 1.1));
   const draw = $derived(MOTION.enter(load, 0.45, 0.9));
-  const skipped = HISTORY.expected - HISTORY.total;
-  const takenPercent = Math.round((HISTORY.total / HISTORY.expected) * 1000) / 10;
+  // StatusBreakdownBar's own segment rule. The card itself cannot be mounted
+  // here: it renders an <h2>, and the stage has no headings.
+  const segments = statusBreakdownSegments(STATUS_BREAKDOWN);
+  const legend = [
+    { label: "Taken", value: STATUS_BREAKDOWN.takenEvents, dot: "bg-success" },
+    { label: "Skipped", value: STATUS_BREAKDOWN.skippedEvents, dot: "bg-warning" },
+    { label: "Missed", value: STATUS_BREAKDOWN.missedEvents, dot: "bg-danger" },
+  ];
 
   const stats = $derived([
     {
@@ -174,16 +182,23 @@
     <p class="mb-4 text-lg font-semibold">Dose Status Breakdown</p>
     <div class="flex flex-col gap-2">
       <div class="bg-surface-overlay flex h-3 w-full overflow-hidden rounded-full">
-        <div class="bg-success h-full" style:width="{takenPercent}%"></div>
-        <div class="bg-warning h-full" style:width="{100 - takenPercent}%"></div>
+        {#if segments.takenPct > 0}
+          <div class="bg-success h-full" style:width="{segments.takenPct}%"></div>
+        {/if}
+        {#if segments.skippedPct > 0}
+          <div class="bg-warning h-full" style:width="{segments.skippedPct}%"></div>
+        {/if}
+        {#if segments.missedPct > 0}
+          <div class="bg-danger h-full" style:width="{segments.missedPct}%"></div>
+        {/if}
       </div>
       <div class="text-text-secondary flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {#each [["Taken", HISTORY.total, "bg-success"], ["Skipped", skipped, "bg-warning"], ["Missed", 0, "bg-danger"]] as [label, value, dot] (label)}
+        {#each legend as { label, value, dot } (label)}
           <span class="flex items-center gap-1.5"
             ><span class="h-2 w-2 rounded-full {dot}"></span>{label} {value}</span
           >
         {/each}
-        <span class="text-text-muted ml-auto">{HISTORY.expected} expected</span>
+        <span class="text-text-muted ml-auto">{STATUS_BREAKDOWN.expectedTotal} expected</span>
       </div>
     </div>
   </div>

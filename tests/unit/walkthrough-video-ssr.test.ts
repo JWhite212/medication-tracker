@@ -64,9 +64,10 @@ describe("the walkthrough's accent", () => {
   });
 });
 
-// Like the accent, the stage's date labels are drawn in the format a new
+// Like the accent, the dashboard header's date is drawn in the format a new
 // account gets, and WALKTHROUGH_DATE_FORMAT says so; this holds it to the
-// column rather than to its own doc comment. (The time format deliberately
+// column rather than to its own doc comment. (SecurityScene passes its own
+// literal and is not covered here.) (The time format deliberately
 // differs: see WalkthroughVideo.)
 describe("the walkthrough's date format", () => {
   it("is the date format column's default", () => {

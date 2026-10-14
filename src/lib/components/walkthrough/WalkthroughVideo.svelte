@@ -20,7 +20,7 @@
 
   let {
     // The app's default accent, so the video matches what a new account sees.
-    accent = "#6366f1",
+    accent = "#4f46e5",
     timeFormat = "24h",
   }: { accent?: string; timeFormat?: TimeFormat } = $props();
 

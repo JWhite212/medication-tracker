@@ -1,29 +1,34 @@
-<script lang="ts">
+<script lang="ts" module>
   import type { RefillForecastEntry } from "$lib/types";
 
-  type Props = { entries: RefillForecastEntry[] };
-  let { entries }: Props = $props();
-
-  function severityClass(severity: RefillForecastEntry["severity"]): string {
+  // Exported so a surface that cannot mount this card still tints and words
+  // its rows by the same rules: the landing-page walkthrough draws Refills
+  // with no link, heading or landmark, and this card renders all three.
+  export function refillSeverityClass(severity: RefillForecastEntry["severity"]): string {
     if (severity === "critical") return "border-danger-ink/40 bg-danger/5";
     if (severity === "warning") return "border-warning/40 bg-warning/5";
     if (severity === "watch") return "border-info/30 bg-info/5";
     return "border-glass-border bg-glass";
   }
 
-  function severityLabel(severity: RefillForecastEntry["severity"]): string {
+  export function refillSeverityLabel(severity: RefillForecastEntry["severity"]): string {
     if (severity === "critical") return "text-danger-ink";
     if (severity === "warning") return "text-warning";
     if (severity === "watch") return "text-info";
     return "text-text-secondary";
   }
 
-  function daysLabel(days: number | null): string {
+  export function refillDaysLabel(days: number | null): string {
     if (days === null) return "Refill needed";
     if (days <= 0) return "Out today";
     if (days === 1) return "1 day left";
     return `${days} days left`;
   }
+</script>
+
+<script lang="ts">
+  type Props = { entries: RefillForecastEntry[] };
+  let { entries }: Props = $props();
 </script>
 
 {#if entries.length > 0}
@@ -38,7 +43,7 @@
       {#each entries as entry (entry.medicationId)}
         <a
           href="/medications/{entry.medicationId}"
-          class="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:opacity-90 {severityClass(
+          class="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:opacity-90 {refillSeverityClass(
             entry.severity,
           )}"
         >
@@ -48,8 +53,8 @@
             aria-hidden="true"
           ></span>
           <span class="min-w-0 flex-1 truncate font-medium">{entry.medicationName}</span>
-          <span class="shrink-0 text-xs {severityLabel(entry.severity)}">
-            {daysLabel(entry.daysUntilRefill)}
+          <span class="shrink-0 text-xs {refillSeverityLabel(entry.severity)}">
+            {refillDaysLabel(entry.daysUntilRefill)}
           </span>
         </a>
       {/each}

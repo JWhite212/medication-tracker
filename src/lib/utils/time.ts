@@ -684,8 +684,8 @@ const MINUTES_PER_DAY = 24 * 60;
 
 /**
  * THE duration formatter. Every "how long" on screen goes through it, so no
- * caller can print "504h 20m" for three weeks again. `formatDueIn` did,
- * because it had no day unit.
+ * caller can print "504h 20m" for three weeks again, as the dashboard's old
+ * due label did before it had a day unit.
  *
  * - Magnitude only. The sign belongs to the caller ("ago" versus "in",
  *   "Due in" versus "Overdue"), never to this function.
@@ -726,20 +726,6 @@ export function formatDuration(
       style === "long" ? `${count} ${unit}${count === 1 ? "" : "s"}` : `${count}${unit[0]}`,
     )
     .join(" ");
-}
-
-/**
- * "Due in 2h 15m" / "Overdue 21d" / "Due now". Positive ms is time until
- * due, negative is overdue, and under a minute either way is "Due now".
- *
- * Built on `formatDuration` (short, two units), which is what gives it a
- * day unit. A medication last taken three weeks ago used to read
- * "Overdue 504h 20m".
- */
-export function formatDueIn(ms: number): string {
-  if (Math.abs(ms) < 60_000) return "Due now";
-  const label = formatDuration(ms, { style: "short", maxUnits: 2 });
-  return ms > 0 ? `Due in ${label}` : `Overdue ${label}`;
 }
 
 /**

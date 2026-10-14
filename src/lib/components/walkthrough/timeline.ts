@@ -289,16 +289,13 @@ export type Frame = {
   camera: Camera;
   cursor: CursorState | null;
   dashboard: {
-    count: number;
-    lisinoprilDone: number;
-    labelGone: number;
-    entry: number;
-    pillHover: boolean;
-    pillPress: number;
-    flash: number;
-    pulse: number;
+    /** Log now's spinner angle in degrees on [T_LOG, T_LOG + 0.4), else null. */
+    pending: number | null;
+    /** 0 → 1 as the log's reload lands: Due collapses, the header crossfades, Done grows. */
+    logged: number;
+    /** The Undo offer's opacity: 0 → 1 after the log, and exactly 0 from the cut to Medications. */
+    offer: number;
   };
-  toast: number;
   medicationsLoad: number;
   tick: number;
   addForm: {
@@ -338,15 +335,15 @@ function pressAt(T: number, click: number): number {
  * it in the stage with use:mark.
  */
 export const REQUIRED_MARKS: readonly string[] = [
-  // Dashboard, and the toast in the app shell's overlay
+  // Dashboard, and the Undo offer in the app shell's overlay
   "d.page",
-  "d.strip",
-  "d.morning",
-  "d.evening",
-  "d.night",
-  "d.quick",
-  "d.lisPill",
-  "o.toast",
+  "d.header",
+  "d.due",
+  "d.logNow",
+  "d.done",
+  "d.later",
+  "d.chips",
+  "o.offer",
   // Medications
   "m.card0",
   "m.card1",
@@ -398,9 +395,6 @@ export function computeFrame(T: number, M: Measurements): Frame {
   const A = c.AddMedication;
 
   const dPage = M["d.page"];
-  const dQuick = M["d.quick"];
-  // Scroll that brings Quick Log up to the middle of the window.
-  const quickScroll = dPage && dQuick ? Math.max(0, Math.min(dPage.h - 900, dQuick.y - 540)) : 0;
 
   // ── Shot list: hard cuts, and each shot drifts or pans ──
   let kind: ShotKind = "desk";
@@ -416,28 +410,36 @@ export function computeFrame(T: number, M: Measurements): Frame {
   } else if (T < c.Today + 0.9) {
     camera = lerpCam(WIDE, zoom(WIDE, 1.04), MOTION.drift(T, c.Today, 0.9));
   } else if (T < c.LogNow) {
-    // Open on the summary and morning group, then pan down the timeline.
+    // Open on the header and Lisinopril's due-now card, then pan down through
+    // Done and Later to the chips, which are on screen here and never tapped.
     const todayScroll = dPage ? Math.max(0, Math.min(dPage.h - 900, 220)) : 0;
     const p = MOTION.move(T, c.Today + 1.1, c.LogNow - c.Today - 1.2);
     scroll = todayScroll * p;
-    const from = fitCamera(unionRects(R("d.strip"), R("d.morning")), 28, 1.9);
-    const to = fitCamera(
-      unionRects(R("d.evening", todayScroll), R("d.night", todayScroll)),
-      28,
-      1.9,
-    );
+    const from = fitCamera(unionRects(R("d.header"), R("d.due")), 28, 1.9);
+    const to = fitCamera(unionRects(R("d.later", todayScroll), R("d.chips", todayScroll)), 28, 1.9);
     camera = lerpCam(from, to, p);
   } else if (T < c.Medications) {
-    scroll = quickScroll;
-    const base = fitCamera(unionRects(R("d.quick", quickScroll), R("o.toast")), 30, 2.0);
-    camera = lerpCam(base, zoom(base, 1.05), MOTION.drift(T, c.LogNow, c.Medications - c.LogNow));
-    const pill = at(R("d.lisPill", quickScroll), 0.42, 0.62);
+    // Hold on the header, Due and Done through the tap and the update. All
+    // three are measured before the log: the collapse only moves content up,
+    // and the new Done row is shorter than the Due section it replaces, so
+    // the whole change happens inside this frame. Then move to the Undo
+    // offer: framing the header and the offer together would be wider than
+    // WIDE, and the text would be too small to read.
+    const hold = fitCamera(unionRects(R("d.header"), R("d.due"), R("d.done")), 28, 2.0);
+    const offer = fitCamera(R("o.offer"), 40, 2.0);
+    const settled = lerpCam(
+      offer,
+      zoom(offer, 1.04),
+      MOTION.drift(T, T_LOG + 1.3, c.Medications - T_LOG - 1.3),
+    );
+    camera = lerpCam(hold, settled, MOTION.move(T, T_LOG + 0.7, 0.6));
+    const logNow = at(R("d.logNow"), 0.5, 0.55);
     cursorPath = {
       keys: [
-        [c.LogNow, { x: pill.x + 230, y: pill.y + 170 }],
-        [c.LogNow + 1.05, pill],
-        [T_LOG + 0.35, pill],
-        [T_LOG + 1.3, { x: pill.x + 70, y: pill.y + 95 }],
+        [c.LogNow, { x: logNow.x + 230, y: logNow.y + 170 }],
+        [c.LogNow + 1.05, logNow],
+        [T_LOG + 0.35, logNow],
+        [T_LOG + 1.3, { x: logNow.x + 70, y: logNow.y + 95 }],
       ],
       clicks: [T_LOG],
     };
@@ -568,23 +570,14 @@ export function computeFrame(T: number, M: Measurements): Frame {
     camera,
     cursor,
     dashboard: {
-      count: T >= T_LOG + 0.15 ? 3 : 2,
-      lisinoprilDone: MOTION.enter(T, T_LOG + 0.15, 0.3),
-      labelGone: MOTION.enter(T, T_LOG + 0.15, 0.3),
-      entry: MOTION.enter(T, T_LOG + 0.2, 0.4),
-      pillHover: T >= c.LogNow + 1.0 && T < T_LOG + 0.45,
-      pillPress: pressAt(T, T_LOG),
-      flash: T >= T_LOG && T < T_LOG + 0.6 ? MOTION.enter(T, T_LOG, 0.6) : 0,
-      // Tailwind's animate-pulse (2s cycle) on the "Due now" label, driven by
-      // T so it stays frame-accurate and pauses with the video.
-      pulse: kind === "desk" && page === "dash" ? 0.75 + 0.25 * Math.cos(Math.PI * T) : 1,
+      // Log now reads "Logging…" for 0.4s. Its spinner turns with T rather
+      // than with a CSS animation, so a paused frame is a still frame.
+      pending: T >= T_LOG && T < T_LOG + 0.4 ? ((360 * (T - T_LOG)) / 0.75) % 360 : null,
+      logged: MOTION.enter(T, T_LOG + 0.4, 0.3),
+      // No five-second timer, as in the app: the offer stays until the hard
+      // cut to Medications, which implies time has passed.
+      offer: T >= c.Medications ? 0 : MOTION.enter(T, T_LOG + 0.5, 0.3),
     },
-    toast:
-      T < T_LOG + 0.2
-        ? 0
-        : T < T_LOG + 5.2
-          ? MOTION.enter(T, T_LOG + 0.2, 0.3)
-          : 1 - MOTION.enter(T, T_LOG + 5.2, 0.3),
     medicationsLoad: Math.max(0, Math.min(3, T - c.Medications)),
     tick: MOTION.enter(T, c.Timers + 1.6, 0.35),
     addForm: {

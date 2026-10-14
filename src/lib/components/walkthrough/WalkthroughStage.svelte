@@ -8,11 +8,13 @@
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
   import { DISCLAIMER_TEXT } from "$components/MedicalDisclaimer.svelte";
   import type { TimeFormat } from "$lib/utils/time";
-  import { PAGES, SITE_HOST } from "./demo-data";
+  import { LOGGED_DOSE, PAGES, SITE_HOST } from "./demo-data";
+  import { DESKTOP_AFTER } from "./demo-dashboard";
+  import { stageLogToast } from "./stage-dashboard";
   import { STAGE_H, STAGE_W, WIN_H, WIN_W, activeCaption, type Frame } from "./timeline";
   import AppShell from "./parts/AppShell.svelte";
   import ChromeWindow from "./parts/ChromeWindow.svelte";
-  import StageToast from "./parts/StageToast.svelte";
+  import StageUndoOffer from "./parts/dashboard/StageUndoOffer.svelte";
   import AddMedicationScene from "./scenes/AddMedicationScene.svelte";
   import AnalyticsScene from "./scenes/AnalyticsScene.svelte";
   import DashboardScene from "./scenes/DashboardScene.svelte";
@@ -38,6 +40,8 @@
   const page = $derived(PAGES[frame.page]);
   const caption = $derived(activeCaption(time));
   const camera = $derived(frame.camera);
+  // The desktop beat's Undo offer, as Log now's reload would word it.
+  const desktopOffer = $derived(stageLogToast(DESKTOP_AFTER, LOGGED_DOSE.desktop, timeFormat));
 </script>
 
 <div
@@ -47,7 +51,11 @@
 >
   {#if full}
     <!-- Desktop: the app in a browser window, framed by the camera -->
-    <div class="absolute inset-0" style:visibility={frame.kind === "desk" ? "visible" : "hidden"}>
+    <div
+      class="absolute inset-0"
+      data-stage-surface="desktop"
+      style:visibility={frame.kind === "desk" ? "visible" : "hidden"}
+    >
       <div
         class="absolute top-0 left-0 origin-top-left"
         style:width="{WIN_W}px"
@@ -64,7 +72,14 @@
           >
             <AppShell active={page.nav}>
               {#snippet overlay()}
-                <StageToast text="Lisinopril logged" progress={frame.toast} markKey="o.toast" />
+                <!-- Where Toast's stack sits: fixed right-4 bottom-4 in the app -->
+                <div class="absolute right-4 bottom-4 z-50 flex flex-col gap-2">
+                  <StageUndoOffer
+                    message={desktopOffer}
+                    opacity={frame.dashboard.offer}
+                    mark="o.offer"
+                  />
+                </div>
               {/snippet}
               <!-- Every page stays mounted so its elements can be measured up front -->
               <div

@@ -1,128 +1,106 @@
 <script lang="ts">
-  // routes/(app)/dashboard/+page.svelte at 08:02: Lisinopril is due now and is
-  // logged from the Quick Log bar during the LogNow shot.
-  import { getMedicationBackground, getReadableTextColor } from "$lib/utils/medication-style";
-  import { formatDueIn, type TimeFormat } from "$lib/utils/time";
-  import { MEDICATIONS, MEDICATION_BY_ID, daySlots, storyClock } from "../demo-data";
+  // routes/(app)/dashboard/+page.svelte at DESKTOP_NOW (08:02): the header,
+  // Lisinopril's due-now card, Done today, Later today, the chips and
+  // Refills, top to bottom as the app orders them. The LogNow shot taps the
+  // card's Log now. Two moments drive it, DESKTOP_BEFORE and DESKTOP_AFTER,
+  // and the fidelity test proves both equal the real composer's payload.
+  // `state` (Frame.dashboard) only says how far the stage has moved from one
+  // to the other.
+  //
+  // Every marked element is mounted at every T. The Due section collapses
+  // and the new Done row grows through StageCollapse, never through {#if},
+  // so the rects measured near T=0 are the before-log layout.
+  //
+  // The spacing is the page's `space-y-6`, written as `mt-6` on each section
+  // and `pt-6` inside the Due collapse, so the collapse takes its gap with it.
+  import type { TimeFormat } from "$lib/utils/time";
+  import { LOGGED_DOSE, WALKTHROUGH_TZ } from "../demo-data";
+  import { DESKTOP_AFTER, DESKTOP_BEFORE } from "../demo-dashboard";
+  import { STAGE_REFILLS, beatRow } from "../stage-dashboard";
   import { useMark } from "../marks";
   import type { Frame } from "../timeline";
-  import DoseEntry from "../parts/DoseEntry.svelte";
-  import MyDaySection from "../parts/MyDaySection.svelte";
-  import SummaryAndRefills from "../parts/SummaryAndRefills.svelte";
+  import StageChips from "../parts/dashboard/StageChips.svelte";
+  import StageCollapse from "../parts/dashboard/StageCollapse.svelte";
+  import StageDashboardHeader from "../parts/dashboard/StageDashboardHeader.svelte";
+  import StageDoneList from "../parts/dashboard/StageDoneList.svelte";
+  import StageDueCard from "../parts/dashboard/StageDueCard.svelte";
+  import StageLaterList from "../parts/dashboard/StageLaterList.svelte";
+  import StageRefills from "../parts/dashboard/StageRefills.svelte";
 
   let { state, timeFormat }: { state: Frame["dashboard"]; timeFormat: TimeFormat } = $props();
 
-  const mark = useMark();
-  const slots = daySlots("upcoming", "upcoming");
+  const register = useMark();
 
-  // Quick Log labels under the pills that have one.
-  const LABELS: Partial<Record<string, { text: string; kind: "due_now" | "upcoming" }>> = {
-    lis: { text: "Due now", kind: "due_now" },
-    vitd: { text: formatDueIn(63 * 60_000), kind: "upcoming" },
-  };
-
-  /** The expanding green ring QuickLogBar flashes on a successful log. */
-  function flashShadow(p: number): string {
-    if (p <= 0 || p >= 1) return "none";
-    const spread = p < 0.5 ? 8 * p : 8 * (1 - p);
-    const alpha = p < 0.5 ? 0.6 - 0.6 * p : 0.6 * (1 - p);
-    return `0 0 0 ${spread.toFixed(2)}px rgba(16,185,129,${alpha.toFixed(3)})`;
-  }
+  const before = DESKTOP_BEFORE;
+  const after = DESKTOP_AFTER;
+  /** The medication whose card the LogNow shot taps. */
+  const tapped = beatRow(after, LOGGED_DOSE.desktop).dose.medicationId;
+  /**
+   * BEFORE's Due cards. The log resolves the only due row, so AFTER has
+   * none and the whole section collapses with `logged`. A card AFTER alone
+   * had would not be drawn, and the fidelity test's after-render would fail.
+   */
+  const dueCards = [...before.earlier, ...before.today];
+  const dueStays = after.earlier.length + after.today.length > 0;
 </script>
 
-<div class="mx-auto flex max-w-2xl flex-col gap-6">
-  <p class="text-2xl font-bold">Dashboard</p>
-  <SummaryAndRefills count={state.count} markKey="d.strip" />
-  <MyDaySection
-    {slots}
+<div class="mx-auto w-full max-w-2xl">
+  <StageDashboardHeader
+    before={before.status}
+    after={after.status}
+    logged={state.logged}
+    now={before.now}
+    tz={WALKTHROUGH_TZ}
     {timeFormat}
-    done={{ "lis08:00": state.lisinoprilDone }}
-    markPrefix="d."
-    logMarks={{ "lis08:00": "d.lisLog" }}
+    mark="d.header"
   />
 
-  <div use:mark={"d.quick"}>
-    <p class="text-text-muted mb-3 text-sm font-medium tracking-wider uppercase">Quick Log</p>
-    <div class="flex flex-wrap gap-3">
-      {#each MEDICATIONS as medication (medication.id)}
-        {@const isLisinopril = medication.id === "lis"}
-        {@const label = LABELS[medication.id]}
-        {@const text = getReadableTextColor(
-          medication.colour,
-          medication.colourSecondary,
-          medication.pattern,
-        )}
-        {@const gone = isLisinopril ? state.labelGone : 0}
-        <div class="flex flex-col items-center gap-1">
-          <div
-            class="flex items-center overflow-hidden rounded-full text-sm font-medium whitespace-nowrap"
-            style:background={getMedicationBackground(
-              medication.colour,
-              medication.colourSecondary,
-              medication.pattern,
-            )}
-            style:color={text.color}
-            style:text-shadow={text.textShadow}
-            style:box-shadow={isLisinopril ? flashShadow(state.flash) : "none"}
-          >
-            <div
-              use:mark={isLisinopril ? "d.lisPill" : undefined}
-              class="flex items-center gap-2 px-4 py-2"
-              style:background={isLisinopril && state.pillHover ? text.hoverOverlay : "transparent"}
-              style:transform={isLisinopril && state.pillPress
-                ? `scale(${1 - 0.05 * state.pillPress})`
-                : undefined}
-            >
-              <span>{medication.name}</span><span class="opacity-70"
-                >{medication.amount}{medication.unit}</span
-              >
-            </div>
-            <div class="p-2 leading-none opacity-70">+</div>
-          </div>
-          {#if label && gone < 1}
-            <div
-              class="overflow-hidden"
-              style:height="{16 * (1 - gone)}px"
-              style:margin-top="{-4 * gone}px"
-            >
-              <span
-                class="block text-xs font-medium {label.kind === 'due_now'
-                  ? 'text-accent-ink'
-                  : 'text-text-muted'}"
-                style:opacity={(isLisinopril ? state.pulse : 1) * (1 - gone)}>{label.text}</span
-              >
-            </div>
-          {/if}
-        </div>
-      {/each}
+  <StageCollapse factor={dueStays ? 1 : 1 - state.logged}>
+    <div class="pt-6">
+      <div use:register={"d.due"} data-stage-section="due" class="space-y-3">
+        {#each dueCards as card (card.key)}
+          <StageDueCard
+            {card}
+            now={before.now}
+            todayStart={before.todayStart}
+            tz={WALKTHROUGH_TZ}
+            {timeFormat}
+            pending={card.medicationId === tapped ? state.pending : null}
+            logNowMark={card.medicationId === tapped ? "d.logNow" : undefined}
+          />
+        {/each}
+      </div>
     </div>
+  </StageCollapse>
+
+  <div class="mt-6">
+    <StageDoneList
+      before={before.done}
+      after={after.done}
+      logged={state.logged}
+      todayStart={before.todayStart}
+      tz={WALKTHROUGH_TZ}
+      {timeFormat}
+      mark="d.done"
+    />
   </div>
 
-  <div>
-    <p class="text-text-muted mb-3 text-sm font-medium tracking-wider uppercase">Today</p>
-    <div use:mark={"d.today"} class="flex flex-col">
-      <!-- The new entry grows in above the existing ones once the dose is logged -->
-      <div class="shrink-0 overflow-hidden" style:height="{66 * state.entry}px">
-        <div style:opacity={state.entry} style:transform="translateY({(1 - state.entry) * 4}px)">
-          <DoseEntry
-            medication={MEDICATION_BY_ID.lis}
-            time={storyClock("08:02", timeFormat)}
-            since="just now"
-          />
-        </div>
-      </div>
-      <div class="flex flex-col gap-2">
-        <DoseEntry
-          medication={MEDICATION_BY_ID.met}
-          time={storyClock("07:48", timeFormat)}
-          since="14m ago"
-        />
-        <DoseEntry
-          medication={MEDICATION_BY_ID.ibu}
-          time={storyClock("06:10", timeFormat)}
-          since="1h 52m ago"
-        />
-      </div>
-    </div>
+  <div class="mt-6">
+    <StageLaterList
+      rows={before.later}
+      now={before.now}
+      todayStart={before.todayStart}
+      tz={WALKTHROUGH_TZ}
+      {timeFormat}
+      mark="d.later"
+    />
+  </div>
+
+  <div class="mt-6">
+    <StageChips medications={before.medications} mark="d.chips" />
+  </div>
+
+  <div class="mt-6">
+    <StageRefills entries={STAGE_REFILLS} />
   </div>
 </div>

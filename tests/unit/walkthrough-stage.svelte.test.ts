@@ -173,3 +173,69 @@ describe("WalkthroughStage marks", () => {
     }
   });
 });
+
+// The stage re-renders on every animation frame, and a frame changes only
+// `time` and the Frame values computed from it. So nothing that depends on T
+// alone may build a formatter: formatUserTime constructs an Intl.DateTimeFormat
+// per call, and StageDashboardHeader once recomputed both header copies (the
+// caught-up one through formatUserTime) whenever `logged` moved, twice per
+// frame across the desktop and phone headers for the whole loop. The copy
+// depends on the payload, never on T; only each layer's opacity follows
+// `logged`.
+describe("WalkthroughStage per-frame work", () => {
+  it("builds no date formatter while the frames step through both log beats", () => {
+    const target = document.body.appendChild(document.createElement("div"));
+    const props = $state<{ frame: Frame; time: number; full: boolean; timeFormat: TimeFormat }>({
+      frame: computeFrame(0, {}),
+      time: 0,
+      full: true,
+      timeFormat: "24h",
+    });
+    const app = mount(WalkthroughStage, {
+      target,
+      props,
+      context: new Map([[MARKS_CONTEXT, new Map()]]),
+    });
+    teardown.push(() => {
+      unmount(app);
+      target.remove();
+    });
+
+    const step = (T: number) => {
+      props.frame = computeFrame(T, {});
+      props.time = T;
+      flushSync();
+    };
+
+    const Real = Intl.DateTimeFormat;
+    let counting = false;
+    let constructed = 0;
+    const Counting = function (...args: ConstructorParameters<typeof Real>) {
+      if (counting) constructed += 1;
+      return new Real(...args);
+    } as unknown as typeof Intl.DateTimeFormat;
+    Counting.supportedLocalesOf = Real.supportedLocalesOf;
+    Object.defineProperty(Counting, "prototype", { value: Real.prototype });
+    Intl.DateTimeFormat = Counting;
+    teardown.push(() => {
+      Intl.DateTimeFormat = Real;
+    });
+
+    // Each beat's first frame is reached uncounted: arriving from another
+    // scene may legitimately build a formatter once (HistoryScene's story
+    // clock moves with its scene). What is counted is the steady state, ten
+    // frames a tenth of a second apart, across which `logged` goes 0 → 1.
+    for (const beat of [T_LOG, T_TAP]) {
+      counting = false;
+      step(beat);
+      counting = true;
+      for (let i = 1; i <= 10; i++) step(beat + 0.1 * i);
+    }
+    counting = true;
+    const perFrame = constructed;
+    // Not vacuous: the spy counts a construction where one happens.
+    expect(new Intl.DateTimeFormat("en-GB")).toBeInstanceOf(Real);
+    expect(constructed).toBe(perFrame + 1);
+    expect(perFrame, "Intl.DateTimeFormat constructions across the beats").toBe(0);
+  });
+});

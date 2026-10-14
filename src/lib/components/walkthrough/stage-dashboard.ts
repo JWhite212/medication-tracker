@@ -44,8 +44,8 @@ export function stageLogToast(moment: StageMoment, doseId: string, timeFormat: T
 
 /**
  * The Refills card's rows: each medication the demo marks `refillWatch`,
- * with its supply in days. 8 days is RefillsCard's "watch" tier
- * (`inventory.ts`: critical ≤ 3d, warning ≤ 7d, watch ≤ 14d).
+ * with its supply in days, tiered by REFILL_THRESHOLDS (`inventory.ts`);
+ * walkthrough-demo-facts.test.ts holds the demo to classifyRefillSeverity.
  */
 export const STAGE_REFILLS = MEDICATIONS.filter((m) => m.refillWatch).map((m) => ({
   medicationId: m.id,

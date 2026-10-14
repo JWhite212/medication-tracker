@@ -24,6 +24,7 @@ import {
   foldDoseStatusBreakdown,
   type MedicationStatusCounts,
 } from "$lib/server/analytics/status-breakdown";
+import { classifyRefillSeverity } from "$lib/server/inventory";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import {
   formatTimeSince,
@@ -48,6 +49,7 @@ import {
   type DemoDose,
   type DemoMedication,
 } from "$lib/components/walkthrough/demo-data";
+import { STAGE_REFILLS } from "$lib/components/walkthrough/stage-dashboard";
 import AnalyticsScene from "$lib/components/walkthrough/scenes/AnalyticsScene.svelte";
 import SecurityScene from "$lib/components/walkthrough/scenes/SecurityScene.svelte";
 import StatusBreakdownBar from "$lib/components/StatusBreakdownBar.svelte";
@@ -273,5 +275,26 @@ describe("the Analytics scene's Dose Status Breakdown", () => {
     );
     expect(real.segments.length).toBeGreaterThan(0);
     expect(scene).toEqual(real);
+  });
+});
+
+// The tier a supply earns is classifyRefillSeverity's alone (inventory.ts).
+// The demo picks its Refills rows by a hand-set flag and states their tier as
+// a literal, so a moved supplyDays or threshold would draw the wrong tint, or
+// drop a row the app shows, with every other test green. The flag also
+// decides the Medications scene's refill badge.
+describe("the Refills card and the refill badge", () => {
+  it("flags exactly the medications classifyRefillSeverity would list", () => {
+    expect(MEDICATIONS.some((m) => m.refillWatch)).toBe(true);
+    for (const m of MEDICATIONS) {
+      expect(Boolean(m.refillWatch), m.name).toBe(classifyRefillSeverity(m.supplyDays) !== "ok");
+    }
+  });
+
+  it("tints each row with the tier classifyRefillSeverity gives its supply", () => {
+    expect(STAGE_REFILLS.length).toBeGreaterThan(0);
+    for (const row of STAGE_REFILLS) {
+      expect(row.severity, row.medicationName).toBe(classifyRefillSeverity(row.daysUntilRefill));
+    }
   });
 });

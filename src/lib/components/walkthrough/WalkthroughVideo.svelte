@@ -21,6 +21,9 @@
   let {
     // The app's default accent, so the video matches what a new account sees.
     accent = "#4f46e5",
+    // Deliberately 24h, unlike the accent: the spec's copy and the stage
+    // mount test are written in 24h. A new account gets 12h
+    // (user_preferences.timeFormat), and the fidelity test checks both.
     timeFormat = "24h",
   }: { accent?: string; timeFormat?: TimeFormat } = $props();
 

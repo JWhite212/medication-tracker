@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { render } from "svelte/server";
 import { userPreferences } from "$lib/server/db/schema";
 import WalkthroughVideo from "$lib/components/walkthrough/WalkthroughVideo.svelte";
+import { WALKTHROUGH_DATE_FORMAT } from "$lib/components/walkthrough/stage-dashboard";
 import { ssrDocument } from "./helpers/axe-ssr";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -60,5 +61,15 @@ describe("the walkthrough's accent", () => {
     expect(tags).toHaveLength(1);
     // Neither `accent=`, the `{accent}` shorthand, nor a spread that could carry one.
     expect(tags[0]).not.toMatch(/\baccent\b|\{\s*\.\.\./);
+  });
+});
+
+// Like the accent, the stage's date labels are drawn in the format a new
+// account gets, and WALKTHROUGH_DATE_FORMAT says so; this holds it to the
+// column rather than to its own doc comment. (The time format deliberately
+// differs: see WalkthroughVideo.)
+describe("the walkthrough's date format", () => {
+  it("is the date format column's default", () => {
+    expect(WALKTHROUGH_DATE_FORMAT).toBe(userPreferences.dateFormat.default);
   });
 });

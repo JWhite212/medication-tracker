@@ -282,20 +282,26 @@ export type CursorState = {
   ripple: { x: number; y: number; p: number } | null;
 };
 
+/**
+ * One log beat, the desktop's (around T_LOG) or the phone's (around T_TAP).
+ * Both run on the same clock, so `logBeat` computes both.
+ */
+export type LogBeat = {
+  /** Log now's spinner angle in degrees for 0.4s from the tap, else null. */
+  pending: number | null;
+  /** 0 → 1 as the reload lands: Due collapses, the header crossfades, Done grows. */
+  logged: number;
+  /** The Undo offer's opacity: 0 → 1 after the tap, and exactly 0 from the next hard cut. */
+  offer: number;
+};
+
 export type Frame = {
   kind: ShotKind;
   page: DesktopPage;
   scroll: number;
   camera: Camera;
   cursor: CursorState | null;
-  dashboard: {
-    /** Log now's spinner angle in degrees on [T_LOG, T_LOG + 0.4), else null. */
-    pending: number | null;
-    /** 0 → 1 as the log's reload lands: Due collapses, the header crossfades, Done grows. */
-    logged: number;
-    /** The Undo offer's opacity: 0 → 1 after the log, and exactly 0 from the cut to Medications. */
-    offer: number;
-  };
+  dashboard: LogBeat;
   medicationsLoad: number;
   tick: number;
   addForm: {
@@ -309,16 +315,30 @@ export type Frame = {
   analyticsLoad: number;
   heat: number;
   downloadHover: boolean;
-  phone: {
+  phone: LogBeat & {
     bannerY: number;
-    vitaminDDone: number;
-    toast: number;
     touch: { x: number; y: number; opacity: number; press: number } | null;
     scale: number;
   };
   titleScale: number;
   outroExtras: number;
 };
+
+/**
+ * One log beat from its tap: Log now reads "Logging…" for 0.4s, the reload
+ * lands over the next 0.3s, and the Undo offer rises from tap + 0.5 and stays
+ * until `cut`, the next hard cut, where it is exactly 0. There is no
+ * five-second timer, as in the app: the cut implies time has passed. The
+ * spinner turns with T rather than with a CSS animation, so a paused frame is
+ * a still frame.
+ */
+function logBeat(T: number, tap: number, cut: number): LogBeat {
+  return {
+    pending: T >= tap && T < tap + 0.4 ? ((360 * (T - tap)) / 0.75) % 360 : null,
+    logged: MOTION.enter(T, tap + 0.4, 0.3),
+    offer: T >= cut ? 0 : MOTION.enter(T, tap + 0.5, 0.3),
+  };
+}
 
 /** Press-in over 150ms before a click, release over 150ms after it. */
 function pressAt(T: number, click: number): number {
@@ -569,15 +589,8 @@ export function computeFrame(T: number, M: Measurements): Frame {
     scroll,
     camera,
     cursor,
-    dashboard: {
-      // Log now reads "Logging…" for 0.4s. Its spinner turns with T rather
-      // than with a CSS animation, so a paused frame is a still frame.
-      pending: T >= T_LOG && T < T_LOG + 0.4 ? ((360 * (T - T_LOG)) / 0.75) % 360 : null,
-      logged: MOTION.enter(T, T_LOG + 0.4, 0.3),
-      // No five-second timer, as in the app: the offer stays until the hard
-      // cut to Medications, which implies time has passed.
-      offer: T >= c.Medications ? 0 : MOTION.enter(T, T_LOG + 0.5, 0.3),
-    },
+    // Lisinopril, from Log now on the desktop. The offer goes at the cut to Medications.
+    dashboard: logBeat(T, T_LOG, c.Medications),
     medicationsLoad: Math.max(0, Math.min(3, T - c.Medications)),
     tick: MOTION.enter(T, c.Timers + 1.6, 0.35),
     addForm: {
@@ -595,8 +608,8 @@ export function computeFrame(T: number, M: Measurements): Frame {
     phone: {
       // Slides down from above the status bar, then back up out of view.
       bannerY: -150 * (1 - MOTION.enter(T, R0 + 0.5, 0.45)) - 170 * MOTION.move(T, R0 + 2.3, 0.35),
-      vitaminDDone: MOTION.enter(T, T_TAP, 0.3),
-      toast: T < T_TAP + 0.15 ? 0 : MOTION.enter(T, T_TAP + 0.15, 0.3),
+      // Vitamin D, from Log now on the phone. The offer goes at the cut to the Outro.
+      ...logBeat(T, T_TAP, c.Outro),
       touch,
       scale: 1.08 + 0.04 * MOTION.drift(T, R0, c.Outro - R0),
     },

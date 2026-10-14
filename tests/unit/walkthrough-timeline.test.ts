@@ -75,6 +75,8 @@ function source(rel: string): string {
 // in the 1440x900 shell: the header at 32-144, the Due card at 168-290
 // (Log now at its right edge), Done today at 314-452, Later today at 476-710
 // and the chips at 734-920. The offer sits at the shell's bottom right.
+// p.vitdLog is in phone space: the Vitamin D card's 48px Log now, at the
+// right edge of the phone's first card, below the 112px header.
 const MEASURED: Measurements = {
   "d.page": { x: 288, y: 0, w: 1152, h: 1500 },
   "d.header": { x: 528, y: 32, w: 672, h: 112 },
@@ -103,7 +105,7 @@ const MEASURED: Measurements = {
   "s.twofa": { x: 528, y: 420, w: 672, h: 330 },
   "x.export": { x: 528, y: 120, w: 672, h: 380 },
   "x.download": { x: 553, y: 380, w: 140, h: 42 },
-  "p.vitdLog": { x: 330, y: 400, w: 40, h: 20 },
+  "p.vitdLog": { x: 253, y: 275, w: 120, h: 48 },
 };
 
 /** A MEASURED rect in window space, where computeFrame's R() puts it. */
@@ -311,6 +313,65 @@ describe("computeFrame", () => {
     expect(computeFrame(T_TAP, MEASURED).phone.touch?.press).toBe(1);
   });
 
+  it("logs Vitamin D once, from the phone's Log now: pending, then logged, then the Undo offer until the Outro", () => {
+    const at = (t: number) => computeFrame(t, MEASURED).phone;
+    // The window edges themselves, which the 20ms samples step over.
+    expect(at(T_TAP - 1e-6).pending).toBeNull();
+    expect(at(T_TAP).pending).toBe(0);
+    expect(at(T_TAP + 0.2).pending).toBeCloseTo(96, 6);
+    expect(at(T_TAP + 0.4).pending).toBeNull();
+    expect(at(T_TAP + 0.4).logged).toBe(0);
+    expect(at(T_TAP + 0.7).logged).toBe(1);
+    expect(at(T_TAP + 0.5).offer).toBe(0);
+    expect(at(T_TAP + 0.8).offer).toBe(1);
+    expect(at(CUES.Outro - 1e-6).offer).toBe(1);
+    expect(at(CUES.Outro).offer).toBe(0);
+    // Fully visible for over a second before the cut to the Outro.
+    expect(CUES.Outro - (T_TAP + 0.8)).toBeGreaterThan(1);
+    for (const t of samples) {
+      const p = at(t);
+      expect(p.pending !== null, `pending at ${t}`).toBe(t >= T_TAP && t < T_TAP + 0.4);
+      if (t < T_TAP + 0.4) expect(p.logged, `logged at ${t}`).toBe(0);
+      if (t >= T_TAP + 0.7) expect(p.logged, `logged at ${t}`).toBe(1);
+      if (t < T_TAP + 0.5) expect(p.offer, `offer at ${t}`).toBe(0);
+      if (t >= T_TAP + 0.8 && t < CUES.Outro) expect(p.offer, `offer at ${t}`).toBe(1);
+      if (t >= CUES.Outro) expect(p.offer, `offer at ${t}`).toBe(0);
+    }
+  });
+
+  // Review Focus 2, on the phone: a pause can land on any frame, and the loop
+  // restarts at T=0, so no part of the tap may outlive its window.
+  it("never leaves the phone's log half-done: no spinner outside its window, and the seam matches", () => {
+    for (const t of samples) {
+      const p = computeFrame(t, MEASURED).phone;
+      if (t < T_TAP || t >= T_TAP + 0.4) expect(p.pending, `pending at ${t}`).toBeNull();
+      for (const v of [p.logged, p.offer]) {
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+    }
+    const first = computeFrame(0, MEASURED);
+    const last = computeFrame(TOTAL_DURATION - 1e-6, MEASURED);
+    expect(last.phone.pending).toBe(first.phone.pending);
+    expect(last.phone.offer).toBe(first.phone.offer);
+    // `logged` is 1 at the end of the loop and 0 at its start. Both ends are
+    // title frames, so the phone is off screen across the seam. Production
+    // measures p.vitdLog while T is between 0 and 1.2s, so the card is
+    // expanded, in its before-tap layout, whenever it is measured.
+    for (const t of [0, 1.2]) expect(computeFrame(t, MEASURED).phone.logged).toBe(0);
+    expect([first.kind, last.kind]).toEqual(["title", "title"]);
+  });
+
+  it("puts the fingertip on the middle of the phone card's Log now, where p.vitdLog is measured", () => {
+    const logNow = MEASURED["p.vitdLog"]!;
+    expect(computeFrame(T_TAP, MEASURED).phone.touch).toEqual({
+      x: logNow.x + logNow.w / 2,
+      y: logNow.y + logNow.h / 2,
+      opacity: 1,
+      press: 1,
+    });
+  });
+
   it("types the new medication a character at a time and never past its end", () => {
     const A = CUES.AddMedication;
     expect(computeFrame(A + 0.5, MEASURED).addForm.name).toBe("");
@@ -343,8 +404,8 @@ describe("computeFrame", () => {
         f.tick,
         f.history.filtered,
         f.heat,
-        f.phone.vitaminDDone,
-        f.phone.toast,
+        f.phone.logged,
+        f.phone.offer,
         f.outroExtras,
       ]) {
         expect(v).toBeGreaterThanOrEqual(0);

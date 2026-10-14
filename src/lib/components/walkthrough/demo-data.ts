@@ -285,32 +285,6 @@ export const ADHERENCE_TRENDS: Partial<Record<MedicationId, { up: boolean; point
   ibu: { up: false, points: 4 },
 };
 
-// ── My Day ──
-export type DayGroupKey = "morning" | "afternoon" | "evening" | "night";
-export type SlotStatus = "taken" | "upcoming" | "overdue";
-export type DaySlot = { group: DayGroupKey; id: MedicationId; time: string; status: SlotStatus };
-
-// Emoji because the dashboard's former My Day timeline used them.
-export const DAY_GROUPS: ReadonlyArray<{ key: DayGroupKey; label: string; icon: string }> = [
-  { key: "morning", label: "Morning", icon: "☀️" },
-  { key: "afternoon", label: "Afternoon", icon: "🌤️" },
-  { key: "evening", label: "Evening", icon: "🌅" },
-  { key: "night", label: "Night", icon: "🌙" },
-];
-
-export function daySlots(lisinopril: SlotStatus, vitaminD: SlotStatus): DaySlot[] {
-  return [
-    { group: "morning", id: "ibu", time: "06:10", status: "taken" },
-    { group: "morning", id: "met", time: "07:48", status: "taken" },
-    { group: "morning", id: "lis", time: "08:00", status: lisinopril },
-    { group: "morning", id: "vitd", time: "09:05", status: vitaminD },
-    { group: "afternoon", id: "ibu", time: "14:10", status: "upcoming" },
-    { group: "evening", id: "met", time: "19:48", status: "upcoming" },
-    { group: "night", id: "mag", time: "22:05", status: "upcoming" },
-    { group: "night", id: "ibu", time: "22:10", status: "upcoming" },
-  ];
-}
-
 // ── Doses ──
 export type DemoDose = {
   id: string;

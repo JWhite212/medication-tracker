@@ -23,7 +23,7 @@
 <script lang="ts">
   import type { DoneRow, DoseLogWithMedication } from "$lib/types";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
-  import { formatDoseLabel, formatSlotTime } from "$lib/utils/dashboard-copy";
+  import { doneCoversLine, doneDoseText, formatDoseLabel } from "$lib/utils/dashboard-copy";
   import DoseActionForm from "./DoseActionForm.svelte";
   import MedicationGlyph from "./MedicationGlyph.svelte";
   import StatusMarker from "./StatusMarker.svelte";
@@ -56,22 +56,22 @@
     const label = formatDoseLabel(med.name, med.dosageAmount, med.dosageUnit);
     const time = formatUserTime(new Date(dose.takenAt), timezone, timeFormat);
     const when = row.dayLabel === "yesterday" ? `yesterday ${time}` : time;
-    const covers = row.covers.map((iso) =>
-      formatSlotTime(new Date(iso), todayStart, timezone, timeFormat),
-    );
     const skipped = dose.status === "skipped";
     const removeToast = skipped ? `${label}: skip removed` : `${label}: missed entry removed`;
     return {
       label,
       time,
       when,
-      dose: `${med.dosageAmount}${med.dosageUnit}${
-        dose.status === "taken" && dose.quantity > 1 ? ` ×${dose.quantity}` : ""
-      }`,
+      dose: doneDoseText({
+        dosageAmount: med.dosageAmount,
+        dosageUnit: med.dosageUnit,
+        quantity: dose.quantity,
+        status: dose.status,
+      }),
       statusWord:
         dose.status === "skipped" ? "Skipped" : dose.status === "missed" ? "Missed" : null,
       // Facts only, no verdict: the slots this dose resolved.
-      coversText: covers.length > 0 ? `for ${covers.join(", ")}` : null,
+      coversText: doneCoversLine(row.covers, todayStart, timezone, timeFormat),
       // "Remove skip", not "Undo skip": every Undo offer now has a button
       // named Undo, and "click Undo" must not be ambiguous for voice control.
       removeLabel: skipped ? "Remove skip" : "Remove",

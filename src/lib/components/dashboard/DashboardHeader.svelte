@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { DashboardStatus } from "$lib/types";
-  import { formatUserDate, type DateFormat, type TimeFormat } from "$lib/utils/time";
-  import { dashboardHeaderCopy } from "$lib/utils/dashboard-copy";
+  import type { DateFormat, TimeFormat } from "$lib/utils/time";
+  import { dashboardHeaderCopy, headerEyebrow } from "$lib/utils/dashboard-copy";
   import { DASHBOARD_HEADING_ID } from "./dom-ids";
 
   let {
@@ -19,9 +19,7 @@
     dateFormat: DateFormat;
   } = $props();
 
-  const eyebrow = $derived(
-    formatUserDate(serverNow, timezone, dateFormat, { weekday: true, year: false }),
-  );
+  const eyebrow = $derived(headerEyebrow(serverNow, timezone, dateFormat));
   const copy = $derived(dashboardHeaderCopy(status, serverNow, timezone, timeFormat));
 </script>
 

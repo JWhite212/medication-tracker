@@ -1,16 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   dashboardHeaderCopy,
+  doneCoversLine,
+  doneDoseText,
   formatDoseLabel,
   formatSlotTime,
+  headerEyebrow,
+  laterUntil,
   rowStatusLine,
   toastForDoseRemoved,
   toastForLog,
   toastForSkip,
   toastForTookItAt,
+  tookItAtLabel,
 } from "$lib/utils/dashboard-copy";
 import type { DashboardStatus, DueRow } from "$lib/types";
-import type { TimeFormat } from "$lib/utils/time";
+import { formatUserDate, type TimeFormat } from "$lib/utils/time";
 
 // UTC keeps every local time equal to its ISO string. Every 24h time asserted
 // here has a two-digit hour on purpose: formatUserTime's en-GB 24h output does
@@ -366,5 +371,124 @@ describe("toastForDoseRemoved", () => {
     [{ on: "Tue 14 Apr" }, "Dose removed: Metformin 500mg on Tue 14 Apr at 22:00"],
   ])("names the day %j", (day, message) => {
     expect(toastForDoseRemoved("Metformin 500mg", "22:00", day)).toBe(message);
+  });
+});
+
+describe("headerEyebrow", () => {
+  // Noon UTC on Thursday 24 September 2026.
+  const NOON = at("2026-09-24T12:00:00.000Z");
+
+  it("is formatUserDate with a weekday and no year, in every date format", () => {
+    for (const dateFormat of ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"] as const) {
+      expect(headerEyebrow(NOON, TZ, dateFormat)).toBe(
+        formatUserDate(NOON, TZ, dateFormat, { weekday: true, year: false }),
+      );
+    }
+  });
+
+  it("lets the preference order the fields, and never adds a year to a named month", () => {
+    // en-GB's short September is "Sept" on ICU 72+ and "Sep" before it. This
+    // runs in the viewer's browser, so the shape is pinned, not the spelling.
+    expect(headerEyebrow(NOON, TZ, "DD/MM/YYYY")).toMatch(/^Thu 24 Sept?$/);
+    expect(headerEyebrow(NOON, TZ, "MM/DD/YYYY")).toMatch(/^Thu, Sep 24$/);
+    // ISO is assembled field by field, and always carries its year.
+    expect(headerEyebrow(NOON, TZ, "YYYY-MM-DD")).toBe("Thu, 2026-09-24");
+  });
+
+  it("names the day in the user's zone, not the server's", () => {
+    // 23:30 UTC on the 24th is already Friday the 25th in Auckland (NZST, +12).
+    const late = at("2026-09-24T23:30:00.000Z");
+    expect(headerEyebrow(late, "UTC", "YYYY-MM-DD")).toBe("Thu, 2026-09-24");
+    expect(headerEyebrow(late, "Pacific/Auckland", "YYYY-MM-DD")).toBe("Fri, 2026-09-25");
+  });
+});
+
+describe("laterUntil", () => {
+  const SERVER_NOW = at("2026-04-16T13:00:00.000Z");
+  const until = (expectedTime: string) => laterUntil(expectedTime, SERVER_NOW);
+
+  it("says how far off a Later row is, in words", () => {
+    expect(until("2026-04-16T20:00:00.000Z")).toBe("in 7 hours");
+    expect(until("2026-04-16T14:00:00.000Z")).toBe("in 1 hour");
+    expect(until("2026-04-16T13:45:00.000Z")).toBe("in 45 minutes");
+  });
+
+  it("shows one unit, floored, like every duration on the page", () => {
+    expect(until("2026-04-16T14:30:00.000Z")).toBe("in 1 hour");
+    expect(until("2026-04-16T20:59:00.000Z")).toBe("in 7 hours");
+  });
+
+  it("measures from the page's serverNow, never the device clock", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(at("2027-03-01T00:00:00.000Z"));
+      expect(until("2026-04-16T20:00:00.000Z")).toBe("in 7 hours");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("doneDoseText", () => {
+  const text = (quantity: number, status = "taken") =>
+    doneDoseText({ dosageAmount: "500", dosageUnit: "mg", quantity, status });
+
+  it("is the medication's dose, with no multiplier for a single dose", () => {
+    expect(text(1)).toBe("500mg");
+    expect(
+      doneDoseText({ dosageAmount: "2.5", dosageUnit: "ml", quantity: 1, status: "taken" }),
+    ).toBe("2.5ml");
+  });
+
+  it("adds ×n to a taken dose of more than one", () => {
+    expect(text(2)).toBe("500mg ×2");
+    expect(text(4)).toBe("500mg ×4");
+  });
+
+  it("never shows a quantity on a skipped or missed row", () => {
+    expect(text(3, "skipped")).toBe("500mg");
+    expect(text(2, "missed")).toBe("500mg");
+  });
+});
+
+describe("doneCoversLine", () => {
+  const line = (covers: string[], timeFormat: TimeFormat = "24h") =>
+    doneCoversLine(covers, TODAY_START, TZ, timeFormat);
+
+  it("is null when the dose resolved no slot beyond its own minute", () => {
+    expect(line([])).toBeNull();
+  });
+
+  it("lists the slots the dose resolved, prefixing yesterday's", () => {
+    expect(
+      line(["2026-04-15T22:30:00.000Z", "2026-04-16T10:55:00.000Z", "2026-04-16T11:00:00.000Z"]),
+    ).toBe("for yesterday 22:30, 10:55, 11:00");
+  });
+
+  it("keeps the order it is given: the composer sorts covers, this only words them", () => {
+    expect(line(["2026-04-16T11:00:00.000Z", "2026-04-16T10:55:00.000Z"])).toBe("for 11:00, 10:55");
+  });
+
+  it("follows the 12h preference", () => {
+    expect(line(["2026-04-16T13:31:00.000Z"], "12h")).toMatch(/^for 0?1:31 pm$/);
+  });
+
+  it("decides 'yesterday' against todayStart, in the user's zone", () => {
+    // Midnight on 16 April in London (BST) is 23:00Z on the 15th.
+    const londonStart = at("2026-04-15T23:00:00.000Z");
+    expect(doneCoversLine(["2026-04-15T21:00:00.000Z"], londonStart, "Europe/London", "24h")).toBe(
+      "for yesterday 22:00",
+    );
+  });
+});
+
+describe("tookItAtLabel", () => {
+  it("names the instant Took it at records", () => {
+    expect(tookItAtLabel("11:00")).toBe("Took it at 11:00");
+  });
+
+  it("carries an Earlier row's day, because its time arrives already prefixed", () => {
+    const time = formatSlotTime(at("2026-04-15T22:00:00.000Z"), TODAY_START, TZ, "24h");
+    expect(tookItAtLabel(time)).toBe("Took it at yesterday 22:00");
   });
 });

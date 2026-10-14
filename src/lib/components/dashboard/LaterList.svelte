@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { LaterRow } from "$lib/types";
-  import { formatDuration, type TimeFormat } from "$lib/utils/time";
-  import { formatSlotTime } from "$lib/utils/dashboard-copy";
+  import type { TimeFormat } from "$lib/utils/time";
+  import { formatSlotTime, laterUntil } from "$lib/utils/dashboard-copy";
   import MedicationGlyph from "./MedicationGlyph.svelte";
   import StatusMarker from "./StatusMarker.svelte";
 
@@ -19,12 +19,6 @@
     timezone: string;
     timeFormat: TimeFormat;
   } = $props();
-
-  /** "in 3 hours": long style, one unit, measured on the server's clock. */
-  function until(row: LaterRow): string {
-    const ms = Date.parse(row.expectedTime) - serverNow.getTime();
-    return `in ${formatDuration(ms, { style: "long", maxUnits: 1 })}`;
-  }
 </script>
 
 <!-- Renders nothing when empty (the RefillsCard convention), so the page does not wrap it in {#if}. -->
@@ -54,7 +48,9 @@
               <span class="text-text-primary truncate font-medium">{row.name}</span>
               <span class="text-text-secondary shrink-0">{row.dosageAmount}{row.dosageUnit}</span>
             </p>
-            <span class="text-text-secondary shrink-0 text-sm">{until(row)}</span>
+            <span class="text-text-secondary shrink-0 text-sm"
+              >{laterUntil(row.expectedTime, serverNow)}</span
+            >
           </li>
         {/each}
       </ul>

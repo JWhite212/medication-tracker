@@ -8,6 +8,7 @@
     rowStatusLine,
     toastForSkip,
     toastForTookItAt,
+    tookItAtLabel,
   } from "$lib/utils/dashboard-copy";
   import DoseActionForm from "./DoseActionForm.svelte";
   import MedicationGlyph from "./MedicationGlyph.svelte";
@@ -141,7 +142,7 @@
         <DoseActionForm
           action="?/logDose"
           fields={{ medicationId: card.medicationId, quantity: "1", takenAt: row.tookItAt }}
-          label={`Took it at ${view.time}`}
+          label={tookItAtLabel(view.time)}
           srContext={`: ${doseLabel}`}
           pendingLabel="Recording…"
           variant="secondary"

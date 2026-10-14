@@ -1,5 +1,11 @@
 import type { DashboardStatus, DueRow } from "$lib/types";
-import { formatDuration, formatUserTime, type TimeFormat } from "./time";
+import {
+  formatDuration,
+  formatUserDate,
+  formatUserTime,
+  type DateFormat,
+  type TimeFormat,
+} from "./time";
 
 /**
  * Every sentence the dashboard shows, as pure functions, so the copy is
@@ -109,6 +115,59 @@ export function dashboardHeaderCopy(
     case "none-today":
       return { sentence: "Nothing scheduled today", supporting: logged };
   }
+}
+
+/**
+ * The header's date eyebrow, "Thu 24 Sept". The date preference decides the
+ * field order and the month's form; this decides the fields: a weekday, and
+ * no year.
+ */
+export function headerEyebrow(serverNow: Date, tz: string, dateFormat: DateFormat): string {
+  return formatUserDate(serverNow, tz, dateFormat, { weekday: true, year: false });
+}
+
+/**
+ * A Due row's backdating button, "Took it at 11:00". `time` arrives formatted
+ * by `formatSlotTime`, so an Earlier row's already reads "yesterday 22:00".
+ */
+export function tookItAtLabel(time: string): string {
+  return `Took it at ${time}`;
+}
+
+/**
+ * A Done row's dose, "500mg", with "×4" added for a taken dose of more than
+ * one. A skip or a missed entry is one event whatever its quantity.
+ */
+export function doneDoseText(dose: {
+  dosageAmount: string;
+  dosageUnit: string;
+  quantity: number;
+  status: string;
+}): string {
+  const multiplier = dose.status === "taken" && dose.quantity > 1 ? ` ×${dose.quantity}` : "";
+  return `${dose.dosageAmount}${dose.dosageUnit}${multiplier}`;
+}
+
+/**
+ * The slots a Done row's dose resolved, as facts with no verdict: "for
+ * yesterday 22:30, 10:55". Null when it resolved none beyond its own minute.
+ * Kept in the order given: the composer sorts `covers`.
+ */
+export function doneCoversLine(
+  covers: readonly string[],
+  todayStart: Date,
+  tz: string,
+  timeFormat: TimeFormat,
+): string | null {
+  if (covers.length === 0) return null;
+  const times = covers.map((iso) => formatSlotTime(new Date(iso), todayStart, tz, timeFormat));
+  return `for ${times.join(", ")}`;
+}
+
+/** How far off a Later row is, "in 3 hours": long style, one unit, floored. */
+export function laterUntil(expectedTime: string, serverNow: Date): string {
+  const ms = Date.parse(expectedTime) - serverNow.getTime();
+  return `in ${formatDuration(ms, { style: "long", maxUnits: 1 })}`;
 }
 
 /**

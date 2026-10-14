@@ -34,9 +34,11 @@
   const register = useMark();
 
   const eyebrow = $derived(headerEyebrow(now, tz, dateFormat));
+  // The copy reads the payload only, and `logged` moves every frame, so the
+  // layers never read it: each one's opacity does, in the template.
   const layers = $derived([
-    { key: "before", copy: dashboardHeaderCopy(before, now, tz, timeFormat), opacity: 1 - logged },
-    { key: "after", copy: dashboardHeaderCopy(after, now, tz, timeFormat), opacity: logged },
+    { key: "before", copy: dashboardHeaderCopy(before, now, tz, timeFormat), after: false },
+    { key: "after", copy: dashboardHeaderCopy(after, now, tz, timeFormat), after: true },
   ]);
 </script>
 
@@ -45,7 +47,10 @@
   <p class="text-2xl font-bold">Today</p>
   <div class="grid">
     {#each layers as layer (layer.key)}
-      <div class="col-start-1 row-start-1 space-y-1" style:opacity={layer.opacity}>
+      <div
+        class="col-start-1 row-start-1 space-y-1"
+        style:opacity={layer.after ? logged : 1 - logged}
+      >
         <p class="text-lg font-semibold">{layer.copy.sentence}</p>
         {#if layer.copy.supporting}
           <p class="text-text-secondary text-sm">{layer.copy.supporting}</p>

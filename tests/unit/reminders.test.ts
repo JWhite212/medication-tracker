@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { getTableName } from "drizzle-orm";
 
 // Two query results: the schedule/medication outer query, and the
@@ -145,7 +145,15 @@ vi.mock("$lib/server/db", () => ({
 const emailResults: Array<
   { ok: true; id?: string } | { ok: false; reason: string; message: string }
 > = [];
-const sentEmails: Array<{ to: string; medicationName: string; sinceLabel: string }> = [];
+// The sender's own arguments: it builds the "last logged" clause itself from
+// the anchor and the sweep's tick, so those two instants are what the sweep
+// owes it. The html is pinned in email.test.ts.
+const sentEmails: Array<{
+  to: string;
+  medicationName: string;
+  lastEventAt: Date | null;
+  now: Date;
+}> = [];
 // The two senders record separately. They used to share `sentEmails`,
 // which only `sendReminderEmail` ever wrote to — so every
 // `expect(sentEmails).toHaveLength(0)` in the low-inventory suite below
@@ -160,8 +168,13 @@ const sentLowInventoryEmails: Array<{
 let nextLowInventoryEmailThrows: Error | null = null;
 
 vi.mock("$lib/server/email", () => ({
-  sendReminderEmail: async (to: string, medicationName: string, sinceLabel: string) => {
-    sentEmails.push({ to, medicationName, sinceLabel });
+  sendReminderEmail: async (
+    to: string,
+    medicationName: string,
+    lastEventAt: Date | null,
+    now: Date,
+  ) => {
+    sentEmails.push({ to, medicationName, lastEventAt, now });
     return emailResults.shift() ?? { ok: true, id: "msg-r" };
   },
   sendLowInventoryEmail: async (
@@ -188,20 +201,38 @@ vi.mock("$lib/server/email", () => ({
 const pushResults: Array<
   { ok: true; deliveredCount: number } | { ok: false; reason: string; message: string }
 > = [];
-const sentPushes: Array<{ userId: string; tag: string; renotify?: boolean }> = [];
+// `title` and `body` are recorded so the copy is tested through the real
+// sweep. With only `tag` and `renotify` here, the body read "Last logged 1d
+// ago ago" in production and nothing could see it.
+const sentPushes: Array<{
+  userId: string;
+  title: string;
+  body: string;
+  tag: string;
+  renotify?: boolean;
+}> = [];
 let pushSubscribersByUser: Record<string, boolean> = {};
 // Tests opt into throwing behaviour by setting these to an Error.
 let nextPushSubsThrows: Error | null = null;
 let nextSendPushThrows: Error | null = null;
 
 vi.mock("$lib/server/push", () => ({
-  sendPushNotification: async (userId: string, payload: { tag: string; renotify?: boolean }) => {
+  sendPushNotification: async (
+    userId: string,
+    payload: { title: string; body: string; tag: string; renotify?: boolean },
+  ) => {
     if (nextSendPushThrows) {
       const err = nextSendPushThrows;
       nextSendPushThrows = null;
       throw err;
     }
-    sentPushes.push({ userId, tag: payload.tag, renotify: payload.renotify });
+    sentPushes.push({
+      userId,
+      title: payload.title,
+      body: payload.body,
+      tag: payload.tag,
+      renotify: payload.renotify,
+    });
     return pushResults.shift() ?? { ok: true, deliveredCount: 1 };
   },
   hasPushSubscriptions: async (userId: string) => {
@@ -360,7 +391,11 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
 
     expect(sentEmails).toHaveLength(1);
     expect(sentPushes).toHaveLength(1);
-    expect(sentEmails[0].sinceLabel).not.toBe("never");
+    // Was `sinceLabel` not "never". The sender no longer takes a label or a
+    // sentinel: it takes the anchor and builds its own clause. The claim is
+    // unchanged — a medication WITH a last event is reported as having one,
+    // and it is the aggregate's instant, not null.
+    expect(sentEmails[0].lastEventAt).toEqual(lastEventRows[0].lastEventAt);
   });
 
   it("dedupes a repeat run when claim returns no row (not retryable)", async () => {
@@ -589,6 +624,88 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
     expect(updateCaptures[0].emailStatus).toBe("sent");
     expect(updateCaptures[0].pushStatus).toBe("not_configured");
     expect(updateCaptures[0].status).toBe("sent");
+  });
+});
+
+describe("checkOverdueMedications — the 'last logged' copy", () => {
+  // These drive the real sweep, so they read the push the real template
+  // builds and the arguments the real sender receives. Both templates once
+  // appended " ago" to a label that already ended in "ago".
+  //
+  // Only `Date` is faked: the sweep reads its one tick instant with
+  // `new Date()`, and dispatch's send timeout still needs a real setTimeout.
+  const NOW = new Date("2026-09-24T10:12:00.000Z");
+  const MINUTE = 60_000;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function overdueRow(schedule: Record<string, unknown>): Record<string, unknown> {
+    return {
+      scheduleId: "s1",
+      intervalHours: null,
+      timeOfDay: null,
+      daysOfWeek: null,
+      medicationId: "med-A",
+      medicationName: "Ibuprofen",
+      userId: "u1",
+      userEmail: "user@example.com",
+      userEmailVerified: true,
+      userTimezone: "UTC",
+      userOverdueEmailReminders: true,
+      userOverduePushReminders: true,
+      userLowInventoryEmailAlerts: true,
+      userLowInventoryPushAlerts: false,
+      medNotificationsEnabled: true,
+      medNotifyOverdueEmail: null,
+      medNotifyOverduePush: null,
+      medNotifyLowInventoryEmail: null,
+      medNotifyLowInventoryPush: null,
+      ...schedule,
+    };
+  }
+
+  it.each([
+    { gap: "30 seconds", ms: 30_000, body: "Last logged just now" },
+    { gap: "5 minutes", ms: 5 * MINUTE, body: "Last logged 5m ago" },
+    { gap: "2 hours 3 minutes", ms: (2 * 60 + 3) * MINUTE, body: "Last logged 2h 3m ago" },
+    { gap: "25 hours", ms: 25 * 60 * MINUTE, body: "Last logged 1d ago" },
+  ])("a reminder $gap after the last event reads $body", async ({ ms, body }) => {
+    // An 18-second interval, so every gap above is overdue and the cases
+    // differ only in how long ago the last event was. The form door admits
+    // it: `intervalHours` is `z.coerce.number().positive().max(72)`.
+    const lastEventAt = new Date(NOW.getTime() - ms);
+    scheduleRows.push(overdueRow({ scheduleKind: "interval", intervalHours: "0.005" }));
+    lastEventRows.push({ medicationId: "med-A", lastEventAt });
+
+    await checkOverdueMedications();
+
+    expect(sentPushes).toHaveLength(1);
+    expect(sentPushes[0]).toMatchObject({ title: "Ibuprofen overdue", body });
+    expect(sentEmails).toEqual([
+      { to: "user@example.com", medicationName: "Ibuprofen", lastEventAt, now: NOW },
+    ]);
+  });
+
+  it('a reminder for a medication never logged reads "Not yet logged"', async () => {
+    // Only a fixed-time slot is overdue with no anchor at all: the interval
+    // branch of computeOverdueSlot returns null without one. 08:00 UTC is
+    // before NOW and on the same civil day, so the 12-hour cap does not apply.
+    scheduleRows.push(overdueRow({ scheduleKind: "fixed_time", timeOfDay: "08:00" }));
+
+    await checkOverdueMedications();
+
+    expect(sentPushes).toHaveLength(1);
+    expect(sentPushes[0]).toMatchObject({ title: "Ibuprofen overdue", body: "Not yet logged" });
+    expect(sentEmails).toEqual([
+      { to: "user@example.com", medicationName: "Ibuprofen", lastEventAt: null, now: NOW },
+    ]);
   });
 });
 

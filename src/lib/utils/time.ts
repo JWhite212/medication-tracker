@@ -1,6 +1,15 @@
-export function formatTimeSince(date: Date): string {
-  const now = Date.now();
-  const diffMs = now - date.getTime();
+/**
+ * "just now", "5m ago", "2h 3m ago" or "1d ago": how long before `now` the
+ * instant `date` was. Every result already reads as a complete phrase, so a
+ * caller must never append its own "ago".
+ *
+ * `now` defaults to the wall clock, which is what the live counters want
+ * (`TimeSince.svelte` re-renders every minute). A caller that already owns a
+ * clock passes it: the reminder sweep decides "overdue" and writes the copy
+ * from one tick instant.
+ */
+export function formatTimeSince(date: Date, now: Date = new Date()): string {
+  const diffMs = now.getTime() - date.getTime();
   const diffSecs = Math.floor(diffMs / 1000);
   const diffMins = Math.floor(diffSecs / 60);
   const diffHours = Math.floor(diffMins / 60);
@@ -10,6 +19,28 @@ export function formatTimeSince(date: Date): string {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ${diffMins % 60}m ago`;
   return `${diffDays}d ago`;
+}
+
+/**
+ * The overdue reminder's "when was this last logged?" sentence: "Last logged
+ * 5m ago", "Last logged just now", or "Not yet logged" when nothing ever was.
+ * The push body is this string and the email lower-cases its first letter,
+ * so the two channels cannot drift apart.
+ *
+ * It exists because both templates once wrapped `formatTimeSince` in
+ * "Last logged … ago" themselves, and every overdue reminder read "Last
+ * logged 1d ago ago" or "Last logged just now ago".
+ *
+ * "Logged", not "taken": the sweep's anchor is the last taken OR skipped dose,
+ * so a reminder can follow a skip, and saying the dose was taken would be
+ * false.
+ *
+ * `now` is required, never defaulted, so the sweep's one tick instant decides
+ * both that the slot is overdue and how long ago the last event was.
+ */
+export function lastLoggedPhrase(lastEventAt: Date | null, now: Date): string {
+  if (lastEventAt === null) return "Not yet logged";
+  return `Last logged ${formatTimeSince(lastEventAt, now)}`;
 }
 
 export type TimeFormat = "12h" | "24h";

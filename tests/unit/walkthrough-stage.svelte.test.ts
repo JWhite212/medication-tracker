@@ -178,7 +178,8 @@ describe("WalkthroughStage marks", () => {
 // `time` and the Frame values computed from it. So nothing that depends on T
 // alone may build a formatter: formatUserTime constructs an Intl.DateTimeFormat
 // per call, and StageDashboardHeader once recomputed both header copies (the
-// caught-up one through formatUserTime) whenever `logged` moved, twice per
+// caught-up one through formatUserTime) on every frame, because its prop
+// getter read the per-tick frame even while `logged` held still: twice per
 // frame across the desktop and phone headers for the whole loop. The copy
 // depends on the payload, never on T; only each layer's opacity follows
 // `logged`.

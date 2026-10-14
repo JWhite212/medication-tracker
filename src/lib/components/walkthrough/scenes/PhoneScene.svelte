@@ -13,10 +13,9 @@
   // every T; the card collapses and the new Done row grows through
   // StageCollapse, never through {#if}.
   //
-  // The content box is 732px (820 − 72 − 16) and the home indicator covers
-  // its foot, so Later is cut at a whole row (PHONE_LATER_ROWS, a deliberate
-  // prefix; see Task 10 Step 20). The phone draws no chips or Refills: on a
-  // real phone they would be below the fold.
+  // Later shows a chosen prefix of whole rows (PHONE_LATER_ROWS); the content
+  // box (732px, 820 − 72 − 16) has room below it. The phone draws no chips or
+  // Refills: on a real phone they would be below the fold.
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
   import { formatUserTime, lastLoggedPhrase, type TimeFormat } from "$lib/utils/time";
   import { LOGGED_DOSE, PHONE_NOW, WALKTHROUGH_TZ } from "../demo-data";

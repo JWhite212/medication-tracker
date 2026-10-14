@@ -248,8 +248,8 @@ export const PHONE_AFTER: StageMoment = {
 
 /**
  * How many of the phone's Later rows PhoneScene shows: `later.slice(0, PHONE_LATER_ROWS)`.
- * The phone's content box is 732px tall and the home indicator covers its
- * bottom, so the list is cut at a whole row rather than through one. The
- * phone-before screenshot confirms the number; it is chosen, not derived.
+ * A whole-row prefix, so no row is cut through; the phone's 732px content box
+ * has room below it. The phone-before screenshot confirms it fits; the number
+ * is chosen, not derived.
  */
 export const PHONE_LATER_ROWS = 2;

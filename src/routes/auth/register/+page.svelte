@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
-  import splashImage from "$lib/assets/8ccec61e-617c-4da0-8596-c6aa9970893e.webp";
+  import heroImage from "$lib/assets/landing-hero-phone.webp";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
   import { ariaDescribedBy } from "$lib/utils/form-errors";
 
@@ -24,12 +24,19 @@
 
 <div class="flex min-h-screen items-center justify-center gap-12 px-4 py-8">
   <div class="hidden lg:flex lg:flex-col lg:items-center lg:justify-center">
+    <!-- The landing hero (npm run render:hero), so a visitor from the landing
+         page already has it cached. Lazy because it is hidden below lg, and a
+         phone should not download an image it never shows. The height must be
+         definite: with max-h and w-auto alone, this shrink-to-fit column gives
+         an unloaded image a 0x0 box, and a lazy image with no box never loads. -->
     <img
-      src={splashImage}
-      alt="MedTracker — Track medications with confidence"
-      width="300"
-      height="540"
-      class="shadow-accent/10 max-h-[80vh] w-auto rounded-3xl shadow-2xl"
+      src={heroImage}
+      alt="MedTracker's Today screen on a phone: Vitamin D is due, with Log now, Took it at and Skip, above three doses done today and two still to come later."
+      width="320"
+      height="696"
+      loading="lazy"
+      decoding="async"
+      class="drop-shadow-accent/25 h-[min(696px,80vh)] w-auto drop-shadow-2xl"
     />
   </div>
   <div class="border-glass-border bg-glass w-full max-w-md rounded-xl border p-8 backdrop-blur-xl">

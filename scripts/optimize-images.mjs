@@ -14,7 +14,6 @@ const ASSETS = path.resolve("src/lib/assets");
 
 // targetWidth = 2x the largest CSS width the image renders at.
 const IMAGES = [
-  { file: "8ccec61e-617c-4da0-8596-c6aa9970893e.png", targetWidth: 768 }, // register splash
   { file: "1b27c358-1903-4e2a-bf26-8f1085f94ee6.png", targetWidth: 640 }, // log empty state (max-w-xs)
   { file: "397d3a76-85b0-43ee-a0c2-981053e4040c.png", targetWidth: 640 }, // medications empty state (max-w-xs)
 ];

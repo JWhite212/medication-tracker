@@ -92,15 +92,16 @@ runbook in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Core features
 
-- **Quick log** — single-tap dose logging with optimistic UI and
-  audit trail.
-- **Live timers** — per-medication "last taken" + "next due"
-  countdowns recomputed every minute, with a `visibilitychange`
-  catch-up.
+- **Quick log** — one-tap dose logging with a ten-minute Undo and
+  an audit trail.
+- **Live timers** — per-medication "last taken" times, plus the
+  dashboard's due times and caught-up "Next: …" line, recomputed
+  every minute with a `visibilitychange` catch-up.
 - **Adherence analytics** — heatmap, daily counts, per-medication
   rollups, hourly + day-of-week distribution, side-effect frequency.
-- **Reminders** — opt-in email and Web Push, dispatched by Vercel
-  Cron with idempotent dedupe keys (see [ADR 0005](docs/adr/0005-reminder-deduplication.md)).
+- **Reminders** — opt-in email and Web Push, dispatched every 30
+  minutes from 06:00 to 22:59 UTC by a GitHub Actions schedule
+  (`reminder-tick`) with a daily Vercel Cron backstop, and idempotent dedupe keys (see [ADR 0005](docs/adr/0005-reminder-deduplication.md)).
 - **Exports** — PDF (with adherence summary, medication list,
   side-effect frequency, medical disclaimer) or CSV (formula-injection
   safe).

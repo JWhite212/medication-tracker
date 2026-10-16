@@ -25,6 +25,7 @@
     "db:studio": "drizzle-kit studio",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "seed:e2e": "tsx scripts/seed-e2e.ts",
+    "render:hero": "node scripts/render-landing-hero.mjs",
     "encrypt:totp": "tsx scripts/encrypt-totp-secrets.ts"
   },
   "devDependencies": {

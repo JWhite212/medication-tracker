@@ -84,10 +84,16 @@
         >
       {/each}
     </div>
+    <!-- Empty, as the real From/To inputs are under a preset: choosing one
+         drops `from` and `to` from the URL, and the page echoes only those.
+         What an empty date input shows is the browser's; this is en-GB's. -->
     <div class="flex items-center gap-2">
-      <div class="{control} px-3 py-1.5"><span>27/06/2026</span><Glyph name="calendar" /></div>
-      <span class="text-text-muted text-xs">to</span>
-      <div class="{control} px-3 py-1.5"><span>24/09/2026</span><Glyph name="calendar" /></div>
+      {#each ["From", "To"] as edge, i (edge)}
+        {#if i > 0}<span class="text-text-muted text-xs">to</span>{/if}
+        <div class="{control} px-3 py-1.5" data-stage-date={edge}>
+          <span class="text-text-muted">dd/mm/yyyy</span><Glyph name="calendar" />
+        </div>
+      {/each}
     </div>
   </div>
 

@@ -19,6 +19,11 @@ import { render } from "svelte/server";
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unusedDb);
 
 import { expectedPerDayForSchedules } from "$lib/server/analytics";
+import {
+  composeAnalyticsPageData,
+  resolveAnalyticsQuery,
+  type AnalyticsCompositionInputs,
+} from "$lib/server/analytics/page-data";
 import { clampEffectiveDays } from "$lib/server/analytics/lifecycle";
 import {
   foldDoseStatusBreakdown,
@@ -275,6 +280,49 @@ describe("the Analytics scene's Dose Status Breakdown", () => {
     );
     expect(real.segments.length).toBeGreaterThan(0);
     expect(scene).toEqual(real);
+  });
+});
+
+// The scene highlights the 90d preset. On the real page a preset button's
+// setPeriod drops `from` and `to` from the URL, and the From/To inputs show
+// only what the payload echoes back, so under a preset they are empty. The
+// scene once filled them with a 90-day span, a state the page never shows
+// beside a preset it was reached by.
+describe("the Analytics scene's date range", () => {
+  it("is empty under the 90d preset, as the real page's From/To inputs are", () => {
+    // The default `heatmapPeriod` (schema.ts) is 90, so both a first visit
+    // and a press of 90d land on the scene's highlighted preset.
+    for (const search of ["", "period=90"]) {
+      const query = resolveAnalyticsQuery(new URLSearchParams(search), 90);
+      expect(query.period, search).toBe(90);
+      const page = composeAnalyticsPageData({
+        timezone: WALKTHROUGH_TZ,
+        period: query.period,
+        fromParam: query.fromParam,
+        toParam: query.toParam,
+        medicationIds: undefined,
+        medicationOptions: [],
+        dailyCounts: [],
+        medStats: [],
+        hourly: [],
+        dayOfWeek: [],
+        sideEffects: { frequency: [] },
+        dailyAdherence: [],
+        statusBreakdown: {},
+        scheduleVariance: [],
+        schedulesByMed: new Map(),
+        prevDailyCounts: [],
+        prevMedStats: [],
+        refillForecast: [],
+      } as unknown as AnalyticsCompositionInputs);
+      expect([page.from, page.to], search).toEqual(["", ""]);
+    }
+
+    const doc = ssrDocument(render(AnalyticsScene, { props: { load: 10, heat: 1 } }).body);
+    const edges = [...doc.querySelectorAll("[data-stage-date]")];
+    expect(edges.map((el) => el.getAttribute("data-stage-date"))).toEqual(["From", "To"]);
+    for (const el of edges)
+      expect(textOf(el), el.getAttribute("data-stage-date")!).not.toMatch(/\d/);
   });
 });
 

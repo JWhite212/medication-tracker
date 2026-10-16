@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Buttons and alerts</title>
+    <style>
+      :root {
+        --surface: #0a0a0f;
+        --raised: #12121a;
+        --overlay: #1a1a25;
+        --glass: rgba(255, 255, 255, 0.08);
+        --glass-border: rgba(255, 255, 255, 0.12);
+        --strong: rgba(255, 255, 255, 0.34);
+        --t1: #f0f0f5;
+        --t2: #c3c3d4;
+        --tm: #9a9aac;
+        --accent: #4f46e5;
+        --accent-ink: #8f92f5;
+        --accent-fg: #fff;
+        --success: #10b981;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+        --danger-ink: #f98686;
+        --danger-fg: #111;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--surface);
+        color: var(--t1);
+        font:
+          14px/1.45 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        padding: 28px 20px 60px;
+      }
+      main {
+        max-width: 1040px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      .lede {
+        color: var(--t2);
+        margin: 0 0 28px;
+        max-width: 760px;
+      }
+      h2 {
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--tm);
+        margin: 34px 0 12px;
+        font-weight: 600;
+      }
+      .card {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        border-radius: 14px;
+        padding: 20px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 150px repeat(2, auto) 1fr;
+        gap: 14px 18px;
+        align-items: center;
+      }
+      .grid .k {
+        color: var(--t2);
+        font-size: 13px;
+      }
+      .grid .note {
+        color: var(--tm);
+        font-size: 12.5px;
+      }
+      .head {
+        color: var(--tm);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      /* Button */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border-radius: 10px;
+        font: 500 14px/1 inherit;
+        padding: 0 16px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .sm {
+        height: 36px;
+        padding: 0 12px;
+      }
+      .md {
+        height: 44px;
+      }
+      .primary {
+        background: var(--accent);
+        color: var(--accent-fg);
+      }
+      .secondary {
+        background: transparent;
+        color: var(--t1);
+        border-color: var(--strong);
+      }
+      .ghost {
+        background: transparent;
+        color: var(--t2);
+      }
+      .danger {
+        background: var(--danger);
+        color: var(--danger-fg);
+      }
+      .danger[aria-disabled="true"] {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .focus {
+        outline: 2px solid var(--accent-ink);
+        outline-offset: 2px;
+      }
+      .spin {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-top-color: #fff;
+        border-radius: 50%;
+      }
+
+      /* Before / after */
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .pane .label {
+        font-size: 12px;
+        color: var(--tm);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 10px;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      .old-p1 {
+        background: var(--accent);
+        color: #fff;
+        border-radius: 8px;
+        padding: 6px 16px;
+        font-size: 14px;
+        border: 0;
+      }
+      .old-p2 {
+        background: var(--accent);
+        color: #fff;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 14px;
+        border: 0;
+      }
+      .old-red {
+        background: transparent;
+        color: var(--danger-ink);
+        border: 1px solid var(--danger-ink);
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 14px;
+      }
+      .old-amber {
+        background: transparent;
+        color: var(--warning);
+        border: 1px solid var(--warning);
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 14px;
+      }
+      .old-out {
+        background: transparent;
+        color: var(--t1);
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        padding: 6px 16px;
+        font-size: 14px;
+      }
+      .px {
+        font-size: 11.5px;
+        color: var(--tm);
+      }
+
+      /* Alert */
+      .alert {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        border-radius: 10px;
+        padding: 11px 14px;
+        font-size: 14px;
+        border: 1px solid;
+      }
+      .alert + .alert {
+        margin-top: 10px;
+      }
+      .alert svg {
+        flex: none;
+        margin-top: 1px;
+      }
+      .a-success {
+        background: rgba(16, 185, 129, 0.1);
+        border-color: rgba(16, 185, 129, 0.3);
+        color: #6ee7b7;
+      }
+      .a-error {
+        background: rgba(239, 68, 68, 0.1);
+        border-color: rgba(249, 134, 134, 0.35);
+        color: var(--danger-ink);
+      }
+      .a-needs {
+        background: rgba(245, 158, 11, 0.08);
+        border-color: rgba(245, 158, 11, 0.35);
+        color: #fbbf24;
+      }
+      .a-neutral {
+        background: var(--raised);
+        border-color: var(--glass-border);
+        color: var(--t2);
+      }
+      .alert b {
+        color: inherit;
+      }
+      .alert .sub {
+        display: block;
+        color: var(--t2);
+        font-size: 13px;
+        margin-top: 2px;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 11px;
+        color: var(--tm);
+        border: 1px solid var(--glass-border);
+        border-radius: 6px;
+        padding: 1px 6px;
+        margin-left: 8px;
+        vertical-align: 1px;
+      }
+      @media (max-width: 760px) {
+        .split {
+          grid-template-columns: 1fr;
+        }
+        .grid {
+          grid-template-columns: 1fr 1fr;
+        }
+        .grid .note {
+          grid-column: 1 / -1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Buttons and alerts — proposed</h1>
+      <p class="lede">
+        The app's own dark theme and default accent. Buttons get fixed heights, so compact density
+        can no longer make a "large" button shorter than a "small" one. Dose controls are not on
+        this page and stay exactly as they are.
+      </p>
+
+      <h2>Button — four kinds, two sizes</h2>
+      <div class="card">
+        <div class="grid">
+          <span class="head">Kind</span><span class="head">md · 44px</span
+          ><span class="head">sm · 36px</span><span class="head">Used for</span>
+
+          <span class="k">Primary</span>
+          <button class="btn md primary">Save changes</button>
+          <button class="btn sm primary">Send test</button>
+          <span class="note">The one main action on a form or page. Accent fill.</span>
+
+          <span class="k">Secondary</span>
+          <button class="btn md secondary">Archive</button>
+          <button class="btn sm secondary">Sign out</button>
+          <span class="note"
+            >Everything else, <em>including</em> reversible "turn it off" actions: Archive, Sign
+            out, Disable 2FA, Adjust stock, Revoke. Neutral, strong border.</span
+          >
+
+          <span class="k">Ghost</span>
+          <button class="btn md ghost">Cancel</button>
+          <button class="btn sm ghost">Clear filter</button>
+          <span class="note">Low-emphasis: Cancel, Back, Clear.</span>
+
+          <span class="k">Danger</span>
+          <button class="btn md danger">Delete permanently</button>
+          <button class="btn sm danger" aria-disabled="true">Delete</button>
+          <span class="note"
+            >Only actions that can't be undone, and only inside the confirm step. Solid red. Never
+            used for reversible actions.</span
+          >
+        </div>
+        <div class="row" style="margin-top: 18px; gap: 14px">
+          <span class="px">States:</span>
+          <button class="btn md primary focus">Focused</button>
+          <button class="btn md primary"><span class="spin"></span>Saving…</button>
+          <button class="btn md secondary" style="opacity: 0.5; cursor: not-allowed">
+            Unavailable
+          </button>
+        </div>
+      </div>
+
+      <h2>Before → after on a real page: a medication's actions</h2>
+      <div class="split">
+        <div class="card pane">
+          <div class="label">Today</div>
+          <div class="row">
+            <button class="old-p2">Mark as refilled</button>
+            <button class="old-amber">Adjust</button>
+            <button class="old-red">Archive</button>
+          </div>
+          <p class="px" style="margin-top: 12px">
+            Archive (undoable) is the same red as permanent deletes; Adjust is amber though nothing
+            needs you.
+          </p>
+        </div>
+        <div class="card pane">
+          <div class="label">Proposed</div>
+          <div class="row">
+            <button class="btn md primary">Mark as refilled</button>
+            <button class="btn md secondary">Adjust</button>
+            <button class="btn md secondary">Archive</button>
+          </div>
+          <p class="px" style="margin-top: 12px">
+            One main action; the rest are calm. Red is reserved for what can't be undone.
+          </p>
+        </div>
+      </div>
+
+      <div class="split" style="margin-top: 16px">
+        <div class="card pane">
+          <div class="label">Today · Notifications, compact density</div>
+          <div class="row">
+            <button class="old-p1">Save Changes</button><span class="px">32px</span>
+            <button class="old-p2">Send test</button><span class="px">36px</span>
+          </div>
+        </div>
+        <div class="card pane">
+          <div class="label">Proposed · any density</div>
+          <div class="row">
+            <button class="btn md primary">Save changes</button><span class="px">44px</span>
+            <button class="btn sm secondary">Send test</button><span class="px">36px</span>
+          </div>
+        </div>
+      </div>
+
+      <h2>Alert — four tones, each with an icon and words</h2>
+      <div class="card">
+        <div class="alert a-success" role="status">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+          <span><b>Settings saved.</b><span class="tag">green · it happened</span></span>
+        </div>
+        <div class="alert a-error" role="alert">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v5M12 16.5v.01" />
+          </svg>
+          <span
+            ><b>Couldn't save — your session expired.</b
+            ><span class="sub">Sign in again and retry.</span
+            ><span class="tag">red · gone wrong</span></span
+          >
+        </div>
+        <div class="alert a-needs" role="status">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 3 2.5 20h19L12 3Z" />
+            <path d="M12 10v4M12 17v.01" />
+          </svg>
+          <span
+            ><b>Verify your email to get reminders by email.</b
+            ><span class="sub">We sent a link to j•••@live.co.uk. <u>Resend</u></span
+            ><span class="tag">amber · needs you</span></span
+          >
+        </div>
+        <div class="alert a-neutral" role="note">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 11v5M12 8v.01" />
+          </svg>
+          <span
+            >As-needed medications have no schedule, so they never show as due or missed.<span
+              class="tag"
+              >neutral · just so you know</span
+            ></span
+          >
+        </div>
+      </div>
+      <p class="px" style="margin-top: 10px">
+        Errors interrupt a screen reader; the other three are announced politely. The tag labels are
+        only for this mockup.
+      </p>
+    </main>
+  </body>
+</html>

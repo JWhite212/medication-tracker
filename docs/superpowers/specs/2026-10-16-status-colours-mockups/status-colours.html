@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Status colours</title>
+    <style>
+      :root {
+        --surface: #0a0a0f;
+        --raised: #12121a;
+        --overlay: #1a1a25;
+        --glass: rgba(255, 255, 255, 0.08);
+        --glass-border: rgba(255, 255, 255, 0.12);
+        --strong: rgba(255, 255, 255, 0.34);
+        --t1: #f0f0f5;
+        --t2: #c3c3d4;
+        --tm: #9a9aac;
+        --accent: #4f46e5;
+        --accent-ink: #8f92f5;
+        --success: #10b981;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+        --danger-ink: #f98686;
+        --info: #a5a8f8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--surface);
+        color: var(--t1);
+        font:
+          14px/1.45 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        padding: 28px 20px 60px;
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      .lede {
+        color: var(--t2);
+        margin: 0 0 8px;
+        max-width: 800px;
+      }
+      .key {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+        margin: 14px 0 6px;
+        font-size: 13px;
+        color: var(--t2);
+      }
+      .key span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sw {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        display: inline-block;
+      }
+      h2 {
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--tm);
+        margin: 32px 0 12px;
+        font-weight: 600;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .card {
+        background: var(--glass);
+        border: 1px solid var(--glass-border);
+        border-radius: 14px;
+        padding: 16px;
+      }
+      .label {
+        font-size: 12px;
+        color: var(--tm);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 10px;
+      }
+      .why {
+        font-size: 12.5px;
+        color: var(--tm);
+        margin: 10px 0 0;
+      }
+      .rowx {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 10px;
+        padding: 9px 10px;
+        border-radius: 10px;
+        background: var(--raised);
+        border: 1px solid var(--glass-border);
+      }
+      .rowx + .rowx {
+        margin-top: 8px;
+      }
+      .t {
+        width: 46px;
+        color: var(--t2);
+        font-variant-numeric: tabular-nums;
+        font-size: 13px;
+      }
+      .name {
+        flex: 1;
+      }
+      .name small {
+        color: var(--tm);
+      }
+      .mk {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 700;
+        flex: none;
+      }
+      .chip {
+        font-size: 11.5px;
+        font-weight: 600;
+        border-radius: 6px;
+        padding: 2px 7px;
+        letter-spacing: 0.02em;
+        border: 1px solid transparent;
+        white-space: nowrap;
+      }
+      .c-amber {
+        color: #fbbf24;
+        background: rgba(245, 158, 11, 0.12);
+        border-color: rgba(245, 158, 11, 0.35);
+      }
+      .c-red {
+        color: var(--danger-ink);
+        background: rgba(239, 68, 68, 0.12);
+        border-color: rgba(249, 134, 134, 0.35);
+      }
+      .c-green {
+        color: #6ee7b7;
+        background: rgba(16, 185, 129, 0.12);
+        border-color: rgba(16, 185, 129, 0.3);
+      }
+      .c-neutral {
+        color: var(--t2);
+        background: transparent;
+        border-color: var(--strong);
+      }
+      .c-info {
+        color: var(--info);
+        background: rgba(165, 168, 248, 0.12);
+        border-color: rgba(165, 168, 248, 0.3);
+      }
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      .kpi {
+        background: var(--raised);
+        border: 1px solid var(--glass-border);
+        border-radius: 10px;
+        padding: 12px;
+        text-align: center;
+      }
+      .kpi .n {
+        font-size: 26px;
+        font-weight: 700;
+      }
+      .kpi .l {
+        font-size: 12px;
+        color: var(--t2);
+      }
+      .kpi .tr {
+        font-size: 12px;
+        margin-left: 4px;
+      }
+      .bar {
+        display: flex;
+        height: 12px;
+        border-radius: 6px;
+        overflow: hidden;
+        margin: 14px 0 8px;
+      }
+      .legend {
+        display: flex;
+        gap: 14px;
+        font-size: 12px;
+        color: var(--t2);
+        flex-wrap: wrap;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .ins {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        font-size: 13px;
+        color: var(--t2);
+        padding: 6px 0;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-top: 6px;
+        flex: none;
+      }
+      .med {
+        background: var(--raised);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .med .top {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      .kpi .n {
+        overflow-wrap: anywhere;
+      }
+      @media (max-width: 480px) {
+        .kpis {
+          grid-template-columns: 1fr;
+        }
+      }
+      .med .stats {
+        font-size: 12.5px;
+        color: var(--t2);
+        margin-top: 8px;
+        display: flex;
+        gap: 14px;
+      }
+      .cap {
+        width: 18px;
+        height: 10px;
+        border-radius: 6px;
+        flex: none;
+      }
+      @media (max-width: 780px) {
+        .split {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Status colours — today vs proposed</h1>
+      <p class="lede">
+        Same data on both sides. Every coloured thing also carries a word or an icon.
+      </p>
+      <div class="key">
+        <span><i class="sw" style="background: var(--warning)"></i>Amber: needs you</span>
+        <span
+          ><i class="sw" style="background: var(--danger)"></i>Red: gone wrong / can't be
+          undone</span
+        >
+        <span><i class="sw" style="background: var(--success)"></i>Green: it happened</span>
+        <span
+          ><i class="sw" style="background: var(--accent)"></i>Accent: due now / selected / main
+          action</span
+        >
+        <span
+          ><i class="sw" style="background: transparent; border: 1px solid var(--strong)"></i
+          >Neutral: everything else</span
+        >
+      </div>
+
+      <h2>Log page — a day's rows</h2>
+      <div class="split">
+        <div class="card">
+          <div class="label">Today</div>
+          <div class="rowx">
+            <span class="t">08:02</span><span class="name">Lisinopril 10mg</span
+            ><span class="mk" style="background: rgba(16, 185, 129, 0.18); color: #6ee7b7">✓</span>
+          </div>
+          <div class="rowx">
+            <span class="t">09:00</span><span class="name">Vitamin D 1000IU</span
+            ><span class="chip c-amber">SKIPPED</span>
+          </div>
+          <div class="rowx">
+            <span class="t">14:00</span><span class="name">Ibuprofen 200mg</span
+            ><span class="chip c-red">MISSED</span>
+          </div>
+          <div class="rowx">
+            <span class="t">20:10</span
+            ><span class="name">Metformin 500mg <small>· side effects</small></span
+            ><span class="chip c-amber">Nausea</span><span class="chip c-red">Headache</span>
+          </div>
+          <p class="why">
+            Skipped is amber here but grey on the dashboard. The side-effect chips say how bad only
+            through colour.
+          </p>
+        </div>
+        <div class="card">
+          <div class="label">Proposed</div>
+          <div class="rowx">
+            <span class="t">08:02</span><span class="name">Lisinopril 10mg</span
+            ><span class="mk" style="background: rgba(16, 185, 129, 0.18); color: #6ee7b7">✓</span>
+          </div>
+          <div class="rowx">
+            <span class="t">09:00</span><span class="name">Vitamin D 1000IU</span
+            ><span class="chip c-neutral">– Skipped</span>
+          </div>
+          <div class="rowx">
+            <span class="t">14:00</span><span class="name">Ibuprofen 200mg</span
+            ><span class="chip c-red">✕ Missed</span>
+          </div>
+          <div class="rowx">
+            <span class="t">20:10</span
+            ><span class="name">Metformin 500mg <small>· side effects</small></span
+            ><span class="chip c-neutral">Nausea · Moderate</span
+            ><span class="chip c-red">Headache · Severe</span>
+          </div>
+          <p class="why">
+            Skipped was your choice, so it's neutral everywhere. Missed and severe are red, with the
+            word as well as the colour.
+          </p>
+        </div>
+      </div>
+
+      <h2>Dashboard — Done today</h2>
+      <div class="split">
+        <div class="card">
+          <div class="label">Today</div>
+          <div class="rowx">
+            <span class="mk" style="background: rgba(16, 185, 129, 0.18); color: #6ee7b7">✓</span
+            ><span class="name">Lisinopril 10mg <small>· 8:02</small></span>
+          </div>
+          <div class="rowx">
+            <span class="mk" style="border: 1.5px solid var(--strong); color: var(--t2)">–</span
+            ><span class="name">Vitamin D 1000IU <small>· Skipped</small></span>
+          </div>
+          <div class="rowx">
+            <span class="mk" style="border: 1.5px solid var(--strong); color: var(--t2)">–</span
+            ><span class="name">Ibuprofen 200mg <small>· Missed</small></span>
+          </div>
+          <p class="why">Skipped and missed look identical.</p>
+        </div>
+        <div class="card">
+          <div class="label">Proposed</div>
+          <div class="rowx">
+            <span class="mk" style="background: rgba(16, 185, 129, 0.18); color: #6ee7b7">✓</span
+            ><span class="name">Lisinopril 10mg <small>· 8:02</small></span>
+          </div>
+          <div class="rowx">
+            <span class="mk" style="border: 1.5px solid var(--strong); color: var(--t2)">–</span
+            ><span class="name">Vitamin D 1000IU <small>· Skipped</small></span>
+          </div>
+          <div class="rowx">
+            <span class="mk" style="background: rgba(239, 68, 68, 0.16); color: var(--danger-ink)"
+              >✕</span
+            ><span class="name"
+              >Ibuprofen 200mg <small style="color: var(--danger-ink)">· Missed</small></span
+            >
+          </div>
+          <p class="why">
+            The same three meanings as the Log page. Overdue (amber "!") and due now (accent) are
+            unchanged.
+          </p>
+        </div>
+      </div>
+
+      <h2>Analytics — headline numbers, breakdown, insights</h2>
+      <div class="split">
+        <div class="card">
+          <div class="label">Today</div>
+          <div class="kpis">
+            <div class="kpi">
+              <div class="n" style="color: var(--accent-ink)">3</div>
+              <div class="l">Day streak</div>
+            </div>
+            <div class="kpi">
+              <div class="n" style="color: var(--success)">42%</div>
+              <div class="l">
+                Avg adherence <span class="tr" style="color: var(--danger-ink)">↓4%</span>
+              </div>
+            </div>
+            <div class="kpi">
+              <div class="n" style="color: var(--warning)">118</div>
+              <div class="l">
+                Doses (90d) <span class="tr" style="color: var(--danger-ink)">↓9%</span>
+              </div>
+            </div>
+          </div>
+          <div class="bar">
+            <i style="width: 42%; background: var(--success)"></i
+            ><i style="width: 13%; background: var(--warning)"></i
+            ><i style="width: 45%; background: var(--danger)"></i>
+          </div>
+          <div class="legend">
+            <span><i class="sw" style="background: var(--success)"></i>Taken 302</span
+            ><span><i class="sw" style="background: var(--warning)"></i>Skipped 94</span
+            ><span><i class="sw" style="background: var(--danger)"></i>Missed 324</span>
+          </div>
+          <div style="margin-top: 12px">
+            <div class="ins">
+              <i class="dot" style="background: var(--success)"></i>Highest adherence: Vitamin D at
+              44%.
+            </div>
+            <div class="ins">
+              <i class="dot" style="background: var(--warning)"></i>Lowest adherence: Ibuprofen at
+              31%.
+            </div>
+            <div class="ins">
+              <i class="dot" style="background: var(--warning)"></i>2 medications need a refill
+              within 7 days.
+            </div>
+          </div>
+          <p class="why">
+            42% is green. A count is amber. A drop in as-needed doses is red. Insight dots carry
+            meaning by colour alone.
+          </p>
+        </div>
+        <div class="card">
+          <div class="label">Proposed</div>
+          <div class="kpis">
+            <div class="kpi">
+              <div class="n">3</div>
+              <div class="l">Day streak</div>
+            </div>
+            <div class="kpi">
+              <div class="n">42%</div>
+              <div class="l">
+                Avg adherence <span class="tr" style="color: var(--t2)">↓4%</span>
+              </div>
+            </div>
+            <div class="kpi">
+              <div class="n">118</div>
+              <div class="l">Doses (90d) <span class="tr" style="color: var(--t2)">↓9%</span></div>
+            </div>
+          </div>
+          <div class="bar">
+            <i style="width: 42%; background: var(--success)"></i
+            ><i style="width: 13%; background: #5d5d70"></i
+            ><i style="width: 45%; background: var(--danger)"></i>
+          </div>
+          <div class="legend">
+            <span><i class="sw" style="background: var(--success)"></i>Taken 302</span
+            ><span><i class="sw" style="background: #5d5d70"></i>Skipped 94</span
+            ><span><i class="sw" style="background: var(--danger)"></i>Missed 324</span>
+          </div>
+          <div style="margin-top: 12px">
+            <div class="ins">
+              <span style="color: var(--t2)">↑</span>Highest adherence: Vitamin D at 44%.
+            </div>
+            <div class="ins">
+              <span style="color: var(--t2)">↓</span>Lowest adherence: Ibuprofen at 31%.
+            </div>
+            <div class="ins">
+              <span style="color: #fbbf24">▲</span
+              ><span
+                ><b style="color: #fbbf24; font-weight: 600">Reorder soon:</b> 2 medications run out
+                within 7 days.</span
+              >
+            </div>
+          </div>
+          <p class="why">
+            Numbers are plain; the arrows don't judge. The bar keeps green = taken and red = missed.
+            Only the refill insight is amber, because it needs you.
+          </p>
+        </div>
+      </div>
+
+      <h2>Medications — one card, running low</h2>
+      <div class="split">
+        <div class="card">
+          <div class="label">Today</div>
+          <div class="med">
+            <div class="top">
+              <i class="cap" style="background: #e46b6b"></i><b>Ibuprofen 200mg</b
+              ><span style="flex: 1"></span><span class="chip c-red">2d left</span
+              ><span class="chip c-amber">Low: 4</span>
+            </div>
+            <div class="stats">
+              <span style="color: var(--warning)">~2d supply left</span><span>4 doses</span>
+            </div>
+          </div>
+          <div class="med" style="margin-top: 8px">
+            <div class="top">
+              <i class="cap" style="background: #e3b341"></i><b>Vitamin D 1000IU</b
+              ><span style="flex: 1"></span><span class="chip c-info">10d left</span>
+            </div>
+            <div class="stats"><span>~10d supply left</span><span>10 doses</span></div>
+          </div>
+          <p class="why">
+            Three different "running low" rules on one card: red chip, amber text, amber "Low". The
+            10-day "watch" chip uses the info colour, which looks like the accent.
+          </p>
+        </div>
+        <div class="card">
+          <div class="label">Proposed</div>
+          <div class="med">
+            <div class="top">
+              <i class="cap" style="background: #e46b6b"></i><b>Ibuprofen 200mg</b
+              ><span style="flex: 1"></span
+              ><span class="chip c-amber">▲ Reorder soon · 2 days left</span>
+            </div>
+            <div class="stats"><span>4 doses left</span></div>
+          </div>
+          <div class="med" style="margin-top: 8px">
+            <div class="top">
+              <i class="cap" style="background: #e3b341"></i><b>Vitamin D 1000IU</b
+              ><span style="flex: 1"></span><span class="chip c-neutral">10 days left</span>
+            </div>
+            <div class="stats"><span>10 doses left</span></div>
+          </div>
+          <p class="why">
+            One rule, one chip. Amber with "Reorder soon" at 7 days or fewer (it needs you); neutral
+            beyond that.
+          </p>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

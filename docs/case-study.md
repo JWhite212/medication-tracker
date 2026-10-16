@@ -26,18 +26,22 @@ due, and export a clean PDF for a doctor's appointment.
 
 A server-first SvelteKit app with:
 
-- **Quick log**: a single form action per medication, optimistically
-  updated, audited.
-- **Live timers**: per-medication "last taken" + "next due"
-  countdowns recomputed every minute, with a `visibilitychange`
-  catch-up so the numbers stay honest after the tab sleeps.
+- **Quick log**: one tap logs a dose through a server form action,
+  audited, with a ten-minute Undo. The page changes only when the
+  reload after the write lands, never ahead of the server.
+- **Live timers**: per-medication "last taken" times, plus the
+  dashboard's relative due times and caught-up "Next: …" line,
+  recomputed every minute, with a `visibilitychange` catch-up so the
+  numbers stay honest after the tab sleeps.
 - **Adherence analytics**: per-day / per-medication rollups that
   filter to actual taken doses (skipped/missed are tracked
-  separately). Adherence caps at 100 % and the over-100 overflow
-  surfaces as a separate "overuse" metric.
-- **Reminders**: opt-in email and Web Push, dispatched by a Vercel
-  cron, deduplicated by a per-slot dedupe key so the user can't be
-  spammed for the same overdue dose.
+  separately). Adherence is capped at 100 % per medication, and doses
+  beyond what was expected surface as a separate "overuse" figure on
+  the PDF report.
+- **Reminders**: opt-in email and Web Push, dispatched every 30
+  minutes from 06:00 to 22:59 UTC by a GitHub Actions schedule, with
+  a daily Vercel cron as a backstop, and deduplicated by a per-slot
+  dedupe key so the user can't be spammed for the same overdue dose.
 - **Exports**: PDF (with disclaimer + side-effect summary) or CSV,
   with formula-injection-safe escaping.
 
@@ -66,24 +70,28 @@ them.
 
 ### Timezone-safe scheduling
 
-All timestamps are stored UTC; UI rendering, the "due in" timers,
-and the heatmap day-buckets all respect the user's IANA timezone.
-Time formatting is centralised in `formatUserTime(date, tz, '12h'
-|'24h')` so exports, emails, and on-screen times all agree.
+All timestamps are stored UTC; UI rendering, the dashboard's due
+times, and the heatmap day-buckets all respect the user's IANA
+timezone. Time formatting is centralised in `formatUserTime(date, tz,
+'12h'|'24h')` so exports and on-screen times agree; reminder emails
+and pushes carry no clock time, only a relative "Last logged …".
 
 ### Idempotent notifications
 
-The reminder cron writes a row to `reminder_events` with a unique
-`dedupe_key` (`userId:medicationId:type:nextDueAt`) before sending.
-A re-run of the cron can't double-send. See ADR 0005.
+The reminder sweep writes a row to `reminder_events` with a unique
+`dedupe_key` before sending. For an overdue dose the key is
+`userId:medicationId:overdue:scheduleKind:scheduleId:nextDueAt`, with
+a `:nN` suffix for each repeat nudge. A re-run of the sweep, or the
+two schedulers overlapping, can't double-send. See ADR 0005.
 
 ### Drug interaction checking — handled honestly
 
 The app calls openFDA for an experimental interaction notice when
 adding a new medication. The feature is feature-flagged
 (`INTERACTIONS_ENABLED`), surrounded by an `AbortController`
-timeout, cached for an hour, and labelled "Experimental — may miss
-interactions and may produce false positives". Treating the feature
+timeout, cached for an hour, and labelled "Experimental interaction
+notice" with a note that it "may miss interactions and may produce
+false positives". Treating the feature
 as advisory rather than authoritative is the difference between a
 helpful nudge and a liability.
 
@@ -91,14 +99,14 @@ helpful nudge and a liability.
 
 ```
 +-------------------+
-|  Browser / PWA    | <-- service-worker for offline shell + push
+|  Browser / PWA    | <-- service-worker: cached static assets + push
 +---------+---------+
           |
           | HTTP, form POST/GET
           v
 +---------+---------+
-|  SvelteKit edge   |
-|  (Vercel)         |
+|  SvelteKit        |
+|  (Vercel, Node)   |
 |  - Loaders        |
 |  - Form actions   |
 |  - API endpoints  |
@@ -131,22 +139,22 @@ Notable design choices captured in the ADRs:
 
 ## 5. Quality
 
-| Discipline      | What's in place                                                                                                                         |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Type safety     | TypeScript strict mode, `svelte-check` in CI                                                                                            |
-| Linting         | ESLint 10 flat config + Prettier 3 + Tailwind plugin                                                                                    |
-| Unit tests      | Vitest with v8 coverage, 121 tests at time of writing                                                                                   |
-| CI              | GitHub Actions: install → check → lint → format-check → test (with coverage upload) → build                                             |
-| Database        | File-based Drizzle migrations, schema changes reviewed in PR                                                                            |
-| Security review | Phase 1 hardening: ownership guards, AES-256-GCM TOTP secrets, secure-cookie posture, password-reset session invalidation, re-auth gate |
-| Accessibility   | WCAG 2.2 AA pass, focus traps in modals, semantic empty states, reduced-motion preference honoured                                      |
+| Discipline      | What's in place                                                                                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Type safety     | TypeScript strict mode, `svelte-check` in CI                                                                                                                         |
+| Linting         | ESLint 10 flat config + Prettier 3 + Tailwind plugin                                                                                                                 |
+| Unit tests      | Vitest with v8 coverage and regression-only floors; a fake-db seam for most suites, PGlite (in-process Postgres) for behaviour the database decides                  |
+| CI              | GitHub Actions: install → dependency audit → secret scan → check → lint → format-check → test (with coverage upload) → build; a Playwright job is gated on `RUN_E2E` |
+| Database        | File-based Drizzle migrations, schema changes reviewed in PR                                                                                                         |
+| Security review | Phase 1 hardening: ownership guards, AES-256-GCM TOTP secrets, secure-cookie posture, password-reset session invalidation, re-auth gate                              |
+| Accessibility   | WCAG 2.2 AA pass, focus traps in modals, semantic empty states, reduced-motion preference honoured                                                                   |
 
 ## 6. What I would improve next
 
-- **Test coverage** — server unit tests for `doses.ts` and the
-  reauth helper need a test database; that infrastructure is the
-  next CI investment.
-- **End-to-end tests** — Playwright journey + axe-core a11y audit.
+- **End-to-end tests in CI** — a Playwright suite with an axe-core
+  accessibility audit lives in `tests/e2e`, but its CI job stays off
+  until a `RUN_E2E` repository variable and a Neon test branch are
+  configured, so today it runs only locally.
 - **Native shell** — wrap the PWA in Capacitor for App Store /
   Play Store distribution.
 - **Doctor-share** — read-only signed URL for sharing the last 30

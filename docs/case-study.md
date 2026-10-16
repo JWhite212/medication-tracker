@@ -155,8 +155,9 @@ Notable design choices captured in the ADRs:
   accessibility audit lives in `tests/e2e`, but its CI job stays off
   until a `RUN_E2E` repository variable and a Neon test branch are
   configured, so today it runs only locally.
-- **Native shell** — wrap the PWA in Capacitor for App Store /
-  Play Store distribution.
+- **Native Mac app** — finish the SwiftUI client for the Mac App
+  Store, which syncs through the app's `/api/v1` endpoints. Its API
+  client and sync engine are built; the app itself is in progress.
 - **Doctor-share** — read-only signed URL for sharing the last 30
   days of dose history without giving someone account access.
 

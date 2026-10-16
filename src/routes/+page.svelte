@@ -1,6 +1,6 @@
 <script lang="ts">
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
-  import heroImage from "$lib/assets/9910d8b5-01d3-4293-94a7-eca14d4e66f5.webp";
+  import heroImage from "$lib/assets/landing-hero-phone.webp";
   import wordmark from "$lib/assets/medtracker-logo-lockup-vector.svg";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
   import WalkthroughVideo from "$lib/components/walkthrough/WalkthroughVideo.svelte";
@@ -79,14 +79,15 @@
         </p>
       </div>
       <div class="flex justify-center lg:justify-end">
+        <!-- Rendered from the walkthrough's phone scene by npm run render:hero -->
         <img
           src={heroImage}
-          alt="MedTracker app showing a daily medication schedule with checkmarks for completed doses"
+          alt="MedTracker's Today screen on a phone: Vitamin D is due, with Log now, Took it at and Skip, above three doses done today and two still to come later."
           width="320"
-          height="560"
+          height="696"
           loading="eager"
           fetchpriority="high"
-          class="shadow-accent/10 w-full max-w-xs rounded-3xl shadow-2xl sm:max-w-sm"
+          class="drop-shadow-accent/25 w-full max-w-xs drop-shadow-2xl"
         />
       </div>
     </div>

@@ -340,29 +340,80 @@ function brighten(hex: string, k: number): string {
   );
 }
 
+/** The three backdrops a Button sits on: the page, a glass card, a dialog. */
+const HOVER_BACKDROPS = ["page", "card", "dialog"] as const;
+type HoverBackdrop = (typeof HOVER_BACKDROPS)[number];
+
+const ACCENT_DERIVATION_WHY =
+  "accent derivation follow-up: 90% opacity on the preset's own fill, as on every accent button";
+
+/**
+ * Hovered `primary` Buttons below 4.5:1 today, as accent preset x scheme x
+ * the backdrops it fails over. `hover:opacity-90` is the rule every accent
+ * button in the app already uses (spec, Button > Hover), so it is kept, and
+ * these are the presets it already fails for. Each entry is a decision, not a
+ * shrug, and it is two-way: a listed row must still fail, so a stale entry
+ * fails as loudly as a new offender. Every row that is not listed must pass.
+ */
+const HOVERED_PRIMARY_BELOW_THRESHOLD: {
+  preset: string;
+  scheme: "dark" | "light";
+  over: readonly HoverBackdrop[];
+  why: string;
+}[] = [
+  { preset: "#ef4444", scheme: "dark", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
+  { preset: "#ef4444", scheme: "light", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
+  { preset: "#3b82f6", scheme: "dark", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
+  { preset: "#64748b", scheme: "dark", over: ["card", "dialog"], why: ACCENT_DERIVATION_WHY },
+  { preset: "#64748b", scheme: "light", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
+];
+
 /**
  * Button's hover states (src/lib/components/ui/Button.svelte). `primary`
  * hovers with `hover:opacity-90`, which composites the fill AND the label 90%
- * over whatever is behind the button. Logged-out pages run the @theme accent,
- * so that pair is measured over the three backdrops a Button sits on.
- * `danger` hovers with `hover:brightness-110`, because 90% opacity took
- * #111111 on #ef4444 to 4.24:1 in dark. Only those two variants have a fill.
+ * over whatever is behind the button. Inside (app) the fill is the user's
+ * preset, set inline with the foreground `readableForeground` derives, so
+ * every preset is measured, not just the @theme default; logged-out pages do
+ * run the @theme pair, which is measured too. Each is checked over the three
+ * backdrops a Button sits on. `danger` hovers with `hover:brightness-110`,
+ * because 90% opacity took #111111 on #ef4444 to 4.24:1 in dark. Only those
+ * two variants have a fill.
  */
-describe.each(SCHEMES)("$name — Button hover states keep a legible label", ({ T }) => {
+describe.each(SCHEMES)("$name — Button hover states keep a legible label", ({ name, T }) => {
   const glass = alphaOf(T["--color-glass"]);
-  const BACKDROPS: Record<string, string> = {
+  const BACKDROPS: Record<HoverBackdrop, string> = {
     page: T["--color-surface"],
     card: compositeOver(glass.alpha, T["--color-surface"], glass.overlay),
     dialog: T["--color-surface-raised"],
   };
-  const atOpacity = (fill: string, fg: string, base: string) =>
-    contrastRatio(compositeOver(0.9, base, T[fg]), compositeOver(0.9, base, T[fill]));
+  /** Label and fill both at 90% over the backdrop, as `hover:opacity-90` paints them. */
+  const hovered = (fill: string, fg: string, base: string) =>
+    contrastRatio(compositeOver(0.9, base, fg), compositeOver(0.9, base, fill));
 
-  for (const [where, base] of Object.entries(BACKDROPS)) {
-    it(`primary at 90% opacity over ${where}`, () => {
-      const ratio = atOpacity("--color-accent", "--color-accent-fg", base);
+  for (const where of HOVER_BACKDROPS) {
+    it(`primary, the @theme default, at 90% opacity over ${where}`, () => {
+      const ratio = hovered(T["--color-accent"], T["--color-accent-fg"], BACKDROPS[where]);
       expect(ratio, `hovered primary is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
     });
+  }
+
+  for (const preset of readAccentPresets()) {
+    const fg = readableForeground(preset).color;
+    const entry = HOVERED_PRIMARY_BELOW_THRESHOLD.find(
+      (e) => e.preset === preset && e.scheme === name,
+    );
+    for (const where of HOVER_BACKDROPS) {
+      const known = entry?.over.includes(where) ?? false;
+      it(`primary ${preset} at 90% opacity over ${where}${known ? " (allowlisted)" : ""}`, () => {
+        const ratio = hovered(preset, fg, BACKDROPS[where]);
+        const text = `hovered primary ${fg} on ${preset} is ${ratio.toFixed(2)}:1`;
+        if (known) {
+          expect(ratio, `${text}: it passes now, so remove its allowlist entry`).toBeLessThan(4.5);
+        } else {
+          expect(ratio, text).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+    }
   }
 
   it("danger brightened to 110%", () => {
@@ -372,6 +423,19 @@ describe.each(SCHEMES)("$name — Button hover states keep a legible label", ({ 
     );
     expect(ratio, `hovered danger is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
   });
+});
+
+it("allowlists only presets, schemes and backdrops that exist, once each", () => {
+  const presets = new Set(readAccentPresets());
+  const schemes = new Set(SCHEMES.map((s) => s.name));
+  const seen = new Set<string>();
+  for (const { preset, scheme, over } of HOVERED_PRIMARY_BELOW_THRESHOLD) {
+    expect(presets.has(preset), `${preset} is not an accent preset`).toBe(true);
+    expect(schemes.has(scheme), `${scheme} is not a scheme`).toBe(true);
+    expect(seen.has(`${scheme} ${preset}`), `${scheme} ${preset} is listed twice`).toBe(false);
+    seen.add(`${scheme} ${preset}`);
+    for (const where of over) expect(HOVER_BACKDROPS).toContain(where);
+  }
 });
 
 // Guard the guard: 90% opacity, the hover danger first had, fails in a dark dialog.

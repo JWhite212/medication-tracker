@@ -27,15 +27,19 @@
     ref?: HTMLButtonElement | HTMLAnchorElement | null;
     /**
      * Layout only: margins, flex-1, self-*, shrink-0, w-*, border-dashed.
-     * Appended, but it cannot override the recipe: Tailwind v4 orders
-     * same-property utilities by name, not by class order, so `rounded-full`
-     * here loses to `rounded-lg`. Use `variant`, `size` and `shape`.
+     * Appended after the recipe. Which of two clashing utilities wins is
+     * Tailwind v4's utility order, not the class order: a caller's `h-12`
+     * beats the recipe's `h-11`, while its `rounded-full` loses to `rounded-lg`.
+     * So never restyle the variant, size or shape through `class`; use
+     * `variant`, `size` and `shape`.
      */
     class?: string;
     children: Snippet;
+    // `ariaDisabled` and `pending` own aria-disabled and aria-busy, which the
+    // template writes after the rest props; a raw one would be overwritten.
   } & Omit<
     HTMLButtonAttributes & HTMLAnchorAttributes,
-    "type" | "href" | "class" | "disabled" | "children"
+    "type" | "href" | "class" | "disabled" | "children" | "aria-disabled" | "aria-busy"
   >;
 
   let {

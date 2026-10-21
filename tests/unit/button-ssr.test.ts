@@ -186,6 +186,22 @@ describe("Button", () => {
     expect(el.hasAttribute("aria-disabled")).toBe(false);
     expect(el.hasAttribute("aria-busy")).toBe(false);
   });
+
+  it("will not compile with a raw aria-disabled or aria-busy", () => {
+    // The component writes both itself, after the rest props, so a raw one
+    // would be silently overwritten. `npm run check` enforces these lines.
+    const disabled: ComponentProps<typeof Button> = {
+      // @ts-expect-error use ariaDisabled: aria-disabled is owned by that prop.
+      "aria-disabled": "true",
+      children: label("Save"),
+    };
+    const busy: ComponentProps<typeof Button> = {
+      // @ts-expect-error use pending: aria-busy is owned by that prop.
+      "aria-busy": "true",
+      children: label("Save"),
+    };
+    expect([disabled, busy]).toHaveLength(2);
+  });
 });
 
 const ICON_BASE = [
@@ -311,10 +327,22 @@ describe("every primitive in the gallery", () => {
     expect(await compiledRule("disabled:opacity-50")).toMatch(/&:disabled \{[^}]*opacity: 50%/);
   });
 
-  it("cannot be restyled through class, which is why shape is a prop", async () => {
-    // Tailwind v4 emits same-property utilities in name order, whatever order
-    // the class attribute lists them in; the later rule wins. An appended
-    // rounded-full sits before rounded-lg, so it loses.
+  // `class` is appended after the recipe, but which of two clashing utilities
+  // wins is Tailwind v4's utility order (the later rule), not the class order.
+  // So it is not a way to restyle the variant, size or shape. Both directions
+  // are pinned, because the claim is only true if a caller can win AND lose.
+  it("a caller's h-12 beats the recipe's h-11, because Tailwind emits it later", async () => {
+    const el = ssr(Button, { class: "h-12", children: label("Save") });
+    expect([...el.classList]).toEqual(expect.arrayContaining(["h-11", "h-12"]));
+    expect(await compiledRule("h-12")).toMatch(/height: calc\(var\(--spacing\) \* 12\)/);
+    const css = await compiledCss(["h-11", "h-12"]);
+    expect(css.indexOf(".h-11 {")).toBeGreaterThan(-1);
+    expect(css.indexOf(".h-12 {")).toBeGreaterThan(css.indexOf(".h-11 {"));
+  });
+
+  it("a caller's rounded-full loses to the recipe's rounded-lg, only because Tailwind emits it earlier", async () => {
+    const el = ssr(Button, { class: "rounded-full", children: label("Save") });
+    expect([...el.classList]).toEqual(expect.arrayContaining(["rounded-lg", "rounded-full"]));
     const css = await compiledCss(["rounded-lg", "rounded-full"]);
     expect(css.indexOf(".rounded-full {")).toBeGreaterThan(-1);
     expect(css.indexOf(".rounded-full {")).toBeLessThan(css.indexOf(".rounded-lg {"));

@@ -12,7 +12,8 @@ import { describe, it, expect, vi } from "vitest";
  *   1. Each case posts a body that is VALID for its action. A body that
  *      failed Zod would return `fail(400)` before ever touching
  *      `locals.user`, so the test would still pass with the guard deleted
- *      and would prove nothing.
+ *      and would prove nothing. A wipe's valid body now carries the typed
+ *      word (`confirmWord`) that `checkDestructiveGuard` asks for.
  *
  *   2. Every server dependency below THROWS when called. The guard is only
  *      correct if it runs before any work, so reaching a mock at all is a
@@ -237,8 +238,8 @@ const CASES: Case[] = [
   { route: "settings/notifications", action: "sendTest", actions: notifications.actions },
   { route: "settings/notifications", action: "resendVerification", actions: notifications.actions }, // prettier-ignore
 
-  { route: "settings/privacy", action: "wipeDoseHistory", actions: privacy.actions, fields: { password: "hunter2" } }, // prettier-ignore
-  { route: "settings/privacy", action: "wipeArchivedMedications", actions: privacy.actions, fields: { password: "hunter2" } }, // prettier-ignore
+  { route: "settings/privacy", action: "wipeDoseHistory", actions: privacy.actions, fields: { confirmWord: "DELETE", password: "hunter2" } }, // prettier-ignore
+  { route: "settings/privacy", action: "wipeArchivedMedications", actions: privacy.actions, fields: { confirmWord: "DELETE", password: "hunter2" } }, // prettier-ignore
   { route: "settings/privacy", action: "revokeOtherSessions", actions: privacy.actions, fields: { password: "hunter2" } }, // prettier-ignore
 
   { route: "settings/security", action: "changePassword", actions: security.actions, fields: { currentPassword: "hunter2", newPassword: "correcthorse", confirmPassword: "correcthorse" } }, // prettier-ignore

@@ -66,7 +66,6 @@ const PENDING_MIGRATION: string[] = [
   "src/routes/(app)/settings/data/+page.svelte",
   "src/routes/(app)/settings/data/import/+page.svelte",
   "src/routes/(app)/settings/notifications/+page.svelte",
-  "src/routes/(app)/settings/privacy/+page.svelte",
   "src/routes/(app)/settings/security/+page.svelte",
   "src/routes/+page.svelte",
   "src/routes/auth/2fa/+page.svelte",

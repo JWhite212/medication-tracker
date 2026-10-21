@@ -329,6 +329,61 @@ describe.each(SCHEMES)("$name — solid fills carry a legible foreground", ({ T 
   }
 });
 
+/** CSS `brightness(k)`: every sRGB channel times k, clamped. Filter functions run in sRGB. */
+function brighten(hex: string, k: number): string {
+  return (
+    "#" +
+    [1, 3, 5]
+      .map((i) => Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * k)))
+      .map((c) => c.toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
+/**
+ * Button's hover states (src/lib/components/ui/Button.svelte). `primary`
+ * hovers with `hover:opacity-90`, which composites the fill AND the label 90%
+ * over whatever is behind the button. Logged-out pages run the @theme accent,
+ * so that pair is measured over the three backdrops a Button sits on.
+ * `danger` hovers with `hover:brightness-110`, because 90% opacity took
+ * #111111 on #ef4444 to 4.24:1 in dark. Only those two variants have a fill.
+ */
+describe.each(SCHEMES)("$name — Button hover states keep a legible label", ({ T }) => {
+  const glass = alphaOf(T["--color-glass"]);
+  const BACKDROPS: Record<string, string> = {
+    page: T["--color-surface"],
+    card: compositeOver(glass.alpha, T["--color-surface"], glass.overlay),
+    dialog: T["--color-surface-raised"],
+  };
+  const atOpacity = (fill: string, fg: string, base: string) =>
+    contrastRatio(compositeOver(0.9, base, T[fg]), compositeOver(0.9, base, T[fill]));
+
+  for (const [where, base] of Object.entries(BACKDROPS)) {
+    it(`primary at 90% opacity over ${where}`, () => {
+      const ratio = atOpacity("--color-accent", "--color-accent-fg", base);
+      expect(ratio, `hovered primary is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
+  it("danger brightened to 110%", () => {
+    const ratio = contrastRatio(
+      brighten(T["--color-danger-fg"], 1.1),
+      brighten(T["--color-danger"], 1.1),
+    );
+    expect(ratio, `hovered danger is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+// Guard the guard: 90% opacity, the hover danger first had, fails in a dark dialog.
+it("would have failed danger at 90% opacity in a dark dialog", () => {
+  const dialog = DARK["--color-surface-raised"];
+  const ratio = contrastRatio(
+    compositeOver(0.9, dialog, DARK["--color-danger-fg"]),
+    compositeOver(0.9, dialog, DARK["--color-danger"]),
+  );
+  expect(ratio).toBeLessThan(4.5);
+});
+
 /**
  * Tinted chips: `bg-danger/20 text-danger-ink` and friends. The opaque
  * surfaces above are not what these render on — the chip paints a fraction of

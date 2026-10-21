@@ -24,6 +24,10 @@ const EXEMPT: { file: string; why: string }[] = [
     why: "The owner: every status class is spelled here and nowhere else.",
   },
   {
+    file: "src/lib/components/ui/Button.svelte",
+    why: "The danger variant (bg-danger text-danger-fg), used only inside DestructiveConfirm.",
+  },
+  {
     file: "src/lib/components/ui/Toast.svelte",
     why: "Spec Non-goals: Toast is unchanged. Its colours already obey the rules and its markup is pinned.",
   },

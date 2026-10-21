@@ -58,7 +58,6 @@ const PENDING_MIGRATION: string[] = [
   "src/lib/components/MedicationForm.svelte",
   "src/lib/components/RefillsCard.svelte",
   "src/lib/components/SideEffectPicker.svelte",
-  "src/lib/components/StatusBreakdownBar.svelte",
   "src/lib/components/medication-form/InteractionWarningPanel.svelte",
   "src/lib/components/medication-form/MedicationScheduleSection.svelte",
   "src/lib/components/medication-form/MedicationStylePicker.svelte",

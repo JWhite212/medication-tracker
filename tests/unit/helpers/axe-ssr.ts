@@ -34,3 +34,12 @@ export async function runAxe(doc: Document, rules: string[]): Promise<AxeResults
 export function evaluatedRules(results: AxeResults): Set<string> {
   return new Set([...results.passes, ...results.violations].map((rule) => rule.id));
 }
+
+/**
+ * SSR markup with Svelte's hydration comments removed. A rendered snippet
+ * arrives bracketed by them (`<a …><!---->Clear filters<!----></a>`), so a
+ * regex that means "the label is this element's direct text" reads this.
+ */
+export function withoutComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, "");
+}

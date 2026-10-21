@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tick } from "svelte";
   import type { SideEffect } from "$lib/types";
+  import { SEVERITY } from "$lib/utils/side-effect-severity";
+  import { toneClass, toneOf, type StatusKey } from "$lib/utils/status-tone";
 
   let { value = [], onchange }: { value: SideEffect[]; onchange: (effects: SideEffect[]) => void } =
     $props();
@@ -51,10 +53,16 @@
     }
   }
 
-  const severityOptions: Array<{ value: SideEffect["severity"]; label: string }> = [
-    { value: "mild", label: "Mild" },
-    { value: "moderate", label: "Mod" },
-    { value: "severe", label: "Severe" },
+  // The button labels are shorter than the chip words ("Mod"), so they stay
+  // here; which status each severity takes is the shared table's answer.
+  const severityOptions: Array<{
+    value: SideEffect["severity"];
+    label: string;
+    status: StatusKey;
+  }> = [
+    { value: "mild", label: "Mild", status: SEVERITY.mild.status },
+    { value: "moderate", label: "Mod", status: SEVERITY.moderate.status },
+    { value: "severe", label: "Severe", status: SEVERITY.severe.status },
   ];
 
   // One chip per name, as the common chips already are: `toggle` works by
@@ -165,24 +173,22 @@
           <span class="text-sm">{effect.name}</span>
           <div class="flex gap-1">
             {#each severityOptions as opt}
-              <!-- The only difference between selected and unselected here is
-                   background colour, and the three severities are themselves
-                   distinguished by colour — so without aria-pressed the current
-                   severity is unavailable to assistive tech and to anyone who
-                   cannot separate amber from red. -->
+              <!-- The chosen severity is the bordered one. Mild and moderate share
+                   the neutral look and differ only by their word; severe is red.
+                   aria-pressed stays the only programmatic state: a border is a
+                   cue only sighted users get, so without it the current severity
+                   is unavailable to assistive tech. An unchosen button keeps a
+                   transparent border, so choosing a severity does not shift the
+                   row. -->
               <button
                 type="button"
                 onclick={() => setSeverity(effect.name, opt.value)}
                 aria-pressed={effect.severity === opt.value}
                 aria-label="{opt.label} severity for {effect.name}"
-                class="min-h-6 rounded-xs px-2 py-0.5 text-xs font-medium transition-colors {effect.severity ===
+                class="min-h-6 rounded-xs border px-2 py-0.5 text-xs font-medium transition-colors {effect.severity ===
                 opt.value
-                  ? opt.value === 'mild'
-                    ? 'bg-text-secondary/30 text-text-primary'
-                    : opt.value === 'moderate'
-                      ? 'bg-warning/20 text-warning'
-                      : 'bg-danger/20 text-danger-ink'
-                  : 'text-text-muted hover:text-text-secondary'}"
+                  ? toneClass(toneOf(opt.status), 'chip')
+                  : 'text-text-muted hover:text-text-secondary border-transparent'}"
               >
                 {opt.label}
               </button>

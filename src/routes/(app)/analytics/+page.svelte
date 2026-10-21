@@ -7,10 +7,16 @@
   import StatusBreakdownBar from "$components/StatusBreakdownBar.svelte";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
   import MedicationFilterSelect from "$lib/components/MedicationFilterSelect.svelte";
+  import Toggle from "$components/ui/Toggle.svelte";
   import { goto } from "$app/navigation";
+  import { toneClass } from "$lib/utils/status-tone";
   import type { DateFormat } from "$lib/utils/time";
 
   let { data } = $props();
+
+  // Analytics reports numbers and does not judge them, so every trend, sparkline
+  // and count below shares the one neutral ink.
+  const NEUTRAL_TEXT = toneClass("neutral", "text");
 
   const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const WEEKEND_DOW = new Set([0, 6]);
@@ -76,19 +82,11 @@
       onchange={setMedFilter}
     />
     <div class="border-glass-border bg-glass flex gap-1 rounded-lg border p-1 backdrop-blur-xl">
-      {#each PERIODS as p}
-        <!-- Selected state was conveyed by background colour alone. aria-pressed
-             matches the schedule-mode toggles in MedicationScheduleSection. -->
-        <button
-          class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {data.period ===
-          p.value
-            ? 'bg-accent text-accent-fg'
-            : 'text-text-secondary hover:text-text-primary'}"
-          aria-pressed={data.period === p.value}
-          onclick={() => setPeriod(p.value)}
-        >
+      {#each PERIODS as p (p.value)}
+        <!-- aria-pressed comes from Toggle, which states the selection beyond its colour. -->
+        <Toggle pressed={data.period === p.value} onclick={() => setPeriod(p.value)}>
           {p.label}
-        </button>
+        </Toggle>
       {/each}
     </div>
     <div class="flex items-center gap-2">
@@ -113,28 +111,24 @@
 
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:gap-4">
     <GlassCard class="animate-fade-in-up text-center" style="animation-delay: 0ms">
-      <p class="text-accent-ink text-3xl font-bold">{data.streak}</p>
+      <p class="text-text-primary text-3xl font-bold">{data.streak}</p>
       <p class="text-text-secondary mt-1 text-sm">Day Streak</p>
     </GlassCard>
     <GlassCard class="animate-fade-in-up text-center" style="animation-delay: 80ms">
-      <p class="text-success text-3xl font-bold">
+      <p class="text-text-primary text-3xl font-bold">
         {data.avgAdherence}%
       </p>
       <div class="mt-1 flex items-center justify-center gap-1.5">
         <span class="text-text-secondary text-sm">Avg Adherence</span>
         {#if data.trends.adherence.direction !== "flat"}
-          <span
-            class="text-xs {data.trends.adherence.direction === 'up'
-              ? 'text-success'
-              : 'text-danger-ink'}"
-          >
+          <span class="text-xs {NEUTRAL_TEXT}">
             {data.trends.adherence.direction === "up" ? "\u2191" : "\u2193"}{data.trends.adherence
               .percent}%
           </span>
         {/if}
       </div>
       {#if data.dailyAdherence.length > 1}
-        <div class="text-success mt-2">
+        <div class="{NEUTRAL_TEXT} mt-2">
           <Sparkline
             values={data.dailyAdherence.map((d) => d.adherence)}
             color="currentColor"
@@ -145,23 +139,19 @@
       {/if}
     </GlassCard>
     <GlassCard class="animate-fade-in-up text-center" style="animation-delay: 160ms">
-      <p class="text-warning text-3xl font-bold">
+      <p class="text-text-primary text-3xl font-bold">
         {data.totalDoses}
       </p>
       <div class="mt-1 flex items-center justify-center gap-1.5">
         <span class="text-text-secondary text-sm">Doses ({periodLabel(data.period)})</span>
         {#if data.trends.doses.direction !== "flat"}
-          <span
-            class="text-xs {data.trends.doses.direction === 'up'
-              ? 'text-success'
-              : 'text-danger-ink'}"
-          >
+          <span class="text-xs {NEUTRAL_TEXT}">
             {data.trends.doses.direction === "up" ? "\u2191" : "\u2193"}{data.trends.doses.percent}%
           </span>
         {/if}
       </div>
       {#if data.dailyAdherence.length > 1}
-        <div class="text-warning mt-2">
+        <div class="{NEUTRAL_TEXT} mt-2">
           <Sparkline
             values={data.dailyAdherence.map((d) => d.doseCount)}
             color="currentColor"
@@ -279,7 +269,7 @@
             <span class="w-28 truncate text-sm">{effect.name}</span>
             <div class="bg-surface-overlay h-4 flex-1 overflow-hidden rounded-full">
               <div
-                class="bg-warning/70 h-full rounded-full"
+                class="h-full rounded-full {toneClass('neutral', 'bar')}"
                 style="width: {(effect.count / maxCount) * 100}%"
               ></div>
             </div>
@@ -296,7 +286,7 @@
               <p class="text-sm font-medium">{med.medication}</p>
               <div class="mt-1 flex flex-wrap gap-1.5">
                 {#each med.effects as eff}
-                  <span class="bg-warning/10 text-warning rounded-full px-2.5 py-0.5 text-xs"
+                  <span class="rounded-full px-2.5 py-0.5 text-xs {toneClass('neutral', 'chip')}"
                     >{eff.name} ({eff.count})</span
                   >
                 {/each}

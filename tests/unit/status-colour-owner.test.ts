@@ -51,7 +51,6 @@ const EXEMPT: { file: string; why: string }[] = [
  * same commit (the stale check below fails otherwise). Task 13 deletes the list.
  */
 const PENDING_MIGRATION: string[] = [
-  "src/lib/components/AdherenceChart.svelte",
   "src/lib/components/DoseEditForm.svelte",
   "src/lib/components/MedicationForm.svelte",
   "src/lib/components/medication-form/InteractionWarningPanel.svelte",
@@ -61,7 +60,6 @@ const PENDING_MIGRATION: string[] = [
   "src/lib/components/walkthrough/scenes/AnalyticsScene.svelte",
   "src/lib/components/walkthrough/scenes/MedicationsScene.svelte",
   "src/lib/components/walkthrough/scenes/SecurityScene.svelte",
-  "src/routes/(app)/analytics/+page.svelte",
   "src/routes/(app)/medications/[id]/+page.svelte",
   "src/routes/(app)/settings/+page.svelte",
   "src/routes/(app)/settings/appearance/+page.svelte",

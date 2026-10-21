@@ -6,7 +6,9 @@
   import { expectedWeeklyDoses, adherencePercent } from "$lib/utils/adherence";
   import { formatDoseLabel } from "$lib/utils/dashboard-copy";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
+  import { toneClass } from "$lib/utils/status-tone";
   import { createDoseWrite } from "$components/dose-writes/dose-write.svelte";
+  import { refillChip } from "$components/RefillsCard.svelte";
   import TimeSince from "$components/TimeSince.svelte";
   import Sparkline from "$components/Sparkline.svelte";
 
@@ -20,13 +22,6 @@
     timezone: string;
     timeFormat: TimeFormat;
   } = $props();
-
-  function refillChipClass(severity: MedicationWithStats["refillSeverity"]): string {
-    if (severity === "critical") return "bg-danger/15 text-danger-ink";
-    if (severity === "warning") return "bg-warning/15 text-warning";
-    if (severity === "watch") return "bg-info/15 text-info";
-    return "";
-  }
 
   const isScheduled = $derived(medication.scheduleType === "scheduled");
   const weeklyExpected = $derived(
@@ -46,14 +41,16 @@
   // narrowed projection added later) would be undefined, and the falsy form
   // would render "Muted" on every medication. This fails safe instead.
   const muted = $derived(medication.notificationsEnabled === false);
-  const refillChip = $derived(
-    Boolean(medication.refillSeverity && medication.refillSeverity !== "ok"),
-  );
-  const lowStockChip = $derived(
-    !refillChip &&
-      medication.inventoryCount !== null &&
-      medication.inventoryAlertThreshold !== null &&
-      medication.inventoryCount <= medication.inventoryAlertThreshold,
+  // One chip, decided by RefillsCard's one rule: amber "Reorder soon" when the
+  // forecast tier or the user's own alert threshold says so, neutral days left
+  // for the watch tier, nothing otherwise.
+  const chip = $derived(
+    refillChip({
+      severity: medication.refillSeverity ?? "ok",
+      daysUntilRefill: medication.daysUntilRefill,
+      inventoryCount: medication.inventoryCount,
+      inventoryAlertThreshold: medication.inventoryAlertThreshold,
+    }),
   );
 
   let logButton = $state<HTMLButtonElement>();
@@ -146,7 +143,7 @@
           </p>
         </div>
       </div>
-      {#if muted || refillChip || lowStockChip}
+      {#if muted || chip}
         <div class="flex flex-wrap items-center gap-2">
           {#if muted}
             <span
@@ -156,18 +153,17 @@
               Muted
             </span>
           {/if}
-          {#if refillChip}
+          {#if chip}
+            <!-- The space after the glyph is an expression because Svelte drops a
+                 literal one at an {#if} edge. -->
+            <!-- eslint-disable svelte/no-useless-mustaches -->
             <span
-              class="rounded-full px-2 py-1 text-xs font-medium {refillChipClass(
-                medication.refillSeverity,
-              )}"
+              data-stock-chip
+              class="rounded-md px-2 py-1 text-xs font-semibold {toneClass(chip.tone, 'chip')}"
+              >{#if chip.glyph}<span aria-hidden="true">{chip.glyph}</span
+                >{" "}{/if}{chip.text}</span
             >
-              {medication.daysUntilRefill ?? 0}d left
-            </span>
-          {:else if lowStockChip}
-            <span class="bg-warning/15 text-warning rounded-full px-2 py-1 text-xs font-medium"
-              >Low: {medication.inventoryCount}</span
-            >
+            <!-- eslint-enable svelte/no-useless-mustaches -->
           {/if}
         </div>
       {/if}
@@ -182,9 +178,7 @@
       {/if}
 
       {#if medication.daysUntilRefill !== null}
-        <span class={medication.daysUntilRefill <= 7 ? "text-warning" : ""}>
-          ~{medication.daysUntilRefill}d supply left
-        </span>
+        <span>~{medication.daysUntilRefill}d supply left</span>
       {/if}
     </div>
 

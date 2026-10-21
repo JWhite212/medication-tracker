@@ -27,7 +27,7 @@ type ListedMedication = MedicationWithStats & {
   refillSeverity: "critical" | "warning" | "watch" | "ok";
 };
 
-// Both status chips on at once ("Muted" and a critical "3d left"), because
+// Both status chips on at once ("Muted" and a critical "Reorder soon · 3 days left"), because
 // the widest header is the one the log button used to land on top of.
 function medication(overrides: Partial<ListedMedication> = {}): ListedMedication {
   return {
@@ -170,7 +170,9 @@ describe("the medication card's quick-log button", () => {
     // chips it must not collide with are still inside the link.
     const linkEnd = html.indexOf("</a>");
     expect(html.indexOf("Muted")).toBeLessThan(linkEnd);
-    expect(html.indexOf("3d left")).toBeLessThan(linkEnd);
+    const chipAt = html.indexOf("Reorder soon · 3 days left");
+    expect(chipAt).toBeGreaterThan(-1);
+    expect(chipAt).toBeLessThan(linkEnd);
     expect(html.indexOf(tag)).toBeGreaterThan(linkEnd);
   });
 

@@ -14,6 +14,7 @@ import {
 } from "$lib/utils/contrast";
 import { entryFor } from "$lib/appearance/registry";
 import { accentInkFor, ACCENT_CHIP_ALPHA } from "$lib/appearance/theme-css";
+import { TONE_CLASSES, type Tone } from "$lib/utils/status-tone";
 import { blockBody, parseDeclarations } from "./helpers/css-tokens";
 
 function readAppCss(): string {
@@ -72,6 +73,21 @@ function alphaOf(value: string): { alpha: number; overlay: string } {
   if (r === "255" && g === "255" && b === "255") return { alpha: Number(m[4]), overlay: "#ffffff" };
   if (r === "0" && g === "0" && b === "0") return { alpha: Number(m[4]), overlay: "#000000" };
   throw new Error(`Expected a white- or black-alpha token, got: ${value}`);
+}
+
+/** `bg-warning/15` -> the token and alpha a class string fills with; no `bg-` class -> null (transparent). */
+function fillOf(classes: string): { token: string; alpha: number } | null {
+  const m = classes.match(/(?:^|\s)bg-([a-z-]+?)(?:\/(\d+))?(?=\s|$)/);
+  return m ? { token: `--color-${m[1]}`, alpha: m[2] ? Number(m[2]) / 100 : 1 } : null;
+}
+
+/** The one `text-*` colour in a class string, as its token. Throws on none or several. */
+function inkOf(classes: string): string {
+  const found = [...classes.matchAll(/(?:^|\s)text-([a-z-]+)(?=\s|$)/g)];
+  if (found.length !== 1) {
+    throw new Error(`Expected one text colour in "${classes}", found ${found.length}`);
+  }
+  return `--color-${found[0][1]}`;
 }
 
 /**
@@ -396,6 +412,102 @@ describe.each(SCHEMES)(
           `${T[fg]} on ${chip} (${T[fill]} at ${alpha} over ${base}) is ${ratio.toFixed(2)}:1`,
         ).toBeGreaterThanOrEqual(threshold);
       });
+    }
+  },
+);
+
+/**
+ * Every status tone the owner can produce, over every backdrop its element is
+ * really drawn on. The pairs are READ from TONE_CLASSES, not restated, so an
+ * opacity tuned in status-tone.ts is re-measured here, and a tone or element
+ * added there is measured without anyone remembering to add a row. That is
+ * how the happened chip came to be /10: at /15 it is 4.33:1 on a hovered card
+ * in dark.
+ *
+ * `bar` and `border` have no rows. Neither carries text, and the word or glyph
+ * beside them carries the status. WCAG 1.4.11 asks 3:1 of a graphic only when
+ * it is the sole carrier. The neutral bar's border-strong already clears 3:1
+ * on every surface in the control-boundary describe below.
+ *
+ * Text on opaque surfaces and on a resting card is already in the text-token
+ * table above (surfaces() includes surface-raised and glass-on-surface), so
+ * `text` adds only the hovered card, which surfaces() does not composite.
+ */
+describe.each(SCHEMES)(
+  "$name — every status tone is legible over the backdrops its element is drawn on",
+  ({ T }) => {
+    const glass = alphaOf(T["--color-glass"]);
+    const glassHover = alphaOf(T["--color-glass-hover"]);
+    const card = compositeOver(glass.alpha, T["--color-surface"], glass.overlay);
+    const cardHover = compositeOver(glassHover.alpha, T["--color-surface"], glassHover.overlay);
+    const modalGlass = compositeOver(glass.alpha, T["--color-surface-raised"], glass.overlay);
+
+    // [backdrop, hex, the component that really draws this element there].
+    const BACKDROPS: Record<"chip" | "marker" | "alert" | "text", [string, string, string][]> = {
+      chip: [
+        ["card", card, "MedicationCard refill chip; Log row status and side-effect chips"],
+        ["cardHover", cardHover, "the same rows hovered (both carry hover:bg-glass-hover)"],
+        ["modalGlass", modalGlass, "SideEffectPicker severity chip in the DoseEditForm modal"],
+      ],
+      marker: [["card", card, "StatusMarker in a DueCard <li> and in the Done card"]],
+      alert: [
+        ["card", card, "a banner inside a GlassCard or the auth card"],
+        [
+          "surface",
+          T["--color-surface"],
+          "a banner on the page itself (notifications' saved line)",
+        ],
+        [
+          "surface-raised",
+          T["--color-surface-raised"],
+          "DoseEditForm's and DestructiveConfirm's error, in the Modal panel",
+        ],
+      ],
+      text: [["cardHover", cardHover, "a status word on a hovered Log row or medication card"]],
+    };
+
+    for (const tone of Object.keys(TONE_CLASSES) as Tone[]) {
+      const c = TONE_CLASSES[tone];
+      const headline = tone === "neutral" ? "--color-text-primary" : inkOf(c.text);
+      const CASES: [
+        element: keyof typeof BACKDROPS,
+        classes: string,
+        fgs: string[],
+        threshold: number,
+      ][] = [
+        ["chip", c.chip, [inkOf(c.chip)], 4.5],
+        // 3:1: the marker's foreground is a glyph in a status circle (WCAG 1.4.11).
+        ["marker", c.marker, [inkOf(c.marker)], 3],
+        // The headline, the icon (the tone's text), the body (text-secondary),
+        // and plain text in a row boxed the same way.
+        [
+          "alert",
+          c.alert,
+          [...new Set([headline, inkOf(c.text), "--color-text-secondary", "--color-text-primary"])],
+          4.5,
+        ],
+        ["text", "", [inkOf(c.text)], 4.5],
+      ];
+      for (const [element, classes, fgs, threshold] of CASES) {
+        for (const [name, base, site] of BACKDROPS[element]) {
+          for (const fg of fgs) {
+            it(`${tone} ${element}: ${fg} over ${name} — ${site}`, () => {
+              expect(T[fg], `${fg} is not defined`).toBeDefined();
+              const fill = fillOf(classes);
+              const bg = !fill
+                ? base
+                : fill.alpha === 1
+                  ? T[fill.token]
+                  : compositeOver(fill.alpha, base, T[fill.token]);
+              const ratio = contrastRatio(T[fg], bg);
+              expect(
+                ratio,
+                `${T[fg]} on ${bg} (${classes || "no fill"} over ${base}) is ${ratio.toFixed(2)}:1`,
+              ).toBeGreaterThanOrEqual(threshold);
+            });
+          }
+        }
+      }
     }
   },
 );

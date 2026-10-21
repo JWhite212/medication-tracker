@@ -4,11 +4,12 @@
 // it (tests/unit/settings-pages-ssr.test.ts) sees only the first render; what
 // happens after a submit settles (a failed sign-out, a push test waiting on
 // its device) needs the client build of Svelte and a clock.
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { flushSync, mount, unmount, type Component } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
-import { alertTitled } from "./helpers/alert-dom";
-import { buttonNamed } from "./helpers/dom-names";
+import { toneClass } from "../../src/lib/utils/status-tone";
+import { alertTitled, expectClasses } from "./helpers/alert-dom";
+import { buttonNamed, textOf } from "./helpers/dom-names";
 
 type Sent = { action: string; finish: (result: ActionResult) => Promise<void> };
 const sent = vi.hoisted(() => [] as Sent[]);
@@ -50,6 +51,7 @@ vi.mock("$app/forms", () => ({
 }));
 
 import Security from "../../src/routes/(app)/settings/security/+page.svelte";
+import Notifications from "../../src/routes/(app)/settings/notifications/+page.svelte";
 
 const user = {
   id: "u1",
@@ -92,8 +94,13 @@ function mountPage(Page: unknown, data: unknown): HTMLElement {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
+  // Unmount first: the notifications page's effect cleanup reads
+  // navigator.serviceWorker, which the push describe defines.
   if (app) unmount(app);
   app = undefined;
+  delete (navigator as unknown as Record<string, unknown>).serviceWorker;
+  delete (window as unknown as Record<string, unknown>).PushManager;
   sent.length = 0;
   goto.mockClear();
   document.body.innerHTML = "";
@@ -141,5 +148,79 @@ describe("Sign Out", () => {
     expect(alertTitled(target, "Couldn't sign out")).toBeNull();
     await sent.at(-1)!.finish({ type: "success", status: 200, data: { loggedOut: true } });
     expect(goto).toHaveBeenCalledWith("/auth/login");
+  });
+});
+
+describe("push card and test confirmation", () => {
+  let subscription: { endpoint: string } | null = null;
+  const notif = () => ({
+    user,
+    preferences,
+    vapidPublicKey: "BAAA",
+    emailVerified: true,
+    emailConfigured: true,
+    pushHealth: {
+      deviceCount: 1,
+      lastReminderAt: null,
+      oldestRegisteredAt: null,
+      vapidConfigured: true,
+    },
+    mutedMedications: [],
+  });
+  const mountNotifications = () => mountPage(Notifications, notif());
+
+  beforeEach(() => {
+    subscription = null;
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        ready: Promise.resolve({ pushManager: { getSubscription: async () => subscription } }),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      },
+    });
+    Object.defineProperty(window, "PushManager", { configurable: true, value: class {} });
+  });
+
+  it("draws Disable as a secondary Button and the active state in neutral words", async () => {
+    subscription = { endpoint: "https://push.test/1" };
+    const target = mountNotifications();
+    const disable = await vi.waitFor(() => buttonNamed(target, "Disable"));
+    expectClasses(disable, "h-9 border-border-strong text-text-primary");
+    const active = [...target.querySelectorAll("p")].find(
+      (p) => textOf(p) === "Push notifications are active on this device.",
+    )!;
+    expectClasses(active, toneClass("neutral", "text"));
+  });
+
+  it("draws Enable as the primary Button", async () => {
+    subscription = null;
+    expectClasses(
+      await vi.waitFor(() => buttonNamed(mountNotifications(), "Enable")),
+      "h-9 bg-accent text-accent-fg",
+    );
+  });
+
+  it("shows Sending… while a test is in flight, then asks for action when the device never confirms", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    subscription = { endpoint: "https://push.test/1" };
+    const target = mountNotifications();
+    await vi.waitFor(() => buttonNamed(target, "Disable"));
+    const send = buttonNamed(target, "Send test notification");
+    send.click();
+    flushSync();
+    expect(send.getAttribute("aria-busy")).toBe("true");
+    expect(send.disabled).toBe(true);
+    props.form = { testOk: true, testMessage: "Sent to 1 device." };
+    await sent.at(-1)!.finish({ type: "success", status: 200, data: props.form as never });
+    flushSync();
+    const ok = alertTitled(target, "Sent to 1 device.")!;
+    expect(textOf(ok)).toContain("Waiting for this device to confirm it displayed…");
+    vi.advanceTimersByTime(10_000);
+    flushSync();
+    const late = alertTitled(target, "This device didn't confirm it displayed the notification.")!;
+    expect(late.getAttribute("role")).toBeNull();
+    expectClasses(late, toneClass("needs-you", "alert"));
+    expect(late.closest('[role="status"]'), "announced politely by the test region").not.toBeNull();
   });
 });

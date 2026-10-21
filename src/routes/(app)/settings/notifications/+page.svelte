@@ -1,11 +1,18 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import { showToast } from "$lib/components/ui/Toast.svelte";
   import { urlBase64ToUint8Array, TEST_PUSH_SHOWN_MESSAGE } from "$lib/utils/push";
+  import { toneClass, toneOf } from "$lib/utils/status-tone";
   import { formatTimeSince } from "$lib/utils/time";
 
   let { data, form } = $props();
+
+  // "Active" and "configured" are states, not verdicts: neutral, whichever way
+  // they read. The words carry the difference.
+  const STATE_TEXT = toneClass(toneOf("state"), "text");
 
   let pushSupported = $state(false);
   let pushEnabled = $state(false);
@@ -139,6 +146,17 @@
   <title>Notifications — MedTracker</title>
 </svelte:head>
 
+<!-- The body of the sent-test Alert, handed over only while there is
+     something to say: a snippet that renders nothing would still draw an empty
+     body. -->
+{#snippet confirmation()}
+  {#if awaitingConfirmation}
+    Waiting for this device to confirm it displayed…
+  {:else if confirmed}
+    Confirmed displayed on this device.
+  {/if}
+{/snippet}
+
 <div class="mx-auto w-full max-w-2xl space-y-6">
   <div class="flex items-center gap-3">
     <a href="/settings" class="text-text-muted hover:text-text-primary text-sm">← Settings</a>
@@ -146,51 +164,45 @@
     <h1 tabindex="-1" class="text-2xl font-bold">Notifications</h1>
   </div>
 
+  <!-- Every "happened" outcome of the preferences and resend forms, announced
+       from a region that is on the page before the result arrives. -->
   <div role="status">
     {#if form?.success}
-      <p class="bg-success/10 text-success rounded-lg px-4 py-2 text-sm">
-        Notification settings saved.
-      </p>
+      <Alert tone="happened" title="Notification settings saved." />
+    {:else if form?.resendOk && form.alreadyVerified}
+      <Alert tone="happened" title="Email already verified." />
+    {:else if form?.resendOk}
+      <Alert tone="happened" title="Verification email sent.">
+        Check your inbox (and spam folder).
+      </Alert>
     {/if}
   </div>
 
   {#if data.emailConfigured && (data.preferences.overdueEmailReminders || data.preferences.lowInventoryEmailAlerts) && !data.emailVerified}
-    <!-- Verify-email hint kept in its own card so the resend form does
-         not nest inside the preferences form. The interactive form sits
-         OUTSIDE the role="status" announcement so screen readers don't
-         re-announce the button when its surrounding text re-renders. -->
+    <!-- Kept in its own card so the resend form does not nest inside the
+         preferences form. Not a live region: it is on screen from the first
+         paint, and a region around the Resend button would re-announce it. The
+         resend's success is announced from the page-level region above, which
+         outlives this panel when the reload finds the address already
+         verified. -->
     <GlassCard>
-      <div class="border-warning/30 bg-warning/5 rounded-lg border px-4 py-3 text-sm">
-        <p class="text-warning" role="status">Verify your email to enable email reminders.</p>
-        {#if form?.resendOk}
-          <p class="text-success mt-2">
-            {#if form?.alreadyVerified}
-              Email already verified.
-            {:else}
-              Verification email sent. Check your inbox (and spam folder).
-            {/if}
-          </p>
-        {:else if form?.resendError}
-          <p class="text-danger-ink mt-2">{form.resendError}</p>
-        {/if}
-        <form method="POST" action="?/resendVerification" use:enhance class="mt-2">
-          <button
-            type="submit"
-            class="text-warning cursor-pointer underline transition-colors hover:no-underline"
-          >
-            Resend verification email
-          </button>
-        </form>
-      </div>
+      <Alert tone="needs-you" title="Verify your email to enable email reminders.">
+        {#snippet action()}
+          <form method="POST" action="?/resendVerification" use:enhance>
+            <Button variant="secondary" size="sm" type="submit">Resend verification email</Button>
+          </form>
+        {/snippet}
+      </Alert>
+      {#if form?.resendError}
+        <Alert tone="wrong" title={form.resendError} class="mt-3" />
+      {/if}
     </GlassCard>
   {:else if (data.preferences.overdueEmailReminders || data.preferences.lowInventoryEmailAlerts) && !data.emailConfigured}
     <GlassCard>
-      <div
-        class="border-glass-border bg-surface-raised text-text-secondary rounded-lg border px-4 py-3 text-sm"
-        role="status"
-      >
-        Email is not configured on this deployment, so email reminders won't be sent.
-      </div>
+      <Alert
+        tone="neutral"
+        title="Email is not configured on this deployment, so email reminders won't be sent."
+      />
     </GlassCard>
   {/if}
 
@@ -270,12 +282,7 @@
         </div>
       </fieldset>
 
-      <button
-        type="submit"
-        class="bg-accent text-accent-fg rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-      >
-        Save Changes
-      </button>
+      <Button variant="primary" type="submit">Save Changes</Button>
     </form>
   </GlassCard>
 
@@ -304,19 +311,17 @@
             Receive instant push notifications for overdue medications
           </p>
         </div>
-        <button
-          type="button"
+        <Button
+          variant={pushEnabled ? "secondary" : "primary"}
+          size="sm"
           onclick={togglePush}
           disabled={pushLoading}
-          class="rounded-lg px-4 py-2 text-sm font-medium transition-colors {pushEnabled
-            ? 'bg-danger/10 text-danger-ink hover:bg-danger/20'
-            : 'bg-accent text-accent-fg hover:opacity-90'} disabled:opacity-50"
+          pending={pushLoading}
+          pendingLabel="Updating…">{pushEnabled ? "Disable" : "Enable"}</Button
         >
-          {pushLoading ? "Updating..." : pushEnabled ? "Disable" : "Enable"}
-        </button>
       </div>
       {#if pushEnabled}
-        <p class="text-success mt-3 text-xs">Push notifications are active on this device.</p>
+        <p class="{STATE_TEXT} mt-3 text-xs">Push notifications are active on this device.</p>
       {/if}
     </GlassCard>
   {/if}
@@ -337,7 +342,7 @@
       <dl class="space-y-2 text-xs">
         <div class="flex items-baseline justify-between gap-4">
           <dt class="text-text-muted">Push service</dt>
-          <dd class={data.pushHealth.vapidConfigured ? "text-success" : "text-warning"}>
+          <dd class={STATE_TEXT}>
             {data.pushHealth.vapidConfigured ? "Configured" : "Not configured on this deployment"}
           </dd>
         </div>
@@ -372,10 +377,12 @@
       {/if}
 
       {#if data.pushHealth.deviceCount > 0 && !data.preferences.overduePushReminders && !data.preferences.lowInventoryPushAlerts}
-        <p class="text-warning text-xs">
-          Both push preferences above are off, so real reminders won't be sent to these devices. A
-          test notification will still arrive.
-        </p>
+        <Alert
+          tone="needs-you"
+          title="Both push preferences above are off, so real reminders won't be sent to these devices."
+        >
+          A test notification will still arrive.
+        </Alert>
       {/if}
 
       <form
@@ -395,38 +402,46 @@
           };
         }}
       >
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
           type="submit"
           disabled={testing ||
             !data.pushHealth.vapidConfigured ||
             data.pushHealth.deviceCount === 0}
-          class="bg-accent text-accent-fg rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          pending={testing}
+          pendingLabel="Sending…">Send test notification</Button
         >
-          {testing ? "Sending..." : "Send test notification"}
-        </button>
       </form>
 
-      <!-- Single live region for every outcome, kept outside the form so
-           the button is not re-announced when the result changes. -->
-      <div role="status" class="space-y-1 empty:hidden">
+      <!-- A failed test is an assertive Alert, so it lives outside the polite
+           region below: an assertive region nested in a polite one is what
+           Toast.svelte removed. -->
+      {#if form?.testError}
+        <Alert tone="wrong" title={form.testError} />
+      {/if}
+
+      <!-- Polite region for every outcome that is not a failure, kept outside
+           the form so the button is not re-announced when the result changes. -->
+      <div role="status" class="space-y-2 empty:hidden">
         {#if data.pushHealth.vapidConfigured && data.pushHealth.deviceCount === 0}
           <p class="text-text-muted text-xs">
             Enable push on at least one device before running a test.
           </p>
         {/if}
-        {#if form?.testError}
-          <p class="text-danger-ink text-xs">{form.testError}</p>
-        {:else if form?.testOk}
-          <p class="text-success text-xs">{form.testMessage}</p>
-          {#if awaitingConfirmation}
-            <p class="text-text-muted text-xs">Waiting for this device to confirm it displayed…</p>
-          {:else if confirmed}
-            <p class="text-success text-xs">Confirmed displayed on this device.</p>
-          {:else if confirmationTimedOut}
-            <p class="text-warning text-xs">
-              This device didn't confirm it displayed the notification. Check notification
-              permissions for this site in your browser and operating system.
-            </p>
+        {#if form?.testOk}
+          <Alert
+            tone="happened"
+            title={form.testMessage}
+            children={awaitingConfirmation || confirmed ? confirmation : undefined}
+          />
+          {#if confirmationTimedOut}
+            <Alert
+              tone="needs-you"
+              title="This device didn't confirm it displayed the notification."
+            >
+              Check notification permissions for this site in your browser and operating system.
+            </Alert>
           {/if}
         {/if}
       </div>

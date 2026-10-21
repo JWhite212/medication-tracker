@@ -20,6 +20,8 @@ import { accessibleName, textOf } from "./helpers/dom-names";
 
 const { default: Profile } = await import("../../src/routes/(app)/settings/+page.svelte");
 const { default: Security } = await import("../../src/routes/(app)/settings/security/+page.svelte");
+const { default: Notifications } =
+  await import("../../src/routes/(app)/settings/notifications/+page.svelte");
 
 // The (app) layout contributes `user` and `preferences` to every settings
 // page's merged PageData; the pages type `data` from their own PageData, so
@@ -181,6 +183,159 @@ describe("/settings/security", () => {
   it("passes axe with 2FA on and a refused revoke", async () => {
     await expectAxeClean(
       page(Security, { ...base, twoFactorEnabled: true }, { sessionError: "Session not found" }),
+      ["button-name", "link-name", "aria-hidden-focus", "aria-allowed-role", "nested-interactive"],
+    );
+  });
+});
+
+describe("/settings/notifications", () => {
+  const notif = (over: Record<string, unknown> = {}) => ({
+    user,
+    preferences,
+    vapidPublicKey: "",
+    emailVerified: true,
+    emailConfigured: true,
+    pushHealth: {
+      deviceCount: 0,
+      lastReminderAt: null,
+      oldestRegisteredAt: null,
+      vapidConfigured: true,
+    },
+    mutedMedications: [],
+    ...over,
+  });
+  /** The first status region in the DOM: the page-level one. */
+  const pageRegion = (doc: Document) => doc.querySelector('[role="status"]')!;
+  // The first status region after the Send test form. `el.DOCUMENT_POSITION_*`,
+  // not `Node.*`: this file runs in node, where only the JSDOM window has a
+  // Node global.
+  const testRegion = (doc: Document) =>
+    [...doc.querySelectorAll('[role="status"]')].find(
+      (el) =>
+        el.compareDocumentPosition(doc.querySelector('form[action="?/sendTest"]')!) &
+        el.DOCUMENT_POSITION_PRECEDING,
+    )!;
+
+  it("announces a save from the page-level region", () => {
+    expect(textOf(pageRegion(page(Notifications, notif())))).toBe("");
+    const alert = alertTitled(
+      pageRegion(page(Notifications, notif(), { success: true })),
+      "Notification settings saved.",
+    )!;
+    expectClasses(alert, toneClass("happened", "alert"));
+  });
+
+  it("draws the unverified address as a needs-you Alert whose action is the resend form", () => {
+    const doc = page(Notifications, notif({ emailVerified: false }));
+    const alert = alertTitled(doc, "Verify your email to enable email reminders.")!;
+    expect(alert.getAttribute("role")).toBeNull();
+    expect(
+      alert.closest('[role="status"], [role="alert"]'),
+      "a live region would re-announce the button",
+    ).toBeNull();
+    expectClasses(alert, toneClass("needs-you", "alert"));
+    const resend = alert.querySelector<HTMLButtonElement>(
+      'form[action="?/resendVerification"] button[type="submit"]',
+    )!;
+    expect(accessibleName(resend)).toBe("Resend verification email");
+    expectClasses(resend, "h-9 border-border-strong");
+  });
+
+  it("announces a sent verification email from the page-level region", () => {
+    const doc = page(Notifications, notif({ emailVerified: false }), {
+      resendOk: true,
+      alreadyVerified: false,
+    });
+    const alert = alertTitled(pageRegion(doc), "Verification email sent.")!;
+    expect(textOf(alert)).toContain("Check your inbox (and spam folder).");
+  });
+
+  it("still announces 'already verified' once the reload has removed the panel", () => {
+    const doc = page(Notifications, notif({ emailVerified: true }), {
+      resendOk: true,
+      alreadyVerified: true,
+    });
+    expect(alertTitled(doc, "Verify your email")).toBeNull();
+    expect(alertTitled(pageRegion(doc), "Email already verified.")).not.toBeNull();
+  });
+
+  it("reports a failed resend assertively, outside every polite region", () => {
+    const doc = page(Notifications, notif({ emailVerified: false }), {
+      resendError: "Too many requests. Try again in 5 minutes.",
+    });
+    const alert = alertTitled(doc, "Too many requests. Try again in 5 minutes.")!;
+    expect(alert.getAttribute("role")).toBe("alert");
+    expect(alert.closest('[role="status"]')).toBeNull();
+  });
+
+  it("states what the server cannot do neutrally", () => {
+    const off = page(Notifications, notif({ emailConfigured: false }));
+    expect(
+      alertTitled(off, "Email is not configured on this deployment")!.getAttribute("role"),
+    ).toBe("note");
+    for (const [vapidConfigured, words] of [
+      [false, "Not configured on this deployment"],
+      [true, "Configured"],
+    ] as const) {
+      const doc = page(
+        Notifications,
+        notif({ pushHealth: { ...notif().pushHealth, vapidConfigured } }),
+      );
+      const dd = [...doc.querySelectorAll("dd")].find((d) => textOf(d) === words)!;
+      expectClasses(dd, toneClass("neutral", "text"));
+    }
+  });
+
+  it("asks for action when both push preferences are off and a device is registered", () => {
+    const doc = page(
+      Notifications,
+      notif({
+        preferences: { ...preferences, overduePushReminders: false, lowInventoryPushAlerts: false },
+        pushHealth: { ...notif().pushHealth, deviceCount: 1 },
+      }),
+    );
+    const alert = alertTitled(doc, "Both push preferences above are off")!;
+    expect(alert.getAttribute("role")).toBeNull();
+    expect(textOf(alert)).toContain("A test notification will still arrive.");
+  });
+
+  it("keeps a failed test out of the polite test region, and a sent one inside it", () => {
+    const registered = notif({ pushHealth: { ...notif().pushHealth, deviceCount: 1 } });
+    const failed = page(Notifications, registered, {
+      testError: "Too many test notifications. Try again in 1 minutes.",
+    });
+    const error = alertTitled(failed, "Too many test notifications.")!;
+    expect(error.getAttribute("role")).toBe("alert");
+    expect(error.closest('[role="status"]')).toBeNull();
+    const ok = page(Notifications, registered, { testOk: true, testMessage: "Sent to 1 device." });
+    expect(testRegion(ok).contains(alertTitled(ok, "Sent to 1 device."))).toBe(true);
+  });
+
+  it("draws Save Changes at 44px primary and Send test at 36px secondary with its pending words", () => {
+    const doc = page(Notifications, notif());
+    expectClasses(submitOf(doc, "?/savePrefs"), "h-11 bg-accent text-accent-fg");
+    const send = submitOf(doc, "?/sendTest");
+    expect(accessibleName(send)).toBe("Send test notification");
+    expectClasses(send, "h-9 border-border-strong");
+    expect(send.hasAttribute("disabled"), "no device registered").toBe(true);
+    expect(send.textContent).toContain("Sending…");
+  });
+
+  it("passes axe with every banner showing", async () => {
+    await expectAxeClean(
+      page(
+        Notifications,
+        notif({
+          emailVerified: false,
+          preferences: {
+            ...preferences,
+            overduePushReminders: false,
+            lowInventoryPushAlerts: false,
+          },
+          pushHealth: { ...notif().pushHealth, deviceCount: 1 },
+        }),
+        { testError: "Push failed." },
+      ),
       ["button-name", "link-name", "aria-hidden-focus", "aria-allowed-role", "nested-interactive"],
     );
   });

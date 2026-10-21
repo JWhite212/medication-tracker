@@ -69,6 +69,19 @@ function expectEveryDescribedByResolves(html: string): void {
   }
 }
 
+/**
+ * An assertive `Alert`: its id first, role="alert", the aria-hidden icon,
+ * and then the message as the first text — the same "message directly
+ * inside the alert" property the old `<div>`/`<p>` regexes held, with the
+ * icon (and Svelte's comment markers) the only things allowed before it.
+ */
+function assertiveAlert(id: string, message: string): RegExp {
+  return new RegExp(
+    String.raw`<div id="${id}"[^>]*\brole="alert"[^>]*>\s*(?:<!--[\s\S]*?-->\s*)*<svg\b[^>]*\baria-hidden="true"[^>]*>[\s\S]*?</svg>\s*(?:<[^>]+>\s*)*` +
+      message,
+  );
+}
+
 /** Nothing on the page claims an error when there is none. */
 function expectNoErrorWiring(html: string): void {
   expect(html).not.toContain("aria-invalid");
@@ -303,7 +316,7 @@ describe("/settings/security", () => {
       },
     }).body;
 
-    expect(html).toMatch(/<p id="totp-error"[^>]*role="alert"/);
+    expect(html).toMatch(assertiveAlert("totp-error", "Incorrect password"));
     const password = control(html, "setup2faPassword");
     expect(attr(password, "aria-describedby")).toBe("totp-error");
     expect(attr(password, "aria-invalid")).toBeUndefined();

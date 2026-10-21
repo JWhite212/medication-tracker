@@ -1,11 +1,22 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import Input from "$lib/components/ui/Input.svelte";
+  import { actionErrorMessage } from "$lib/utils/form-errors";
+  import { toneClass, toneOf } from "$lib/utils/status-tone";
   import { formatUserDate, type DateFormat } from "$lib/utils/time";
 
   let { data, form } = $props();
+
+  // "Enabled" is a state, not a verdict: neutral, whatever the setting is.
+  const STATE_CHIP = toneClass(toneOf("state"), "chip");
+  const SIGN_OUT_FAILED = "Couldn't sign out — please try again.";
+  // The sign-out form is enhanced, so its failure never reaches `form`: it
+  // is read from the result in the callback and drawn here.
+  let signOutError = $state<string | null>(null);
 
   type FormErrors = Record<string, string[] | undefined>;
   const passwordErrors = $derived((form?.passwordErrors ?? {}) as FormErrors);
@@ -28,9 +39,7 @@
 
     <div role="status">
       {#if form?.passwordSuccess}
-        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-          Password updated successfully.
-        </p>
+        <Alert tone="happened" title="Password updated successfully." class="mb-4" />
       {/if}
     </div>
 
@@ -60,12 +69,7 @@
         error={passwordErrors.confirmPassword?.[0] ?? ""}
       />
 
-      <button
-        type="submit"
-        class="bg-accent text-accent-fg rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-      >
-        Update Password
-      </button>
+      <Button variant="primary" type="submit">Update Password</Button>
     </form>
   </GlassCard>
 
@@ -77,14 +81,14 @@
          were silent, so enabling or disabling 2FA announced nothing at all. -->
     <div role="status">
       {#if form?.totpEnabled}
-        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-          Two-factor authentication enabled successfully.
-        </p>
+        <Alert
+          tone="happened"
+          title="Two-factor authentication enabled successfully."
+          class="mb-4"
+        />
       {/if}
       {#if form?.totpDisabled}
-        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-          Two-factor authentication disabled.
-        </p>
+        <Alert tone="happened" title="Two-factor authentication disabled." class="mb-4" />
       {/if}
     </div>
     <!-- One unkeyed string for every 2FA action, so each field of whichever
@@ -92,13 +96,7 @@
          disable arm's "Incorrect password" and "Invalid code" arrive the same
          way and the page cannot tell which field they mean. -->
     {#if form?.totpError}
-      <p
-        id="totp-error"
-        class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm"
-        role="alert"
-      >
-        {form.totpError}
-      </p>
+      <Alert tone="wrong" id="totp-error" title={form.totpError} class="mb-4" />
     {/if}
 
     {#if form?.totpSetup}
@@ -132,21 +130,14 @@
             required
             describedBy={form?.totpError ? "totp-error" : undefined}
           />
-          <button
-            type="submit"
-            class="bg-accent text-accent-fg rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-          >
-            Verify
-          </button>
+          <Button variant="primary" type="submit">Verify</Button>
         </form>
       </div>
     {:else if data.twoFactorEnabled}
       <!-- 2FA is enabled — show disable option -->
       <div class="space-y-4">
         <div class="flex items-center gap-3">
-          <span class="bg-success/10 text-success rounded-full px-3 py-1 text-xs font-medium"
-            >Enabled</span
-          >
+          <span class="{STATE_CHIP} rounded-md px-2 py-0.5 text-xs font-semibold">Enabled</span>
           <p class="text-text-secondary text-sm">
             Your account is protected with two-factor authentication.
           </p>
@@ -176,12 +167,7 @@
               required
               describedBy={form?.totpError ? "totp-error" : undefined}
             />
-            <button
-              type="submit"
-              class="border-danger-ink/30 text-danger-ink hover:bg-danger/10 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors"
-            >
-              Disable 2FA
-            </button>
+            <Button variant="secondary" type="submit">Disable 2FA</Button>
           </div>
         </form>
       </div>
@@ -203,12 +189,7 @@
           required
           describedBy={form?.totpError ? "totp-error" : undefined}
         />
-        <button
-          type="submit"
-          class="bg-accent text-accent-fg rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-        >
-          Set Up 2FA
-        </button>
+        <Button variant="primary" type="submit">Set Up 2FA</Button>
       </form>
     {/if}
   </GlassCard>
@@ -216,6 +197,18 @@
   <!-- Active Sessions -->
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">Active Sessions</h2>
+
+    <!-- A revoke is announced from a region that is on the page before the
+         result arrives. A refused revoke is an assertive Alert, so it sits
+         OUTSIDE that region: nested in a polite one it would be read twice. -->
+    <div role="status">
+      {#if form?.sessionRevoked}
+        <Alert tone="happened" title="Session revoked." class="mb-4" />
+      {/if}
+    </div>
+    {#if form?.sessionError}
+      <Alert tone="wrong" title={form.sessionError} class="mb-4" />
+    {/if}
 
     <div class="space-y-3">
       <!-- The ordinal is visible as well as in the button's name. Expiry date is
@@ -249,13 +242,12 @@
           {#if session.id !== data.currentSessionId}
             <form method="POST" action="?/revokeSession" use:enhance>
               <input type="hidden" name="sessionId" value={session.id} />
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 type="submit"
-                aria-label="Revoke session {i + 1}"
-                class="border-danger-ink/30 text-danger-ink hover:bg-danger/10 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+                aria-label="Revoke session {i + 1}">Revoke</Button
               >
-                Revoke
-              </button>
             </form>
           {/if}
         </div>
@@ -276,19 +268,22 @@
       method="POST"
       action="?/logout"
       use:enhance={() => {
+        signOutError = null;
         return async ({ result }) => {
           if (result.type === "success") {
             await goto("/auth/login");
+            return;
           }
+          // Anything else left the user signed in and the button looking
+          // idle, so say so rather than leave them to wonder.
+          signOutError = actionErrorMessage(result, SIGN_OUT_FAILED);
         };
       }}
     >
-      <button
-        type="submit"
-        class="border-danger-ink/30 text-danger-ink hover:bg-danger/10 rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors"
-      >
-        Sign Out
-      </button>
+      <Button variant="secondary" type="submit">Sign Out</Button>
     </form>
+    {#if signOutError}
+      <Alert tone="wrong" title={signOutError} class="mt-4" />
+    {/if}
   </GlassCard>
 </div>

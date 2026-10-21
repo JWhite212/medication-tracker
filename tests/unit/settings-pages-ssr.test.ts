@@ -19,6 +19,7 @@ import { expectAxeClean, ssrDocument } from "./helpers/axe-ssr";
 import { accessibleName, textOf } from "./helpers/dom-names";
 
 const { default: Profile } = await import("../../src/routes/(app)/settings/+page.svelte");
+const { default: Security } = await import("../../src/routes/(app)/settings/security/+page.svelte");
 
 // The (app) layout contributes `user` and `preferences` to every settings
 // page's merged PageData; the pages type `data` from their own PageData, so
@@ -56,6 +57,9 @@ const page = (Page: unknown, data: unknown, form: unknown = null) =>
     render(Page as Component<{ data: unknown; form: unknown }>, { props: { data, form } }).body,
   );
 
+const submitOf = (doc: Document, action: string) =>
+  doc.querySelector<HTMLButtonElement>(`form[action="${action}"] button[type="submit"]`)!;
+
 describe("/settings (profile)", () => {
   const data = { user, preferences };
 
@@ -89,5 +93,95 @@ describe("/settings (profile)", () => {
       "aria-hidden-focus",
       "aria-allowed-role",
     ]);
+  });
+});
+
+describe("/settings/security", () => {
+  const SESSIONS = [
+    { id: "s1", expiresAt: new Date("2026-11-01T00:00:00Z") },
+    { id: "s2", expiresAt: new Date("2026-11-02T00:00:00Z") },
+  ];
+  const base = {
+    user,
+    preferences,
+    sessions: SESSIONS,
+    currentSessionId: "s1",
+    twoFactorEnabled: false,
+  };
+  /** GlassCard's root: the parent of the card's h2. */
+  const sessionsCard = (doc: Document) =>
+    [...doc.querySelectorAll("h2")].find((h) => textOf(h) === "Active Sessions")!.parentElement!;
+
+  it.each([
+    ["Password updated successfully.", { passwordSuccess: true }],
+    ["Two-factor authentication enabled successfully.", { totpEnabled: true }],
+    ["Two-factor authentication disabled.", { totpDisabled: true }],
+  ])("announces %s from its card's persistent status region", (title, form) => {
+    const alert = alertTitled(page(Security, base, form), title)!;
+    expect(alert.closest('[role="status"]')).not.toBeNull();
+    expect(alert.getAttribute("role")).toBeNull();
+    expectClasses(alert, toneClass("happened", "alert"));
+  });
+
+  it.each([
+    // [name, action, variant classes, height, data override, form]
+    ["Update Password", "?/changePassword", "bg-accent text-accent-fg", "h-11", {}, null],
+    ["Set Up 2FA", "?/setupTwoFactor", "bg-accent text-accent-fg", "h-11", {}, null],
+    [
+      "Verify",
+      "?/verifyTwoFactor",
+      "bg-accent text-accent-fg",
+      "h-11",
+      {},
+      { totpSetup: { qrCode: "data:image/png;base64,AA==", secret: "ABC" } },
+    ],
+    [
+      "Disable 2FA",
+      "?/disableTwoFactor",
+      "border-border-strong text-text-primary",
+      "h-11",
+      { twoFactorEnabled: true },
+      null,
+    ],
+    ["Sign Out", "?/logout", "border-border-strong text-text-primary", "h-11", {}, null],
+  ])("draws %s as a Button of the right kind", (name, action, variant, height, over, form) => {
+    const submit = submitOf(page(Security, { ...base, ...over }, form), action);
+    expect(accessibleName(submit)).toBe(name);
+    expectClasses(submit, `${variant} ${height}`);
+  });
+
+  it("names each Revoke by its session and draws it as a 36px secondary", () => {
+    const revoke = submitOf(page(Security, base), "?/revokeSession");
+    expect(revoke.getAttribute("aria-label")).toBe("Revoke session 2");
+    expect(textOf(revoke)).toBe("Revoke");
+    expectClasses(revoke, "h-9 border-border-strong text-text-primary");
+  });
+
+  it("shows 2FA 'Enabled' as a neutral state chip", () => {
+    const doc = page(Security, { ...base, twoFactorEnabled: true });
+    const chip = [...doc.querySelectorAll("span")].find((s) => textOf(s) === "Enabled")!;
+    expectClasses(chip, toneClass("neutral", "chip"));
+  });
+
+  it("reports a refused revoke, which the action returned and the page never drew", () => {
+    const doc = page(Security, base, { sessionError: "Session not found" });
+    const alert = alertTitled(doc, "Session not found")!;
+    expect(alert.getAttribute("role")).toBe("alert");
+    expect(alert.closest('[role="status"]'), "an error never sits in the polite region").toBeNull();
+    expect(sessionsCard(doc).contains(alert)).toBe(true);
+  });
+
+  it("announces a revoke from a region the Active Sessions card always renders", () => {
+    expect(sessionsCard(page(Security, base)).querySelector('[role="status"]')).not.toBeNull();
+    const doc = page(Security, base, { sessionRevoked: true });
+    const alert = alertTitled(sessionsCard(doc), "Session revoked.")!;
+    expect(alert.closest('[role="status"]')).not.toBeNull();
+  });
+
+  it("passes axe with 2FA on and a refused revoke", async () => {
+    await expectAxeClean(
+      page(Security, { ...base, twoFactorEnabled: true }, { sessionError: "Session not found" }),
+      ["button-name", "link-name", "aria-hidden-focus", "aria-allowed-role", "nested-interactive"],
+    );
   });
 });

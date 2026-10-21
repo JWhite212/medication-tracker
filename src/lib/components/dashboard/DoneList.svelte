@@ -24,6 +24,7 @@
   import type { DoneRow, DoseLogWithMedication } from "$lib/types";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { doneCoversLine, doneDoseText, formatDoseLabel } from "$lib/utils/dashboard-copy";
+  import { toneClass, toneOf } from "$lib/utils/status-tone";
   import DoseActionForm from "./DoseActionForm.svelte";
   import MedicationGlyph from "./MedicationGlyph.svelte";
   import StatusMarker from "./StatusMarker.svelte";
@@ -70,6 +71,10 @@
       }),
       statusWord:
         dose.status === "skipped" ? "Skipped" : dose.status === "missed" ? "Missed" : null,
+      statusClass: toneClass(
+        toneOf(dose.status === "missed" ? "dose-missed" : "dose-skipped"),
+        "text",
+      ),
       // Facts only, no verdict: the slots this dose resolved.
       coversText: doneCoversLine(row.covers, todayStart, timezone, timeFormat),
       // "Remove skip", not "Undo skip": every Undo offer now has a button
@@ -119,7 +124,7 @@
                 >
                 <span class="text-text-secondary shrink-0">{v.dose}</span>
                 {#if v.statusWord}
-                  <span class="text-text-secondary shrink-0">{v.statusWord}</span>
+                  <span class="shrink-0 {v.statusClass}">{v.statusWord}</span>
                 {/if}
               </p>
               {#if v.coversText}

@@ -14,24 +14,29 @@ import {
   STATUS_MARKER_STATES,
   type StatusMarkerState,
 } from "$lib/components/dashboard/status-marker";
-import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
+import { toneClass } from "$lib/utils/status-tone";
+import { evaluatedRules, runAxe, ssrDocument, withoutComments } from "./helpers/axe-ssr";
 
-/** The marker label table. A new state fails the first test until it is added here. */
+/** The marker label table. A new state fails the first test until it is added here.
+ *  Tinted states name their TONE; the owner's own test pins the class strings. */
 const SPEC: Record<StatusMarkerState, { label: string; classes: string[] }> = {
-  taken: { label: "Taken", classes: ["bg-success/20", "text-success"] },
-  overdue: { label: "Overdue", classes: ["bg-warning/20", "text-warning"] },
+  taken: { label: "Taken", classes: toneClass("happened", "marker").split(" ") },
+  overdue: { label: "Overdue", classes: toneClass("needs-you", "marker").split(" ") },
   "due-now": { label: "Due now", classes: ["ring-2", "ring-accent-ink"] },
   upcoming: { label: "Upcoming", classes: ["border", "border-border-strong"] },
-  skipped: { label: "Skipped", classes: ["border", "border-border-strong", "text-text-secondary"] },
-  missed: { label: "Missed", classes: ["border", "border-border-strong", "text-text-secondary"] },
+  skipped: { label: "Skipped", classes: toneClass("neutral", "marker").split(" ") },
+  missed: { label: "Missed", classes: toneClass("wrong", "marker").split(" ") },
 };
 
 const renderMarker = (state: StatusMarkerState) => render(StatusMarker, { props: { state } }).body;
-const withoutComments = (html: string) => html.replace(/<!--[\s\S]*?-->/g, "").trim();
-const outerTag = (html: string) => withoutComments(html).match(/^<span[^>]*>/)?.[0] ?? "";
+const outerTag = (html: string) =>
+  withoutComments(html)
+    .trim()
+    .match(/^<span[^>]*>/)?.[0] ?? "";
 const classesOf = (tag: string) => tag.match(/\bclass="([^"]*)"/)?.[1].split(/\s+/) ?? [];
 const glyphOf = (html: string) =>
   withoutComments(html)
+    .trim()
     .replace(/^<span[^>]*>/, "")
     .replace(/<\/span>$/, "")
     .trim();
@@ -68,12 +73,18 @@ describe("StatusMarker", () => {
 
   it("gives every state its own shape, so status never rests on colour alone", () => {
     const glyphs = new Map(STATUS_MARKER_STATES.map((s) => [s, glyphOf(renderMarker(s))]));
-    const distinct = ["taken", "overdue", "due-now", "upcoming", "skipped"] as const;
-    expect(new Set(distinct.map((s) => glyphs.get(s))).size).toBe(distinct.length);
-    // A missed row is rendered exactly like a skip: a decision, not a problem.
-    expect(glyphs.get("missed")).toBe(glyphs.get("skipped"));
+    // Missed used to share the skip's dash. A skip is a decision; a missed
+    // dose is something that went wrong, and it now looks it.
+    expect(new Set(glyphs.values()).size).toBe(STATUS_MARKER_STATES.length);
     expect(glyphs.get("due-now")).toContain("bg-accent-ink");
     expect(glyphs.get("upcoming")).toBe("");
+  });
+
+  it("draws missed as a two-stroke cross and skipped as a single dash", () => {
+    const strokes = (s: StatusMarkerState) =>
+      (glyphOf(renderMarker(s)).match(/<line\b/g) ?? []).length;
+    expect(strokes("missed")).toBe(2);
+    expect(strokes("skipped")).toBe(1);
   });
 
   it("passes axe's own aria-prohibited-attr rule", async () => {

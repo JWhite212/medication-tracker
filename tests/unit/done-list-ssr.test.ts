@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
 import type { DoneRow, DoseLogWithMedication } from "$lib/types";
 import { formatSlotTime } from "$lib/utils/dashboard-copy";
+import { toneClass } from "$lib/utils/status-tone";
 
 vi.mock("$app/forms", () => ({
   enhance: () => ({ destroy() {} }),
@@ -176,7 +177,7 @@ describe("DoneList", () => {
     expect(hiddenFields(form)).toEqual({ doseId: "d2" });
   });
 
-  it("renders a missed row the same way, with Missed", () => {
+  it("renders a missed row with Missed and a Remove", () => {
     const li = items(renderList(ROWS))[2];
     expect(li.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe("Missed");
     expect(textOf(li)).toContain("Missed");
@@ -210,6 +211,29 @@ describe("DoneList", () => {
       expect(button.hasAttribute("aria-label")).toBe(false);
       expect(accessibleName(button).startsWith(visibleLabel(button))).toBe(true);
     }
+  });
+
+  /** The status word beside the dose text ("Skipped" or "Missed"). */
+  const statusWord = (li: Element, word: string) =>
+    [...li.querySelectorAll("p span")].find((s) => textOf(s) === word)!;
+
+  it("draws a missed row red: the wrong-tone marker and the word Missed", () => {
+    const li = items(renderList(ROWS))[2];
+    const marker = li.querySelector('[role="img"]')!;
+    expect([...marker.classList]).toEqual(
+      expect.arrayContaining(toneClass("wrong", "marker").split(" ")),
+    );
+    expect([...statusWord(li, "Missed").classList]).toEqual(
+      expect.arrayContaining(toneClass("wrong", "text").split(" ")),
+    );
+  });
+
+  it("keeps a skipped row's word neutral, so skipped and missed no longer look alike", () => {
+    const word = statusWord(items(renderList(ROWS))[1], "Skipped");
+    expect([...word.classList]).toEqual(
+      expect.arrayContaining(toneClass("neutral", "text").split(" ")),
+    );
+    expect(word.className).not.toMatch(/danger/);
   });
 
   it("passes axe: button-name, listitem, aria-required-children, aria-prohibited-attr", async () => {

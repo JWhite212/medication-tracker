@@ -10,6 +10,7 @@
     toastForTookItAt,
     tookItAtLabel,
   } from "$lib/utils/dashboard-copy";
+  import { toneClass, toneOf } from "$lib/utils/status-tone";
   import DoseActionForm from "./DoseActionForm.svelte";
   import MedicationGlyph from "./MedicationGlyph.svelte";
   import StatusMarker from "./StatusMarker.svelte";
@@ -42,7 +43,9 @@
   const rest = $derived(card.rows.slice(1));
   const doseLabel = $derived(formatDoseLabel(card.name, card.dosageAmount, card.dosageUnit));
   const nameId = $derived(`due-name-${card.key}`);
-  const border = $derived(top.state === "due-now" ? "border-accent-ink/50" : "border-warning/50");
+  const border = $derived(
+    top.state === "due-now" ? "border-accent-ink/50" : toneClass(toneOf("dose-overdue"), "border"),
+  );
 
   function markerFor(row: DueRow): StatusMarkerState {
     return row.state === "due-now" ? "due-now" : "overdue";

@@ -2,6 +2,7 @@
   import { enhance } from "$app/forms";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import MedicationForm from "$lib/components/MedicationForm.svelte";
+  import { toneClass } from "$lib/utils/status-tone";
   import {
     formatUserDate,
     formatUserTime,
@@ -190,13 +191,7 @@
             <div class="min-w-0">
               <p class="text-sm font-medium">
                 {EVENT_LABELS[event.eventType] ?? event.eventType}
-                <span
-                  class="ml-1 text-xs font-semibold {event.quantityChange > 0
-                    ? 'text-success'
-                    : event.quantityChange < 0
-                      ? 'text-warning'
-                      : 'text-text-muted'}"
-                >
+                <span class="ml-1 text-xs font-semibold {toneClass('neutral', 'text')}">
                   {event.quantityChange > 0 ? "+" : ""}{event.quantityChange}
                 </span>
               </p>

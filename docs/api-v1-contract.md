@@ -153,8 +153,12 @@ token is bound to the purpose it was minted for.
 - `400` if the body fails validation, including an unknown `purpose` — `{ message: "Invalid reauth payload" }`.
 - `401` on a wrong password — `{ message: "Incorrect password" }`. Also `401` for an
   **OAuth-only account**, which has no password to confirm and therefore cannot mint a
-  token at all; the destructive commands stay closed for those accounts, matching the web
-  privacy page, which likewise offers them no alternative confirmation.
+  token at all; the destructive commands stay closed for those accounts. This differs
+  from the browser on purpose (decided 2026-10-16): the web app's permanent deletions
+  (`checkDestructiveGuard`) take a typed word from every account plus the password where
+  there is one, so an account with no password deletes there on the word alone. This
+  door keeps requiring a password-minted token and takes no word, so an OAuth-only
+  account cannot wipe through the API, and a stolen bearer token alone never can.
 - `429` when the attempt budget is spent (§6B shape). The budget lives in `confirmReauth`
   and is keyed `reauth:<userId>` — **shared with the browser doors on purpose**, so an
   attacker cannot get a fresh allowance by switching transport. 10 attempts / 15 minutes.
@@ -517,13 +521,17 @@ minutes of a web delete, brings a dose back (see Tombstones, §3).
 ### Wipes bump the sync epoch
 
 **Both wipes require a password proof.** They are irreversible and write no
-per-row tombstone, and the browser has always demanded a password for them
-(`settings/privacy`). This door demanded nothing, so a stolen bearer token was
+per-row tombstone. This door demanded nothing, so a stolen bearer token was
 sufficient to destroy a user's entire dose history through the same code path.
 Call `POST /api/v1/auth/reauth` with `{ password, purpose }` to obtain a
 `reauthToken`, then pass it in the command payload; `requireRecentReauth`
 redeems it single-use. An OAuth-only account has no password to confirm and so
-cannot mint one — the same position it is in on the web privacy page.
+cannot mint one. The browser differs here on purpose (decided 2026-10-16): its
+`settings/privacy` wipes take a typed word from every account plus the password
+where there is one (`checkDestructiveGuard`), so an account with no password
+wipes there on the word alone. This door keeps requiring a password-minted token
+and takes no word, so an OAuth-only account cannot wipe through the API, and a
+stolen bearer token alone never can.
 
 `wipe_dose_history` and `wipe_archived_medications` (`src/lib/server/api/wipe.ts`) each run
 their delete + `users.syncEpoch + 1` + an audit-log row (`entityId: "*"`) inside **one

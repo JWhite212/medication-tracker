@@ -18,6 +18,7 @@ import {
   foldDoseStatusBreakdown,
 } from "$lib/server/analytics/status-breakdown";
 import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
+import { REORDER_SOON } from "$lib/utils/dashboard-copy";
 
 /**
  * Expected doses per day for one medication — the single owner of that
@@ -503,7 +504,7 @@ export async function getDayOfWeekDistribution(
 // can import without crossing the $lib/server boundary. Re-exported
 // here for backward-compatible callers.
 export type { Insight } from "$lib/types";
-import type { Insight } from "$lib/types";
+import type { Insight, InsightSignal } from "$lib/types";
 
 export type InsightInputs = {
   totalDoses: number;
@@ -537,7 +538,7 @@ export function buildInsights(input: InsightInputs): Insight[] {
     if (Math.abs(delta) >= 5) {
       out.push({
         id: "adherence-trend",
-        severity: delta > 0 ? "positive" : "warning",
+        signal: delta > 0 ? "up" : "down",
         text: `Adherence ${delta > 0 ? "improved" : "declined"} ${Math.abs(delta)}% vs. previous period`,
       });
     }
@@ -551,14 +552,14 @@ export function buildInsights(input: InsightInputs): Insight[] {
       const top = sorted[0];
       out.push({
         id: "highest-adherence-med",
-        severity: "positive",
+        signal: "up",
         text: `Highest adherence: ${top.medicationName} (${top.adherence}%)`,
       });
       const bottom = sorted[sorted.length - 1];
       if (bottom.adherence < 80) {
         out.push({
           id: "lowest-adherence-med",
-          severity: "warning",
+          signal: "down",
           text: `Lowest adherence: ${bottom.medicationName} (${bottom.adherence}%)`,
         });
       }
@@ -572,7 +573,7 @@ export function buildInsights(input: InsightInputs): Insight[] {
     if (worst && worst.count < avg * 0.7 && worst.count >= 0) {
       out.push({
         id: "worst-day",
-        severity: "info",
+        signal: "info",
         text: `Fewest doses on ${DAY_LABEL_FULL[worst.dayOfWeek]}`,
       });
     }
@@ -585,7 +586,7 @@ export function buildInsights(input: InsightInputs): Insight[] {
       const hh = peak.hour.toString().padStart(2, "0");
       out.push({
         id: "peak-hour",
-        severity: "info",
+        signal: "info",
         text: `Most consistent dosing time is ${hh}:00`,
       });
     }
@@ -594,18 +595,19 @@ export function buildInsights(input: InsightInputs): Insight[] {
   if (input.refillCriticalCount > 0) {
     out.push({
       id: "refill-warning",
-      severity: "warning",
+      signal: "needs-you",
+      lead: REORDER_SOON,
       text:
         input.refillCriticalCount === 1
-          ? `1 medication needs a refill within 7 days`
-          : `${input.refillCriticalCount} medications need a refill within 7 days`,
+          ? `1 medication runs out within 7 days`
+          : `${input.refillCriticalCount} medications run out within 7 days`,
     });
   }
 
   if (input.sideEffectsCount >= 3 && input.topSideEffect) {
     out.push({
       id: "side-effects",
-      severity: "info",
+      signal: "info",
       text: `${input.sideEffectsCount} side effects logged — most common: ${input.topSideEffect}`,
     });
   }
@@ -613,13 +615,13 @@ export function buildInsights(input: InsightInputs): Insight[] {
   if (input.streak >= 3) {
     out.push({
       id: "streak",
-      severity: "positive",
+      signal: "up",
       text: `Current streak: ${input.streak} days`,
     });
   }
 
-  const order = { warning: 0, positive: 1, info: 2 } as const;
-  return out.sort((a, b) => order[a.severity] - order[b.severity]).slice(0, 5);
+  const SIGNAL_RANK: Record<InsightSignal, number> = { "needs-you": 0, down: 1, up: 2, info: 3 };
+  return out.sort((a, b) => SIGNAL_RANK[a.signal] - SIGNAL_RANK[b.signal]).slice(0, 5);
 }
 
 // Mean abs-minute delta between fixed-time scheduled doses and actual

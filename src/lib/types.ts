@@ -54,9 +54,12 @@ export type MedicationWithStats = Medication & {
 // components don't reach into $lib/server/* — type-only imports are
 // technically erased, but keeping the boundary clean avoids accidental
 // runtime imports and matches SvelteKit conventions.
+export type InsightSignal = "needs-you" | "down" | "up" | "info";
 export type Insight = {
   id: string;
-  severity: "info" | "positive" | "warning";
+  signal: InsightSignal;
+  /** A short bold lead-in the card prints before `text`, followed by a colon. Only refill-warning has one. */
+  lead?: string;
   text: string;
 };
 

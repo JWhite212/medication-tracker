@@ -1,5 +1,6 @@
 import type { AxeResults } from "axe-core";
 import { JSDOM } from "jsdom";
+import { expect } from "vitest";
 
 /** Parse SSR markup into a standalone document, inside a <main> as the page nests it. */
 export function ssrDocument(bodyHtml: string): Document {
@@ -42,4 +43,18 @@ export function evaluatedRules(results: AxeResults): Set<string> {
  */
 export function withoutComments(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, "");
+}
+
+/**
+ * Run the named axe rules and fail on any violation, listing each offending
+ * node. Also fails when a rule evaluated nothing: an empty violations list
+ * is vacuous if the page never gave the rule a candidate.
+ */
+export async function expectAxeClean(doc: Document, rules: string[]): Promise<void> {
+  const results = await runAxe(doc, rules);
+  const offenders = results.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.html}`));
+  expect(offenders, offenders.join("\n")).toEqual([]);
+  for (const rule of rules) {
+    expect(evaluatedRules(results).has(rule), `${rule} evaluated nothing`).toBe(true);
+  }
 }

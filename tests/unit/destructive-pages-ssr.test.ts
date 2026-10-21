@@ -18,6 +18,8 @@ import { STATUS_TOKEN } from "./helpers/status-token";
 const { default: PrivacyPage } =
   await import("../../src/routes/(app)/settings/privacy/+page.svelte");
 const { default: DataPage } = await import("../../src/routes/(app)/settings/data/+page.svelte");
+const { default: ImportPage } =
+  await import("../../src/routes/(app)/settings/data/import/+page.svelte");
 
 const user = {
   id: "u1",
@@ -309,5 +311,153 @@ describe("data page", () => {
     const results = await runAxe(page(DataPage, DATA, { success: true }), rules);
     expect(results.violations).toEqual([]);
     for (const r of rules) expect(evaluatedRules(results).has(r), r).toBe(true);
+  });
+});
+
+describe("import page", () => {
+  const IMPORT = {
+    user,
+    preferences,
+    medications: [],
+    hasPassword: true,
+    maxBytes: 5_242_880,
+    timezone: "UTC",
+  };
+  const IMPORTED = {
+    medicationsCreated: 2,
+    medicationsReused: 1,
+    dosesCreated: 1204,
+    dosesSkipped: 3,
+    inventoryEventsCreated: 0,
+    medicationsDeleted: 4,
+    dosesDeleted: 900,
+  };
+  const SUMMARY = {
+    medicationsCreated: 2,
+    medicationsReused: 0,
+    dosesCreated: 10,
+    dosesSkipped: 0,
+    inventoryEventsCreated: 0,
+    medicationsDeleted: 0,
+    dosesDeleted: 0,
+  };
+  const preview = (over: Record<string, unknown> = {}) => ({
+    format: "json",
+    mode: "merge",
+    summary: SUMMARY,
+    warnings: [],
+    unmatchedNames: [],
+    createdNames: [],
+    reusedNames: [],
+    empty: false,
+    ...over,
+  });
+  const REPLACE_PREVIEW = preview({
+    mode: "replace",
+    summary: { ...SUMMARY, medicationsDeleted: 6, dosesDeleted: 1204 },
+    warnings: ["1 row was skipped (bad date)."],
+  });
+
+  it("announces Import complete from a status region that is always there", () => {
+    const before = page(ImportPage, IMPORT, null).querySelector("#import-outcome");
+    expect(before).not.toBeNull();
+    expect(before!.getAttribute("role")).toBe("status");
+    expect(before!.textContent!.trim()).toBe("");
+    expect(before!.closest("form")).toBeNull();
+
+    const doc = page(ImportPage, IMPORT, { imported: IMPORTED, importId: "i1" });
+    const region = doc.querySelector('#import-outcome[role="status"]')!;
+    expect(region.textContent).toContain("Import complete");
+    expect(region.textContent).toContain("1204 dose entries added");
+    expect(region.querySelector('svg[aria-hidden="true"]')).not.toBeNull(); // the Alert's icon
+    const replaced = [...region.querySelectorAll("li")].find((li) =>
+      li
+        .textContent!.replace(/\s+/g, " ")
+        .includes("4 medications and 900 dose entries were replaced"),
+    )!;
+    expect(replaced).toBeDefined();
+    expect(statusTokens(replaced)).toEqual([]);
+  });
+
+  it("after an import, View medications is primary and Back to Data is ghost", () => {
+    const doc = page(ImportPage, IMPORT, { imported: IMPORTED, importId: "i1" });
+    expect([...link(doc, "/medications").classList]).toEqual(
+      expect.arrayContaining(["bg-accent", "h-11"]),
+    );
+    const back = [...doc.querySelectorAll("a")].find(
+      (a) => a.textContent!.trim() === "Back to Data",
+    )!;
+    expect(back).toBeDefined();
+    expect(back.classList).toContain("h-11");
+    expect(back.classList).not.toContain("border");
+    // The page's own form is gone once the outcome is shown.
+    expect(doc.querySelector("form")).toBeNull();
+  });
+
+  it("a failure is a role=alert outside the preview-ready status region", () => {
+    const doc = page(ImportPage, IMPORT, { error: "That file is over the 5 MB limit." });
+    const alert = doc.querySelector('[role="alert"]')!;
+    expect(alert).not.toBeNull();
+    expect(alert.textContent).toContain("That file is over the 5 MB limit.");
+    expect(alert.closest('[role="status"]')).toBeNull();
+  });
+
+  it("says the preview is ready inside its status region, and stops saying it on a failure", () => {
+    const ready = page(ImportPage, IMPORT, { preview: preview() });
+    const regions = [...ready.querySelectorAll('[role="status"]')].filter((r) =>
+      r.textContent!.includes("Import preview ready"),
+    );
+    expect(regions).toHaveLength(1);
+    const failed = page(ImportPage, IMPORT, { error: "Nope.", preview: preview() });
+    expect(failed.body.textContent).not.toContain("Import preview ready");
+  });
+
+  it("the Replace everything card is neutral and still says it can't be undone", () => {
+    const doc = page(ImportPage, IMPORT, null);
+    const card = [...doc.querySelectorAll("label")].find((l) =>
+      l.textContent!.includes("Replace everything"),
+    )!;
+    expect(card).toBeDefined();
+    expect(card.classList).toContain("border-glass-border");
+    for (const el of [card, ...card.querySelectorAll("[class]")]) {
+      expect(statusTokens(el), el.outerHTML).toEqual([]);
+    }
+    expect(card.textContent).toContain("Cannot be undone.");
+  });
+
+  it("holds no status colour anywhere before a preview", () => {
+    const doc = page(ImportPage, IMPORT, null);
+    expect([...doc.querySelectorAll("[class]")].flatMap(statusTokens)).toEqual([]);
+  });
+
+  it("a replace preview flags its deletions and its warnings as needs-you Alerts, not alerts", () => {
+    const doc = page(ImportPage, IMPORT, { preview: REPLACE_PREVIEW });
+    const text = doc.body.textContent!.replace(/\s+/g, " ");
+    expect(text).toContain("Replace mode will first delete 6 medications and");
+    expect(text).toContain("Check before importing");
+    expect(text).toContain("1 row was skipped (bad date).");
+    expect(doc.querySelector('[role="alert"]')).toBeNull();
+    // Amber, and an icon: the needs-you tone carries a word and a glyph, not colour alone.
+    const deletes = [...doc.querySelectorAll("p")].find((p) =>
+      p.textContent!.includes("Replace mode will first delete"),
+    )!;
+    expect(statusTokens(deletes)).toEqual(["text-warning"]);
+    expect(deletes.closest("div.flex")!.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it("Preview is a secondary submit and Import is a primary submit, in merge mode", () => {
+    const doc = page(ImportPage, IMPORT, { preview: preview() });
+    const submits = [...doc.querySelectorAll('button[type="submit"]')];
+    expect(submits.map((b) => b.getAttribute("formaction"))).toEqual(["?/preview", "?/commit"]);
+    expect(submits[0].classList).toContain("border-border-strong");
+    expect(submits[1].classList).toContain("bg-accent");
+    expect(submits[1].textContent!.trim()).toBe("Import");
+    for (const b of submits) expect(b.classList).toContain("h-11");
+  });
+
+  it("passes axe's structural rules", async () => {
+    const results = await runAxe(page(ImportPage, IMPORT, { preview: REPLACE_PREVIEW }), AXE_RULES);
+    expect(results.violations).toEqual([]);
+    for (const r of AXE_RULES) expect(evaluatedRules(results).has(r), r).toBe(true);
   });
 });

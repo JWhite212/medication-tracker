@@ -11,6 +11,7 @@
 // and undici's `FormData` are different realms. fake-db, because nothing here
 // is decided by the database (the guard's one read is a password_hash).
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { rateLimitSurface } from "./helpers/rate-limit";
 
 const h = vi.hoisted(() => ({
   confirmReauth: vi.fn(),
@@ -19,6 +20,17 @@ const h = vi.hoisted(() => ({
   invalidateSession: vi.fn(async () => {}),
   invalidateUserSessions: vi.fn(async () => {}),
   logAudit: vi.fn(async () => {}),
+  /** What the import planner hands back: a replace that deletes 6 medications and 1,204 doses. */
+  PLAN: {
+    format: "json",
+    mode: "replace",
+    summary: { medicationsCreated: 1, dosesCreated: 2, medicationsDeleted: 6, dosesDeleted: 1204 },
+    warnings: [],
+    unmatchedNames: [],
+    medications: [],
+  } as never as { summary: unknown },
+  buildPlanFromFile: vi.fn(),
+  applyImport: vi.fn(),
 }));
 
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
@@ -38,12 +50,19 @@ vi.mock("$lib/server/auth/lucia", () => ({
   },
 }));
 vi.mock("$lib/server/audit", () => ({ logAudit: h.logAudit }));
+vi.mock("$lib/server/auth/rate-limit", () =>
+  rateLimitSurface({ primitive: async () => ({ allowed: true, retryAfterMs: 0 }) }),
+);
+vi.mock("$lib/server/import/pipeline", () => ({ buildPlanFromFile: h.buildPlanFromFile }));
+vi.mock("$lib/server/import/plan", () => ({ planIsEmpty: () => false }));
+vi.mock("$lib/server/import/apply", () => ({ applyImport: h.applyImport }));
 
 import { fakeDb } from "./helpers/fake-db";
 import { users } from "$lib/server/db/schema";
 
 const privacy = await import("../../src/routes/(app)/settings/privacy/+page.server");
 const data = await import("../../src/routes/(app)/settings/data/+page.server");
+const dataImport = await import("../../src/routes/(app)/settings/data/import/+page.server");
 
 const { confirmReauth } = h;
 
@@ -71,6 +90,8 @@ beforeEach(() => {
   fakeDb.reset();
   vi.clearAllMocks();
   confirmReauth.mockReset();
+  h.buildPlanFromFile.mockImplementation(async () => ({ ok: true, plan: h.PLAN }));
+  h.applyImport.mockImplementation(async () => ({ summary: h.PLAN.summary, importId: "i1" }));
 });
 
 describe.each([
@@ -194,5 +215,90 @@ describe("data ?/deleteAccount", () => {
     ).rejects.toMatchObject({ status: 302, location: "/" });
     expect(deletedUser()).toBe(true);
     expect(confirmReauth).not.toHaveBeenCalled();
+  });
+});
+
+describe("import ?/commit", () => {
+  const { PLAN, applyImport } = h;
+  const commit = (fields: Record<string, string | File>) =>
+    call(dataImport.actions, "commit", {
+      file: new File(["{}"], "backup.json", { type: "application/json" }),
+      ...fields,
+    });
+
+  it("refuses a replace posted without the word, for both kinds of account, writing nothing", async () => {
+    for (const seed of [seedPassword, seedPasswordless]) {
+      fakeDb.reset();
+      seed();
+      expect(await commit({ mode: "replace", password: "hunter2" })).toMatchObject({
+        status: 400,
+        data: { error: "Type REPLACE to confirm." },
+      });
+    }
+    expect(applyImport).not.toHaveBeenCalled();
+    expect(confirmReauth).not.toHaveBeenCalled();
+  });
+
+  it("refuses a password account's replace with the word but no password — it used to need only the password", async () => {
+    seedPassword();
+    expect(await commit({ mode: "replace", confirmWord: "REPLACE" })).toMatchObject({
+      status: 400,
+      data: { error: "Password is required to confirm this action." },
+    });
+    expect(applyImport).not.toHaveBeenCalled();
+  });
+
+  it("refuses a wrong password through the reauth message, writing nothing", async () => {
+    seedPassword();
+    confirmReauth.mockResolvedValueOnce({ ok: false });
+    expect(
+      await commit({ mode: "replace", confirmWord: "REPLACE", password: "wrong" }),
+    ).toMatchObject({ status: 400, data: { error: "Incorrect password." } });
+    expect(applyImport).not.toHaveBeenCalled();
+  });
+
+  it("replaces for a password account with REPLACE and a confirmed password", async () => {
+    seedPassword();
+    confirmReauth.mockResolvedValueOnce({ ok: true, token: "t" });
+    expect(await commit({ mode: "replace", confirmWord: "REPLACE", password: "hunter2" })).toEqual({
+      imported: PLAN.summary,
+      importId: "i1",
+    });
+    expect(confirmReauth).toHaveBeenCalledWith("u1", "hunter2", "import_replace_data");
+    expect(applyImport).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces for an account with no password on REPLACE, now posted as confirmWord", async () => {
+    seedPasswordless();
+    expect(await commit({ mode: "replace", confirmPhrase: "REPLACE" })).toMatchObject({
+      status: 400,
+      data: { error: "Type REPLACE to confirm." },
+    }); // the old field no longer counts
+    expect(applyImport).not.toHaveBeenCalled();
+    expect(await commit({ mode: "replace", confirmWord: "REPLACE" })).toEqual({
+      imported: PLAN.summary,
+      importId: "i1",
+    });
+    expect(confirmReauth).not.toHaveBeenCalled();
+  });
+
+  it("asks nothing of a merge", async () => {
+    seedPassword();
+    expect(await commit({ mode: "merge" })).toEqual({ imported: PLAN.summary, importId: "i1" });
+    expect(confirmReauth).not.toHaveBeenCalled();
+    // Not even the account read: a merge deletes nothing.
+    expect(fakeDb.attempted.some((c) => c.op === "select" && c.table === "users")).toBe(false);
+  });
+
+  it("reports every other failure under `error` too, so the dialog shows the server's words", async () => {
+    expect(await commit({ mode: "merge", file: "" })).toMatchObject({
+      status: 400,
+      data: { error: "Choose a file to import." },
+    });
+    h.buildPlanFromFile.mockResolvedValueOnce({ ok: false, reason: "That file isn't JSON." });
+    expect(await commit({ mode: "merge" })).toMatchObject({
+      status: 400,
+      data: { error: "That file isn't JSON." },
+    });
   });
 });

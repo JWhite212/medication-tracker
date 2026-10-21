@@ -1,9 +1,9 @@
 import { error, fail } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { medications, users } from "$lib/server/db/schema";
+import { medications } from "$lib/server/db/schema";
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
-import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
+import { accountHasPassword, checkDestructiveGuard } from "$lib/server/auth/destructive-guard";
 import { applyImport } from "$lib/server/import/apply";
 import { buildPlanFromFile } from "$lib/server/import/pipeline";
 import { planIsEmpty } from "$lib/server/import/plan";
@@ -21,8 +21,6 @@ const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const ATTEMPT_MAX = 20;
 const COMMIT_WINDOW_MS = 60 * 60 * 1000;
 const COMMIT_MAX = 5;
-
-const REPLACE_PHRASE = "REPLACE";
 
 /** What the browser needs to render a preview. Deliberately not the
  * whole plan: that carries every source row, and shipping it to the
@@ -61,26 +59,22 @@ function toPreview(plan: ImportPlan): PreviewView {
 export const load: PageServerLoad = async ({ locals }) => {
   const userId = locals.user!.id;
 
-  const [meds, [account]] = await Promise.all([
+  const [meds, hasPassword] = await Promise.all([
     db
       .select({ id: medications.id, name: medications.name, isArchived: medications.isArchived })
       .from(medications)
       .where(eq(medications.userId, userId))
       .orderBy(medications.isArchived, medications.sortOrder, medications.name),
-    db
-      .select({ passwordHash: users.passwordHash })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1),
+    accountHasPassword(userId),
   ]);
 
   return {
     medications: meds,
-    // OAuth-only accounts have no password hash, so confirmReauth can
-    // never succeed for them. They confirm by typing the phrase instead
-    // — being locked out of restoring your own backup would be worse
-    // than the marginal difference in gate strength.
-    hasPassword: Boolean(account?.passwordHash),
+    // Every account types REPLACE in the replace dialog, and an account
+    // with a password also enters it (checkDestructiveGuard). An OAuth-only
+    // account confirms on the word alone: being locked out of restoring your
+    // own backup would be worse than the marginal difference in gate strength.
+    hasPassword,
     timezone: locals.user!.timezone,
     maxBytes: IMPORT_MAX_BYTES,
   };
@@ -186,24 +180,24 @@ export const actions: Actions = {
     const { allowed, retryAfterMs } = await enforceLimit(LIMITS.importPreview, userId);
     if (!allowed) {
       return fail(429, {
-        importError: `Too many import previews. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
+        error: `Too many import previews. Try again in ${Math.ceil(retryAfterMs / 60000)} minutes.`,
       });
     }
 
     const upload = await readUpload(request);
-    if (!upload.ok) return fail(400, { importError: upload.reason });
+    if (!upload.ok) return fail(400, { error: upload.reason });
 
     const options = readOptions(upload.formData);
     const mapping = readMapping(upload.formData);
     if (!(await assertMappingOwnership(userId, mapping))) {
-      return fail(400, { importError: "That medication mapping isn't valid for your account." });
+      return fail(400, { error: "That medication mapping isn't valid for your account." });
     }
 
     const result = await buildPlanFromFile(userId, upload.text, locals.user!.timezone, {
       ...options,
       nameMapping: mapping,
     });
-    if (!result.ok) return fail(400, { importError: result.reason });
+    if (!result.ok) return fail(400, { error: result.reason });
 
     return { preview: toPreview(result.plan) };
   },
@@ -219,41 +213,25 @@ export const actions: Actions = {
     const attempt = await enforceLimit(LIMITS.importAttempt, userId);
     if (!attempt.allowed) {
       return fail(429, {
-        importError: `Too many import attempts. Try again in ${Math.ceil(attempt.retryAfterMs / 60000)} minutes.`,
+        error: `Too many import attempts. Try again in ${Math.ceil(attempt.retryAfterMs / 60000)} minutes.`,
       });
     }
 
     const upload = await readUpload(request);
-    if (!upload.ok) return fail(400, { importError: upload.reason });
+    if (!upload.ok) return fail(400, { error: upload.reason });
 
     const options = readOptions(upload.formData);
     const mapping = readMapping(upload.formData);
     if (!(await assertMappingOwnership(userId, mapping))) {
-      return fail(400, { importError: "That medication mapping isn't valid for your account." });
+      return fail(400, { error: "That medication mapping isn't valid for your account." });
     }
 
     if (options.mode === "replace") {
-      const [account] = await db
-        .select({ passwordHash: users.passwordHash })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-
-      if (account?.passwordHash) {
-        const password = String(upload.formData.get("password") ?? "");
-        if (!password) {
-          return fail(400, { importError: "Enter your password to replace all data." });
-        }
-        const reauth = await confirmReauth(userId, password, "import_replace_data");
-        if (!reauth.ok) return fail(400, { importError: reauthMessage(reauth) });
-      } else {
-        const phrase = String(upload.formData.get("confirmPhrase") ?? "").trim();
-        if (phrase !== REPLACE_PHRASE) {
-          return fail(400, {
-            importError: `Type ${REPLACE_PHRASE} to confirm replacing all your data.`,
-          });
-        }
-      }
+      const guard = await checkDestructiveGuard(userId, upload.formData, {
+        word: "REPLACE",
+        purpose: "import_replace_data",
+      });
+      if (!guard.ok) return fail(400, { error: guard.error });
     }
 
     // Re-parsed and re-planned from the uploaded bytes rather than
@@ -263,13 +241,13 @@ export const actions: Actions = {
       ...options,
       nameMapping: mapping,
     });
-    if (!result.ok) return fail(400, { importError: result.reason });
+    if (!result.ok) return fail(400, { error: result.reason });
 
     const plan = result.plan;
 
     if (plan.unmatchedNames.length > 0) {
       return fail(400, {
-        importError: "Some medications still need a decision before importing.",
+        error: "Some medications still need a decision before importing.",
         preview: toPreview(plan),
       });
     }
@@ -279,7 +257,7 @@ export const actions: Actions = {
     // pending deletions for exactly this reason.
     if (planIsEmpty(plan)) {
       return fail(400, {
-        importError:
+        error:
           plan.mode === "replace"
             ? "That file contains nothing importable, so replacing would delete your data and put nothing back. Nothing has been changed."
             : "Nothing to import — everything in that file is already in your account.",
@@ -290,7 +268,7 @@ export const actions: Actions = {
     const commit = await enforceLimit(LIMITS.importCommit, userId);
     if (!commit.allowed) {
       return fail(429, {
-        importError: `Too many imports. Try again in ${Math.ceil(commit.retryAfterMs / 60000)} minutes.`,
+        error: `Too many imports. Try again in ${Math.ceil(commit.retryAfterMs / 60000)} minutes.`,
       });
     }
 

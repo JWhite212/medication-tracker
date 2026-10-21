@@ -14,7 +14,10 @@ import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
 import { JSDOM } from "jsdom";
 import type { DoseLogWithMedication } from "$lib/types";
+import { toneClass } from "$lib/utils/status-tone";
+import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
 import { compiledRule } from "./helpers/compiled-rule";
+import { accessibleName, textOf } from "./helpers/dom-names";
 
 // The delete form imports `enhance` and the toast store; neither is reachable
 // on the server and neither is what these assertions are about.
@@ -34,7 +37,10 @@ const { doseWriteContext } = await import("./helpers/dashboard-context");
 
 type Status = DoseLogWithMedication["status"];
 
-function makeDose(status: Status): DoseLogWithMedication {
+function makeDose(
+  status: Status,
+  overrides: Partial<DoseLogWithMedication> = {},
+): DoseLogWithMedication {
   return {
     id: `dose-${status}`,
     userId: "user-1",
@@ -55,21 +61,26 @@ function makeDose(status: Status): DoseLogWithMedication {
       colourSecondary: null,
       pattern: "solid",
     },
+    ...overrides,
   };
 }
 
-function renderRow(status: Status): Document {
-  const { body } = render(TimelineEntry, {
+function renderRowHtml(status: Status, overrides: Partial<DoseLogWithMedication> = {}): string {
+  return render(TimelineEntry, {
     props: {
-      dose: makeDose(status),
+      dose: makeDose(status, overrides),
       timezone: "UTC",
       timeFormat: "24h" as const,
       day: null,
       onedit: () => {},
     },
     context: doseWriteContext(),
-  });
-  return new JSDOM(`<!doctype html><html><body>${body}</body></html>`).window.document;
+  }).body;
+}
+
+function renderRow(status: Status, overrides: Partial<DoseLogWithMedication> = {}): Document {
+  return new JSDOM(`<!doctype html><html><body>${renderRowHtml(status, overrides)}</body></html>`)
+    .window.document;
 }
 
 function tokens(el: Element): string[] {
@@ -260,5 +271,84 @@ describe("× before the page is live", () => {
     const x = doc.querySelector('button[aria-label^="Delete dose of"]');
     expect(x?.hasAttribute("aria-expanded")).toBe(false);
     expect(x?.hasAttribute("aria-controls")).toBe(false);
+  });
+});
+
+describe("status and severity chips say what they mean in words, coloured by the status owner", () => {
+  const chipNamed = (doc: Document, name: string) =>
+    [...doc.querySelectorAll('[role="listitem"] span')].find((s) => accessibleName(s) === name);
+  const has = (el: Element, recipe: string) =>
+    expect(tokens(el)).toEqual(expect.arrayContaining(recipe.split(" ")));
+
+  it("draws a skipped dose as a neutral '– Skipped' chip, with the dash hidden from screen readers", () => {
+    const chip = chipNamed(renderRow("skipped"), "Skipped");
+    expect(chip, "no Skipped chip").toBeDefined();
+    expect(textOf(chip!)).toBe("– Skipped");
+    expect(chip!.querySelector('[aria-hidden="true"]')?.textContent).toBe("–");
+    has(chip!, toneClass("neutral", "chip"));
+    expect(tokens(chip!)).not.toContain("uppercase");
+  });
+
+  it("draws a missed dose as a red '✕ Missed' chip", () => {
+    const chip = chipNamed(renderRow("missed"), "Missed");
+    expect(chip, "no Missed chip").toBeDefined();
+    expect(textOf(chip!)).toBe("✕ Missed");
+    expect(chip!.querySelector('[aria-hidden="true"]')?.textContent).toBe("✕");
+    has(chip!, toneClass("wrong", "chip"));
+  });
+
+  it("names each side effect's severity in words: mild and moderate neutral, severe red", () => {
+    const doc = renderRow("taken", {
+      sideEffects: [
+        { name: "Nausea", severity: "mild" },
+        { name: "Dizziness", severity: "moderate" },
+        { name: "Headache", severity: "severe" },
+      ],
+    });
+    const chips = [...doc.querySelectorAll('[role="listitem"] span')].filter((s) =>
+      / · (Mild|Moderate|Severe)$/.test(textOf(s)),
+    );
+    expect(chips.map(textOf)).toEqual([
+      "Nausea · Mild",
+      "Dizziness · Moderate",
+      "Headache · Severe",
+    ]);
+    has(chips[0], toneClass("neutral", "chip"));
+    has(chips[1], toneClass("neutral", "chip"));
+    has(chips[2], toneClass("wrong", "chip"));
+    expect(chips[1].className).not.toMatch(/warning/);
+  });
+
+  it("prints the relative time since in neutral text, not the accent", () => {
+    const since = renderRow("taken").querySelector('[role="listitem"] time')!.parentElement!;
+    expect(tokens(since)).toContain("text-text-secondary");
+    expect(tokens(since)).not.toContain("text-accent-ink");
+  });
+
+  it("gives × a neutral hover: removing a dose is undoable, so it is not red", () => {
+    const x = renderRow("taken").querySelector('button[aria-label^="Delete dose of"]')!;
+    expect(tokens(x)).toContain("hover:text-text-primary");
+    expect(x.getAttribute("class")).not.toMatch(/danger/);
+  });
+
+  it("passes axe: button-name, aria-required-parent, aria-hidden-focus, aria-prohibited-attr", async () => {
+    const rows = (["taken", "skipped", "missed"] as const).map((status) =>
+      renderRowHtml(status, {
+        sideEffects: [
+          { name: "Nausea", severity: "mild" },
+          { name: "Headache", severity: "severe" },
+        ],
+      }),
+    );
+    const rules = [
+      "button-name",
+      "aria-required-parent",
+      "aria-hidden-focus",
+      "aria-prohibited-attr",
+    ];
+    const results = await runAxe(ssrDocument(`<div role="list">${rows.join("")}</div>`), rules);
+    const offenders = results.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.html}`));
+    expect(offenders, offenders.join("\n")).toEqual([]);
+    for (const rule of rules) expect(evaluatedRules(results).has(rule), rule).toBe(true);
   });
 });

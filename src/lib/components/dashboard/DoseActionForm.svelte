@@ -84,7 +84,8 @@
     quiet:
       "h-11 min-w-11 rounded-lg px-3 text-sm font-medium text-text-secondary hover:bg-surface-overlay",
     chip: "h-11 rounded-full px-3 text-sm font-medium text-text-primary hover:bg-surface-overlay",
-    danger: "min-h-11 rounded-lg px-3 text-sm font-medium text-danger-ink hover:bg-surface-overlay",
+    danger:
+      "min-h-11 rounded-lg px-3 text-sm font-medium text-text-secondary hover:bg-surface-overlay hover:text-text-primary",
   };
 </script>
 

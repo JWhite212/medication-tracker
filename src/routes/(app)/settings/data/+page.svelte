@@ -1,13 +1,18 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
-  import Modal from "$lib/components/ui/Modal.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import DestructiveConfirm from "$lib/components/ui/DestructiveConfirm.svelte";
+  import { createDestructiveDialog } from "$lib/components/ui/destructive-dialog.svelte";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
+  import { accountDeletionSummary } from "$lib/utils/destructive-confirm";
 
   let { data, form } = $props();
-  let showDeleteConfirm = $state(false);
-  let deleteConfirmText = $state("");
-  let deletePassword = $state("");
+
+  // Account deletion is a deletion nothing can undo, so it opens the one
+  // confirmation dialog; its form sits after the page container (below).
+  const account = createDestructiveDialog();
 </script>
 
 <svelte:head>
@@ -23,7 +28,7 @@
 
   <div role="status">
     {#if form?.success}
-      <p class="bg-success/10 text-success rounded-lg px-4 py-2 text-sm">Settings saved.</p>
+      <Alert tone="happened" title="Settings saved." />
     {/if}
   </div>
 
@@ -49,27 +54,12 @@
         </select>
       </div>
 
-      <button
-        type="submit"
-        class="bg-accent text-accent-fg rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-      >
-        Save Format
-      </button>
+      <Button variant="primary" type="submit">Save Format</Button>
     </form>
 
     <div class="border-glass-border mt-4 flex flex-wrap gap-3 border-t pt-4">
-      <a
-        href="/api/export"
-        class="border-glass-border hover:bg-surface-overlay inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
-      >
-        Download Export
-      </a>
-      <a
-        href="/api/export/full"
-        class="border-glass-border hover:bg-surface-overlay inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
-      >
-        Download Full Backup (JSON)
-      </a>
+      <Button variant="secondary" href="/api/export">Download Export</Button>
+      <Button variant="secondary" href="/api/export/full">Download Full Backup (JSON)</Button>
     </div>
     <p class="text-text-muted mt-3 text-xs">
       PDF and CSV exports are reports — useful to read or share, but they don't carry everything.
@@ -83,76 +73,34 @@
       Restore from a backup, or bring data across from another account. Imports preview what will
       change before anything is written, and merging never overwrites what's already here.
     </p>
-    <a
-      href="/settings/data/import"
-      class="border-glass-border hover:bg-surface-overlay inline-flex rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
-    >
-      Import Data
-    </a>
+    <Button variant="secondary" href="/settings/data/import">Import Data</Button>
   </GlassCard>
 
   <GlassCard>
-    <h2 class="text-danger-ink mb-4 text-lg font-semibold">Danger Zone</h2>
-    <p class="text-text-secondary mb-4 text-sm">
+    <!-- Neutral: red stays on the irreversible action inside the dialog. -->
+    <h2 class="mb-4 text-lg font-semibold">Danger Zone</h2>
+    <p id="delete-account-description" class="text-text-secondary mb-4 text-sm">
       Permanently delete your account and all associated data. This action cannot be undone.
     </p>
-    <button
-      type="button"
-      class="border-danger-ink text-danger-ink hover:bg-danger/10 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
-      onclick={() => (showDeleteConfirm = true)}
+    <Button variant="secondary" aria-describedby="delete-account-description" onclick={account.show}
+      >Delete My Account</Button
     >
-      Delete My Account
-    </button>
   </GlassCard>
 </div>
 
-<Modal open={showDeleteConfirm} onclose={() => (showDeleteConfirm = false)} title="Delete Account">
-  <h3 class="text-danger-ink mb-2 text-lg font-semibold">Delete Account</h3>
-  <p class="text-text-secondary mb-4 text-sm">
-    Type <strong>DELETE</strong> to confirm. All your medications, dose history, and settings will be
-    permanently removed.
-  </p>
-  <div role="status">
-    {#if form?.deleteError}
-      <p class="bg-danger/10 text-danger-ink mb-3 rounded-lg px-4 py-2 text-sm">
-        {form.deleteError}
-      </p>
-    {/if}
-  </div>
-  <!-- Both relied on `placeholder` alone for a name. A placeholder disappears the
-       moment you type, so it is not a label — and these gate account deletion. -->
-  <input
-    type="text"
-    aria-label="Type DELETE to confirm"
-    bind:value={deleteConfirmText}
-    placeholder="Type DELETE"
-    class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink mb-3 w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
+<!-- The dialog renders inside the form it submits, and that form sits outside
+     every GlassCard: backdrop-blur-xl would make a card the containing block
+     for Modal's fixed scrim, clipping it to the card. -->
+<form method="POST" action="?/deleteAccount" use:enhance={account.submit}>
+  <DestructiveConfirm
+    open={account.open}
+    onclose={account.close}
+    title="Delete your account?"
+    summary={accountDeletionSummary(data.counts)}
+    word="DELETE"
+    hasPassword={data.hasPassword}
+    confirmLabel="Delete account"
+    pending={account.pending}
+    error={account.error}
   />
-  <input
-    type="password"
-    aria-label="Your password"
-    autocomplete="current-password"
-    bind:value={deletePassword}
-    placeholder="Enter your password"
-    class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink mb-4 w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
-  />
-  <div class="flex gap-3">
-    <button
-      type="button"
-      class="border-glass-border hover:bg-surface-overlay flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
-      onclick={() => (showDeleteConfirm = false)}
-    >
-      Cancel
-    </button>
-    <form method="POST" action="?/deleteAccount" use:enhance class="flex-1">
-      <input type="hidden" name="password" value={deletePassword} />
-      <button
-        type="submit"
-        disabled={deleteConfirmText !== "DELETE" || !deletePassword}
-        class="bg-danger text-danger-fg w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Delete Permanently
-      </button>
-    </form>
-  </div>
-</Modal>
+</form>

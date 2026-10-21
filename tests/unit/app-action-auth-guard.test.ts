@@ -227,7 +227,7 @@ const CASES: Case[] = [
   { route: "settings/appearance", action: "reducedMotion", actions: appearance.actions, fields: { reducedMotion: "on" } }, // prettier-ignore
 
   { route: "settings/data", action: "updateFormat", actions: data.actions, fields: { exportFormat: "csv" } }, // prettier-ignore
-  { route: "settings/data", action: "deleteAccount", actions: data.actions, fields: { password: "hunter2" } }, // prettier-ignore
+  { route: "settings/data", action: "deleteAccount", actions: data.actions, fields: { confirmWord: "DELETE", password: "hunter2" } }, // prettier-ignore
 
   // Already guarded before this change — kept here so the guard that the
   // rest of this file was modelled on cannot be removed without a failure.

@@ -17,6 +17,7 @@ import { STATUS_TOKEN } from "./helpers/status-token";
 
 const { default: PrivacyPage } =
   await import("../../src/routes/(app)/settings/privacy/+page.svelte");
+const { default: DataPage } = await import("../../src/routes/(app)/settings/data/+page.svelte");
 
 const user = {
   id: "u1",
@@ -237,5 +238,76 @@ describe("privacy page", () => {
     );
     expect(results.violations).toEqual([]);
     for (const r of AXE_RULES) expect(evaluatedRules(results).has(r), r).toBe(true);
+  });
+});
+
+describe("data page", () => {
+  const DATA = { user, preferences, counts: { medications: 6, doses: 1204 }, hasPassword: false };
+
+  it("Save Format is the primary submit", () => {
+    const doc = page(DataPage, DATA, null);
+    const submits = [...doc.querySelectorAll('button[type="submit"]')];
+    expect(submits.map((b) => b.textContent!.trim())).toEqual(["Save Format"]);
+    expect([...submits[0].classList]).toEqual(expect.arrayContaining(["bg-accent", "h-11"]));
+  });
+
+  it("the downloads and Import Data are secondary links", () => {
+    const doc = page(DataPage, DATA, null);
+    for (const href of ["/api/export", "/api/export/full", "/settings/data/import"]) {
+      expectSecondary(link(doc, href), href);
+    }
+  });
+
+  it("Delete My Account is a secondary button in no form, described by its paragraph", () => {
+    const doc = page(DataPage, DATA, null);
+    const b = button(doc, "Delete My Account");
+    expect(b.getAttribute("type")).toBe("button");
+    expectSecondary(b, "Delete My Account");
+    expect(b.closest("form")).toBeNull();
+    const id = b.getAttribute("aria-describedby");
+    expect(doc.getElementById(id!)?.textContent).toContain(
+      "Permanently delete your account and all associated data.",
+    );
+  });
+
+  it("the Danger Zone heading is neutral", () => {
+    const h = [...page(DataPage, DATA, null).querySelectorAll("h2")].find(
+      (e) => e.textContent === "Danger Zone",
+    )!;
+    expect(h).toBeDefined();
+    expect(statusTokens(h)).toEqual([]);
+  });
+
+  it("holds no status colour anywhere while nothing has happened", () => {
+    const doc = page(DataPage, DATA, null);
+    expect([...doc.querySelectorAll("[class]")].flatMap(statusTokens)).toEqual([]);
+  });
+
+  it("the account dialog's form is empty while closed and outside every GlassCard", () => {
+    const f = page(DataPage, DATA, null).querySelector('form[action="?/deleteAccount"]');
+    expect(f).not.toBeNull();
+    expect(f!.querySelector("input, button")).toBeNull();
+    expect(f!.closest(".backdrop-blur-xl")).toBeNull();
+  });
+
+  it("Settings saved. is a happened Alert in the persistent status region", () => {
+    const empty = page(DataPage, DATA, null).querySelector('[role="status"]')!;
+    expect(empty).not.toBeNull();
+    expect(empty.textContent!.trim()).toBe("");
+
+    const region = page(DataPage, DATA, { success: true }).querySelector('[role="status"]')!;
+    expect(region.textContent).toContain("Settings saved.");
+    expect(region.querySelector('svg[aria-hidden="true"]')).not.toBeNull(); // the Alert's icon
+    expect(region.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("passes axe's structural rules", async () => {
+    // The page's one form control is a <select>, which axe checks under
+    // select-name, not label (label has no candidate here while the dialog is
+    // closed, and an unevaluated rule would pass vacuously).
+    const rules = AXE_RULES.map((r) => (r === "label" ? "select-name" : r));
+    const results = await runAxe(page(DataPage, DATA, { success: true }), rules);
+    expect(results.violations).toEqual([]);
+    for (const r of rules) expect(evaluatedRules(results).has(r), r).toBe(true);
   });
 });

@@ -22,6 +22,7 @@ import { pgDb } from "../helpers/pg-db";
 
 const { load: privacyLoad } =
   await import("../../../src/routes/(app)/settings/privacy/+page.server");
+const { load: dataLoad } = await import("../../../src/routes/(app)/settings/data/+page.server");
 
 beforeEach(async () => {
   await pgDb.reset();
@@ -57,5 +58,14 @@ describe("privacy load", () => {
       ((await privacyLoad({ locals: { user: { id: "u3" } } } as never)) as { hasPassword: boolean })
         .hasPassword,
     ).toBe(true);
+  });
+});
+
+describe("data load", () => {
+  it("counts what deleting the account removes", async () => {
+    expect(await dataLoad({ locals: { user: { id: "u1" } } } as never)).toMatchObject({
+      counts: { medications: 3, doses: 5 },
+      hasPassword: false,
+    });
   });
 });

@@ -43,6 +43,7 @@ import { fakeDb } from "./helpers/fake-db";
 import { users } from "$lib/server/db/schema";
 
 const privacy = await import("../../src/routes/(app)/settings/privacy/+page.server");
+const data = await import("../../src/routes/(app)/settings/data/+page.server");
 
 const { confirmReauth } = h;
 
@@ -133,5 +134,65 @@ describe.each([
     expect(await call(privacy.actions, name, { confirmWord: "DELETE" })).toEqual(okResult);
     expect(confirmReauth).not.toHaveBeenCalled();
     expect(wipeFn).toHaveBeenCalledWith("u1");
+  });
+});
+
+describe("data ?/deleteAccount", () => {
+  /** Whether the action reached its one DELETE, the row every cascade hangs off. */
+  const deletedUser = () => fakeDb.attempted.some((c) => c.op === "delete" && c.table === "users");
+
+  it("refuses a direct POST without the word, for both kinds of account, deleting nothing", async () => {
+    for (const seed of [seedPassword, seedPasswordless]) {
+      fakeDb.reset();
+      seed();
+      expect(await call(data.actions, "deleteAccount", { password: "hunter2" })).toMatchObject({
+        status: 400,
+        data: { error: "Type DELETE to confirm." },
+      });
+      expect(deletedUser()).toBe(false);
+      expect(h.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(h.logAudit).not.toHaveBeenCalled();
+    }
+    expect(confirmReauth).not.toHaveBeenCalled();
+  });
+
+  it("refuses a password account with the word but no password", async () => {
+    seedPassword();
+    expect(await call(data.actions, "deleteAccount", { confirmWord: "DELETE" })).toMatchObject({
+      status: 400,
+      data: { error: "Password is required to confirm this action." },
+    });
+    expect(confirmReauth).not.toHaveBeenCalled();
+    expect(deletedUser()).toBe(false);
+    expect(h.invalidateUserSessions).not.toHaveBeenCalled();
+  });
+
+  it("refuses a wrong password through the reauth message, deleting nothing", async () => {
+    seedPassword();
+    confirmReauth.mockResolvedValueOnce({ ok: false });
+    expect(
+      await call(data.actions, "deleteAccount", { confirmWord: "DELETE", password: "wrong" }),
+    ).toMatchObject({ status: 400, data: { error: "Incorrect password." } });
+    expect(deletedUser()).toBe(false);
+  });
+
+  it("deletes a password account with the word and a confirmed password, and redirects home", async () => {
+    seedPassword();
+    confirmReauth.mockResolvedValueOnce({ ok: true, token: "t" });
+    await expect(
+      call(data.actions, "deleteAccount", { confirmWord: "DELETE", password: "hunter2" }),
+    ).rejects.toMatchObject({ status: 302, location: "/" });
+    expect(confirmReauth).toHaveBeenCalledWith("u1", "hunter2", "delete_account");
+    expect(deletedUser()).toBe(true);
+    expect(h.invalidateUserSessions).toHaveBeenCalledWith("u1");
+  });
+
+  it("now deletes an account with no password on the word alone", async () => {
+    seedPasswordless();
+    await expect(
+      call(data.actions, "deleteAccount", { confirmWord: "DELETE" }),
+    ).rejects.toMatchObject({ status: 302, location: "/" });
+    expect(deletedUser()).toBe(true);
+    expect(confirmReauth).not.toHaveBeenCalled();
   });
 });

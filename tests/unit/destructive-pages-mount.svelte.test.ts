@@ -20,6 +20,7 @@ vi.mock("$app/forms", () => ({
 }));
 
 import PrivacyPage from "../../src/routes/(app)/settings/privacy/+page.svelte";
+import DataPage from "../../src/routes/(app)/settings/data/+page.svelte";
 
 const user = {
   id: "u1",
@@ -129,6 +130,42 @@ describe("privacy page", () => {
     clickButton("Delete dose history");
     await settle();
     const after = h.submits.get("?/wipeDoseHistory")!({} as never) as (o: unknown) => Promise<void>;
+    const update = vi.fn();
+    await after({
+      result: { type: "failure", status: 400, data: { error: "Incorrect password." } },
+      update,
+    });
+    await settle();
+    expect(update).not.toHaveBeenCalled();
+    expect(q('[role="dialog"] [role="alert"]').textContent).toContain("Incorrect password.");
+  });
+});
+
+describe("data page", () => {
+  const DATA = { user, preferences, counts: { medications: 6, doses: 1204 }, hasPassword: false };
+
+  it("opens the account dialog with its counted summary, asking a passwordless account for the word alone", async () => {
+    mountPage(DataPage, DATA);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    clickButton("Delete My Account");
+    await settle();
+    const dialog = q('[role="dialog"]');
+    expect(dialog.getAttribute("aria-label")).toBe("Delete your account?");
+    expect(dialog.textContent).toContain(
+      "This deletes your account and settings, 6 medications and 1,204 doses.",
+    );
+    expect(dialog.closest("form")!.getAttribute("action")).toBe("?/deleteAccount");
+    expect(dialog.querySelector('input[name="confirmWord"]')).not.toBeNull();
+    expect(dialog.querySelector('input[name="password"]')).toBeNull();
+    expect(dialog.closest(".backdrop-blur-xl")).toBeNull();
+  });
+
+  it("keeps a refused deletion in the dialog with the server's words", async () => {
+    mountPage(DataPage, { ...DATA, hasPassword: true });
+    clickButton("Delete My Account");
+    await settle();
+    expect(q('[role="dialog"] input[name="password"]')).not.toBeNull();
+    const after = h.submits.get("?/deleteAccount")!({} as never) as (o: unknown) => Promise<void>;
     const update = vi.fn();
     await after({
       result: { type: "failure", status: 400, data: { error: "Incorrect password." } },

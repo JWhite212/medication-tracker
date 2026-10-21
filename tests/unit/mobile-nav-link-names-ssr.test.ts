@@ -150,7 +150,13 @@ const pages: PageCase[] = [
     "/settings",
     "← Settings",
   ],
-  ["data", DataPage, { user, preferences }, "/settings", "← Settings"],
+  [
+    "data",
+    DataPage,
+    { user, preferences, counts: { medications: 0, doses: 0 }, hasPassword: true },
+    "/settings",
+    "← Settings",
+  ],
   [
     "privacy",
     PrivacyPage,

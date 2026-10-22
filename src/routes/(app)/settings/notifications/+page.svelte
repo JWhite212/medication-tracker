@@ -422,8 +422,11 @@
       {/if}
 
       <!-- Polite region for every outcome that is not a failure, kept outside
-           the form so the button is not re-announced when the result changes. -->
-      <div role="status" class="space-y-2 empty:hidden">
+           the form so the button is not re-announced when the result changes.
+           Never hidden while idle: a display:none region leaves the
+           accessibility tree, and the result that appears in it may not be
+           announced. -->
+      <div role="status" class="space-y-2">
         {#if data.pushHealth.vapidConfigured && data.pushHealth.deviceCount === 0}
           <p class="text-text-muted text-xs">
             Enable push on at least one device before running a test.

@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { flushSync, mount, unmount, type Component } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
 import { toneClass } from "../../src/lib/utils/status-tone";
+import { TEST_PUSH_SHOWN_MESSAGE } from "../../src/lib/utils/push";
 import { alertTitled, expectClasses } from "./helpers/alert-dom";
 import { buttonNamed, textOf } from "./helpers/dom-names";
 
@@ -222,5 +223,34 @@ describe("push card and test confirmation", () => {
     expect(late.getAttribute("role")).toBeNull();
     expectClasses(late, toneClass("needs-you", "alert"));
     expect(late.closest('[role="status"]'), "announced politely by the test region").not.toBeNull();
+  });
+
+  it("says the device confirmed it once the service worker reports the test displayed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    subscription = { endpoint: "https://push.test/1" };
+    const target = mountNotifications();
+    await vi.waitFor(() => buttonNamed(target, "Disable"));
+    buttonNamed(target, "Send test notification").click();
+    flushSync();
+    props.form = { testOk: true, testMessage: "Sent to 1 device." };
+    await sent.at(-1)!.finish({ type: "success", status: 200, data: props.form as never });
+    flushSync();
+    // The page's listener, as the service worker would reach it.
+    const listen = vi.mocked(navigator.serviceWorker.addEventListener);
+    const onMessage = listen.mock.calls.find(([type]) => type === "message")![1] as (
+      event: Pick<MessageEvent, "data">,
+    ) => void;
+    onMessage({ data: { type: TEST_PUSH_SHOWN_MESSAGE } });
+    flushSync();
+    const ok = alertTitled(target, "Sent to 1 device.")!;
+    expect(textOf(ok)).toContain("Confirmed displayed on this device.");
+    expect(textOf(ok)).not.toContain("Waiting for this device");
+    expectClasses(ok, toneClass("happened", "alert"));
+    // The confirmation cancels the timeout, so the needs-you Alert never comes.
+    vi.advanceTimersByTime(10_000);
+    flushSync();
+    expect(
+      alertTitled(target, "This device didn't confirm it displayed the notification."),
+    ).toBeNull();
   });
 });

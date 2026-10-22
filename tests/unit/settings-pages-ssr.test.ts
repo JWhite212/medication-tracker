@@ -311,6 +311,16 @@ describe("/settings/notifications", () => {
     expect(testRegion(ok).contains(alertTitled(ok, "Sent to 1 device."))).toBe(true);
   });
 
+  // A live region that is display:none while idle leaves the accessibility
+  // tree, so the result that later appears in it may never be announced.
+  it("never hides the test region, even while it has nothing to say", () => {
+    const registered = notif({ pushHealth: { ...notif().pushHealth, deviceCount: 1 } });
+    const region = testRegion(page(Notifications, registered));
+    expect(textOf(region)).toBe("");
+    const hiding = [...region.classList].filter((c) => /(^|:)(hidden|sr-only)$/.test(c));
+    expect(hiding, region.className).toEqual([]);
+  });
+
   it("draws Save Changes at 44px primary and Send test at 36px secondary with its pending words", () => {
     const doc = page(Notifications, notif());
     expectClasses(submitOf(doc, "?/savePrefs"), "h-11 bg-accent text-accent-fg");

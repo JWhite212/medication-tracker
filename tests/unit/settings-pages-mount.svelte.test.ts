@@ -237,10 +237,8 @@ describe("push card and test confirmation", () => {
     flushSync();
     // The page's listener, as the service worker would reach it.
     const listen = vi.mocked(navigator.serviceWorker.addEventListener);
-    const onMessage = listen.mock.calls.find(([type]) => type === "message")![1] as (
-      event: Pick<MessageEvent, "data">,
-    ) => void;
-    onMessage({ data: { type: TEST_PUSH_SHOWN_MESSAGE } });
+    const onMessage = listen.mock.calls.find(([type]) => type === "message")![1] as EventListener;
+    onMessage(new MessageEvent("message", { data: { type: TEST_PUSH_SHOWN_MESSAGE } }));
     flushSync();
     const ok = alertTitled(target, "Sent to 1 device.")!;
     expect(textOf(ok)).toContain("Confirmed displayed on this device.");

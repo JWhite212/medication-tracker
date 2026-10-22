@@ -114,6 +114,13 @@ async function submit(result: ActionResult) {
   return update;
 }
 
+/** A button's name as assistive tech gets it: its text without hidden or invisible parts. */
+function spokenName(el: Element): string {
+  const copy = el.cloneNode(true) as Element;
+  copy.querySelectorAll('[aria-hidden="true"], .invisible').forEach((n) => n.remove());
+  return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 describe("DoseEditForm", () => {
   const dose: DoseLogWithMedication = {
     id: "d1",
@@ -358,5 +365,66 @@ describe("MedicationForm", () => {
     // A failure still goes through `update()`, which is how the page hands the
     // field errors back down as the `errors` prop.
     expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("moves focus to its own message for a group-level failure, never to an alert elsewhere on the page", async () => {
+    const elsewhere = document.body.insertBefore(
+      document.createElement("p"),
+      document.body.firstChild,
+    );
+    elsewhere.setAttribute("role", "alert");
+    elsewhere.tabIndex = -1;
+    try {
+      mountForm({ errors: { colour: ["Choose a colour"] } });
+      await submit(failure(400, { errors: { colour: ["Choose a colour"] } }));
+      expect(document.activeElement).toBe(target.querySelector("#colour-error"));
+    } finally {
+      elsewhere.remove();
+    }
+  });
+
+  it("moves focus to its own invalid field, never to one elsewhere on the page", async () => {
+    const elsewhere = document.body.insertBefore(
+      document.createElement("input"),
+      document.body.firstChild,
+    );
+    elsewhere.setAttribute("aria-invalid", "true");
+    try {
+      mountForm({ errors: { name: ["Name is required"] } });
+      await submit(failure(400, { errors: { name: ["Name is required"] } }));
+      expect(document.activeElement).toBe(target.querySelector("#name"));
+    } finally {
+      elsewhere.remove();
+    }
+  });
+
+  it("says Saving… on a disabled, busy submit while the request runs, and hands it back after a crash", async () => {
+    mountForm();
+    const button = () => target.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(spokenName(button())).toBe("Add Medication");
+    const formElement = target.querySelector("form")!;
+    const action = new URL("http://localhost/medications/new");
+    const formData = new FormData(formElement);
+    const after = await captured.submit!({
+      action,
+      formData,
+      formElement,
+      controller: new AbortController(),
+      submitter: null,
+      cancel: () => {},
+    });
+    flushSync();
+    expect(button().disabled).toBe(true);
+    expect(button().getAttribute("aria-busy")).toBe("true");
+    expect(spokenName(button())).toBe("Saving…");
+
+    if (typeof after === "function") {
+      await after({ action, formData, formElement, result: CRASH, update: vi.fn(async () => {}) });
+    }
+    flushSync();
+    await tick();
+    expect(button().disabled).toBe(false);
+    expect(button().getAttribute("aria-busy")).not.toBe("true");
+    expect(spokenName(button())).toBe("Add Medication");
   });
 });

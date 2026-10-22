@@ -4,6 +4,8 @@
   import type { SubmitFunction } from "@sveltejs/kit";
   import { showToast } from "$components/ui/Toast.svelte";
   import SideEffectPicker from "$components/SideEffectPicker.svelte";
+  import Alert from "$components/ui/Alert.svelte";
+  import Button from "$components/ui/Button.svelte";
   import { beginDoseWrite } from "$components/dose-writes/begin-dose-write";
   import { getDoseWriteLock } from "$components/dose-writes/dose-write-lock.svelte";
   import { UNKNOWN_OUTCOME_TOAST } from "$components/dose-writes/copy";
@@ -236,19 +238,11 @@
        read and copied; tabindex="-1" takes focus without joining the Tab
        order, and the modal's trap still wraps from it. -->
   {#if formError}
-    <p class="bg-danger/10 text-danger-ink rounded-lg px-4 py-2 text-sm" role="alert" tabindex="-1">
-      {formError}
-    </p>
+    <Alert tone="wrong" title={formError} tabindex={-1} />
   {/if}
 
   <div class="flex gap-3">
-    <button
-      type="button"
-      onclick={onclose}
-      class="border-glass-border hover:bg-surface-overlay flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors"
-    >
-      Cancel
-    </button>
+    <Button variant="ghost" class="flex-1" onclick={onclose}>Cancel</Button>
     <!-- aria-disabled, never `disabled`: the attribute drops keyboard focus
          to <body>. A busy Save is cancelled in `save` instead. min-h-11 is
          the dose-control floor; compact density rewrites .py-2.5. -->

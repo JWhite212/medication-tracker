@@ -21,8 +21,12 @@ import MedicationForm from "../../src/lib/components/MedicationForm.svelte";
 import InteractionWarningPanel from "../../src/lib/components/medication-form/InteractionWarningPanel.svelte";
 import ScheduleSection from "../../src/lib/components/medication-form/MedicationScheduleSection.svelte";
 import StylePicker from "../../src/lib/components/medication-form/MedicationStylePicker.svelte";
+import SideEffectPicker from "../../src/lib/components/SideEffectPicker.svelte";
+import DoseEditForm from "../../src/lib/components/DoseEditForm.svelte";
 import { toneClass, type Tone } from "$lib/utils/status-tone";
+import type { DoseLogWithMedication } from "$lib/types";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
+import { doseWriteContext } from "./helpers/dashboard-context";
 import { expectAxeClean, ssrDocument } from "./helpers/axe-ssr";
 import { textOf } from "./helpers/dom-names";
 
@@ -195,8 +199,61 @@ describe("MedicationStylePicker's add and remove buttons", () => {
   });
 });
 
-describe("the medication form's markup passes axe", () => {
-  it("names every button and allows every aria attribute, with the notice showing", async () => {
+describe("SideEffectPicker's chips", () => {
+  const doc = ssrDocument(
+    render(SideEffectPicker, {
+      props: {
+        value: [
+          { name: "Nausea", severity: "mild" },
+          { name: "Rash", severity: "moderate" },
+        ],
+        onchange: () => {},
+      },
+    }).body,
+  );
+
+  it("draws the common effects as pill Toggles", () => {
+    const toggles = [...doc.querySelectorAll("button[aria-pressed]")].filter(
+      (b) => !b.hasAttribute("aria-label"),
+    );
+    expect(toggles.map(spoken)).toEqual([
+      "Nausea",
+      "Headache",
+      "Dizziness",
+      "Drowsiness",
+      "Dry mouth",
+      "Fatigue",
+      "Insomnia",
+      "Appetite change",
+    ]);
+    for (const t of toggles) {
+      expect(classes(t)).toEqual(expect.arrayContaining(["rounded-full", "h-9", FOCUS_RING]));
+    }
+  });
+
+  it("draws a custom effect as a removable action, not as a pressed toggle", () => {
+    const chip = doc.querySelector('button[aria-label="Remove Rash"]')!;
+    expect(chip.getAttribute("type")).toBe("button");
+    expect(chip.hasAttribute("aria-pressed")).toBe(false);
+    expect(classes(chip)).toEqual(
+      expect.arrayContaining(["border-border-strong", "rounded-full", "h-9", FOCUS_RING]),
+    );
+    for (const pressedCue of ["border-accent-ink", "bg-accent/15", "text-accent-ink"]) {
+      expect(classes(chip)).not.toContain(pressedCue);
+    }
+  });
+
+  it("adds a custom effect with a secondary sm Button, disabled while the field is empty", () => {
+    const add = [...doc.querySelectorAll("button")].find((b) => spoken(b) === "Add")!;
+    expect(classes(add)).toEqual(expect.arrayContaining(["border-border-strong", "h-9"]));
+    expect(add.hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("the form controls' markup passes axe", () => {
+  const RULES = ["button-name", "aria-allowed-attr", "aria-valid-attr-value"];
+
+  it("names every button and allows every aria attribute in the medication form, with the notice showing", async () => {
     await expectAxeClean(
       ssrDocument(
         render(MedicationForm, {
@@ -209,7 +266,40 @@ describe("the medication form's markup passes axe", () => {
             props: { warnings: ["Aspirin may increase bleeding risk."] },
           }).body,
       ),
-      ["button-name", "aria-allowed-attr", "aria-valid-attr-value"],
+      RULES,
+    );
+  });
+
+  it("does the same for the dose editor, whose chips, Cancel and Save are all buttons", async () => {
+    const dose: DoseLogWithMedication = {
+      id: "d1",
+      userId: "u1",
+      medicationId: "m1",
+      quantity: 1,
+      takenAt: new Date("2026-05-01T09:00:00.000Z"),
+      loggedAt: new Date("2026-05-01T09:00:00.000Z"),
+      notes: null,
+      sideEffects: [{ name: "Rash", severity: "moderate" }],
+      status: "taken",
+      updatedAt: new Date("2026-05-01T09:00:00.000Z"),
+      medication: {
+        name: "Ibuprofen",
+        dosageAmount: "200",
+        dosageUnit: "mg",
+        form: "tablet",
+        colour: "#6366f1",
+        colourSecondary: null,
+        pattern: "solid",
+      },
+    };
+    await expectAxeClean(
+      ssrDocument(
+        render(DoseEditForm, {
+          props: { dose, timezone: "UTC", onclose: () => {} },
+          context: doseWriteContext(),
+        }).body,
+      ),
+      RULES,
     );
   });
 });

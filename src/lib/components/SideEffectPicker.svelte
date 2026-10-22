@@ -1,5 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import Button from "$lib/components/ui/Button.svelte";
+  import Toggle from "$lib/components/ui/Toggle.svelte";
   import type { SideEffect } from "$lib/types";
   import { SEVERITY } from "$lib/utils/side-effect-severity";
   import { toneClass, toneOf, type StatusKey } from "$lib/utils/status-tone";
@@ -76,7 +78,14 @@
   );
 
   let customInputEl: HTMLInputElement | undefined = $state();
-  const removeButtons: Record<string, HTMLButtonElement | null> = {};
+  // Each custom chip's remove button, by effect name. Bound through a getter
+  // and a setter, not `bind:ref={removeButtons[name]}`: a chip has no entry
+  // until it mounts, so that binding reads undefined at first, and Button's
+  // `ref` (which has a null fallback) throws props_invalid_value on a bound
+  // undefined. The pair also makes this a plain record: nothing here is
+  // reactive, and a binding to a member of one would warn
+  // binding_property_non_reactive.
+  const removeButtons: Record<string, HTMLElement | null> = {};
 
   // A custom chip deletes itself when pressed, which drops keyboard focus to
   // <body>. Focus goes to the next chip, else the previous one, else the text
@@ -102,17 +111,7 @@
   <!-- Common effect chips -->
   <div class="flex flex-wrap gap-2">
     {#each commonEffects as name}
-      <!-- Selection was carried by border and background alone. -->
-      <button
-        type="button"
-        onclick={() => toggle(name)}
-        aria-pressed={isSelected(name)}
-        class="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors {isSelected(name)
-          ? 'border-accent-ink bg-accent/15 text-accent-ink'
-          : 'border-border-strong bg-glass text-text-secondary hover:bg-glass-hover'}"
-      >
-        {name}
-      </button>
+      <Toggle shape="pill" pressed={isSelected(name)} onclick={() => toggle(name)}>{name}</Toggle>
     {/each}
 
     <!-- Custom effect chips -->
@@ -124,16 +123,13 @@
          deleted the last button instead, so focus never moved and nothing was
          announced. -->
     {#each customNames as name (name)}
-      <button
-        bind:this={removeButtons[name]}
-        type="button"
-        onclick={() => removeCustom(name)}
+      <Button
+        size="sm"
+        shape="pill"
+        bind:ref={() => removeButtons[name] ?? null, (el) => (removeButtons[name] = el)}
         aria-label="Remove {name}"
-        class="border-accent-ink bg-accent/15 text-accent-ink inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+        onclick={() => removeCustom(name)}>{name} <span aria-hidden="true">&times;</span></Button
       >
-        {name}
-        <span aria-hidden="true">&times;</span>
-      </button>
     {/each}
   </div>
 
@@ -152,14 +148,7 @@
         placeholder="Add custom effect..."
         class="border-border-strong bg-surface text-text-primary placeholder:text-text-muted focus:border-accent-ink focus:ring-accent-ink flex-1 rounded-lg border px-3 py-1.5 text-sm focus:ring-1 focus:outline-none"
       />
-      <button
-        type="button"
-        onclick={addCustom}
-        disabled={!customInput.trim()}
-        class="border-border-strong bg-glass text-text-secondary hover:bg-glass-hover rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40"
-      >
-        Add
-      </button>
+      <Button size="sm" disabled={!customInput.trim()} onclick={addCustom}>Add</Button>
     </div>
   </div>
 

@@ -232,6 +232,26 @@ describe("DoseEditForm under the layout's write lock", () => {
   });
 });
 
+describe("DoseEditForm's Cancel", () => {
+  it("is a 44px ghost Button beside the fenced Save, and closes without submitting", () => {
+    const { save, form } = mountEditForm();
+    const cancel = [...form.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Cancel",
+    )!;
+    expect(cancel.getAttribute("type")).toBe("button");
+    expect([...cancel.classList]).toEqual(
+      expect.arrayContaining(["h-11", "text-text-secondary", "focus-visible:outline-accent-ink"]),
+    );
+    expect([...cancel.classList]).not.toContain("border");
+    // The fence (spec, "The fence: dose controls"): Save's markup is not this migration's.
+    expect(save.className).toBe(
+      "bg-accent text-accent-fg min-h-11 flex-1 rounded-lg py-2.5 text-sm font-medium transition-opacity hover:opacity-90 aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
+    );
+    cancel.click();
+    expect(onclose).toHaveBeenCalledOnce();
+  });
+});
+
 describe("DoseEditForm and the Undo offer", () => {
   it("withdraws an offer naming this dose once the Save is sent, and a refused Save withdraws nothing", async () => {
     const { form, submit } = mountEditForm();

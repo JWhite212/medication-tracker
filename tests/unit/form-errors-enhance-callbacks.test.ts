@@ -6,6 +6,7 @@ import { flushSync, mount, tick, unmount } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
 import type { DoseLogWithMedication } from "$lib/types";
 import { SESSION_EXPIRED_MESSAGE } from "$lib/utils/form-errors";
+import { toneClass } from "$lib/utils/status-tone";
 import { UNKNOWN_OUTCOME_TOAST } from "$lib/components/dose-writes/copy";
 import { createDoseWriteLock } from "$lib/components/dose-writes/dose-write-lock.svelte";
 import { doseWriteContext } from "./helpers/dashboard-context";
@@ -280,6 +281,18 @@ describe("DoseEditForm", () => {
     // to the message itself; it is beside its group, so no form-level copy.
     expect(document.activeElement).toBe(field("sideEffects-error"));
     expect(formAlert()).toBeNull();
+  });
+
+  it("draws its form-level message as an error Alert, still the form's one id-less alert", async () => {
+    await submit(CRASH);
+    const alert = formAlert()!;
+    expect([...alert.classList]).toEqual(
+      expect.arrayContaining(toneClass("wrong", "alert").split(" ")),
+    );
+    expect(alert.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(target.querySelector("form")!.querySelectorAll('[role="alert"]:not([id])')).toHaveLength(
+      1,
+    );
   });
 
   it("clears the form-level message once a save succeeds", async () => {

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Button, { FOCUS_RING } from "$lib/components/ui/Button.svelte";
+
   type MedOption = { id: string; name: string; colour: string; isArchived: boolean };
 
   let {
@@ -55,12 +57,23 @@
 <svelte:window onpointerdown={onPointerDown} onkeydown={onKeyDown} />
 
 <div class="relative" bind:this={container}>
+  <!-- Bespoke on purpose, aligned to the primitives (the shared 36px height and
+       focus ring). It cannot be a Button: its resting look carries state, an
+       accent boundary while a filter is applied, which no variant has and a
+       call-site class cannot add -- Tailwind v4 emits same-property utilities
+       in name order, so an accent border class beside `border-border-strong`
+       comes out first and loses (measured: `border-accent-ink/60`, which is
+       how the old trigger's own "filtered" cue stayed invisible). So exactly
+       one boundary is written, by the conditional below. And it cannot be a
+       Toggle: that forces aria-pressed onto what is a disclosure and must say
+       aria-expanded. -->
   <button
     type="button"
-    class="border-border-strong bg-glass text-text-primary flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium backdrop-blur-xl transition-colors {selected.length >
-    0
-      ? 'border-accent-ink/60'
-      : ''}"
+    class={[
+      "bg-glass text-text-primary flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium backdrop-blur-xl transition-colors",
+      FOCUS_RING,
+      selected.length > 0 ? "border-accent-ink" : "border-border-strong",
+    ]}
     bind:this={triggerEl}
     aria-expanded={open}
     onclick={() => (open = !open)}
@@ -110,13 +123,7 @@
         <p class="text-text-secondary px-2.5 py-2 text-sm">No medications yet</p>
       {/if}
       {#if selected.length > 0}
-        <button
-          type="button"
-          class="text-text-secondary hover:text-text-primary mt-1 w-full rounded-md px-2.5 py-1.5 text-left text-xs"
-          onclick={clear}
-        >
-          Clear filter
-        </button>
+        <Button variant="ghost" size="sm" block class="mt-1" onclick={clear}>Clear filter</Button>
       {/if}
     </div>
   {/if}

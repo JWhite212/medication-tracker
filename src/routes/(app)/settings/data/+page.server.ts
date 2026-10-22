@@ -7,7 +7,7 @@ import { dataSchema } from "$lib/utils/validation";
 import { logAudit } from "$lib/server/audit";
 import { lucia } from "$lib/server/auth/lucia";
 import {
-  accountHasPassword,
+  destructiveConfirmation,
   checkDestructiveGuard,
   signedInFrom,
 } from "$lib/server/auth/destructive-guard";
@@ -16,16 +16,16 @@ import type { Actions, PageServerLoad } from "./$types";
 export const load: PageServerLoad = async ({ locals }) => {
   const userId = locals.user!.id;
   // The counts are what the account-deletion dialog says goes with it.
-  const [prefs, medicationRow, doseRow, hasPassword] = await Promise.all([
+  const [prefs, medicationRow, doseRow, confirmation] = await Promise.all([
     getOrCreatePreferences(userId),
     db.select({ value: count() }).from(medications).where(eq(medications.userId, userId)),
     db.select({ value: count() }).from(doseLogs).where(eq(doseLogs.userId, userId)),
-    accountHasPassword(userId),
+    destructiveConfirmation(signedInFrom(locals)),
   ]);
   return {
     preferences: prefs,
     counts: { medications: medicationRow[0]?.value ?? 0, doses: doseRow[0]?.value ?? 0 },
-    hasPassword,
+    confirmation,
   };
 };
 

@@ -54,6 +54,16 @@ export function returnPathOrNull(candidate: string | null | undefined): ReturnPa
     : null;
 }
 
+/**
+ * What a deletion's dialog asks for, decided on the server by the guard's
+ * own rules (`destructiveConfirmation`): a password, or (for an account with
+ * none) the word and a recent sign-in, which `recent` says the session has
+ * and `providers` say how to refresh.
+ */
+export type DestructiveConfirmation =
+  | { kind: "password" }
+  | { kind: "recentSignIn"; recent: boolean; providers: WebProvider[] };
+
 /** The OAuth start leg, told where to come back to. */
 export function signInAgainHref(provider: WebProvider, returnTo: ReturnPath): string {
   return `/auth/callback/${provider}?returnTo=${encodeURIComponent(returnTo)}`;

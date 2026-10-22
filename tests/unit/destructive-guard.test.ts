@@ -13,19 +13,22 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * mock only proves the guard delegates to it.
  */
 
-const { confirmReauth, reauthMessage } = vi.hoisted(() => ({
+const { confirmReauth, reauthMessage, configuredWebProviders } = vi.hoisted(() => ({
   confirmReauth: vi.fn(),
   reauthMessage: vi.fn(() => "REAUTH MESSAGE"),
+  configuredWebProviders: vi.fn((): ("google" | "github")[] => ["google", "github"]),
 }));
 
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 vi.mock("$lib/server/auth/reauth", () => ({ confirmReauth, reauthMessage }));
+vi.mock("$lib/server/auth/oauth", () => ({ configuredWebProviders }));
 
 import { fakeDb, predicateIncludes } from "./helpers/fake-db";
-import { users } from "$lib/server/db/schema";
+import { oauthAccounts, users } from "$lib/server/db/schema";
 import {
   accountHasPassword,
   checkDestructiveGuard,
+  destructiveConfirmation,
   signedInRecently,
 } from "../../src/lib/server/auth/destructive-guard";
 import {
@@ -61,6 +64,8 @@ beforeEach(() => {
   fakeDb.reset();
   confirmReauth.mockReset();
   reauthMessage.mockClear();
+  configuredWebProviders.mockReset();
+  configuredWebProviders.mockReturnValue(["google", "github"]);
 });
 
 it("refuses a missing word before reading the account or spending a password attempt", async () => {
@@ -217,6 +222,58 @@ describe("signedInRecently", () => {
     expect(RECENT_SIGN_IN_MESSAGE).toBe("Sign in again to confirm.");
   });
 });
+
+describe("destructiveConfirmation: what the dialog says the guard will ask", () => {
+  const linked = (...providers: string[]) =>
+    fakeDb.seed(
+      oauthAccounts,
+      providers.map((provider) => ({ provider })),
+    );
+
+  it("describes a password account as a password confirmation, and reads no links", async () => {
+    seedPassword();
+    expect(await destructiveConfirmation(asOfNull(), NOW)).toEqual({ kind: "password" });
+    expect(fakeDb.attempted.some((c) => c.table === "oauth_accounts")).toBe(false);
+  });
+
+  it("offers the linked providers that can sign in on the web and are configured, Google first", async () => {
+    seedPasswordless();
+    linked("github", "apple", "google");
+    expect(await destructiveConfirmation(RECENT, NOW)).toEqual({
+      kind: "recentSignIn",
+      recent: true,
+      providers: ["google", "github"],
+    });
+  });
+
+  it("drops a linked provider whose sign-in is not configured", async () => {
+    seedPasswordless();
+    linked("google");
+    configuredWebProviders.mockReturnValue(["github"]);
+    expect(await destructiveConfirmation(RECENT, NOW)).toMatchObject({ providers: [] });
+  });
+
+  it("reads the links of the user it was given", async () => {
+    seedPasswordless();
+    linked("google");
+    await destructiveConfirmation({ userId: "u-42", authenticatedAt: null }, NOW);
+    const read = fakeDb.attempted.find((c) => c.op === "select" && c.table === "oauth_accounts");
+    expect(predicateIncludes(read?.predicate, "u-42")).toBe(true);
+  });
+
+  it("reports recent by the same rule as the guard", async () => {
+    seedPasswordless();
+    linked("google");
+    expect(await destructiveConfirmation(RECENT, NOW)).toMatchObject({ recent: true });
+    const stale = { userId: "u1", authenticatedAt: ago(RECENT_SIGN_IN_WINDOW_MS) };
+    expect(await destructiveConfirmation(stale, NOW)).toMatchObject({ recent: false });
+    expect(await destructiveConfirmation(asOfNull(), NOW)).toMatchObject({ recent: false });
+  });
+});
+
+function asOfNull() {
+  return { userId: "u1", authenticatedAt: null };
+}
 
 describe("accountHasPassword", () => {
   it("is true for a hash, false for null and for no row", async () => {

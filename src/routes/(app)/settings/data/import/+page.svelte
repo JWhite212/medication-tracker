@@ -6,6 +6,7 @@
   import Button from "$lib/components/ui/Button.svelte";
   import Alert from "$lib/components/ui/Alert.svelte";
   import DestructiveConfirm from "$lib/components/ui/DestructiveConfirm.svelte";
+  import SignInAgain from "$lib/components/ui/SignInAgain.svelte";
   import { createDestructiveDialog } from "$lib/components/ui/destructive-dialog.svelte";
   import { focusIfLost, pageHeading } from "$components/dose-writes/focus-after";
   import { replaceSummary } from "$lib/utils/destructive-confirm";
@@ -188,7 +189,9 @@
             doses: preview?.summary.dosesDeleted ?? 0,
           })}
           word="REPLACE"
-          hasPassword={data.hasPassword}
+          confirmation={data.confirmation}
+          returnTo="/settings/data/import"
+          signInNote="You'll need to choose the file again."
           confirmLabel="Replace all data"
           formaction="?/commit"
           pending={replaceDialog.pending}
@@ -241,18 +244,35 @@
             </span>
           </label>
 
-          <!-- Neutral, like Merge: choosing it is reversible. The step that can't
-               be undone is the confirmation dialog's danger button. -->
-          <label class="border-glass-border flex gap-3 rounded-lg border p-3">
-            <input type="radio" name="mode" value="replace" bind:group={mode} class="mt-1" />
-            <span>
-              <span class="block text-sm font-medium">Replace everything</span>
-              <span class="text-text-muted block text-sm">
-                Deletes all current medications, schedules, doses and inventory history, then
-                restores the file. Cannot be undone.
+          <!-- One space-y child: Replace and what it needs, so the empty
+               status region below adds no gap. -->
+          <div>
+            <!-- Neutral, like Merge: choosing it is reversible. The step that can't
+                 be undone is the confirmation dialog's danger button. -->
+            <label class="border-glass-border flex gap-3 rounded-lg border p-3">
+              <input type="radio" name="mode" value="replace" bind:group={mode} class="mt-1" />
+              <span>
+                <span class="block text-sm font-medium">Replace everything</span>
+                <span class="text-text-muted block text-sm">
+                  Deletes all current medications, schedules, doses and inventory history, then
+                  restores the file. Cannot be undone.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+
+            <!-- Said here, as soon as Replace is chosen, so the sign-in round trip
+                 comes before any preview or commit. Always present, so choosing
+                 Replace announces the prompt. -->
+            <div role="status">
+              {#if mode === "replace" && data.confirmation.kind === "recentSignIn" && !data.confirmation.recent}
+                <SignInAgain
+                  class="mt-3"
+                  providers={data.confirmation.providers}
+                  returnTo="/settings/data/import"
+                />
+              {/if}
+            </div>
+          </div>
         </div>
 
         <div class="border-glass-border mt-4 space-y-2 border-t pt-4">

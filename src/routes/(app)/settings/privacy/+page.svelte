@@ -227,7 +227,8 @@
       medications: data.counts.doseMedications,
     })}
     word="DELETE"
-    hasPassword={data.hasPassword}
+    confirmation={data.confirmation}
+    returnTo="/settings/privacy"
     confirmLabel="Delete dose history"
     pending={doseHistory.pending}
     error={doseHistory.error}
@@ -243,7 +244,8 @@
       doses: data.counts.archivedDoses,
     })}
     word="DELETE"
-    hasPassword={data.hasPassword}
+    confirmation={data.confirmation}
+    returnTo="/settings/privacy"
     confirmLabel="Delete archived medications"
     pending={archived.pending}
     error={archived.error}

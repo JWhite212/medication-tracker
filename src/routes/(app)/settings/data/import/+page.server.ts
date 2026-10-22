@@ -4,7 +4,7 @@ import { db } from "$lib/server/db";
 import { medications } from "$lib/server/db/schema";
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import {
-  accountHasPassword,
+  destructiveConfirmation,
   checkDestructiveGuard,
   signedInFrom,
 } from "$lib/server/auth/destructive-guard";
@@ -63,13 +63,13 @@ function toPreview(plan: ImportPlan): PreviewView {
 export const load: PageServerLoad = async ({ locals }) => {
   const userId = locals.user!.id;
 
-  const [meds, hasPassword] = await Promise.all([
+  const [meds, confirmation] = await Promise.all([
     db
       .select({ id: medications.id, name: medications.name, isArchived: medications.isArchived })
       .from(medications)
       .where(eq(medications.userId, userId))
       .orderBy(medications.isArchived, medications.sortOrder, medications.name),
-    accountHasPassword(userId),
+    destructiveConfirmation(signedInFrom(locals)),
   ]);
 
   return {
@@ -79,7 +79,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     // account confirms on the word and a sign-in within the last 10 minutes,
     // which the dialog offers to refresh: being locked out of restoring your
     // own backup would be worse than an extra sign-in.
-    hasPassword,
+    confirmation,
     timezone: locals.user!.timezone,
     maxBytes: IMPORT_MAX_BYTES,
   };

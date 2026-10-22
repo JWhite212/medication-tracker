@@ -5,7 +5,7 @@ import { doseLogs, medications, sessions, auditLogs } from "$lib/server/db/schem
 import { lucia } from "$lib/server/auth/lucia";
 import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
 import {
-  accountHasPassword,
+  destructiveConfirmation,
   checkDestructiveGuard,
   signedInFrom,
 } from "$lib/server/auth/destructive-guard";
@@ -26,7 +26,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     archivedMedRow,
     sessionRow,
     auditRow,
-    hasPassword,
+    confirmation,
   ] = await Promise.all([
     // One query for both numbers the dose-history dialog states: how many
     // doses, and how many medications they span.
@@ -50,7 +50,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       .where(and(eq(medications.userId, userId), eq(medications.isArchived, true))),
     db.select({ value: count() }).from(sessions).where(eq(sessions.userId, userId)),
     db.select({ value: count() }).from(auditLogs).where(eq(auditLogs.userId, userId)),
-    accountHasPassword(userId),
+    destructiveConfirmation(signedInFrom(locals)),
   ]);
 
   return {
@@ -63,7 +63,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       sessions: sessionRow[0]?.value ?? 0,
       auditLogs: auditRow[0]?.value ?? 0,
     },
-    hasPassword,
+    confirmation,
   };
 };
 

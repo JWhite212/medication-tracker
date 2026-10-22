@@ -36,10 +36,21 @@ const user = {
 
 const preferences = { userId: "u1", exportFormat: "pdf" };
 
+const PASSWORD = { kind: "password" } as const;
+const RECENT = { kind: "recentSignIn", recent: true, providers: ["google"] } as const;
+const STALE = { kind: "recentSignIn", recent: false, providers: ["google", "github"] } as const;
+
+/** The "Sign in again" links on the page, as [text, href]. */
+const signInLinks = () =>
+  [...document.querySelectorAll<HTMLAnchorElement>('a[href^="/auth/callback/"]')].map((a) => [
+    a.textContent!.trim(),
+    a.getAttribute("href"),
+  ]);
+
 const PRIVACY = {
   user,
   preferences,
-  hasPassword: true,
+  confirmation: PASSWORD,
   counts: {
     activeMedications: 4,
     archivedMedications: 2,
@@ -111,7 +122,7 @@ describe("privacy page", () => {
     expect(dialog.textContent).toContain("This deletes 1,204 doses for 6 medications.");
     expect(dialog.closest("form")!.getAttribute("action")).toBe("?/wipeDoseHistory");
     expect(dialog.closest(".backdrop-blur-xl")).toBeNull();
-    expect(dialog.querySelector('input[name="password"]')).not.toBeNull(); // hasPassword: true
+    expect(dialog.querySelector('input[name="password"]')).not.toBeNull(); // a password account
   });
 
   it("opens the archived dialog with its own summary", async () => {
@@ -145,10 +156,41 @@ describe("privacy page", () => {
   });
 });
 
-describe("data page", () => {
-  const DATA = { user, preferences, counts: { medications: 6, doses: 1204 }, hasPassword: false };
+describe("an account with no password whose sign-in is not recent", () => {
+  it("offers Privacy's two dialogs a sign-in that comes back to Privacy", async () => {
+    mountPage(PrivacyPage, { ...PRIVACY, confirmation: STALE });
+    for (const opener of ["Delete dose history", "Delete archived medications"]) {
+      clickButton(opener);
+      await settle();
+      expect(signInLinks()).toEqual([
+        ["Sign in again with Google", "/auth/callback/google?returnTo=%2Fsettings%2Fprivacy"],
+        ["Sign in again with GitHub", "/auth/callback/github?returnTo=%2Fsettings%2Fprivacy"],
+      ]);
+      button("Cancel", '[role="dialog"]').click();
+      await settle();
+    }
+  });
 
-  it("opens the account dialog with its counted summary, asking a passwordless account for the word alone", async () => {
+  it("offers the account dialog a sign-in that comes back to Data", async () => {
+    mountPage(DataPage, {
+      user,
+      preferences,
+      counts: { medications: 6, doses: 1204 },
+      confirmation: STALE,
+    });
+    clickButton("Delete My Account");
+    await settle();
+    expect(signInLinks().map(([, href]) => href)).toEqual([
+      "/auth/callback/google?returnTo=%2Fsettings%2Fdata",
+      "/auth/callback/github?returnTo=%2Fsettings%2Fdata",
+    ]);
+  });
+});
+
+describe("data page", () => {
+  const DATA = { user, preferences, counts: { medications: 6, doses: 1204 }, confirmation: RECENT };
+
+  it("opens the account dialog with its counted summary, asking a recently signed-in passwordless account for the word alone", async () => {
     mountPage(DataPage, DATA);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     clickButton("Delete My Account");
@@ -165,7 +207,7 @@ describe("data page", () => {
   });
 
   it("keeps a refused deletion in the dialog with the server's words", async () => {
-    mountPage(DataPage, { ...DATA, hasPassword: true });
+    mountPage(DataPage, { ...DATA, confirmation: PASSWORD });
     clickButton("Delete My Account");
     await settle();
     expect(q('[role="dialog"] input[name="password"]')).not.toBeNull();
@@ -186,7 +228,7 @@ describe("import page", () => {
     user,
     preferences,
     medications: [],
-    hasPassword: true,
+    confirmation: PASSWORD,
     maxBytes: 5_242_880,
     timezone: "UTC",
   };
@@ -310,5 +352,71 @@ describe("import page", () => {
     expect(q("#import-outcome").textContent).toContain("Import complete");
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(q("h1"));
+  });
+});
+
+describe("import page, for an account with no password", () => {
+  const importData = (confirmation: unknown) => ({
+    user,
+    preferences,
+    medications: [],
+    confirmation,
+    maxBytes: 5_242_880,
+    timezone: "UTC",
+  });
+  const choose = async (mode: "merge" | "replace") => {
+    q<HTMLInputElement>(`input[value="${mode}"]`).click();
+    await settle();
+  };
+
+  it("says to sign in again as soon as Replace is chosen, before any file or preview", async () => {
+    mountPage(ImportPage, importData(STALE));
+    expect(signInLinks()).toEqual([]);
+
+    await choose("replace");
+    expect(signInLinks()).toEqual([
+      ["Sign in again with Google", "/auth/callback/google?returnTo=%2Fsettings%2Fdata%2Fimport"],
+      ["Sign in again with GitHub", "/auth/callback/github?returnTo=%2Fsettings%2Fdata%2Fimport"],
+    ]);
+    // Announced: the prompt arrives inside a status region that was already there.
+    expect(
+      document.querySelector('a[href^="/auth/callback/google"]')!.closest('[role="status"]'),
+    ).not.toBeNull();
+
+    await choose("merge");
+    expect(signInLinks()).toEqual([]);
+  });
+
+  it("says nothing extra when the sign-in is recent", async () => {
+    mountPage(ImportPage, importData(RECENT));
+    await choose("replace");
+    expect(signInLinks()).toEqual([]);
+  });
+
+  it("tells the dialog to warn that the file must be chosen again", async () => {
+    mountPage(ImportPage, importData(STALE), {
+      preview: {
+        format: "json",
+        mode: "replace",
+        summary: {
+          medicationsCreated: 0,
+          medicationsReused: 0,
+          dosesCreated: 0,
+          dosesSkipped: 0,
+          inventoryEventsCreated: 0,
+          medicationsDeleted: 1,
+          dosesDeleted: 1,
+        },
+        warnings: [],
+        unmatchedNames: [],
+        createdNames: [],
+        reusedNames: [],
+        empty: false,
+      },
+    });
+    await choose("replace");
+    clickButton("Replace all data");
+    await settle();
+    expect(q('[role="dialog"]').textContent).toContain("You'll need to choose the file again.");
   });
 });

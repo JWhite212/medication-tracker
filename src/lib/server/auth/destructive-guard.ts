@@ -1,10 +1,12 @@
 import { eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { users } from "$lib/server/db/schema";
+import { oauthAccounts, users } from "$lib/server/db/schema";
+import { configuredWebProviders } from "$lib/server/auth/oauth";
 import { confirmReauth, reauthMessage, type ReauthPurpose } from "$lib/server/auth/reauth";
 import {
   RECENT_SIGN_IN_MESSAGE,
   RECENT_SIGN_IN_WINDOW_MS,
+  type DestructiveConfirmation,
   type DestructiveWord,
 } from "$lib/utils/destructive-confirm";
 
@@ -48,6 +50,31 @@ export function signedInFrom(locals: App.Locals): SignedIn {
 export function signedInRecently(authenticatedAt: Date | null, now: Date): boolean {
   if (authenticatedAt === null) return false;
   return now.getTime() - authenticatedAt.getTime() < RECENT_SIGN_IN_WINDOW_MS;
+}
+
+/**
+ * What the dialog should ask for, by the guard's own rules, so the page and
+ * the gate cannot disagree. The three page loads return it. `recent` is as
+ * of the load and can go stale while the page sits open; the guard's refusal
+ * then tells the dialog (`RECENT_SIGN_IN_MESSAGE`). `providers` are the
+ * account's linked providers that a browser can sign in with now: Apple is
+ * API-only, and an unconfigured provider's link would only 503.
+ */
+export async function destructiveConfirmation(
+  { userId, authenticatedAt }: SignedIn,
+  now: Date = new Date(),
+): Promise<DestructiveConfirmation> {
+  if (await accountHasPassword(userId)) return { kind: "password" };
+  const linked = await db
+    .select({ provider: oauthAccounts.provider })
+    .from(oauthAccounts)
+    .where(eq(oauthAccounts.userId, userId));
+  const names = new Set(linked.map((row) => row.provider));
+  return {
+    kind: "recentSignIn",
+    recent: signedInRecently(authenticatedAt, now),
+    providers: configuredWebProviders().filter((provider) => names.has(provider)),
+  };
 }
 
 /**

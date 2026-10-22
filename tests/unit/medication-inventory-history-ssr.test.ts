@@ -15,6 +15,7 @@ import Page from "../../src/routes/(app)/medications/[id]/+page.svelte";
 import ListPage from "../../src/routes/(app)/medications/+page.svelte";
 import { toneClass, type Tone } from "$lib/utils/status-tone";
 import type { InventoryEventType } from "$lib/server/db/schema";
+import type { Medication } from "$lib/types";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
 import { doseWriteContext } from "./helpers/dashboard-context";
 import { evaluatedRules, expectAxeClean, runAxe, ssrDocument } from "./helpers/axe-ssr";
@@ -48,7 +49,9 @@ const preferences = {
 };
 // `Medication` is drizzle-inferred and has `lowInventoryEpisodeAt`, which
 // BASE_MEDICATION_ROW lacks; tests are type-checked, so `npm run check` needs it.
-const MEDICATION = { ...BASE_MEDICATION_ROW, lowInventoryEpisodeAt: null };
+// Typed as `Medication`, not left to inference: inferred, `archivedAt` is the
+// literal `null` and a test that archives the medication cannot spread a Date in.
+const MEDICATION: Medication = { ...BASE_MEDICATION_ROW, lowInventoryEpisodeAt: null };
 
 const event = (id: string, eventType: InventoryEventType, quantityChange: number) => ({
   id,

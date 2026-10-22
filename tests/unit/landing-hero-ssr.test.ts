@@ -76,6 +76,17 @@ describe("the landing header", () => {
     expect(textOf(start)).toBe("Get Started");
     expectClasses(start, "h-9 bg-accent text-accent-fg");
   });
+  // Button never wraps its label, so on a narrow phone the one-row header
+  // squeezed the wordmark under Sign in (system font, 320px) or scrolled
+  // sideways (a wider font). The fix is the container's alone; the Buttons
+  // keep their size. Class strength only: the widths are checked at 360px and
+  // 320px in the preview pass.
+  it("wraps rather than scrolling sideways on a narrow phone, with the buttons kept right", () => {
+    expectClasses(header(), "flex flex-wrap justify-between gap-y-3");
+    const group = header().querySelector('a[href="/auth/login"]')!.parentElement!;
+    expectClasses(group, "ml-auto flex gap-2 sm:gap-3");
+    expect(group.classList.contains("gap-3")).toBe(false);
+  });
   it("passes axe link-name", async () => {
     await expectAxeClean(ssrDocument(render(LandingPage).body), ["link-name"]);
   });

@@ -111,7 +111,12 @@ describe("MedicationScheduleSection's controls", () => {
   const MODE_GROUP = '[role="group"][aria-label="Schedule"]';
 
   it("offers the three modes as Toggles, only the current one pressed", () => {
-    const modes = [...schedule().querySelectorAll(`${MODE_GROUP} button`)];
+    const doc = schedule();
+    // Toggle is whitespace-nowrap, so the three need about 324px side by side;
+    // the form is 293px wide at 375px. Without flex-wrap the row cannot shrink
+    // and <main> scrolls sideways.
+    expect(classes(doc.querySelector(MODE_GROUP))).toContain("flex-wrap");
+    const modes = [...doc.querySelectorAll(`${MODE_GROUP} button`)];
     expect(modes.map(spoken)).toEqual(["Interval", "Fixed time", "As needed (PRN)"]);
     expect(modes.map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
     for (const b of modes) {

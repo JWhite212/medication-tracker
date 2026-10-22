@@ -48,7 +48,7 @@
       text="Interval: every N hours. Fixed time: at one or more specific times of day. As needed (PRN): only when required, no reminders."
     />
   </span>
-  <div class="flex gap-2" role="group" aria-label="Schedule">
+  <div class="flex flex-wrap gap-2" role="group" aria-label="Schedule">
     <Toggle pressed={mode === "interval"} onclick={() => (mode = "interval")} class="flex-1">
       Interval
     </Toggle>

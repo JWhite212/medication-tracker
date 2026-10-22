@@ -61,7 +61,6 @@ const PENDING_MIGRATION: string[] = [
   "src/lib/components/walkthrough/scenes/MedicationsScene.svelte",
   "src/lib/components/walkthrough/scenes/SecurityScene.svelte",
   "src/routes/(app)/medications/[id]/+page.svelte",
-  "src/routes/(app)/settings/appearance/+page.svelte",
   "src/routes/+page.svelte",
   "src/routes/auth/2fa/+page.svelte",
   "src/routes/auth/login/+page.svelte",

@@ -25,7 +25,7 @@ const EXEMPT: { file: string; why: string }[] = [
   },
   {
     file: "src/lib/components/ui/Button.svelte",
-    why: "The danger variant (bg-danger text-danger-fg), used only inside DestructiveConfirm.",
+    why: "The danger variant (bg-danger text-danger-fg). The Button danger-variant check below holds its call sites to DestructiveConfirm.",
   },
   {
     file: "src/lib/components/ui/Toast.svelte",
@@ -185,5 +185,89 @@ describe("status colour is written only by its owner", () => {
 
   it("each exemption says why", () => {
     expect(EXEMPT.filter((e) => e.why.trim() === "")).toEqual([]);
+  });
+});
+
+/**
+ * `Button`'s danger variant is exempt above because Button spells it, so the
+ * scan cannot see a call site that asks for it: `<Button variant="danger">`
+ * carries no status token. The spec's one hard button rule is that nothing
+ * reversible is red, and the only irreversible button is DestructiveConfirm's,
+ * so this holds the variant to that file.
+ *
+ * Only `<Button` tags count. DoseActionForm takes its own `variant="danger"`
+ * prop (a fenced dose control, ruling P1), which is not Button's.
+ */
+const DANGER_HOME = "src/lib/components/ui/DestructiveConfirm.svelte";
+
+/**
+ * Every `<Button …>` opening tag in `source`, however many lines it spans. A
+ * plain `[^>]*` stops at the `>` of an arrow function in `onclick={() => …}`,
+ * so this walks the tag, skipping `{…}` expressions and quoted values.
+ */
+function buttonOpeningTags(source: string): string[] {
+  const tags: string[] = [];
+  for (const start of source.matchAll(/<Button(?=[\s/>])/g)) {
+    let depth = 0;
+    let quote: string | null = null;
+    for (let i = start.index; i < source.length; i++) {
+      const ch = source[i];
+      if (quote) {
+        if (ch === quote) quote = null;
+      } else if (ch === '"' || ch === "'" || (depth > 0 && ch === "`")) {
+        quote = ch;
+      } else if (ch === "{") {
+        depth++;
+      } else if (ch === "}") {
+        depth--;
+      } else if (ch === ">" && depth === 0) {
+        tags.push(source.slice(start.index, i + 1));
+        break;
+      }
+    }
+  }
+  return tags;
+}
+
+/** A literal `variant="danger"`, or a `variant={…}` expression that can produce it. */
+const DANGER_VARIANT = /\bvariant\s*=\s*(?:"danger"|'danger'|\{[^}]*\bdanger\b[^}]*\})/;
+
+/** file -> its `<Button>` opening tags that ask for the danger variant. */
+const DANGER_BUTTONS = new Map(
+  walk("src")
+    .filter((file) => file.endsWith(".svelte"))
+    .map(
+      (file) =>
+        [
+          file,
+          buttonOpeningTags(readFileSync(file, "utf8")).filter((tag) => DANGER_VARIANT.test(tag)),
+        ] as const,
+    )
+    .filter(([, tags]) => tags.length > 0),
+);
+
+describe("Button's danger variant is used only by DestructiveConfirm", () => {
+  it("reads a tag across lines and past an arrow function", () => {
+    expect(
+      buttonOpeningTags(
+        '<Button\n  onclick={() => (open = true)}\n  variant="danger"\n>Go</Button><ButtonGroup>',
+      ),
+    ).toEqual(['<Button\n  onclick={() => (open = true)}\n  variant="danger"\n>']);
+  });
+
+  it("counts a literal and an expression, and not another component's prop", () => {
+    expect(DANGER_VARIANT.test('<Button variant="danger">')).toBe(true);
+    expect(DANGER_VARIANT.test('<Button variant={wipe ? "danger" : "secondary"}>')).toBe(true);
+    expect(DANGER_VARIANT.test('<Button variant={on ? "secondary" : "primary"}>')).toBe(false);
+    expect(buttonOpeningTags('<DoseActionForm variant="danger" />')).toEqual([]);
+    expect(buttonOpeningTags('<IconButton variant="danger" label="x" />')).toEqual([]);
+  });
+
+  it("no other file asks for it", () => {
+    expect([...DANGER_BUTTONS.keys()].filter((file) => file !== DANGER_HOME)).toEqual([]);
+  });
+
+  it("DestructiveConfirm still does, so this check cannot go stale", () => {
+    expect(DANGER_BUTTONS.get(DANGER_HOME)?.length).toBe(1);
   });
 });

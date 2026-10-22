@@ -34,6 +34,10 @@ application layer. `password_hash` is null for OAuth-only accounts.
 
 Lucia-managed. One row per active browser. Cascade-deletes when the user
 is removed. Index on `user_id` for fast lookup-by-user.
+`authenticated_at` is when the session's holder signed in, stamped by every
+`lucia.createSession`; it is nullable with no default, so a session created
+before the column existed reads NULL, which `checkDestructiveGuard` treats
+as not recent for an account with no password.
 
 ### `oauth_accounts`
 

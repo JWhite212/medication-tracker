@@ -3,6 +3,7 @@ import { LIMITS } from "$lib/server/auth/rate-limit-policy";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "../helpers/fake-db";
 import { users } from "$lib/server/db/schema";
+import { stampedSince } from "../helpers/session-stamp";
 
 // The row the user lookup finds; null means "no such user".
 function seedUser(row: Record<string, unknown> | null) {
@@ -91,6 +92,9 @@ const baseUser = {
   emailVerified: true,
 };
 
+/** When this test began: a sign-in's stamp must fall after it. */
+let testStart = 0;
+
 beforeEach(() => {
   fakeDb.reset();
   seedUser(null);
@@ -105,6 +109,7 @@ beforeEach(() => {
   hashPassword.mockClear();
   checkRateLimit.mockClear();
   createSession.mockClear();
+  testStart = Date.now();
   signPreAuthToken.mockClear();
   logAudit.mockClear();
 });
@@ -199,7 +204,7 @@ describe("POST /api/v1/auth/login", () => {
         emailVerified: true,
       },
     });
-    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: expect.any(Date) });
+    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: stampedSince(testStart) });
   });
 
   it("transparently upgrades a stale Argon2 hash on successful login", async () => {

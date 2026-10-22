@@ -1,5 +1,6 @@
 import { rateLimitSurface } from "./helpers/rate-limit";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { stampedSince } from "./helpers/session-stamp";
 
 // The real preauth module, not a mock: the whole point of this suite is
 // that the cookie is UNFORGEABLE, and a mocked verifier would let a forged
@@ -81,6 +82,9 @@ const call = (
 
 const validToken = () => signPreAuthToken("pending-user");
 
+/** When this test began: a sign-in's stamp must fall after it. */
+let testStart = 0;
+
 beforeEach(() => {
   state.totpResult = false;
   state.rateLimit = { allowed: true, retryAfterMs: 0 };
@@ -90,6 +94,7 @@ beforeEach(() => {
   verifyAndConsumeTOTPCode.mockClear();
   checkRateLimit.mockClear();
   createSession.mockClear();
+  testStart = Date.now();
 });
 
 describe("the pending_2fa cookie is a signed claim, not a user id", () => {
@@ -158,7 +163,7 @@ describe("the pending_2fa cookie is a signed claim, not a user id", () => {
     });
     expect(verifySecondFactorForLogin).toHaveBeenCalledWith("pending-user", "123456");
     expect(createSession).toHaveBeenCalledWith("pending-user", {
-      authenticatedAt: expect.any(Date),
+      authenticatedAt: stampedSince(testStart),
     });
   });
 });

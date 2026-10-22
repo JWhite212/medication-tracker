@@ -194,13 +194,21 @@ describe("an account with no password must have signed in recently", () => {
     expect(confirmReauth).toHaveBeenCalledWith("u1", "hunter2", "wipe_dose_history");
   });
 
-  it("reads the clock when none is given", async () => {
+  it("reads the real clock when none is given", async () => {
     seedPasswordless();
     const { now: _now, ...noClock } = DOSES;
-    const justNow = asOf(new Date(Date.now() - 1000));
-    expect(await checkDestructiveGuard(justNow, fd({ confirmWord: "DELETE" }), noClock)).toEqual({
+    const word = fd({ confirmWord: "DELETE" });
+    // Both, so neither a frozen nor an epoch-zero default clock can pass.
+    expect(await checkDestructiveGuard(asOf(new Date(Date.now() - 1000)), word, noClock)).toEqual({
       ok: true,
     });
+    expect(
+      await checkDestructiveGuard(
+        asOf(new Date(Date.now() - RECENT_SIGN_IN_WINDOW_MS - 1000)),
+        fd({ confirmWord: "DELETE" }),
+        noClock,
+      ),
+    ).toEqual(REFUSED);
   });
 });
 
@@ -211,10 +219,17 @@ describe("signedInRecently", () => {
     expect(signedInRecently(ago(RECENT_SIGN_IN_WINDOW_MS + 60_000), NOW)).toBe(false);
   });
 
-  it("is true inside the window, and for a stamp slightly in the future (clock drift)", () => {
+  it("is true inside the window, and for a stamp up to a minute in the future (clock drift)", () => {
     expect(signedInRecently(ago(RECENT_SIGN_IN_WINDOW_MS - 1), NOW)).toBe(true);
     expect(signedInRecently(ago(0), NOW)).toBe(true);
     expect(signedInRecently(ago(-5_000), NOW)).toBe(true);
+    expect(signedInRecently(ago(-60_000), NOW)).toBe(true);
+  });
+
+  it("is false for a stamp further in the future, which can only be a mis-stamp", () => {
+    expect(signedInRecently(ago(-60_001), NOW)).toBe(false);
+    // e.g. a caller that stamped the session's expiresAt
+    expect(signedInRecently(ago(-30 * 24 * 60 * 60 * 1000), NOW)).toBe(false);
   });
 
   it("is a ten-minute window", () => {

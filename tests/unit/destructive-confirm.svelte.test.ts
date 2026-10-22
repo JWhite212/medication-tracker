@@ -330,6 +330,26 @@ describe("an account with no password whose sign-in is not recent", () => {
     expect(danger().getAttribute("aria-disabled")).toBe("true");
   });
 
+  it("remembers a sign-in refusal after Cancel, so reopening does not invite a doomed retry", async () => {
+    props.confirmation = RECENT_NO_PASSWORD;
+    await openFrom(opener);
+    props.error = RECENT_SIGN_IN_MESSAGE;
+    await settle();
+
+    // Cancel, then reopen: createDestructiveDialog's show() clears the error.
+    props.open = false;
+    props.error = null;
+    await settle();
+    props.open = true;
+    await settle();
+
+    expect(signInLinks()).toEqual([
+      ["Sign in again with Google", "/auth/callback/google?returnTo=%2Fsettings%2Fprivacy"],
+    ]);
+    type(q('input[name="confirmWord"]'), "DELETE");
+    expect(danger().getAttribute("aria-disabled")).toBe("true");
+  });
+
   it("announces the sign-in prompt through a status region that was there before it", async () => {
     props.confirmation = RECENT_NO_PASSWORD;
     await openFrom(opener);

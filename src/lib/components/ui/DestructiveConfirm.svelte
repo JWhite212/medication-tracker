@@ -76,11 +76,15 @@
   let password = $state("");
 
   const hasPassword = $derived(confirmation.kind === "password");
-  // Stale at load, or refused since: the guard's refusal is recognised by its
-  // exact words, so the failure keeps the plain shape actionErrorMessage reads.
+  // Set once the guard refuses for an old sign-in, recognised by its exact
+  // words so the failure keeps the plain shape actionErrorMessage reads. It
+  // outlives the error, which show() clears on reopen: the sign-in is no
+  // younger after a Cancel, and Import would re-upload the file only to be
+  // refused again. A sign-in round trip reloads the page, which resets it.
+  let refusedForSignIn = $state(false);
+  // Stale at load, or refused since.
   const needsSignIn = $derived(
-    confirmation.kind === "recentSignIn" &&
-      (!confirmation.recent || error === RECENT_SIGN_IN_MESSAGE),
+    confirmation.kind === "recentSignIn" && (!confirmation.recent || refusedForSignIn),
   );
 
   const ready = $derived(
@@ -101,7 +105,7 @@
     if (!ready || pending) e.preventDefault();
   }
 
-  // Neither effect reads what it writes.
+  // None of these effects reads what it writes.
   $effect(() => {
     if (!open) {
       typed = "";
@@ -110,6 +114,9 @@
   });
   $effect(() => {
     if (error) password = "";
+  });
+  $effect(() => {
+    if (error === RECENT_SIGN_IN_MESSAGE) refusedForSignIn = true;
   });
 
   const INPUT =

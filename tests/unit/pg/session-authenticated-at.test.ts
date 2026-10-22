@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import { sessions } from "../../../src/lib/server/db/schema";
 
 // A session's sign-in time travels through Lucia's real Drizzle adapter: the
@@ -66,6 +67,15 @@ describe("sessions.authenticated_at", () => {
 
     expect(session).not.toBeNull();
     expect(session?.authenticatedAt).toBeNull();
+  });
+
+  it("declares the column nullable and with no default in schema.ts, which production push applies", () => {
+    // The migration below is what PGlite applies; production applies schema.ts
+    // through drizzle-kit push. Pin both, or a .defaultNow() added here without
+    // regenerating would pass the suite and backfill every live session as fresh.
+    const column = getTableConfig(sessions).columns.find((c) => c.name === "authenticated_at");
+    expect(column).toBeDefined();
+    expect([column!.notNull, column!.hasDefault]).toEqual([false, false]);
   });
 
   it("adds the column nullable and with no default, so existing sessions stay not-recent", async () => {

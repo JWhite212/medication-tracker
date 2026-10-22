@@ -74,7 +74,7 @@
 
 - [ ] **Step 7: Run tests**
       Run: `npx vitest run tests/unit/pg/session-authenticated-at.test.ts tests/unit/auth-oauth-callback.test.ts tests/unit/auth-2fa-action.test.ts tests/unit/api/`
-      Expected: PASS. Mutation-prove: drop `?? null` → the null case fails; add `.defaultNow()` → the default case fails. Restore.
+      Expected: PASS. Mutation-prove: add `DEFAULT now()` to the migration → the information_schema case fails; add `.defaultNow()` to `schema.ts` alone → a `getTableConfig(sessions)` case fails (production applies `schema.ts` via push, so both are pinned; added after review). Restore. (As built, `?? null` on the read proved not load-bearing — Drizzle yields null — and was dropped.)
 
 - [ ] **Step 8: Commit**
       `git add src/lib/server/db/schema.ts drizzle/ src/lib/server/auth/lucia.ts src/routes tests/unit` (only the files above) — `feat(auth): stamp every session with the time its holder signed in`.

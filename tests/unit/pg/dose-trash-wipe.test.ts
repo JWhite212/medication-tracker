@@ -25,8 +25,8 @@ vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock)
 // Account deletion re-checks the password and ends the sessions before its
 // one DELETE. Neither is what this file tests, so both succeed. The seeded
 // `u1` has no password, so `checkDestructiveGuard` passes on the typed word
-// alone and the mocked `confirmReauth` is never reached; that also runs the
-// passwordless path on real Postgres.
+// and the session's recent sign-in, and the mocked `confirmReauth` is never
+// reached; that also runs the passwordless path on real Postgres.
 vi.mock("$lib/server/auth/reauth", () => ({
   confirmReauth: async () => ({ ok: true }),
   reauthMessage: () => "Incorrect password.",

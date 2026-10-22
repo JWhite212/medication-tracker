@@ -164,9 +164,11 @@ export function signedInRecently(authenticatedAt: Date | null, now: Date): boole
 ```
 
 Strictly less than. Exactly 10:00 after sign-in is **not** recent. A
-timestamp slightly in the future (clock drift between serverless instances)
-counts as recent: only the server writes this column, so a future value is
-drift, not an attack.
+timestamp up to one minute in the future (clock drift between serverless
+instances) counts as recent: only the server writes this column, so a small
+future value is drift, not an attack. Anything further ahead is **not**
+recent (added after review): it can only be a mis-stamp, such as a caller
+passing `expiresAt`, which would otherwise read as recent for 30 days.
 
 ### 4. The guard
 
@@ -401,8 +403,13 @@ round-trip through Lucia's real adapter, so:
 - Preview deployments skip push. A preview whose `DATABASE_URL` lacks the
   column will 500 for signed-in users until production push has run. Say so
   in the PR.
-- Rolling back the code after push is safe: old code neither selects nor
-  writes the nullable column.
+- Rolling back with Vercel's **Instant Rollback** (no rebuild) is safe at
+  runtime (old code neither selects nor writes the nullable column), but it returns password-less accounts to word-only deletion until
+  roll-forward; sessions created meanwhile have NULL and fail closed again
+  afterwards. A revert-and-**rebuild**, or a hotfix cut from a branch without
+  this change, is not a clean rollback: production push would plan dropping a
+  column from a non-empty `sessions` table, which needs approval, so the build
+  aborts. Roll forward instead.
 - Every password-less user signs in again once, the first time they delete
   after deploy. Intended.
 
@@ -424,7 +431,8 @@ round-trip through Lucia's real adapter, so:
   under `drizzle-kit push`.
 - `DatabaseSessionAttributes.authenticatedAt` required, so the compiler finds
   every session creation; API sessions stamped too.
-- Strict `<` at the boundary; a future timestamp counts as recent.
+- Strict `<` at the boundary; a timestamp up to a minute in the future counts
+  as recent, further ahead does not.
 - The refusal is recognised by a shared message constant, not a new failure
   field, to keep `actionErrorMessage` the single reader.
 - Exact-match allowlist of three paths instead of general `returnTo` support.

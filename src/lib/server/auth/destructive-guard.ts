@@ -40,16 +40,22 @@ export function signedInFrom(locals: App.Locals): SignedIn {
   return { userId: locals.user!.id, authenticatedAt: locals.session?.authenticatedAt ?? null };
 }
 
+/** How far ahead of this instance's clock a sign-in stamp may be and still count. */
+const CLOCK_DRIFT_MS = 60 * 1000;
+
 /**
  * Whether a session's sign-in is recent enough for a password-less account
  * to delete. Null (every session created before `authenticated_at` existed)
  * is never recent. Strictly less than the window, so exactly ten minutes is
- * too old. A stamp a little in the future counts as recent: only the server
- * writes it, so that is drift between instances' clocks, not an attack.
+ * too old. A stamp up to a minute in the future counts as recent: only the
+ * server writes it, so that is drift between instances' clocks. Further
+ * ahead can only be a mis-stamp (a caller passing `expiresAt`, say), which
+ * would otherwise read as recent for weeks, so it does not count.
  */
 export function signedInRecently(authenticatedAt: Date | null, now: Date): boolean {
   if (authenticatedAt === null) return false;
-  return now.getTime() - authenticatedAt.getTime() < RECENT_SIGN_IN_WINDOW_MS;
+  const age = now.getTime() - authenticatedAt.getTime();
+  return age >= -CLOCK_DRIFT_MS && age < RECENT_SIGN_IN_WINDOW_MS;
 }
 
 /**

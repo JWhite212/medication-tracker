@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "./helpers/fake-db";
 import { users, oauthAccounts } from "$lib/server/db/schema";
 import { verifyPreAuthToken } from "$lib/server/api/preauth";
+import { stampedSince } from "./helpers/session-stamp";
 
 // Exercises the OAuth callback's post-verification branch: an existing
 // oauth_accounts link must route a 2FA-enabled user through the same
@@ -86,9 +87,13 @@ const baseUser = {
   emailVerified: true,
 };
 
+/** When this test began: a sign-in's stamp must fall after it. */
+let testStart = 0;
+
 beforeEach(() => {
   fakeDb.reset();
   createSession.mockClear();
+  testStart = Date.now();
   vi.stubGlobal("fetch", githubFetchStub());
 });
 
@@ -121,7 +126,7 @@ describe("GET /auth/callback/[provider] — existing linked account", () => {
 
     await expect(call(cookies)).rejects.toMatchObject({ status: 302, location: "/dashboard" });
 
-    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: expect.any(Date) });
+    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: stampedSince(testStart) });
     expect(cookies.set).toHaveBeenCalledWith("auth_session", "sess-1", expect.anything());
     const pendingCall = cookies.set.mock.calls.find((c) => c[0] === "pending_2fa");
     expect(pendingCall).toBeUndefined();

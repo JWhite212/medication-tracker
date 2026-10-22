@@ -40,9 +40,17 @@ export function evaluatedRules(results: AxeResults): Set<string> {
  * SSR markup with Svelte's hydration comments removed. A rendered snippet
  * arrives bracketed by them (`<a …><!---->Clear filters<!----></a>`), so a
  * regex that means "the label is this element's direct text" reads this.
+ * Repeated until nothing changes, because removing one comment can join the
+ * text either side of it into a new `<!--`.
  */
 export function withoutComments(html: string): string {
-  return html.replace(/<!--[\s\S]*?-->/g, "");
+  let prev: string;
+  let next = html;
+  do {
+    prev = next;
+    next = prev.replace(/<!--[\s\S]*?-->/g, "");
+  } while (next !== prev);
+  return next;
 }
 
 /**

@@ -2,6 +2,8 @@
   import { enhance } from "$app/forms";
   import { beforeNavigate } from "$app/navigation";
   import { onDestroy } from "svelte";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
   import { showToast } from "$lib/components/ui/Toast.svelte";
@@ -365,11 +367,13 @@
     <h1 tabindex="-1" class="text-2xl font-bold">Appearance</h1>
   </div>
 
-  <!-- Single polite region for every outcome, outside every form so a
-       control is not re-announced when its own result changes. Mirrors
-       settings/notifications:406-408. The Toast is NOT a polite channel
-       despite its container -- each item carries role="alert" -- so it
-       carries failures only. -->
+  <!-- Single polite region for the per-control "saved" outcome, outside every
+       form so a control is not re-announced when its own result changes.
+       Failures go to a toast instead, and the Toast stack is a polite region
+       of its own (role="status" on its container; its items no longer carry
+       role="alert"), so each outcome is announced once, from one place.
+       appearance-page-ssr.test.ts pins that this is the page's only
+       role="status" and that it precedes the first form. -->
   <p role="status" class="sr-only">{announcement}</p>
 
   <GlassCard>
@@ -405,17 +409,10 @@
           </div>
         </fieldset>
         {#if !hydrated}
-          <button
-            type="submit"
-            class="bg-accent text-accent-fg mt-2 rounded-lg px-4 py-2 text-sm font-medium"
-          >
-            Save accent colour
-          </button>
+          <Button variant="primary" size="sm" type="submit" class="mt-2">Save accent colour</Button>
           {@const feedback = noJsFeedback("accentColor")}
           {#if feedback}
-            <p class="mt-1 text-xs {feedback.ok ? 'text-success' : 'text-danger-ink'}">
-              {feedback.text}
-            </p>
+            <Alert tone={feedback.ok ? "happened" : "wrong"} title={feedback.text} class="mt-2" />
           {/if}
         {/if}
         <p class="text-text-muted mt-1 h-4 text-xs" aria-hidden="true">
@@ -450,17 +447,12 @@
             {/each}
           </select>
           {#if !hydrated}
-            <button
-              type="submit"
-              class="bg-accent text-accent-fg mt-2 rounded-lg px-4 py-2 text-sm font-medium"
+            <Button variant="primary" size="sm" type="submit" class="mt-2"
+              >Save {entry.label.toLowerCase()}</Button
             >
-              Save {entry.label.toLowerCase()}
-            </button>
             {@const feedback = noJsFeedback(entry.key)}
             {#if feedback}
-              <p class="mt-1 text-xs {feedback.ok ? 'text-success' : 'text-danger-ink'}">
-                {feedback.text}
-              </p>
+              <Alert tone={feedback.ok ? "happened" : "wrong"} title={feedback.text} class="mt-2" />
             {/if}
           {/if}
           <p class="text-text-muted mt-1 h-4 text-xs" aria-hidden="true">
@@ -502,17 +494,11 @@
           />
         </div>
         {#if !hydrated}
-          <button
-            type="submit"
-            class="bg-accent text-accent-fg mt-2 rounded-lg px-4 py-2 text-sm font-medium"
+          <Button variant="primary" size="sm" type="submit" class="mt-2">Save motion setting</Button
           >
-            Save motion setting
-          </button>
           {@const feedback = noJsFeedback("reducedMotion")}
           {#if feedback}
-            <p class="mt-1 text-xs {feedback.ok ? 'text-success' : 'text-danger-ink'}">
-              {feedback.text}
-            </p>
+            <Alert tone={feedback.ok ? "happened" : "wrong"} title={feedback.text} class="mt-2" />
           {/if}
         {/if}
         <p class="text-text-muted mt-1 h-4 text-xs" aria-hidden="true">

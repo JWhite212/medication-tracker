@@ -61,6 +61,7 @@ import {
   startSubmit,
   type DoseActionFormProps,
 } from "./helpers/dose-action-form-harness";
+import { evaluatedRules, runAxe } from "./helpers/axe-ssr";
 import { accessibleName } from "./helpers/dom-names";
 
 const NOW = new Date("2026-05-01T13:00:00.000Z");
@@ -164,7 +165,28 @@ describe("DoseActionForm markup", () => {
     expect([...chip.classList]).toEqual(expect.arrayContaining(["h-11", "rounded-full"]));
     destroy?.();
     const danger = setup({ props: { variant: "danger" } }).button;
-    expect([...danger.classList]).toEqual(expect.arrayContaining(["min-h-11", "text-danger-ink"]));
+    // Removing a dose is undoable (the Undo offer and the trash), so the one
+    // `danger` caller, the edit dialog's Remove this dose, is neutral.
+    expect([...danger.classList]).toEqual(
+      expect.arrayContaining(["min-h-11", "text-text-secondary"]),
+    );
+    expect(danger.className).not.toMatch(/danger/);
+  });
+
+  it("keeps the neutral danger variant a named button: axe's button-name and aria-allowed-attr", async () => {
+    // This file mounts the form for real, so axe reads the live document;
+    // axe yields on timers, which the suite's fake clock would never fire.
+    const { lock, button } = setup({ props: { variant: "danger", label: "Remove this dose" } });
+    // Held, so the button carries aria-disabled and aria-allowed-attr has a candidate.
+    lock.acquire();
+    flushSync();
+    vi.useRealTimers();
+    const rules = ["button-name", "aria-allowed-attr"];
+    const results = await runAxe(document, rules);
+    const offenders = results.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.html}`));
+    expect(offenders, offenders.join("\n")).toEqual([]);
+    for (const rule of rules) expect(evaluatedRules(results).has(rule), rule).toBe(true);
+    expect(accessibleName(button)).toContain("Remove this dose");
   });
 
   it("ignores a held Enter: the repeat is defaultPrevented, the first press is not", () => {

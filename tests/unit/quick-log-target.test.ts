@@ -203,4 +203,22 @@ describe("KeyboardShortcuts guards", () => {
     press("?");
     expect(overlay()).toBeNull();
   });
+
+  it("opens with focus on a type=button Close whose icon is hidden, which closes it", async () => {
+    mountWithChip();
+    press("?");
+    await tick();
+    await tick();
+    const overlay = () => document.querySelector('[aria-label="Keyboard shortcuts"]');
+    const close = overlay()!.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
+    expect(document.activeElement).toBe(close);
+    expect(close.getAttribute("type")).toBe("button");
+    expect(close.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect([...close.classList]).toEqual(
+      expect.arrayContaining(["size-9", "focus-visible:outline-accent-ink"]),
+    );
+    close.click();
+    flushSync();
+    expect(overlay()).toBeNull();
+  });
 });

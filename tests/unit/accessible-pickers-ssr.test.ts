@@ -27,7 +27,9 @@ import MedicationForm from "../../src/lib/components/MedicationForm.svelte";
 import { PRESET_COLOURS } from "$lib/medications/medication-style-options";
 import { CUSTOM_COLOUR_NAME, PRESET_COLOUR_NAMES } from "$lib/medications/medication-colour-names";
 import { PATTERN_OPTIONS } from "$lib/utils/medication-style";
+import { toneClass } from "$lib/utils/status-tone";
 import type { SideEffect } from "$lib/types";
+import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
 
 // MedicationForm's `use:enhance` is SvelteKit client runtime, unreachable on
 // the server and not what these assertions are about.
@@ -365,7 +367,8 @@ describe("SideEffectPicker", () => {
     expect(chip, "no Remove Rash button").not.toBeNull();
     // It removes rather than toggles, so it must not claim a pressed state.
     expect(chip!.hasAttribute("aria-pressed")).toBe(false);
-    const glyph = chip!.querySelector("span");
+    // The name sits in its own span (it truncates); the × is the last child.
+    const glyph = chip!.lastElementChild;
     expect(glyph?.textContent).toBe("×");
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
 
@@ -390,5 +393,59 @@ describe("SideEffectPicker", () => {
       expect(button.classList.contains("border-border-strong"), button.outerHTML).toBe(true);
       expect(button.classList.contains("border-glass-border"), button.outerHTML).toBe(false);
     }
+  });
+  const graded = renderSideEffects([
+    { name: "Nausea", severity: "mild" },
+    { name: "Rash", severity: "moderate" },
+    { name: "Headache", severity: "severe" },
+  ]);
+  const pressedFor = (name: string) =>
+    graded.querySelector<HTMLButtonElement>(
+      `button[aria-label$="severity for ${name}"][aria-pressed="true"]`,
+    )!;
+
+  it("colours a chosen severity by the status table: mild and moderate neutral, severe red", () => {
+    const neutral = toneClass("neutral", "chip").split(" ");
+    expect(pressedFor("Nausea").textContent!.trim()).toBe("Mild");
+    expect([...pressedFor("Nausea").classList]).toEqual(expect.arrayContaining(neutral));
+    expect(pressedFor("Rash").textContent!.trim()).toBe("Mod");
+    expect([...pressedFor("Rash").classList]).toEqual(expect.arrayContaining(neutral));
+    expect(pressedFor("Headache").textContent!.trim()).toBe("Severe");
+    expect([...pressedFor("Headache").classList]).toEqual(
+      expect.arrayContaining(toneClass("wrong", "chip").split(" ")),
+    );
+    // Moderate used to be amber. Nothing in the picker is amber now.
+    expect(graded.body.innerHTML).not.toMatch(/\b(?:text|bg|border)-warning\b/);
+  });
+
+  it("keeps an unchosen severity the chosen one's width: a transparent border, no status colour", () => {
+    const unpressed = [
+      ...graded.querySelectorAll('button[aria-label*="severity for"][aria-pressed="false"]'),
+    ];
+    expect(unpressed).toHaveLength(6);
+    for (const button of unpressed) {
+      expect([...button.classList]).toEqual(
+        expect.arrayContaining(["border", "border-transparent"]),
+      );
+      expect(button.className, button.outerHTML).not.toMatch(/warning|danger|success/);
+    }
+  });
+
+  it("passes axe: button-name, label, aria-allowed-attr", async () => {
+    const html = render(SideEffectPicker, {
+      props: {
+        value: [
+          { name: "Nausea", severity: "mild" },
+          { name: "Rash", severity: "moderate" },
+          { name: "Headache", severity: "severe" },
+        ],
+        onchange: () => {},
+      },
+    }).body;
+    const rules = ["button-name", "label", "aria-allowed-attr"];
+    const results = await runAxe(ssrDocument(html), rules);
+    const offenders = results.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.html}`));
+    expect(offenders, offenders.join("\n")).toEqual([]);
+    for (const rule of rules) expect(evaluatedRules(results).has(rule), rule).toBe(true);
   });
 });

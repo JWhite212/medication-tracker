@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Button from "$lib/components/ui/Button.svelte";
+  import Toggle from "$lib/components/ui/Toggle.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
   import { DAY_LABELS, type ScheduleMode } from "$lib/medications/medication-form-state";
   import type { FormErrors } from "$lib/medications/medication-form-errors";
@@ -46,40 +48,16 @@
       text="Interval: every N hours. Fixed time: at one or more specific times of day. As needed (PRN): only when required, no reminders."
     />
   </span>
-  <div class="flex gap-2" role="group" aria-label="Schedule">
-    <button
-      type="button"
-      onclick={() => (mode = "interval")}
-      aria-pressed={mode === "interval"}
-      class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
-      'interval'
-        ? 'border-accent-ink bg-accent/15 text-accent-ink'
-        : 'border-glass-border text-text-secondary hover:bg-surface-overlay'}"
-    >
+  <div class="flex flex-wrap gap-2" role="group" aria-label="Schedule">
+    <Toggle pressed={mode === "interval"} onclick={() => (mode = "interval")} class="flex-1">
       Interval
-    </button>
-    <button
-      type="button"
-      onclick={() => (mode = "fixed_time")}
-      aria-pressed={mode === "fixed_time"}
-      class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
-      'fixed_time'
-        ? 'border-accent-ink bg-accent/15 text-accent-ink'
-        : 'border-glass-border text-text-secondary hover:bg-surface-overlay'}"
-    >
+    </Toggle>
+    <Toggle pressed={mode === "fixed_time"} onclick={() => (mode = "fixed_time")} class="flex-1">
       Fixed time
-    </button>
-    <button
-      type="button"
-      onclick={() => (mode = "prn")}
-      aria-pressed={mode === "prn"}
-      class="flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors {mode ===
-      'prn'
-        ? 'border-accent-ink bg-accent/15 text-accent-ink'
-        : 'border-glass-border text-text-secondary hover:bg-surface-overlay'}"
-    >
+    </Toggle>
+    <Toggle pressed={mode === "prn"} onclick={() => (mode = "prn")} class="flex-1">
       As needed (PRN)
-    </button>
+    </Toggle>
   </div>
 </div>
 
@@ -131,25 +109,18 @@
               class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink flex-1 rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
               aria-label="Time of day {idx + 1}"
             />
-            <button
-              type="button"
-              onclick={() => removeFixedTime(idx)}
+            <!-- Secondary, not red: removing a schedule row is undone by adding it
+                 again. It keeps its visible word rather than an icon. -->
+            <Button
+              size="sm"
               disabled={fixedTimes.length <= 1}
-              class="border-glass-border text-text-secondary hover:text-danger-ink hover:border-danger-ink rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Remove this time"
+              onclick={() => removeFixedTime(idx)}>Remove</Button
             >
-              Remove
-            </button>
           </div>
         {/each}
       </div>
-      <button
-        type="button"
-        onclick={addFixedTime}
-        class="border-glass-border text-text-secondary hover:bg-surface-overlay mt-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
-      >
-        + Add time
-      </button>
+      <Button size="sm" class="mt-2" onclick={addFixedTime}>+ Add time</Button>
     </div>
 
     <div>
@@ -162,18 +133,9 @@
       </span>
       <div class="flex flex-wrap gap-2">
         {#each DAY_LABELS as { value, short }}
-          <button
-            type="button"
-            onclick={() => toggleDay(value)}
-            aria-pressed={daysOfWeek.includes(value)}
-            class="rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors {daysOfWeek.includes(
-              value,
-            )
-              ? 'border-accent-ink bg-accent/15 text-accent-ink'
-              : 'border-glass-border text-text-secondary hover:bg-surface-overlay'}"
-          >
+          <Toggle pressed={daysOfWeek.includes(value)} onclick={() => toggleDay(value)}>
             {short}
-          </button>
+          </Toggle>
         {/each}
       </div>
     </div>

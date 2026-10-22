@@ -9,8 +9,9 @@ import { rateLimitedResponse } from "$lib/server/api/rate-limit-response";
 /**
  * Mint a short-lived re-authentication token for a destructive command.
  *
- * The browser has always required a password before wiping dose history —
- * `settings/privacy` prompts for one and runs it through `confirmReauth`.
+ * The browser doors guard their permanent deletions with a typed word for
+ * every account, plus the password where the account has one
+ * (`checkDestructiveGuard`, run by `settings/privacy` among others).
  * `/api/v1/commands` required nothing at all, so a stolen bearer token was
  * sufficient to irreversibly delete a user's entire dose log through the
  * same code path the web UI guards. Two doors, one destructive action, one
@@ -43,7 +44,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
   // An OAuth-only account has no password to confirm, so `confirmReauth`
   // cannot mint for it and the destructive commands stay closed at this
-  // door. That is the same position the browser is in for those accounts on
-  // the privacy page, which also has no alternative confirmation there.
+  // door. The browser differs, deliberately (decided 2026-10-16): it lets an
+  // account with no password delete on the typed word alone, while this door
+  // keeps requiring a password-minted token and takes no word. So an
+  // OAuth-only account cannot wipe through the API, and a stolen bearer
+  // token alone never can.
   return json({ reauthToken: reauth.token, expiresInMs: 5 * 60 * 1000 });
 };

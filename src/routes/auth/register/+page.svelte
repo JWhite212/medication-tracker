@@ -3,6 +3,8 @@
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
   import heroImage from "$lib/assets/landing-hero-phone.webp";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import { ariaDescribedBy } from "$lib/utils/form-errors";
 
   let { form } = $props();
@@ -51,13 +53,7 @@
          never rendered: a throttled sign-up looked like a button that did
          nothing. -->
     {#if errors.form}
-      <div
-        id="form-error"
-        class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
-        role="alert"
-      >
-        {errors.form[0]}
-      </div>
+      <Alert tone="wrong" id="form-error" title={errors.form[0]} class="mb-4" />
     {/if}
 
     <form
@@ -150,13 +146,16 @@
 
       <MedicalDisclaimer variant="compact" />
 
-      <button
+      <Button
+        variant="primary"
         type="submit"
+        block
         disabled={loading}
-        class="bg-accent hover:bg-accent-hover text-accent-fg w-full rounded-lg py-2.5 font-medium transition-colors disabled:opacity-50"
+        pending={loading}
+        pendingLabel="Creating account…"
       >
-        {loading ? "Creating account..." : "Create account"}
-      </button>
+        Create account
+      </Button>
     </form>
 
     <p class="text-text-secondary mt-6 text-center text-sm">

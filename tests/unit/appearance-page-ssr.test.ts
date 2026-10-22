@@ -23,6 +23,9 @@
 import { describe, it, expect } from "vitest";
 import { render } from "svelte/server";
 import Page from "../../src/routes/(app)/settings/appearance/+page.svelte";
+import { toneClass } from "../../src/lib/utils/status-tone";
+import { alertTitled, expectClasses } from "./helpers/alert-dom";
+import { expectAxeClean, ssrDocument } from "./helpers/axe-ssr";
 
 const preferences = {
   userId: "u1",
@@ -138,6 +141,12 @@ describe("appearance page SSR (no-JS path)", () => {
     // $effect does not run during SSR, so `hydrated` is false and the
     // buttons must be present for a browser with no JS.
     expect(body.match(/type="submit"/g) ?? []).toHaveLength(6);
+    // Each is a 36px primary Button, not an accent box sized by padding.
+    const submits = [
+      ...ssrDocument(body).querySelectorAll<HTMLButtonElement>('button[type="submit"]'),
+    ];
+    expect(submits).toHaveLength(6);
+    for (const submit of submits) expectClasses(submit, "h-9 bg-accent text-accent-fg");
   });
 
   it("gives the accent group a real label and drops the orphaned one", () => {
@@ -147,8 +156,11 @@ describe("appearance page SSR (no-JS path)", () => {
   });
 
   it("renders exactly one polite live region, outside every form", () => {
-    expect(body.match(/role="status"/g) ?? []).toHaveLength(1);
-    expect(body.indexOf('role="status"')).toBeLessThan(body.indexOf("<form"));
+    // Over the feedback renders too: an Alert must not add a second region.
+    for (const html of [body, successBody, validationErrorBody, rateLimitedBody]) {
+      expect(html.match(/role="status"/g) ?? []).toHaveLength(1);
+      expect(html.indexOf('role="status"')).toBeLessThan(html.indexOf("<form"));
+    }
   });
 
   it("no longer renders the shared success banner", () => {
@@ -159,6 +171,11 @@ describe("appearance page SSR (no-JS path)", () => {
 describe("appearance page SSR (no-JS feedback from the form prop)", () => {
   it("renders success feedback for the control the result belongs to", () => {
     expect(successBody).toContain("Display Density saved.");
+    // Announced by the page's one polite region, so the Alert carries no role.
+    const alert = alertTitled(ssrDocument(successBody), "Display Density saved.")!;
+    expect(alert.getAttribute("role")).toBeNull();
+    expectClasses(alert, toneClass("happened", "alert"));
+    expect(alert.closest('form[action="?/uiDensity"]')).not.toBeNull();
   });
 
   it("does not leak success feedback onto any other control", () => {
@@ -169,12 +186,29 @@ describe("appearance page SSR (no-JS feedback from the form prop)", () => {
 
   it("renders the 400 validation message for the control the result belongs to", () => {
     expect(validationErrorBody).toContain("Invalid enum value.");
+    const alert = alertTitled(ssrDocument(validationErrorBody), "Invalid enum value.")!;
+    expect(alert.getAttribute("role")).toBe("alert");
+    expectClasses(alert, toneClass("wrong", "alert"));
   });
 
   it("renders the formatted 429 message for the control the result belongs to", () => {
     // The action builds this exact sentence server-side
     // (+page.server.ts:52) -- a silent no-JS 429 was the concrete bug.
     expect(rateLimitedBody).toContain("Too many changes. Try again in 30 seconds.");
+    const alert = alertTitled(
+      ssrDocument(rateLimitedBody),
+      "Too many changes. Try again in 30 seconds.",
+    )!;
+    expect(alert.getAttribute("role")).toBe("alert");
+    expectClasses(alert, toneClass("wrong", "alert"));
+  });
+
+  it("passes axe with a refused no-JS save", async () => {
+    await expectAxeClean(ssrDocument(rateLimitedBody), [
+      "button-name",
+      "aria-hidden-focus",
+      "aria-allowed-role",
+    ]);
   });
 });
 

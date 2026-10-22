@@ -1,6 +1,8 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { page } from "$app/state";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
 
   let { form } = $props();
   let loading = $state(false);
@@ -26,13 +28,7 @@
          per-account rate limit, a 429 that someone else holding the password
          can trigger against a code that is correct. -->
     {#if form?.error}
-      <div
-        id="form-error"
-        class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
-        role="alert"
-      >
-        {form.error}
-      </div>
+      <Alert tone="wrong" id="form-error" title={form.error} class="mb-4" />
     {/if}
 
     <form
@@ -63,13 +59,16 @@
           placeholder="000000"
         />
       </div>
-      <button
+      <Button
+        variant="primary"
         type="submit"
+        block
         disabled={loading}
-        class="bg-accent hover:bg-accent-hover text-accent-fg w-full rounded-lg py-2.5 font-medium transition-colors disabled:opacity-50"
+        pending={loading}
+        pendingLabel="Verifying…"
       >
-        {loading ? "Verifying..." : "Verify"}
-      </button>
+        Verify
+      </Button>
     </form>
 
     <p class="text-text-secondary mt-6 text-center text-sm">

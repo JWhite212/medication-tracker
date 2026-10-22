@@ -28,6 +28,8 @@ vi.mock("$app/state", () => ({ page: { data: {} } }));
 vi.mock("$components/ui/Toast.svelte", () => ({ showToast: () => {} }));
 
 import DueCard from "$lib/components/dashboard/DueCard.svelte";
+import StageDueCard from "$lib/components/walkthrough/parts/dashboard/StageDueCard.svelte";
+import { toneClass, toneOf } from "$lib/utils/status-tone";
 import { createDoseWriteLock } from "$lib/components/dose-writes/dose-write-lock.svelte";
 import { dashboardContext } from "./helpers/dashboard-context";
 import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
@@ -250,6 +252,34 @@ describe("DueCard", () => {
     expect(cardItem(renderCard(TODAY_CARD)).classList.contains("border-warning/50")).toBe(false);
     expect(cardItem(renderCard(OVERDUE_CARD)).classList.contains("border-warning/50")).toBe(true);
     expect(cardItem(renderCard(EARLIER_CARD)).classList.contains("border-warning/50")).toBe(true);
+  });
+
+  it("is bordered on the landing page's walkthrough exactly as here", () => {
+    // useMark is a no-op without its context, so no registry is needed.
+    const overdueEdge = toneClass(toneOf("dose-overdue"), "border");
+    const cases: [DueCardData, string][] = [
+      [TODAY_CARD, "border-accent-ink/50"],
+      [OVERDUE_CARD, overdueEdge],
+      [EARLIER_CARD, overdueEdge],
+    ];
+    for (const [card, edge] of cases) {
+      const { body } = render(StageDueCard, {
+        props: {
+          card,
+          now: NOW,
+          todayStart: TODAY_START,
+          tz: TZ,
+          timeFormat: "24h" as const,
+          pending: null,
+        },
+      });
+      const drawn = [...ssrDocument(body).querySelector("main > div")!.classList].sort();
+      // Both draw `bg-glass rounded-xl border p-3 backdrop-blur-xl` plus the edge.
+      expect(drawn, card.key).toEqual(
+        ["bg-glass", "rounded-xl", "border", "p-3", "backdrop-blur-xl", edge].sort(),
+      );
+      expect(drawn, card.key).toEqual([...cardItem(renderCard(card)).classList].sort());
+    }
   });
 
   it("never fades, dashes or tints a row that needs action", () => {

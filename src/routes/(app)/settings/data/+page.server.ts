@@ -1,17 +1,28 @@
 import { error, fail, redirect } from "@sveltejs/kit";
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { users } from "$lib/server/db/schema";
+import { doseLogs, medications, users } from "$lib/server/db/schema";
 import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferences";
 import { dataSchema } from "$lib/utils/validation";
 import { logAudit } from "$lib/server/audit";
 import { lucia } from "$lib/server/auth/lucia";
-import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
+import { accountHasPassword, checkDestructiveGuard } from "$lib/server/auth/destructive-guard";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
-  const prefs = await getOrCreatePreferences(locals.user!.id);
-  return { preferences: prefs };
+  const userId = locals.user!.id;
+  // The counts are what the account-deletion dialog says goes with it.
+  const [prefs, medicationRow, doseRow, hasPassword] = await Promise.all([
+    getOrCreatePreferences(userId),
+    db.select({ value: count() }).from(medications).where(eq(medications.userId, userId)),
+    db.select({ value: count() }).from(doseLogs).where(eq(doseLogs.userId, userId)),
+    accountHasPassword(userId),
+  ]);
+  return {
+    preferences: prefs,
+    counts: { medications: medicationRow[0]?.value ?? 0, doses: doseRow[0]?.value ?? 0 },
+    hasPassword,
+  };
 };
 
 export const actions: Actions = {
@@ -34,18 +45,11 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
     const formData = await request.formData();
-    const password = String(formData.get("password") ?? "");
-
-    if (!password) {
-      return fail(400, {
-        deleteError: "Password is required to delete your account.",
-      });
-    }
-
-    const reauth = await confirmReauth(userId, password, "delete_account");
-    if (!reauth.ok) {
-      return fail(400, { deleteError: reauthMessage(reauth) });
-    }
+    const guard = await checkDestructiveGuard(userId, formData, {
+      word: "DELETE",
+      purpose: "delete_account",
+    });
+    if (!guard.ok) return fail(400, { error: guard.error });
 
     await logAudit(userId, "user", userId, "delete");
     await lucia.invalidateUserSessions(userId);

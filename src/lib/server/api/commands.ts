@@ -137,7 +137,8 @@ const handlers: Record<string, Handler> = {
   // so they take a password proof — obtained from POST /api/v1/auth/reauth
   // and redeemed single-use here. Without it a stolen bearer token was
   // enough to destroy a user's entire dose history through the same code
-  // path `settings/privacy` guards with a password prompt.
+  // path `settings/privacy` guards with a typed word and, where the account
+  // has one, the password.
   wipe_dose_history: async (userId, payload) => {
     await consumeReauth(userId, payload, "wipe_dose_history");
     return wipeDoseHistory(userId);

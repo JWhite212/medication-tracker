@@ -1,14 +1,28 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import DestructiveConfirm from "$lib/components/ui/DestructiveConfirm.svelte";
+  import { createDestructiveDialog } from "$lib/components/ui/destructive-dialog.svelte";
+  import {
+    archivedMedicationsSummary,
+    doseHistorySummary,
+    formatCount,
+  } from "$lib/utils/destructive-confirm";
 
   let { data, form } = $props();
 
-  // Local password values per form. Each form clears its own field
-  // on success.
-  let wipeDosesPassword = $state("");
-  let wipeArchivedPassword = $state("");
+  // Revoke's password field, cleared once its result has landed.
   let revokePassword = $state("");
+
+  // The two wipes are deletions nothing can undo, so each opens the one
+  // confirmation dialog; its form sits after the page container (below).
+  const doseHistory = createDestructiveDialog();
+  const archived = createDestructiveDialog();
+
+  const removedLabel = (n: number, one: string, many: string) =>
+    `Removed ${formatCount(n)} ${n === 1 ? one : many}.`;
 </script>
 
 <svelte:head>
@@ -70,24 +84,9 @@
       Download your dose history as a PDF or CSV, or download the audit log as a CSV.
     </p>
     <div class="flex flex-wrap gap-3">
-      <a
-        href="/api/export?format=pdf"
-        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
-      >
-        Dose history (PDF)
-      </a>
-      <a
-        href="/api/export?format=csv"
-        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
-      >
-        Dose history (CSV)
-      </a>
-      <a
-        href="/api/audit"
-        class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
-      >
-        Audit log (CSV)
-      </a>
+      <Button variant="secondary" href="/api/export?format=pdf">Dose history (PDF)</Button>
+      <Button variant="secondary" href="/api/export?format=csv">Dose history (CSV)</Button>
+      <Button variant="secondary" href="/api/audit">Audit log (CSV)</Button>
     </div>
   </GlassCard>
 
@@ -99,18 +98,21 @@
     <!-- The region is PERSISTENT and the message appears inside it. A live region
          inserted at the same moment as its content is not reliably announced —
          same shape as the one in settings/notifications. use:enhance means there
-         is no navigation, so without this the outcome is silent. -->
+         is no navigation, so without this the outcome is silent. Only what
+         happened goes in it: an error Alert is role="alert", announces itself,
+         and nested in a polite region can be read twice, so it is a sibling. -->
     <div role="status">
       {#if form?.revokeOk}
-        <p class="bg-success/10 text-success mb-3 rounded-lg px-4 py-2 text-sm">
-          Revoked {form.removed} session{form.removed === 1 ? "" : "s"}.
-        </p>
-      {:else if form?.revokeError}
-        <p class="bg-danger/10 text-danger-ink mb-3 rounded-lg px-4 py-2 text-sm">
-          {form.revokeError}
-        </p>
+        <Alert
+          class="mb-3"
+          tone="happened"
+          title={`Revoked ${form.removed} session${form.removed === 1 ? "" : "s"}.`}
+        />
       {/if}
     </div>
+    {#if form?.revokeError}
+      <Alert class="mb-3" tone="wrong" title={form.revokeError} />
+    {/if}
     <form
       method="POST"
       action="?/revokeOtherSessions"
@@ -132,125 +134,118 @@
           class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
         />
       </label>
-      <button
-        type="submit"
-        class="border-warning text-warning hover:bg-warning/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-      >
-        Revoke other sessions
-      </button>
+      <Button variant="secondary" type="submit">Revoke other sessions</Button>
     </form>
   </GlassCard>
 
   <GlassCard>
-    <h2 class="text-warning mb-2 text-lg font-semibold">Danger zone</h2>
+    <!-- Neutral: red stays on the irreversible action inside each dialog. Each
+         control is described by its section's paragraph, so a screen reader
+         that Tabs straight to it still hears what it deletes. -->
+    <h2 class="mb-2 text-lg font-semibold">Danger zone</h2>
 
     <div class="space-y-4">
       <div>
         <h3 class="text-sm font-medium">Delete all dose history</h3>
-        <p class="text-text-secondary mb-2 text-sm">
+        <p id="wipe-doses-description" class="text-text-secondary mb-2 text-sm">
           Removes every dose log permanently. Medications and schedules are kept.
         </p>
         <div role="status">
           {#if form?.wipeDosesOk}
-            <p class="bg-success/10 text-success mb-2 rounded-lg px-4 py-2 text-sm">
-              Removed {form.removed} dose log entr{form.removed === 1 ? "y" : "ies"}.
-            </p>
-          {:else if form?.wipeDosesError}
-            <p class="bg-danger/10 text-danger-ink mb-2 rounded-lg px-4 py-2 text-sm">
-              {form.wipeDosesError}
-            </p>
+            <Alert
+              class="mb-2"
+              tone="happened"
+              title={removedLabel(form.removed, "dose log entry", "dose log entries")}
+            />
           {/if}
         </div>
-        <form
-          method="POST"
-          action="?/wipeDoseHistory"
-          use:enhance={() =>
-            async ({ update }) => {
-              await update();
-              wipeDosesPassword = "";
-            }}
-          class="flex flex-wrap items-end gap-3"
-        >
-          <label class="flex-1">
-            <span class="text-text-muted mb-1 block text-xs">Password</span>
-            <input
-              type="password"
-              name="password"
-              autocomplete="current-password"
-              bind:value={wipeDosesPassword}
-              required
-              class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
-            />
-          </label>
-          <button
-            type="submit"
-            class="border-danger-ink text-danger-ink hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+        {#if data.counts.doseLogs > 0}
+          <Button
+            variant="secondary"
+            aria-describedby="wipe-doses-description"
+            onclick={doseHistory.show}>Delete dose history</Button
           >
-            Delete dose history
-          </button>
-        </form>
+        {:else}
+          <p class="text-text-muted text-sm">{doseHistorySummary({ doses: 0, medications: 0 })}</p>
+        {/if}
       </div>
 
       <div class="border-glass-border border-t pt-4">
         <h3 class="text-sm font-medium">Delete archived medications</h3>
-        <p class="text-text-secondary mb-2 text-sm">
+        <p id="wipe-archived-description" class="text-text-secondary mb-2 text-sm">
           Permanently removes medications you've archived, along with their dose history and
           schedules.
         </p>
         <div role="status">
           {#if form?.wipeArchivedOk}
-            <p class="bg-success/10 text-success mb-2 rounded-lg px-4 py-2 text-sm">
-              Removed {form.removed} archived medication{form.removed === 1 ? "" : "s"}.
-            </p>
-          {:else if form?.wipeArchivedError}
-            <p class="bg-danger/10 text-danger-ink mb-2 rounded-lg px-4 py-2 text-sm">
-              {form.wipeArchivedError}
-            </p>
+            <Alert
+              class="mb-2"
+              tone="happened"
+              title={removedLabel(form.removed, "archived medication", "archived medications")}
+            />
           {/if}
         </div>
-        <form
-          method="POST"
-          action="?/wipeArchivedMedications"
-          use:enhance={() =>
-            async ({ update }) => {
-              await update();
-              wipeArchivedPassword = "";
-            }}
-          class="flex flex-wrap items-end gap-3"
-        >
-          <label class="flex-1">
-            <span class="text-text-muted mb-1 block text-xs">Password</span>
-            <input
-              type="password"
-              name="password"
-              autocomplete="current-password"
-              bind:value={wipeArchivedPassword}
-              required
-              class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
-            />
-          </label>
-          <button
-            type="submit"
-            class="border-danger-ink text-danger-ink hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+        {#if data.counts.archivedMedications > 0}
+          <Button
+            variant="secondary"
+            aria-describedby="wipe-archived-description"
+            onclick={archived.show}>Delete archived medications</Button
           >
-            Delete archived medications
-          </button>
-        </form>
+        {:else}
+          <p class="text-text-muted text-sm">
+            {archivedMedicationsSummary({ medications: 0, doses: 0 })}
+          </p>
+        {/if}
       </div>
 
       <div class="border-glass-border border-t pt-4">
         <h3 class="text-sm font-medium">Delete account</h3>
-        <p class="text-text-secondary mb-2 text-sm">
+        <p id="delete-account-description" class="text-text-secondary mb-2 text-sm">
           Permanently deletes your account and every record of your data. The confirmation form
           lives on the data management page.
         </p>
-        <a
+        <Button
+          variant="secondary"
           href="/settings/data"
-          class="border-danger-ink text-danger-ink hover:bg-danger/10 inline-flex rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
+          aria-describedby="delete-account-description">Go to delete account</Button
         >
-          Go to delete account
-        </a>
       </div>
     </div>
   </GlassCard>
 </div>
+
+<!-- Each dialog renders inside the form it submits, and these forms sit
+     outside every GlassCard: backdrop-blur-xl would make a card the
+     containing block for Modal's fixed scrim, clipping it to the card. -->
+<form method="POST" action="?/wipeDoseHistory" use:enhance={doseHistory.submit}>
+  <DestructiveConfirm
+    open={doseHistory.open}
+    onclose={doseHistory.close}
+    title="Delete dose history?"
+    summary={doseHistorySummary({
+      doses: data.counts.doseLogs,
+      medications: data.counts.doseMedications,
+    })}
+    word="DELETE"
+    hasPassword={data.hasPassword}
+    confirmLabel="Delete dose history"
+    pending={doseHistory.pending}
+    error={doseHistory.error}
+  />
+</form>
+<form method="POST" action="?/wipeArchivedMedications" use:enhance={archived.submit}>
+  <DestructiveConfirm
+    open={archived.open}
+    onclose={archived.close}
+    title="Delete archived medications?"
+    summary={archivedMedicationsSummary({
+      medications: data.counts.archivedMedications,
+      doses: data.counts.archivedDoses,
+    })}
+    word="DELETE"
+    hasPassword={data.hasPassword}
+    confirmLabel="Delete archived medications"
+    pending={archived.pending}
+    error={archived.error}
+  />
+</form>

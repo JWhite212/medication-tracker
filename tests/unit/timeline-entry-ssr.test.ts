@@ -12,13 +12,12 @@
 // interactive and live in tests/unit/timeline-entry-delete.test.ts.
 import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
-import { compile } from "tailwindcss";
 import type { DoseLogWithMedication } from "$lib/types";
+import { toneClass } from "$lib/utils/status-tone";
+import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
+import { compiledRule } from "./helpers/compiled-rule";
+import { accessibleName, textOf } from "./helpers/dom-names";
 
 // The delete form imports `enhance` and the toast store; neither is reachable
 // on the server and neither is what these assertions are about.
@@ -33,12 +32,19 @@ vi.mock("$app/state", () => ({
 }));
 
 const { default: TimelineEntry } = await import("../../src/lib/components/TimelineEntry.svelte");
+// The landing page draws this row without mounting it; DoseEntry is that drawing.
+const { default: DoseEntry } =
+  await import("../../src/lib/components/walkthrough/parts/DoseEntry.svelte");
+const { MEDICATION_BY_ID } = await import("../../src/lib/components/walkthrough/demo-data");
 // × is a dose write, and every dose write reads the (app) layout's lock.
 const { doseWriteContext } = await import("./helpers/dashboard-context");
 
 type Status = DoseLogWithMedication["status"];
 
-function makeDose(status: Status): DoseLogWithMedication {
+function makeDose(
+  status: Status,
+  overrides: Partial<DoseLogWithMedication> = {},
+): DoseLogWithMedication {
   return {
     id: `dose-${status}`,
     userId: "user-1",
@@ -59,21 +65,26 @@ function makeDose(status: Status): DoseLogWithMedication {
       colourSecondary: null,
       pattern: "solid",
     },
+    ...overrides,
   };
 }
 
-function renderRow(status: Status): Document {
-  const { body } = render(TimelineEntry, {
+function renderRowHtml(status: Status, overrides: Partial<DoseLogWithMedication> = {}): string {
+  return render(TimelineEntry, {
     props: {
-      dose: makeDose(status),
+      dose: makeDose(status, overrides),
       timezone: "UTC",
       timeFormat: "24h" as const,
       day: null,
       onedit: () => {},
     },
     context: doseWriteContext(),
-  });
-  return new JSDOM(`<!doctype html><html><body>${body}</body></html>`).window.document;
+  }).body;
+}
+
+function renderRow(status: Status, overrides: Partial<DoseLogWithMedication> = {}): Document {
+  return new JSDOM(`<!doctype html><html><body>${renderRowHtml(status, overrides)}</body></html>`)
+    .window.document;
 }
 
 function tokens(el: Element): string[] {
@@ -128,35 +139,52 @@ describe("a skipped or missed dose row stays legible (WCAG 1.4.3)", () => {
   });
 });
 
-/**
- * Compile a class name against the real src/app.css and return the rule
- * Tailwind generates for it, or null if it generates none. Reading the
- * compiled CSS rather than the class string is the point: an arbitrary
- * variant with a typo is still a perfectly good class name, it just produces
- * no CSS, and a test of the string would pass while the controls never hid.
- */
-const require = createRequire(import.meta.url);
-const APP_CSS = fileURLToPath(new URL("../../src/app.css", import.meta.url));
-async function compiledRule(candidate: string): Promise<string | null> {
-  const compiler = await compile(readFileSync(APP_CSS, "utf8"), {
-    base: dirname(APP_CSS),
-    loadStylesheet: async (id: string) => {
-      if (id !== "tailwindcss") throw new Error(`unexpected @import ${id}`);
-      const path = require.resolve("tailwindcss/index.css");
-      return { path, base: dirname(path), content: readFileSync(path, "utf8") };
-    },
-  });
-  const css = compiler.build([candidate]);
-  const selector = "." + candidate.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`);
-  const start = css.indexOf(`${selector} {`);
-  if (start === -1) return null;
-  let depth = 0;
-  for (let i = css.indexOf("{", start); i < css.length; i++) {
-    if (css[i] === "{") depth++;
-    else if (css[i] === "}" && --depth === 0) return css.slice(start, i + 1);
+describe("the landing page's walkthrough draws this row's time-since and side-effect chip as it does", () => {
+  /** Colour and border tokens: the size utilities (text-xs, text-sm, …) are not paint. */
+  const paint = (el: Element) =>
+    tokens(el)
+      .filter(
+        (t) =>
+          (/^(?:text|bg|border|ring)-/.test(t) && !/^text-(?:xs|sm|base|lg|\d?xl)$/.test(t)) ||
+          t === "border",
+      )
+      .sort();
+  const withoutSrOnly = (el: Element) => {
+    const clone = el.cloneNode(true) as Element;
+    clone.querySelectorAll(".sr-only").forEach((node) => node.remove());
+    return textOf(clone);
+  };
+
+  for (const severity of ["mild", "moderate", "severe"] as const) {
+    it(`matches the real row for ${severity}`, () => {
+      const real = renderRow("taken", { sideEffects: [{ name: "Upset stomach", severity }] });
+      const stage = ssrDocument(
+        render(DoseEntry, {
+          props: {
+            medication: MEDICATION_BY_ID.ibu,
+            time: "14:12",
+            since: "17h 50m ago",
+            sideEffect: { name: "Upset stomach", severity },
+          },
+        }).body,
+      );
+
+      const realSince = real.querySelector("time[datetime]")!.parentElement!;
+      const stageSince = [...stage.querySelectorAll("span")].find(
+        (el) => textOf(el) === "17h 50m ago",
+      )!;
+      expect(paint(realSince), "the real time-since carries paint").not.toEqual([]);
+      expect(paint(stageSince)).toEqual(paint(realSince));
+
+      // `.mt-2.pl-7`, not `.pl-7`: the row's time line is a `.pl-7` too.
+      const realChip = real.querySelector(".mt-2.pl-7 > span")!;
+      const stageChip = stage.querySelector(".mt-2.pl-7 > span")!;
+      expect(paint(stageChip)).toEqual(paint(realChip));
+      expect(withoutSrOnly(stageChip)).toBe(withoutSrOnly(realChip));
+      expect(withoutSrOnly(realChip)).toMatch(/^Upset stomach · (?:Mild|Moderate|Severe)$/);
+    });
   }
-  return null;
-}
+});
 
 const HOVER_MEDIA = /@media \(hover: ?hover\)/;
 
@@ -294,5 +322,97 @@ describe("× before the page is live", () => {
     const x = doc.querySelector('button[aria-label^="Delete dose of"]');
     expect(x?.hasAttribute("aria-expanded")).toBe(false);
     expect(x?.hasAttribute("aria-controls")).toBe(false);
+  });
+});
+
+describe("status and severity chips say what they mean in words, coloured by the status owner", () => {
+  const chipNamed = (doc: Document, name: string) =>
+    [...doc.querySelectorAll('[role="listitem"] span')].find((s) => accessibleName(s) === name);
+  const has = (el: Element, recipe: string) =>
+    expect(tokens(el)).toEqual(expect.arrayContaining(recipe.split(" ")));
+
+  it("draws a skipped dose as a neutral '– Skipped' chip, with the dash hidden from screen readers", () => {
+    const chip = chipNamed(renderRow("skipped"), "Skipped");
+    expect(chip, "no Skipped chip").toBeDefined();
+    expect(textOf(chip!)).toBe("– Skipped");
+    expect(chip!.querySelector('[aria-hidden="true"]')?.textContent).toBe("–");
+    has(chip!, toneClass("neutral", "chip"));
+    expect(tokens(chip!)).not.toContain("uppercase");
+  });
+
+  it("draws a missed dose as a red '✕ Missed' chip", () => {
+    const chip = chipNamed(renderRow("missed"), "Missed");
+    expect(chip, "no Missed chip").toBeDefined();
+    expect(textOf(chip!)).toBe("✕ Missed");
+    expect(chip!.querySelector('[aria-hidden="true"]')?.textContent).toBe("✕");
+    has(chip!, toneClass("wrong", "chip"));
+  });
+
+  it("names each side effect's severity in words: mild and moderate neutral, severe red", () => {
+    const doc = renderRow("taken", {
+      sideEffects: [
+        { name: "Nausea", severity: "mild" },
+        { name: "Dizziness", severity: "moderate" },
+        { name: "Headache", severity: "severe" },
+      ],
+    });
+    const chips = [...doc.querySelectorAll('[role="listitem"] span')].filter((s) =>
+      / · (Mild|Moderate|Severe)$/.test(textOf(s)),
+    );
+    expect(chips.map(textOf)).toEqual([
+      "Nausea · Mild",
+      "Dizziness · Moderate",
+      "Headache · Severe",
+    ]);
+    has(chips[0], toneClass("neutral", "chip"));
+    has(chips[1], toneClass("neutral", "chip"));
+    has(chips[2], toneClass("wrong", "chip"));
+    expect(chips[1].className).not.toMatch(/warning/);
+  });
+
+  // Every write door validates the enum, so only a legacy row or direct SQL
+  // reaches this. It must cost one chip its grade, not the whole /log page.
+  it("draws a stored severity outside the enum as a neutral Mild chip instead of throwing", () => {
+    const doc = renderRow("taken", {
+      sideEffects: [{ name: "Rash", severity: "extreme" as "mild" }],
+    });
+    const chip = [...doc.querySelectorAll('[role="listitem"] span')].find(
+      (s) => textOf(s) === "Rash · Mild",
+    );
+    expect(chip, "no Rash chip").toBeDefined();
+    has(chip!, toneClass("neutral", "chip"));
+  });
+
+  it("prints the relative time since in neutral text, not the accent", () => {
+    const since = renderRow("taken").querySelector('[role="listitem"] time')!.parentElement!;
+    expect(tokens(since)).toContain("text-text-secondary");
+    expect(tokens(since)).not.toContain("text-accent-ink");
+  });
+
+  it("gives × a neutral hover: removing a dose is undoable, so it is not red", () => {
+    const x = renderRow("taken").querySelector('button[aria-label^="Delete dose of"]')!;
+    expect(tokens(x)).toContain("hover:text-text-primary");
+    expect(x.getAttribute("class")).not.toMatch(/danger/);
+  });
+
+  it("passes axe: button-name, aria-required-parent, aria-hidden-focus, aria-prohibited-attr", async () => {
+    const rows = (["taken", "skipped", "missed"] as const).map((status) =>
+      renderRowHtml(status, {
+        sideEffects: [
+          { name: "Nausea", severity: "mild" },
+          { name: "Headache", severity: "severe" },
+        ],
+      }),
+    );
+    const rules = [
+      "button-name",
+      "aria-required-parent",
+      "aria-hidden-focus",
+      "aria-prohibited-attr",
+    ];
+    const results = await runAxe(ssrDocument(`<div role="list">${rows.join("")}</div>`), rules);
+    const offenders = results.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.html}`));
+    expect(offenders, offenders.join("\n")).toEqual([]);
+    for (const rule of rules) expect(evaluatedRules(results).has(rule), rule).toBe(true);
   });
 });

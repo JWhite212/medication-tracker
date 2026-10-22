@@ -15,7 +15,9 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { render } from "svelte/server";
 import LandingPage from "../../src/routes/+page.svelte";
-import { ssrDocument } from "./helpers/axe-ssr";
+import { expectClasses } from "./helpers/alert-dom";
+import { expectAxeClean, ssrDocument } from "./helpers/axe-ssr";
+import { textOf } from "./helpers/dom-names";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -61,5 +63,31 @@ describe("the landing hero", () => {
     const img = heroImage();
     expect(img.getAttribute("src")).toBe("/src/lib/assets/landing-hero-phone.webp");
     expect(img.getAttribute("alt")).toMatch(/Log now/);
+  });
+});
+
+describe("the landing header", () => {
+  const header = () => ssrDocument(render(LandingPage).body).querySelector("header")!;
+  it("signs in through a ghost Button link and starts through a primary one, both 36px", () => {
+    const signIn = header().querySelector('a[href="/auth/login"]')!;
+    expect(textOf(signIn)).toBe("Sign in");
+    expectClasses(signIn, "h-9 text-text-secondary");
+    const start = header().querySelector('a[href="/auth/register"]')!;
+    expect(textOf(start)).toBe("Get Started");
+    expectClasses(start, "h-9 bg-accent text-accent-fg");
+  });
+  // Button never wraps its label, so on a narrow phone the one-row header
+  // squeezed the wordmark under Sign in (system font, 320px) or scrolled
+  // sideways (a wider font). The fix is the container's alone; the Buttons
+  // keep their size. Class strength only: the widths are checked at 360px and
+  // 320px in the preview pass.
+  it("wraps rather than scrolling sideways on a narrow phone, with the buttons kept right", () => {
+    expectClasses(header(), "flex flex-wrap justify-between gap-y-3");
+    const group = header().querySelector('a[href="/auth/login"]')!.parentElement!;
+    expectClasses(group, "ml-auto flex gap-2 sm:gap-3");
+    expect(group.classList.contains("gap-3")).toBe(false);
+  });
+  it("passes axe link-name", async () => {
+    await expectAxeClean(ssrDocument(render(LandingPage).body), ["link-name"]);
   });
 });

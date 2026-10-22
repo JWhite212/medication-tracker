@@ -2,6 +2,7 @@
   import type { SessionUser } from "$lib/types";
   import { page } from "$app/stores";
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
+  import IconButton from "$lib/components/ui/IconButton.svelte";
 
   let {
     user,
@@ -76,12 +77,7 @@
       <span class="text-lg font-semibold">MedTracker</span>
     </a>
     {#if mobile && ondismiss}
-      <button
-        type="button"
-        onclick={ondismiss}
-        class="text-text-secondary hover:bg-surface-overlay hover:text-text-primary mr-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors"
-        aria-label="Close menu"
-      >
+      <IconButton label="Close menu" class="mr-3 shrink-0" onclick={ondismiss}>
         <svg
           class="h-5 w-5"
           fill="none"
@@ -92,7 +88,7 @@
         >
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
         </svg>
-      </button>
+      </IconButton>
     {/if}
   </div>
   <nav class="flex-1 space-y-1 p-3">

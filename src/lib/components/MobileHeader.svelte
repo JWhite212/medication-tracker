@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SessionUser } from "$lib/types";
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
+  import IconButton from "$lib/components/ui/IconButton.svelte";
 
   let {
     user,
@@ -26,19 +27,24 @@
        overlay it names is unmounted while closed and an IDREF must point at
        an element that exists. aria-expanded="false" already tells AT there is
        nothing to go to in that state. -->
-  <button
-    bind:this={toggle}
-    type="button"
+  <IconButton
+    label="Toggle menu"
+    bind:ref={toggle}
     onclick={ontoggle}
-    class="text-text-secondary hover:bg-surface-overlay hover:text-text-primary flex h-9 w-9 items-center justify-center rounded-lg transition-colors"
-    aria-label="Toggle menu"
     aria-expanded={menuOpen}
     aria-controls={menuOpen ? menuId : undefined}
   >
-    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <svg
+      aria-hidden="true"
+      class="h-5 w-5"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      stroke-width="2"
+    >
       <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
     </svg>
-  </button>
+  </IconButton>
 
   <a href="/dashboard" class="flex items-center gap-2 text-lg font-semibold">
     <img src={appIcon} alt="" width="28" height="28" class="h-7 w-7 rounded-md" />

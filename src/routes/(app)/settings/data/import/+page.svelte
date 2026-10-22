@@ -1,6 +1,14 @@
 <script lang="ts">
+  import { tick } from "svelte";
+  import type { ActionResult } from "@sveltejs/kit";
   import { enhance } from "$app/forms";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import DestructiveConfirm from "$lib/components/ui/DestructiveConfirm.svelte";
+  import { createDestructiveDialog } from "$lib/components/ui/destructive-dialog.svelte";
+  import { focusIfLost, pageHeading } from "$components/dose-writes/focus-after";
+  import { replaceSummary } from "$lib/utils/destructive-confirm";
 
   let { data, form } = $props();
 
@@ -11,8 +19,6 @@
   // never overwrites anything — so they are opt-in, not opt-out.
   let sectionPreferences = $state(false);
   let sectionProfile = $state(false);
-  let password = $state("");
-  let confirmPhrase = $state("");
   let submitting = $state(false);
   let fileName = $state("");
   let fileSize = $state(0);
@@ -67,22 +73,46 @@
     mapping = { ...mapping, ...Object.fromEntries(missing.map((name) => [name, "skip"])) };
   });
 
-  const replaceConfirmed = $derived(
-    mode !== "replace" || (data.hasPassword ? password.length > 0 : confirmPhrase === "REPLACE"),
-  );
-  const canCommit = $derived(
-    preview !== null && !preview.empty && !needsMapping && replaceConfirmed && !submitting,
-  );
+  // Both the merge submit and the replace dialog's entry use it: the
+  // dialog cannot open without a preview that matches what would be sent.
+  const canCommit = $derived(preview !== null && !preview.empty && !needsMapping && !submitting);
 
   const maxMb = $derived(Math.round(data.maxBytes / 1024 / 1024));
 
+  // Replace mode deletes everything first, so it commits from the one
+  // confirmation dialog (DestructiveConfirm), which sits inside this form.
+  const replaceDialog = createDestructiveDialog();
+
   function submitHandler() {
     const signatureAtSubmit = currentSignature;
+    // The dialog is modal: while it is open its submit is the only one reachable.
+    const fromDialog = replaceDialog.open;
     submitting = true;
-    return async ({ update }: { update: (opts?: { reset?: boolean }) => Promise<void> }) => {
-      await update({ reset: false });
-      previewSignature = signatureAtSubmit;
-      submitting = false;
+    if (fromDialog) replaceDialog.begin();
+    return async ({
+      result,
+      update,
+    }: {
+      result: ActionResult;
+      update: (opts?: { reset?: boolean }) => Promise<void>;
+    }) => {
+      // A refusal stays in the dialog with the server's words; nothing was written.
+      if (fromDialog && replaceDialog.settle(result)) {
+        submitting = false;
+        return;
+      }
+      try {
+        await update({ reset: false });
+      } finally {
+        if (fromDialog) replaceDialog.finish();
+        previewSignature = signatureAtSubmit;
+        submitting = false;
+      }
+      // A successful commit replaces the form, and the control that had focus with it.
+      if (result.type === "success") {
+        await tick();
+        focusIfLost(pageHeading);
+      }
     };
   }
 </script>
@@ -100,45 +130,71 @@
     <h1 tabindex="-1" class="text-2xl font-bold">Import Data</h1>
   </div>
 
+  <!-- PERSISTENT, and outside the form: a successful commit replaces the
+       form with the outcome, and a live region inserted with its content is
+       not reliably announced. Only what happened goes in it. -->
+  <div id="import-outcome" role="status">
+    {#if imported}
+      <Alert tone="happened" title="Import complete">
+        <ul class="space-y-1">
+          <li>{imported.medicationsCreated} medications added</li>
+          {#if imported.medicationsReused > 0}
+            <li>{imported.medicationsReused} already existed and were left untouched</li>
+          {/if}
+          <li>{imported.dosesCreated} dose entries added</li>
+          {#if imported.dosesSkipped > 0}
+            <li>{imported.dosesSkipped} dose entries skipped as duplicates</li>
+          {/if}
+          {#if imported.inventoryEventsCreated > 0}
+            <li>{imported.inventoryEventsCreated} inventory events restored</li>
+          {/if}
+          {#if imported.medicationsDeleted > 0}
+            <!-- Neutral: it reports what already happened, inside a happened Alert. -->
+            <li>
+              {imported.medicationsDeleted} medications and {imported.dosesDeleted} dose entries were
+              replaced
+            </li>
+          {/if}
+        </ul>
+      </Alert>
+    {/if}
+  </div>
+
   {#if imported}
-    <GlassCard>
-      <h2 class="text-success mb-2 text-lg font-semibold">Import complete</h2>
-      <ul class="text-text-secondary space-y-1 text-sm">
-        <li>{imported.medicationsCreated} medications added</li>
-        {#if imported.medicationsReused > 0}
-          <li>{imported.medicationsReused} already existed and were left untouched</li>
-        {/if}
-        <li>{imported.dosesCreated} dose entries added</li>
-        {#if imported.dosesSkipped > 0}
-          <li>{imported.dosesSkipped} dose entries skipped as duplicates</li>
-        {/if}
-        {#if imported.inventoryEventsCreated > 0}
-          <li>{imported.inventoryEventsCreated} inventory events restored</li>
-        {/if}
-        {#if imported.medicationsDeleted > 0}
-          <li class="text-danger-ink">
-            {imported.medicationsDeleted} medications and {imported.dosesDeleted} dose entries were replaced
-          </li>
-        {/if}
-      </ul>
-      <div class="mt-4 flex gap-3">
-        <a
-          href="/medications"
-          class="bg-accent text-accent-fg rounded-lg px-4 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-        >
-          View medications
-        </a>
-        <a
-          href="/settings/data"
-          class="border-glass-border hover:bg-surface-overlay rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors"
-        >
-          Back to Data
-        </a>
-      </div>
-    </GlassCard>
+    <div class="flex gap-3">
+      <Button variant="primary" href="/medications">View medications</Button>
+      <Button variant="ghost" href="/settings/data">Back to Data</Button>
+    </div>
   {:else}
     <form method="POST" enctype="multipart/form-data" use:enhance={submitHandler} class="space-y-6">
       <input type="hidden" name="mapping" value={mappingJson} />
+
+      <!-- Here, before the first GlassCard, on purpose. Outside every card,
+           because backdrop-blur-xl would make a card the containing block for
+           Modal's fixed scrim. And first in the form, so while it is open its
+           danger button is the form's default button: Enter in the word field
+           submits the dialog (guarded), not "Preview again". The `contents`
+           wrapper keeps the scrim from being a direct child of this
+           space-y-6 form, whose margin-block-end would otherwise shorten the
+           fixed inset-0 scrim and leave a clickable strip of page beneath it;
+           it draws no box, so it adds no gap while the dialog is closed. -->
+      <div class="contents">
+        <DestructiveConfirm
+          open={replaceDialog.open}
+          onclose={replaceDialog.close}
+          title="Replace all your data?"
+          summary={replaceSummary({
+            medications: preview?.summary.medicationsDeleted ?? 0,
+            doses: preview?.summary.dosesDeleted ?? 0,
+          })}
+          word="REPLACE"
+          hasPassword={data.hasPassword}
+          confirmLabel="Replace all data"
+          formaction="?/commit"
+          pending={replaceDialog.pending}
+          error={replaceDialog.error}
+        />
+      </div>
 
       <GlassCard>
         <h2 class="mb-1 text-lg font-semibold">Choose a file</h2>
@@ -185,10 +241,12 @@
             </span>
           </label>
 
-          <label class="border-danger-ink/40 flex gap-3 rounded-lg border p-3">
+          <!-- Neutral, like Merge: choosing it is reversible. The step that can't
+               be undone is the confirmation dialog's danger button. -->
+          <label class="border-glass-border flex gap-3 rounded-lg border p-3">
             <input type="radio" name="mode" value="replace" bind:group={mode} class="mt-1" />
             <span>
-              <span class="text-danger-ink block text-sm font-medium">Replace everything</span>
+              <span class="block text-sm font-medium">Replace everything</span>
               <span class="text-text-muted block text-sm">
                 Deletes all current medications, schedules, doses and inventory history, then
                 restores the file. Cannot be undone.
@@ -196,36 +254,6 @@
             </span>
           </label>
         </div>
-
-        {#if mode === "replace"}
-          <div class="border-danger-ink/40 bg-danger/5 mt-4 rounded-lg border p-3">
-            {#if data.hasPassword}
-              <label for="password" class="mb-1 block text-sm font-medium"
-                >Confirm your password</label
-              >
-              <input
-                id="password"
-                type="password"
-                name="password"
-                bind:value={password}
-                autocomplete="current-password"
-                class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
-              />
-            {:else}
-              <label for="confirmPhrase" class="mb-1 block text-sm font-medium">
-                Type <strong>REPLACE</strong> to confirm
-              </label>
-              <input
-                id="confirmPhrase"
-                type="text"
-                name="confirmPhrase"
-                bind:value={confirmPhrase}
-                autocomplete="off"
-                class="border-border-strong bg-surface-raised text-text-primary focus:border-danger-ink focus:ring-danger-ink w-full rounded-lg border px-4 py-2.5 focus:ring-1 focus:outline-none"
-              />
-            {/if}
-          </div>
-        {/if}
 
         <div class="border-glass-border mt-4 space-y-2 border-t pt-4">
           <p class="text-sm font-medium">Also restore from a JSON backup</p>
@@ -266,17 +294,18 @@
       </GlassCard>
 
       <!-- The outcome of the page's primary action. use:enhance means no
-           navigation, so without a persistent live region neither the failure nor
-           the arrival of the preview below was announced at all. -->
+           navigation, so without a persistent live region the arrival of the
+           preview below was not announced at all. A failure is an Alert with
+           role="alert", which announces itself, so it is a sibling: nested in
+           this polite region it could be read twice. -->
       <div role="status">
-        {#if form?.importError}
-          <p class="bg-danger/10 text-danger-ink rounded-lg px-4 py-3 text-sm">
-            {form.importError}
-          </p>
-        {:else if preview}
+        {#if preview && !form?.error}
           <p class="sr-only">Import preview ready. Review the summary below before importing.</p>
         {/if}
       </div>
+      {#if form?.error}
+        <Alert tone="wrong" title={form.error} />
+      {/if}
 
       {#if preview}
         <GlassCard>
@@ -306,10 +335,11 @@
           </dl>
 
           {#if preview.summary.medicationsDeleted > 0 || preview.summary.dosesDeleted > 0}
-            <p class="bg-danger/10 text-danger-ink mt-3 rounded-lg px-4 py-3 text-sm">
-              Replace mode will first delete {preview.summary.medicationsDeleted} medications and
-              {preview.summary.dosesDeleted} dose entries.
-            </p>
+            <Alert
+              class="mt-3"
+              tone="needs-you"
+              title={`Replace mode will first delete ${preview.summary.medicationsDeleted} medications and ${preview.summary.dosesDeleted} dose entries.`}
+            />
           {/if}
 
           {#if preview.createdNames.length > 0}
@@ -326,11 +356,14 @@
           {/if}
 
           {#if preview.warnings.length > 0}
-            <ul class="text-warning mt-3 space-y-1 text-sm">
-              {#each preview.warnings as warning}
-                <li>• {warning}</li>
-              {/each}
-            </ul>
+            <Alert class="mt-3" tone="needs-you" title="Check before importing">
+              <!-- Unkeyed on purpose: two identical warnings would make a keyed each throw. -->
+              <ul class="list-disc space-y-1 pl-4">
+                {#each preview.warnings as warning}
+                  <li>{warning}</li>
+                {/each}
+              </ul>
+            </Alert>
           {/if}
 
           {#if preview.empty}
@@ -376,26 +409,20 @@
       {/if}
 
       <div class="flex flex-wrap gap-3">
-        <button
-          type="submit"
-          formaction="?/preview"
-          disabled={submitting}
-          class="border-glass-border hover:bg-surface-overlay rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
-        >
+        <Button variant="secondary" type="submit" formaction="?/preview" disabled={submitting}>
           {preview ? "Preview again" : "Preview import"}
-        </button>
+        </Button>
 
-        <button
-          type="submit"
-          formaction="?/commit"
-          disabled={!canCommit}
-          class="rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 {mode ===
-          'replace'
-            ? 'bg-danger text-danger-fg'
-            : 'bg-accent text-accent-fg'}"
-        >
-          {mode === "replace" ? "Replace all data" : "Import"}
-        </button>
+        {#if mode === "replace"}
+          <!-- Opens the confirmation; the dialog's own danger button commits. -->
+          <Button variant="secondary" disabled={!canCommit} onclick={replaceDialog.show}
+            >Replace all data</Button
+          >
+        {:else}
+          <Button variant="primary" type="submit" formaction="?/commit" disabled={!canCommit}
+            >Import</Button
+          >
+        {/if}
       </div>
 
       {#if preview && needsMapping}

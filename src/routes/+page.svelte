@@ -3,6 +3,7 @@
   import heroImage from "$lib/assets/landing-hero-phone.webp";
   import wordmark from "$lib/assets/medtracker-logo-lockup-vector.svg";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import WalkthroughVideo from "$lib/components/walkthrough/WalkthroughVideo.svelte";
 </script>
 
@@ -22,22 +23,20 @@
 </svelte:head>
 
 <div class="flex min-h-screen flex-col">
-  <header class="border-glass-border flex items-center justify-between border-b px-4 py-4 sm:px-6">
+  <!-- Wraps rather than squeezing or scrolling sideways: the Buttons never
+       wrap their labels, so below about 360px (system font) the wordmark and
+       both buttons no longer fit on one row. The buttons then take a second
+       row, still on the right. -->
+  <header
+    class="border-glass-border flex flex-wrap items-center justify-between gap-y-3 border-b px-4 py-4 sm:px-6"
+  >
     <div class="flex items-center gap-3">
       <img src={appIcon} alt="" width="36" height="36" class="h-9 w-9 rounded-lg" />
       <span class="text-lg font-semibold">MedTracker</span>
     </div>
-    <div class="flex items-center gap-3">
-      <a
-        href="/auth/login"
-        class="text-text-secondary hover:text-text-primary rounded-lg px-4 py-2 text-sm font-medium"
-        >Sign in</a
-      >
-      <a
-        href="/auth/register"
-        class="bg-accent hover:bg-accent-hover text-accent-fg rounded-lg px-4 py-2 text-sm font-medium"
-        >Get Started</a
-      >
+    <div class="ml-auto flex items-center gap-2 sm:gap-3">
+      <Button variant="ghost" size="sm" href="/auth/login">Sign in</Button>
+      <Button variant="primary" size="sm" href="/auth/register">Get Started</Button>
     </div>
   </header>
 
@@ -118,7 +117,7 @@
       </div>
       <div>
         <div
-          class="bg-success/15 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl text-xl"
+          class="bg-accent/15 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl text-xl"
         >
           📊
         </div>
@@ -129,7 +128,7 @@
       </div>
       <div>
         <div
-          class="bg-warning/15 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl text-xl"
+          class="bg-accent/15 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl text-xl"
         >
           🔒
         </div>

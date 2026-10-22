@@ -7,6 +7,7 @@
   import { beginDoseWrite } from "$components/dose-writes/begin-dose-write";
   import { getDoseWriteLock } from "$components/dose-writes/dose-write-lock.svelte";
   import MedicationCard from "$lib/components/MedicationCard.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import EmptyState from "$components/EmptyState.svelte";
   import emptyMedications from "$lib/assets/397d3a76-85b0-43ee-a0c2-981053e4040c.webp";
 
@@ -82,11 +83,7 @@
          without scrolling) when the card focus was on is gone: after an Undo,
          or a Log refused for a medication deleted elsewhere. -->
     <h1 tabindex="-1" class="text-2xl font-bold">Medications</h1>
-    <a
-      href="/medications/new"
-      class="bg-accent text-accent-fg rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90"
-      >+ Add Medication</a
-    >
+    <Button variant="primary" size="sm" href="/medications/new">+ Add Medication</Button>
   </div>
 
   {#if data.medications.length === 0}

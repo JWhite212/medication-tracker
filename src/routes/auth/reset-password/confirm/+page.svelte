@@ -1,5 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
 
   let { data, form } = $props();
   let loading = $state(false);
@@ -20,13 +22,7 @@
          mismatch and a dead link alike. Neither field is marked invalid for
          the same reason; the page cannot tell which one, if either, is wrong. -->
     {#if form?.error}
-      <div
-        id="form-error"
-        class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
-        role="alert"
-      >
-        {form.error}
-      </div>
+      <Alert tone="wrong" id="form-error" title={form.error} class="mb-4" />
     {/if}
 
     <form
@@ -70,13 +66,16 @@
         />
       </div>
 
-      <button
+      <Button
+        variant="primary"
         type="submit"
+        block
         disabled={loading}
-        class="bg-accent hover:bg-accent-hover text-accent-fg w-full rounded-lg py-2.5 font-medium transition-colors disabled:opacity-50"
+        pending={loading}
+        pendingLabel="Updating…"
       >
-        {loading ? "Updating..." : "Set new password"}
-      </button>
+        Set new password
+      </Button>
     </form>
 
     <p class="text-text-secondary mt-6 text-center text-sm">

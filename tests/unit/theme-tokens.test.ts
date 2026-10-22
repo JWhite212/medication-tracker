@@ -14,6 +14,7 @@ import {
 } from "$lib/utils/contrast";
 import { entryFor } from "$lib/appearance/registry";
 import { accentInkFor, ACCENT_CHIP_ALPHA } from "$lib/appearance/theme-css";
+import { TONE_CLASSES, type Tone } from "$lib/utils/status-tone";
 import { blockBody, parseDeclarations } from "./helpers/css-tokens";
 
 function readAppCss(): string {
@@ -72,6 +73,21 @@ function alphaOf(value: string): { alpha: number; overlay: string } {
   if (r === "255" && g === "255" && b === "255") return { alpha: Number(m[4]), overlay: "#ffffff" };
   if (r === "0" && g === "0" && b === "0") return { alpha: Number(m[4]), overlay: "#000000" };
   throw new Error(`Expected a white- or black-alpha token, got: ${value}`);
+}
+
+/** `bg-warning/15` -> the token and alpha a class string fills with; no `bg-` class -> null (transparent). */
+function fillOf(classes: string): { token: string; alpha: number } | null {
+  const m = classes.match(/(?:^|\s)bg-([a-z-]+?)(?:\/(\d+))?(?=\s|$)/);
+  return m ? { token: `--color-${m[1]}`, alpha: m[2] ? Number(m[2]) / 100 : 1 } : null;
+}
+
+/** The one `text-*` colour in a class string, as its token. Throws on none or several. */
+function inkOf(classes: string): string {
+  const found = [...classes.matchAll(/(?:^|\s)text-([a-z-]+)(?=\s|$)/g)];
+  if (found.length !== 1) {
+    throw new Error(`Expected one text colour in "${classes}", found ${found.length}`);
+  }
+  return `--color-${found[0][1]}`;
 }
 
 /**
@@ -146,6 +162,12 @@ describe.each(SCHEMES)("$name — @theme parsing", ({ T }) => {
     expect(T["--color-text-primary"]).toMatch(/^#[0-9a-f]{6}$/i);
     expect(Object.keys(T).length).toBeGreaterThan(15);
   });
+
+  it("has no --color-info: neutral replaced it as a status colour", () => {
+    // Its hue sat next to the accent's, so the refill "watch" tier and a
+    // selected control looked the same. The owner scan rejects *-info classes.
+    expect(T["--color-info"]).toBeUndefined();
+  });
 });
 
 describe.each(SCHEMES)(
@@ -157,12 +179,9 @@ describe.each(SCHEMES)(
       "--color-text-muted",
       "--color-accent-ink",
       "--color-danger-ink",
-      // success and warning are asserted here too: they are used as text in 14
-      // and 15 files respectively, and both already pass, so this pins that.
+      // success and warning are the happened and needs-you text (TONE_CLASSES).
       "--color-success",
       "--color-warning",
-      // info is rendered as text on the medications list chip.
-      "--color-info",
       // --color-accent-hover is deliberately NOT here. It is a fill-only token
       // (see app.css) and would need to be near #4f46e5's lightness to work as
       // text, which is the opposite of what white-on-fill needs. It is asserted
@@ -199,8 +218,8 @@ describe.each(SCHEMES)(
 
     // The backdrops a tinted accent chip actually paints on — the sidebar /
     // mobile-header avatar initial (resting AND hovered) and the onboarding
-    // step numerals. `card` is built the same way the CHIPS table below
-    // builds it (MedicationCard: .bg-glass > page <main> on
+    // step numerals. `card` is built the same way the status-tone describe
+    // below builds it (MedicationCard: .bg-glass > page <main> on
     // --color-surface) — the onboarding numeral's real parent is exactly
     // that bg-glass card. `surface-raised` is the avatar's own resting
     // backdrop (the `<aside>` / `<header>` it sits in). `surface-overlay` is
@@ -313,89 +332,245 @@ describe.each(SCHEMES)("$name — solid fills carry a legible foreground", ({ T 
   }
 });
 
+/** CSS `brightness(k)`: every sRGB channel times k, clamped. Filter functions run in sRGB. */
+function brighten(hex: string, k: number): string {
+  return (
+    "#" +
+    [1, 3, 5]
+      .map((i) => Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * k)))
+      .map((c) => c.toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
+/** The three backdrops a Button sits on: the page, a glass card, a dialog. */
+const HOVER_BACKDROPS = ["page", "card", "dialog"] as const;
+type HoverBackdrop = (typeof HOVER_BACKDROPS)[number];
+
+const ACCENT_DERIVATION_WHY =
+  "accent derivation follow-up: 90% opacity on the preset's own fill, as on every accent button";
+
 /**
- * Tinted chips: `bg-danger/20 text-danger-ink` and friends. The opaque
- * surfaces above are not what these render on — the chip paints a fraction of
- * its own fill over whatever is behind it, which lightens the backdrop and
- * costs the foreground contrast. Nothing asserted that, so live combinations
- * were sitting below 4.5 while every token passed on its own.
+ * Hovered `primary` Buttons below 4.5:1 today, as accent preset x scheme x
+ * the backdrops it fails over. `hover:opacity-90` is the rule every accent
+ * button in the app already uses (spec, Button > Hover), so it is kept, and
+ * these are the presets it already fails for. Each entry is a decision, not a
+ * shrug, and it is two-way: a listed row must still fail, so a stale entry
+ * fails as loudly as a new offender. Every row that is not listed must pass.
+ */
+const HOVERED_PRIMARY_BELOW_THRESHOLD: {
+  preset: string;
+  scheme: "dark" | "light";
+  over: readonly HoverBackdrop[];
+  why: string;
+}[] = [
+  { preset: "#ef4444", scheme: "dark", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
+  { preset: "#ef4444", scheme: "light", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
+  { preset: "#3b82f6", scheme: "dark", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
+  { preset: "#64748b", scheme: "dark", over: ["card", "dialog"], why: ACCENT_DERIVATION_WHY },
+  { preset: "#64748b", scheme: "light", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
+];
+
+/**
+ * Button's hover states (src/lib/components/ui/Button.svelte). `primary`
+ * hovers with `hover:opacity-90`, which composites the fill AND the label 90%
+ * over whatever is behind the button. Inside (app) the fill is the user's
+ * preset, set inline with the foreground `readableForeground` derives, so
+ * every preset is measured, not just the @theme default; logged-out pages do
+ * run the @theme pair, which is measured too. Each is checked over the three
+ * backdrops a Button sits on. `danger` hovers with `hover:brightness-110`,
+ * because 90% opacity took #111111 on #ef4444 to 4.24:1 in dark. Only those
+ * two variants have a fill.
+ */
+describe.each(SCHEMES)("$name — Button hover states keep a legible label", ({ name, T }) => {
+  const glass = alphaOf(T["--color-glass"]);
+  const BACKDROPS: Record<HoverBackdrop, string> = {
+    page: T["--color-surface"],
+    card: compositeOver(glass.alpha, T["--color-surface"], glass.overlay),
+    dialog: T["--color-surface-raised"],
+  };
+  /** Label and fill both at 90% over the backdrop, as `hover:opacity-90` paints them. */
+  const hovered = (fill: string, fg: string, base: string) =>
+    contrastRatio(compositeOver(0.9, base, fg), compositeOver(0.9, base, fill));
+
+  for (const where of HOVER_BACKDROPS) {
+    it(`primary, the @theme default, at 90% opacity over ${where}`, () => {
+      const ratio = hovered(T["--color-accent"], T["--color-accent-fg"], BACKDROPS[where]);
+      expect(ratio, `hovered primary is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
+  for (const preset of readAccentPresets()) {
+    const fg = readableForeground(preset).color;
+    const entry = HOVERED_PRIMARY_BELOW_THRESHOLD.find(
+      (e) => e.preset === preset && e.scheme === name,
+    );
+    for (const where of HOVER_BACKDROPS) {
+      const known = entry?.over.includes(where) ?? false;
+      it(`primary ${preset} at 90% opacity over ${where}${known ? " (allowlisted)" : ""}`, () => {
+        const ratio = hovered(preset, fg, BACKDROPS[where]);
+        const text = `hovered primary ${fg} on ${preset} is ${ratio.toFixed(2)}:1`;
+        if (known) {
+          expect(ratio, `${text}: it passes now, so remove its allowlist entry`).toBeLessThan(4.5);
+        } else {
+          expect(ratio, text).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+    }
+  }
+
+  it("danger brightened to 110%", () => {
+    const ratio = contrastRatio(
+      brighten(T["--color-danger-fg"], 1.1),
+      brighten(T["--color-danger"], 1.1),
+    );
+    expect(ratio, `hovered danger is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+it("allowlists only presets, schemes and backdrops that exist, once each", () => {
+  const presets = new Set(readAccentPresets());
+  const schemes = new Set(SCHEMES.map((s) => s.name));
+  const seen = new Set<string>();
+  for (const { preset, scheme, over } of HOVERED_PRIMARY_BELOW_THRESHOLD) {
+    expect(presets.has(preset), `${preset} is not an accent preset`).toBe(true);
+    expect(schemes.has(scheme), `${scheme} is not a scheme`).toBe(true);
+    expect(seen.has(`${scheme} ${preset}`), `${scheme} ${preset} is listed twice`).toBe(false);
+    seen.add(`${scheme} ${preset}`);
+    for (const where of over) expect(HOVER_BACKDROPS).toContain(where);
+  }
+});
+
+// Guard the guard: 90% opacity, the hover danger first had, fails in a dark dialog.
+it("would have failed danger at 90% opacity in a dark dialog", () => {
+  const dialog = DARK["--color-surface-raised"];
+  const ratio = contrastRatio(
+    compositeOver(0.9, dialog, DARK["--color-danger-fg"]),
+    compositeOver(0.9, dialog, DARK["--color-danger"]),
+  );
+  expect(ratio).toBeLessThan(4.5);
+});
+
+// Guard the guard: the Refills row's old hover, 90% opacity on the whole
+// row, took its amber label below AA in light. That is why it hovers with
+// glass-hover instead ("refillsRowHover" below).
+it("would have failed a Refills row's amber label at 90% opacity in light", () => {
+  const surface = LIGHT["--color-surface"];
+  const fill = fillOf(TONE_CLASSES["needs-you"].alert)!;
+  const row = compositeOver(fill.alpha, surface, LIGHT[fill.token]);
+  const ratio = contrastRatio(
+    compositeOver(0.9, surface, LIGHT[inkOf(TONE_CLASSES["needs-you"].text)]),
+    compositeOver(0.9, surface, row),
+  );
+  expect(ratio).toBeLessThan(4.5);
+});
+
+/**
+ * Tinted chips are not rendered on the opaque surfaces above: a chip paints a
+ * fraction of its own fill over whatever is behind it, which lightens the
+ * backdrop and costs the foreground contrast. Nothing asserted that, so live
+ * combinations were sitting below 4.5 while every token passed on its own.
  *
- * Each backdrop below is the real DOM nesting, read off the component, not a
- * representative surface.
+ * Every status tone the owner can produce, over every backdrop its element is
+ * really drawn on. The pairs are READ from TONE_CLASSES, not restated, so an
+ * opacity tuned in status-tone.ts is re-measured here, and a tone or element
+ * added there is measured without anyone remembering to add a row. That is
+ * how the happened chip came to be /10: at /15 it is 4.33:1 on a hovered card
+ * in dark.
+ *
+ * `bar` and `border` have no rows. Neither carries text, and the word or glyph
+ * beside them carries the status. WCAG 1.4.11 asks 3:1 of a graphic only when
+ * it is the sole carrier. The neutral bar's border-strong already clears 3:1
+ * on every surface in the control-boundary describe below.
+ *
+ * Text on opaque surfaces and on a resting card is already in the text-token
+ * table above (surfaces() includes surface-raised and glass-on-surface), so
+ * `text` adds only glass-hover over the page, which surfaces() does not
+ * composite: a hovered card, and a hovered Refills row, whose hover replaces
+ * its tint.
  */
 describe.each(SCHEMES)(
-  "$name — tinted chips are legible over the backdrop they actually paint on",
+  "$name — every status tone is legible over the backdrops its element is drawn on",
   ({ T }) => {
     const glass = alphaOf(T["--color-glass"]);
     const glassHover = alphaOf(T["--color-glass-hover"]);
-
-    // MedicationCard: .bg-glass.hover:bg-glass-hover > page <main> on --color-surface.
     const card = compositeOver(glass.alpha, T["--color-surface"], glass.overlay);
     const cardHover = compositeOver(glassHover.alpha, T["--color-surface"], glassHover.overlay);
-    // SideEffectPicker severity chips: .bg-glass > DoseEditForm > Modal panel
-    // on --color-surface-raised.
     const modalGlass = compositeOver(glass.alpha, T["--color-surface-raised"], glass.overlay);
 
-    // [fill, alpha, backdrop, foreground, threshold]. 3:1 rather than 4.5 where
-    // the foreground is a glyph in a status circle (WCAG 1.4.11), not text.
-    const CHIPS: [string, number, string, string, number, string][] = [
-      ["--color-info", 0.15, card, "--color-info", 4.5, "medications refill chip (watch)"],
-      ["--color-info", 0.15, cardHover, "--color-info", 4.5, "…hovered"],
-      ["--color-warning", 0.15, card, "--color-warning", 4.5, "medications refill chip (warning)"],
-      ["--color-warning", 0.15, cardHover, "--color-warning", 4.5, "…hovered"],
-      [
-        "--color-danger",
-        0.15,
-        card,
-        "--color-danger-ink",
-        4.5,
-        "medications refill chip (critical)",
+    // [backdrop, hex, the component that really draws this element there].
+    const BACKDROPS: Record<"chip" | "marker" | "alert" | "text", [string, string, string][]> = {
+      chip: [
+        ["card", card, "MedicationCard refill chip; Log row status and side-effect chips"],
+        ["cardHover", cardHover, "the same rows hovered (both carry hover:bg-glass-hover)"],
+        ["modalGlass", modalGlass, "SideEffectPicker severity chip in the DoseEditForm modal"],
       ],
-      ["--color-danger", 0.15, cardHover, "--color-danger-ink", 4.5, "…hovered"],
-      [
-        "--color-danger",
-        0.2,
-        modalGlass,
-        "--color-danger-ink",
-        4.5,
-        "side effect severity: severe",
+      marker: [["card", card, "StatusMarker in a DueCard <li> and in the Done card"]],
+      alert: [
+        ["card", card, "a banner inside a GlassCard or the auth card"],
+        [
+          "surface",
+          T["--color-surface"],
+          "a banner on the page itself (notifications' saved line)",
+        ],
+        [
+          "surface-raised",
+          T["--color-surface-raised"],
+          "DoseEditForm's and DestructiveConfirm's error, in the Modal panel",
+        ],
       ],
-      [
-        "--color-warning",
-        0.2,
-        modalGlass,
-        "--color-warning",
-        4.5,
-        "side effect severity: moderate",
+      text: [
+        ["cardHover", cardHover, "a status word on a hovered Log row or medication card"],
+        [
+          "refillsRowHover",
+          cardHover,
+          "a hovered Refills row's label: hover:bg-glass-hover replaces the row's tint (refills-card-ssr pins the class)",
+        ],
       ],
-      [
-        "--color-text-secondary",
-        0.3,
-        modalGlass,
-        "--color-text-primary",
-        4.5,
-        "side effect severity: mild",
-      ],
-      // StatusMarker's two tinted states: a 20px circle inside a DueCard
-      // <li class="bg-glass"> or the Done today card (.bg-glass), each sitting
-      // directly on the page <main>, so the backdrop is `card`. Neither has a
-      // hover background, so there is no hovered row. `due-now`, `upcoming`,
-      // `skipped` and `missed` are untinted rings and carry no chip to check.
-      ["--color-success", 0.2, card, "--color-success", 3, "StatusMarker: taken"],
-      ["--color-warning", 0.2, card, "--color-warning", 3, "StatusMarker: overdue"],
-    ];
+    };
 
-    for (const [fill, alpha, base, fg, threshold, site] of CHIPS) {
-      it(`${fg} on ${fill}/${alpha * 100} — ${site}`, () => {
-        expect(T[fill], `${fill} is not defined`).toBeDefined();
-        expect(T[fg], `${fg} is not defined`).toBeDefined();
-        const chip = compositeOver(alpha, base, T[fill]);
-        const ratio = contrastRatio(T[fg], chip);
-        expect(
-          ratio,
-          `${T[fg]} on ${chip} (${T[fill]} at ${alpha} over ${base}) is ${ratio.toFixed(2)}:1`,
-        ).toBeGreaterThanOrEqual(threshold);
-      });
+    for (const tone of Object.keys(TONE_CLASSES) as Tone[]) {
+      const c = TONE_CLASSES[tone];
+      const headline = tone === "neutral" ? "--color-text-primary" : inkOf(c.text);
+      const CASES: [
+        element: keyof typeof BACKDROPS,
+        classes: string,
+        fgs: string[],
+        threshold: number,
+      ][] = [
+        ["chip", c.chip, [inkOf(c.chip)], 4.5],
+        // 3:1: the marker's foreground is a glyph in a status circle (WCAG 1.4.11).
+        ["marker", c.marker, [inkOf(c.marker)], 3],
+        // The headline, the icon (the tone's text), the body (text-secondary),
+        // and plain text in a row boxed the same way.
+        [
+          "alert",
+          c.alert,
+          [...new Set([headline, inkOf(c.text), "--color-text-secondary", "--color-text-primary"])],
+          4.5,
+        ],
+        ["text", "", [inkOf(c.text)], 4.5],
+      ];
+      for (const [element, classes, fgs, threshold] of CASES) {
+        for (const [name, base, site] of BACKDROPS[element]) {
+          for (const fg of fgs) {
+            it(`${tone} ${element}: ${fg} over ${name} — ${site}`, () => {
+              expect(T[fg], `${fg} is not defined`).toBeDefined();
+              const fill = fillOf(classes);
+              const bg = !fill
+                ? base
+                : fill.alpha === 1
+                  ? T[fill.token]
+                  : compositeOver(fill.alpha, base, T[fill.token]);
+              const ratio = contrastRatio(T[fg], bg);
+              expect(
+                ratio,
+                `${T[fg]} on ${bg} (${classes || "no fill"} over ${base}) is ${ratio.toFixed(2)}:1`,
+              ).toBeGreaterThanOrEqual(threshold);
+            });
+          }
+        }
+      }
     }
   },
 );
@@ -491,8 +666,8 @@ describe.each(SCHEMES)("$name — the heatmap ramp is distinguishable step to st
 
 // Important Finding 2: a hover affordance guards a property this file had
 // never asserted — that a hover state paints DIFFERENT pixels from the
-// resting state, not that it is legible (that is what the CHIPS/text-token
-// tests above already cover). Floor is deliberately modest (1.02, not the
+// resting state, not that it is legible (that is what the status-tone and
+// text-token tests above already cover). Floor is deliberately modest (1.02, not the
 // 4.5/3 thresholds used elsewhere) — this is not a legibility check.
 //
 // This guards --color-surface-overlay, not --color-glass-hover. The 17

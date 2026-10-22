@@ -1,9 +1,11 @@
 <script lang="ts">
   // routes/(app)/settings/security/+page.svelte with two-factor enabled.
+  import { toneClass, toneOf } from "$lib/utils/status-tone";
   import { formatUserDate } from "$lib/utils/time";
   import { SESSION_EXPIRIES, WALKTHROUGH_TZ } from "../demo-data";
   import { useMark } from "../marks";
   import FieldBox from "../parts/FieldBox.svelte";
+  import { stageButton } from "../parts/stage-controls";
 
   const mark = useMark();
   const card = "border-glass-border bg-glass rounded-xl border p-6";
@@ -29,10 +31,7 @@
       <FieldBox label="Current Password" required />
       <FieldBox label="New Password" required />
       <FieldBox label="Confirm New Password" required />
-      <span
-        class="bg-accent text-accent-fg self-start rounded-lg px-5 py-2.5 text-sm font-medium whitespace-nowrap"
-        >Update Password</span
-      >
+      <span class="{stageButton('primary')} self-start">Update Password</span>
     </div>
   </div>
 
@@ -40,9 +39,12 @@
     <p class="mb-4 text-lg font-semibold">Two-Factor Authentication</p>
     <div class="flex flex-col gap-4">
       <div class="flex items-center gap-3">
+        <!-- "Enabled" is a state, not a verdict: neutral, as on the page. -->
         <span
-          class="bg-success/10 text-success rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap"
-          >Enabled</span
+          class="{toneClass(
+            toneOf('state'),
+            'chip',
+          )} rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap">Enabled</span
         >
         <p class="text-text-secondary text-sm">
           Your account is protected with two-factor authentication.
@@ -52,10 +54,7 @@
         <FieldBox label="Confirm your password" required />
         <div class="flex items-end gap-3">
           <FieldBox label="Authenticator code" required placeholder="000000" width={232} />
-          <span
-            class="border-danger-ink/30 text-danger-ink rounded-lg border px-5 py-2.5 text-sm font-medium whitespace-nowrap"
-            >Disable 2FA</span
-          >
+          <span class={stageButton("secondary")}>Disable 2FA</span>
         </div>
       </div>
     </div>
@@ -81,10 +80,7 @@
             <p class="text-text-muted text-xs">Expires {session.expires}</p>
           </div>
           {#if !session.current}
-            <span
-              class="border-danger-ink/30 text-danger-ink rounded-lg border px-3 py-1.5 text-xs font-medium whitespace-nowrap"
-              >Revoke</span
-            >
+            <span class={stageButton("secondary", "sm")}>Revoke</span>
           {/if}
         </div>
       {/each}

@@ -1,9 +1,10 @@
 import { error, fail } from "@sveltejs/kit";
-import { eq, and, count, ne } from "drizzle-orm";
+import { eq, and, count, countDistinct, ne } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications, sessions, auditLogs } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
 import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
+import { accountHasPassword, checkDestructiveGuard } from "$lib/server/auth/destructive-guard";
 import { logAudit } from "$lib/server/audit";
 import {
   wipeArchivedMedications as wipeArchivedMedicationsForUser,
@@ -14,8 +15,27 @@ import type { Actions, PageServerLoad } from "./$types";
 export const load: PageServerLoad = async ({ locals }) => {
   const userId = locals.user!.id;
 
-  const [doseCountRow, activeMedRow, archivedMedRow, sessionRow, auditRow] = await Promise.all([
-    db.select({ value: count() }).from(doseLogs).where(eq(doseLogs.userId, userId)),
+  const [
+    doseCountRow,
+    archivedDoseRow,
+    activeMedRow,
+    archivedMedRow,
+    sessionRow,
+    auditRow,
+    hasPassword,
+  ] = await Promise.all([
+    // One query for both numbers the dose-history dialog states: how many
+    // doses, and how many medications they span.
+    db
+      .select({ value: count(), medications: countDistinct(doseLogs.medicationId) })
+      .from(doseLogs)
+      .where(eq(doseLogs.userId, userId)),
+    // What "Delete archived medications" takes with it.
+    db
+      .select({ value: count() })
+      .from(doseLogs)
+      .innerJoin(medications, eq(doseLogs.medicationId, medications.id))
+      .where(and(eq(doseLogs.userId, userId), eq(medications.isArchived, true))),
     db
       .select({ value: count() })
       .from(medications)
@@ -26,19 +46,26 @@ export const load: PageServerLoad = async ({ locals }) => {
       .where(and(eq(medications.userId, userId), eq(medications.isArchived, true))),
     db.select({ value: count() }).from(sessions).where(eq(sessions.userId, userId)),
     db.select({ value: count() }).from(auditLogs).where(eq(auditLogs.userId, userId)),
+    accountHasPassword(userId),
   ]);
 
   return {
     counts: {
       doseLogs: doseCountRow[0]?.value ?? 0,
+      doseMedications: doseCountRow[0]?.medications ?? 0,
       activeMedications: activeMedRow[0]?.value ?? 0,
       archivedMedications: archivedMedRow[0]?.value ?? 0,
+      archivedDoses: archivedDoseRow[0]?.value ?? 0,
       sessions: sessionRow[0]?.value ?? 0,
       auditLogs: auditRow[0]?.value ?? 0,
     },
+    hasPassword,
   };
 };
 
+// Revoking sessions is not one of the four deletions nothing can undo, so it
+// keeps this password-only gate rather than checkDestructiveGuard. An account
+// with no password still cannot use it; that is a separate follow-up.
 async function requirePassword(
   userId: string,
   formData: FormData,
@@ -65,8 +92,11 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
     const formData = await request.formData();
-    const reauth = await requirePassword(userId, formData, "wipe_dose_history");
-    if (!reauth.ok) return fail(400, { wipeDosesError: reauth.error });
+    const guard = await checkDestructiveGuard(userId, formData, {
+      word: "DELETE",
+      purpose: "wipe_dose_history",
+    });
+    if (!guard.ok) return fail(400, { error: guard.error });
 
     const { deleted } = await wipeDoseHistoryForUser(userId);
     return { wipeDosesOk: true, removed: deleted };
@@ -76,8 +106,11 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
     const formData = await request.formData();
-    const reauth = await requirePassword(userId, formData, "wipe_archived_medications");
-    if (!reauth.ok) return fail(400, { wipeArchivedError: reauth.error });
+    const guard = await checkDestructiveGuard(userId, formData, {
+      word: "DELETE",
+      purpose: "wipe_archived_medications",
+    });
+    if (!guard.ok) return fail(400, { error: guard.error });
 
     const { deleted } = await wipeArchivedMedicationsForUser(userId);
     return { wipeArchivedOk: true, removed: deleted };

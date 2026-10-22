@@ -12,6 +12,7 @@
   import { useMark } from "../marks";
   import DoseEntry from "../parts/DoseEntry.svelte";
   import Glyph from "../parts/Glyph.svelte";
+  import { stageButton } from "../parts/stage-controls";
 
   let {
     checked,
@@ -86,10 +87,10 @@
       </span>
       With side effects
     </div>
-    <div class="{control} text-text-secondary!">Apply</div>
+    <div class={stageButton("secondary", "sm")}>Apply</div>
     <!-- The real page shows Clear filters only while a filter is active, so it
          fades in with the filtered list -->
-    <div class="{control} text-text-secondary!" style:opacity={filtered}>Clear filters</div>
+    <div class={stageButton("secondary", "sm")} style:opacity={filtered}>Clear filters</div>
   </div>
   <div class="relative">
     <div style:opacity={1 - filtered}>{@render doseGroups(LOG_ALL)}</div>

@@ -19,10 +19,10 @@ test.describe("analytics and history filters", () => {
     await expect(page).toHaveURL(/status=taken/);
     await expect(page.getByRole("heading", { name: HEADING.doseHistory })).toBeVisible();
 
-    // The Skipped/Missed pill badges should be absent under a taken-only
-    // filter.
-    await expect(page.locator("text=/^Skipped$/")).toHaveCount(0);
-    await expect(page.locator("text=/^Missed$/")).toHaveCount(0);
+    // The Skipped/Missed chips (a glyph, then the word) should be absent
+    // under a taken-only filter.
+    await expect(page.locator("text=/^–\\s?Skipped$/")).toHaveCount(0);
+    await expect(page.locator("text=/^✕\\s?Missed$/")).toHaveCount(0);
   });
 
   test("a search query that matches no notes shows the empty filter state", async ({ page }) => {

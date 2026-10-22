@@ -16,15 +16,19 @@
   } = $props();
 </script>
 
-<Input
-  label="Name"
-  name="name"
-  value={nameValue}
-  error={errors["name"]?.[0] ?? ""}
-  required
-  placeholder="e.g. Aspirin"
-  onblur={(e: FocusEvent & { currentTarget: HTMLInputElement }) =>
-    onNameBlur(e.currentTarget.value)}
-/>
+<!-- The notice's status region is always mounted. As a direct child of the
+     form's `space-y-5` it would add a 20px gap even when empty. -->
+<div>
+  <Input
+    label="Name"
+    name="name"
+    value={nameValue}
+    error={errors["name"]?.[0] ?? ""}
+    required
+    placeholder="e.g. Aspirin"
+    onblur={(e: FocusEvent & { currentTarget: HTMLInputElement }) =>
+      onNameBlur(e.currentTarget.value)}
+  />
 
-<InteractionWarningPanel warnings={interactionWarnings} />
+  <InteractionWarningPanel warnings={interactionWarnings} />
+</div>

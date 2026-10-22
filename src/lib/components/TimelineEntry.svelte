@@ -6,6 +6,8 @@
   import { focusTargetAfterResolve, pageHeading } from "$components/dose-writes/focus-after";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { formatDoseLabel, toastForDoseRemoved } from "$lib/utils/dashboard-copy";
+  import { SEVERITY } from "$lib/utils/side-effect-severity";
+  import { toneClass, toneOf, type StatusKey } from "$lib/utils/status-tone";
   import type { DoseLogWithMedication } from "$lib/types";
   import { getMedicationBackground } from "$lib/utils/medication-style";
 
@@ -29,6 +31,18 @@
     day: { label: string; isYesterday: boolean } | null;
     onedit?: (dose: DoseLogWithMedication) => void;
   } = $props();
+
+  // Each coloured chip also says what it is: a glyph (hidden from screen
+  // readers, which get the word) and the word itself. The side-effect
+  // severity words live in the shared severity table, which the landing-page
+  // walkthrough reads too.
+  const STATUS_CHIPS: Record<
+    "skipped" | "missed",
+    { glyph: string; word: string; status: StatusKey }
+  > = {
+    skipped: { glyph: "–", word: "Skipped", status: "dose-skipped" },
+    missed: { glyph: "✕", word: "Missed", status: "dose-missed" },
+  };
 
   // × deletes on the first tap and the toast offers Undo, as every dose
   // control on the dashboard does. It used to open an inline "This can't be
@@ -161,18 +175,14 @@
           {dose.medication.dosageAmount}{dose.medication.dosageUnit}
           {#if dose.status === "taken" && dose.quantity > 1}&times; {dose.quantity}{/if}
         </span>
-        {#if dose.status === "skipped"}
+        {#if dose.status === "skipped" || dose.status === "missed"}
+          {@const chip = STATUS_CHIPS[dose.status]}
           <span
-            class="bg-warning/15 text-warning ml-2 rounded-full px-2 py-0.5 text-xs font-semibold tracking-wider uppercase"
+            class="ml-2 rounded-md px-2 py-0.5 text-xs font-semibold {toneClass(
+              toneOf(chip.status),
+              'chip',
+            )}"><span aria-hidden="true">{chip.glyph}</span> {chip.word}</span
           >
-            Skipped
-          </span>
-        {:else if dose.status === "missed"}
-          <span
-            class="bg-danger/15 text-danger-ink ml-2 rounded-full px-2 py-0.5 text-xs font-semibold tracking-wider uppercase"
-          >
-            Missed
-          </span>
         {/if}
       </p>
     </div>
@@ -183,7 +193,7 @@
       <span class="text-text-secondary"
         >{formatUserTime(new Date(dose.takenAt), timezone, timeFormat)}</span
       >
-      <span class="text-accent-ink font-medium">
+      <span class="text-text-secondary font-medium">
         <TimeSince date={new Date(dose.takenAt)} />
       </span>
     </div>
@@ -237,7 +247,7 @@
           type={mounted ? "submit" : "button"}
           onkeydown={write.onkeydown}
           aria-disabled={write.busy ? "true" : undefined}
-          class="text-text-muted hover:text-danger-ink inline-flex size-8 items-center justify-center text-xs aria-disabled:cursor-not-allowed pointer-coarse:size-11"
+          class="text-text-muted hover:text-text-primary inline-flex size-8 items-center justify-center text-xs aria-disabled:cursor-not-allowed pointer-coarse:size-11"
           aria-label="Delete dose of {dose.medication.name} at {takenTime}"
         >
           {#if write.pending}
@@ -256,14 +266,16 @@
   {#if dose.sideEffects && dose.sideEffects.length > 0}
     <div class="mt-2 flex flex-wrap gap-1.5 pl-7">
       {#each dose.sideEffects as effect}
+        <!-- Every write door validates the severity; a legacy or hand-written
+             value outside the enum draws as mild rather than crashing /log. -->
+        {@const severity = SEVERITY[effect.severity] ?? SEVERITY.mild}
         <span
-          class="rounded-full px-2 py-0.5 text-xs font-medium {effect.severity === 'severe'
-            ? 'bg-danger/15 text-danger-ink'
-            : effect.severity === 'moderate'
-              ? 'bg-warning/15 text-warning'
-              : 'bg-text-secondary/30 text-text-primary'}"
+          class="rounded-md px-2 py-0.5 text-xs font-semibold {toneClass(
+            toneOf(severity.status),
+            'chip',
+          )}"
         >
-          {effect.name}
+          {effect.name} · {severity.word}
         </span>
       {/each}
     </div>

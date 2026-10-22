@@ -4,6 +4,8 @@
   import type { Medication } from "$lib/types";
   import type { MedicationSchedule } from "$lib/server/schedules";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import MedicationIdentityFields from "./medication-form/MedicationIdentityFields.svelte";
   import MedicationDosageFields from "./medication-form/MedicationDosageFields.svelte";
   import MedicationCategoryFields from "./medication-form/MedicationCategoryFields.svelte";
@@ -62,7 +64,9 @@
   // the `errors` prop, but an error result carries no `form` for the page to
   // hand back, so this is the only place it can be said.
   let actionError = $state("");
-  let actionErrorEl = $state<HTMLElement | null>(null);
+  // The crash message's id, so the after-callback can find it inside the form
+  // and hand it focus.
+  const ACTION_ERROR_ID = "medication-form-error";
   // The `errors` prop only changes when `update()` runs, which an error
   // result skips, so the previous attempt's field messages would otherwise
   // stay marked invalid beside a message saying nothing was checked at all.
@@ -128,7 +132,7 @@
   action={medication ? "?/update" : undefined}
   use:enhance={() => {
     loading = true;
-    return async ({ result, update }) => {
+    return async ({ formElement, result, update }) => {
       if (result.type === "error") {
         // `update()` would hand this to the nearest +error.svelte, which
         // replaces the page and every field the user has filled in. Say what
@@ -137,7 +141,7 @@
         loading = false;
         actionError = unsavedErrorMessage(result);
         await tick();
-        actionErrorEl?.focus();
+        formElement.querySelector<HTMLElement>(`#${ACTION_ERROR_ID}`)?.focus();
         return;
       }
       actionError = "";
@@ -151,8 +155,12 @@
           // announced nothing — the page looked like it had ignored the submit.
           // Falling back to the first alert covers them; it needs tabindex to be
           // focusable, since a <p> is not.
-          const invalid = document.querySelector<HTMLElement>('[aria-invalid="true"]');
-          const target = invalid ?? document.querySelector<HTMLElement>('[role="alert"]');
+          //
+          // Scoped to this form, as DoseEditForm's `focusFirstProblem` is. A
+          // page-wide query took the first alert on the page, which was the
+          // interaction notice, not this form's message.
+          const invalid = formElement.querySelector<HTMLElement>('[aria-invalid="true"]');
+          const target = invalid ?? formElement.querySelector<HTMLElement>('[role="alert"]');
           if (!target) return;
           if (!invalid) target.setAttribute("tabindex", "-1");
           target.focus();
@@ -247,21 +255,10 @@
   <MedicalDisclaimer variant="inline" />
 
   {#if actionError}
-    <p
-      bind:this={actionErrorEl}
-      class="bg-danger/10 text-danger-ink rounded-lg px-4 py-2 text-sm"
-      role="alert"
-      tabindex="-1"
-    >
-      {actionError}
-    </p>
+    <Alert tone="wrong" id={ACTION_ERROR_ID} title={actionError} tabindex={-1} />
   {/if}
 
-  <button
-    type="submit"
-    disabled={loading}
-    class="bg-accent text-accent-fg w-full rounded-lg px-4 py-2.5 font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-  >
-    {loading ? "Saving..." : medication ? "Update Medication" : "Add Medication"}
-  </button>
+  <Button variant="primary" type="submit" block disabled={loading} pending={loading}>
+    {medication ? "Update Medication" : "Add Medication"}
+  </Button>
 </form>

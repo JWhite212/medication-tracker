@@ -69,6 +69,19 @@ function expectEveryDescribedByResolves(html: string): void {
   }
 }
 
+/**
+ * An assertive `Alert`: its id first, role="alert", the aria-hidden icon,
+ * and then the message as the first text — the same "message directly
+ * inside the alert" property the old `<div>`/`<p>` regexes held, with the
+ * icon (and Svelte's comment markers) the only things allowed before it.
+ */
+function assertiveAlert(id: string, message: string): RegExp {
+  return new RegExp(
+    String.raw`<div id="${id}"[^>]*\brole="alert"[^>]*>\s*(?:<!--[\s\S]*?-->\s*)*<svg\b[^>]*\baria-hidden="true"[^>]*>[\s\S]*?</svg>\s*(?:<[^>]+>\s*)*` +
+      message,
+  );
+}
+
 /** Nothing on the page claims an error when there is none. */
 function expectNoErrorWiring(html: string): void {
   expect(html).not.toContain("aria-invalid");
@@ -112,7 +125,7 @@ describe("/auth/register", () => {
       props: { form: { errors: { form: ["Too many attempts. Try again in 15 minutes."] } } },
     }).body;
 
-    expect(html).toMatch(/<div id="form-error"[^>]*role="alert"[^>]*>\s*Too many attempts/);
+    expect(html).toMatch(assertiveAlert("form-error", "Too many attempts"));
     for (const id of ["name", "email", "password"]) {
       expect(attr(control(html, id), "aria-describedby")).toBe("form-error");
       // A throttle is not a verdict on what was typed.
@@ -159,7 +172,7 @@ describe("/auth/login", () => {
       props: { data, form: { errors: { form: ["Too many attempts. Try again in 15 minutes."] } } },
     }).body;
 
-    expect(html).toMatch(/<div id="form-error"[^>]*role="alert"/);
+    expect(html).toMatch(assertiveAlert("form-error", "Too many attempts"));
     for (const id of ["email", "password"]) {
       expect(attr(control(html, id), "aria-describedby")).toBe("form-error");
       expect(attr(control(html, id), "aria-invalid")).toBeUndefined();
@@ -206,7 +219,7 @@ describe.each([
     const html = renderPage({ error: "Too many attempts. Try again in 15 minutes." });
 
     // role="alert" is what makes an enhanced submit's refusal audible at all.
-    expect(html).toMatch(/<div id="form-error"[^>]*role="alert"[^>]*>\s*Too many attempts/);
+    expect(html).toMatch(assertiveAlert("form-error", "Too many attempts"));
     for (const id of fields) {
       expect(attr(control(html, id), "aria-describedby")).toBe("form-error");
       // A throttle is not a verdict on what was typed.
@@ -303,7 +316,7 @@ describe("/settings/security", () => {
       },
     }).body;
 
-    expect(html).toMatch(/<p id="totp-error"[^>]*role="alert"/);
+    expect(html).toMatch(assertiveAlert("totp-error", "Incorrect password"));
     const password = control(html, "setup2faPassword");
     expect(attr(password, "aria-describedby")).toBe("totp-error");
     expect(attr(password, "aria-invalid")).toBeUndefined();

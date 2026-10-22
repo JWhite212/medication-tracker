@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Button from "$lib/components/ui/Button.svelte";
+
   let step = $state(0);
   const totalSteps = 3;
 </script>
@@ -14,19 +16,8 @@
         Track your medications, log doses, and stay on top of your health — all in one place.
       </p>
       <div class="flex flex-col items-center gap-3">
-        <a
-          href="/medications/new"
-          class="bg-accent text-accent-fg inline-block rounded-lg px-6 py-3 text-sm font-medium transition-opacity hover:opacity-90"
-        >
-          Add your first medication
-        </a>
-        <button
-          type="button"
-          class="text-text-secondary hover:text-text-primary text-sm transition-colors"
-          onclick={() => (step = 1)}
-        >
-          Learn more first
-        </button>
+        <Button variant="primary" href="/medications/new">Add your first medication</Button>
+        <Button variant="ghost" onclick={() => (step = 1)}>Learn more first</Button>
       </div>
     </div>
   {:else if step === 1}
@@ -49,20 +40,8 @@
         </div>
       </div>
       <div class="mt-6 flex items-center justify-between">
-        <button
-          type="button"
-          class="text-text-secondary hover:text-text-primary text-sm transition-colors"
-          onclick={() => (step = 0)}
-        >
-          Back
-        </button>
-        <button
-          type="button"
-          class="text-accent-ink hover:text-text-primary text-sm font-medium transition-colors"
-          onclick={() => (step = 2)}
-        >
-          Next
-        </button>
+        <Button variant="ghost" onclick={() => (step = 0)}>Back</Button>
+        <Button variant="primary" onclick={() => (step = 2)}>Next</Button>
       </div>
     </div>
   {:else if step === 2}
@@ -101,19 +80,8 @@
         </div>
       </div>
       <div class="mt-6 flex items-center justify-between">
-        <button
-          type="button"
-          class="text-text-secondary hover:text-text-primary text-sm transition-colors"
-          onclick={() => (step = 1)}
-        >
-          Back
-        </button>
-        <a
-          href="/medications/new"
-          class="bg-accent text-accent-fg rounded-lg px-6 py-3 text-sm font-medium transition-opacity hover:opacity-90"
-        >
-          Get started
-        </a>
+        <Button variant="ghost" onclick={() => (step = 1)}>Back</Button>
+        <Button variant="primary" href="/medications/new">Get started</Button>
       </div>
     </div>
   {/if}

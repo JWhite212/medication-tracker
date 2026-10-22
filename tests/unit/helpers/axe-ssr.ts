@@ -1,5 +1,6 @@
 import type { AxeResults } from "axe-core";
 import { JSDOM } from "jsdom";
+import { expect } from "vitest";
 
 /** Parse SSR markup into a standalone document, inside a <main> as the page nests it. */
 export function ssrDocument(bodyHtml: string): Document {
@@ -33,4 +34,35 @@ export async function runAxe(doc: Document, rules: string[]): Promise<AxeResults
  */
 export function evaluatedRules(results: AxeResults): Set<string> {
   return new Set([...results.passes, ...results.violations].map((rule) => rule.id));
+}
+
+/**
+ * SSR markup with Svelte's hydration comments removed. A rendered snippet
+ * arrives bracketed by them (`<a …><!---->Clear filters<!----></a>`), so a
+ * regex that means "the label is this element's direct text" reads this.
+ * Repeated until nothing changes, because removing one comment can join the
+ * text either side of it into a new `<!--`.
+ */
+export function withoutComments(html: string): string {
+  let prev: string;
+  let next = html;
+  do {
+    prev = next;
+    next = prev.replace(/<!--[\s\S]*?-->/g, "");
+  } while (next !== prev);
+  return next;
+}
+
+/**
+ * Run the named axe rules and fail on any violation, listing each offending
+ * node. Also fails when a rule evaluated nothing: an empty violations list
+ * is vacuous if the page never gave the rule a candidate.
+ */
+export async function expectAxeClean(doc: Document, rules: string[]): Promise<void> {
+  const results = await runAxe(doc, rules);
+  const offenders = results.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.html}`));
+  expect(offenders, offenders.join("\n")).toEqual([]);
+  for (const rule of rules) {
+    expect(evaluatedRules(results).has(rule), `${rule} evaluated nothing`).toBe(true);
+  }
 }

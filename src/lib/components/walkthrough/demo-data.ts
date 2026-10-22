@@ -8,6 +8,7 @@
 // UTC and every string is formatted in WALKTHROUGH_TZ, never the visitor's
 // zone, so the video reads the same everywhere.
 
+import type { SideEffect } from "$lib/types";
 import { formatUserTime, type TimeFormat } from "$lib/utils/time";
 
 // ── Story clocks ──
@@ -337,7 +338,12 @@ export const LOGGED_DOSE = {
 } as const;
 
 // ── Dose history ──
-export type LoggedDose = { id: MedicationId; time: string; since: string; sideEffect?: string };
+export type LoggedDose = {
+  id: MedicationId;
+  time: string;
+  since: string;
+  sideEffect?: SideEffect;
+};
 export type DoseGroup = { label: string; doses: LoggedDose[] };
 
 const DAY_LABEL = new Intl.DateTimeFormat("en-GB", {
@@ -347,6 +353,9 @@ const DAY_LABEL = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
 });
 const septemberDay = (day: number) => DAY_LABEL.format(new Date(Date.UTC(2026, 8, day)));
+
+/** The one side effect the demo account logs, as scripts/seed-demo.ts seeds it. */
+const UPSET_STOMACH: SideEffect = { name: "Upset stomach", severity: "mild" };
 
 // Newest first within each day, as /log orders by takenAt descending.
 export const LOG_ALL: readonly DoseGroup[] = [
@@ -364,7 +373,7 @@ export const LOG_ALL: readonly DoseGroup[] = [
       { id: "ibu", time: "22:14", since: "9h 48m ago" },
       { id: "mag", time: "22:05", since: "9h 57m ago" },
       { id: "met", time: "19:51", since: "12h 11m ago" },
-      { id: "ibu", time: "14:12", since: "17h 50m ago", sideEffect: "Upset stomach" },
+      { id: "ibu", time: "14:12", since: "17h 50m ago", sideEffect: UPSET_STOMACH },
       { id: "vitd", time: "09:05", since: "22h 57m ago" },
       { id: "lis", time: "08:01", since: "1d ago" },
     ],
@@ -374,15 +383,15 @@ export const LOG_ALL: readonly DoseGroup[] = [
 export const LOG_WITH_SIDE_EFFECTS: readonly DoseGroup[] = [
   {
     label: "Yesterday",
-    doses: [{ id: "ibu", time: "14:12", since: "17h 50m ago", sideEffect: "Upset stomach" }],
+    doses: [{ id: "ibu", time: "14:12", since: "17h 50m ago", sideEffect: UPSET_STOMACH }],
   },
   {
     label: septemberDay(21),
-    doses: [{ id: "ibu", time: "22:20", since: "2d ago", sideEffect: "Upset stomach" }],
+    doses: [{ id: "ibu", time: "22:20", since: "2d ago", sideEffect: UPSET_STOMACH }],
   },
   {
     label: septemberDay(17),
-    doses: [{ id: "ibu", time: "14:05", since: "6d ago", sideEffect: "Upset stomach" }],
+    doses: [{ id: "ibu", time: "14:05", since: "6d ago", sideEffect: UPSET_STOMACH }],
   },
 ];
 

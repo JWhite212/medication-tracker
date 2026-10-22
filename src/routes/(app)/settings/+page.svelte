@@ -1,5 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import Input from "$lib/components/ui/Input.svelte";
 
@@ -20,9 +22,7 @@
 
     <div role="status">
       {#if form?.success}
-        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-          Settings saved successfully.
-        </p>
+        <Alert tone="happened" title="Settings saved successfully." class="mb-4" />
       {/if}
     </div>
 
@@ -59,12 +59,7 @@
         {/if}
       </div>
 
-      <button
-        type="submit"
-        class="bg-accent text-accent-fg rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-      >
-        Save Changes
-      </button>
+      <Button variant="primary" type="submit">Save Changes</Button>
     </form>
   </GlassCard>
 

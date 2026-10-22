@@ -22,6 +22,9 @@ import {
  * `./time` and types.
  */
 
+/** The words for a refill that needs you: RefillsCard's rows and the medications card's chip (both through refillChip) and the refill insight's lead (buildInsights). */
+export const REORDER_SOON = "Reorder soon";
+
 /** Under this the dashboard says "now" rather than "less than a minute". */
 const NOW_THRESHOLD_MS = 60_000;
 

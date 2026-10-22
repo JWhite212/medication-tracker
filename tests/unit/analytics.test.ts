@@ -16,6 +16,7 @@ import {
 } from "$lib/server/analytics";
 import type { InsightInputs } from "$lib/server/analytics";
 import type { MedicationSchedule } from "$lib/server/schedules";
+import { REORDER_SOON } from "$lib/utils/dashboard-copy";
 
 const baseInputs: InsightInputs = {
   totalDoses: 0,
@@ -154,8 +155,24 @@ describe("buildInsights", () => {
       ],
     });
     expect(insights.find((i) => i.id === "adherence-trend")).toMatchObject({
-      severity: "positive",
+      signal: "up",
       text: expect.stringContaining("improved 15%"),
+    });
+  });
+
+  it("signals a decline as down", () => {
+    const insights = buildInsights({
+      ...baseInputs,
+      avgAdherence: 60,
+      prevAvgAdherence: 80,
+      medStats: [
+        { medicationName: "A", adherence: 80, expectedTotal: 30 },
+        { medicationName: "B", adherence: 80, expectedTotal: 30 },
+      ],
+    });
+    expect(insights.find((i) => i.id === "adherence-trend")).toMatchObject({
+      signal: "down",
+      text: expect.stringContaining("declined 20%"),
     });
   });
 
@@ -238,16 +255,22 @@ describe("buildInsights", () => {
     expect(insights.find((i) => i.id === "worst-day")).toBeUndefined();
   });
 
-  it("emits refill-warning when at least one med needs refilling", () => {
-    const single = buildInsights({ ...baseInputs, refillCriticalCount: 1 });
-    const sInsight = single.find((i) => i.id === "refill-warning");
-    expect(sInsight).toBeDefined();
-    expect(sInsight?.severity).toBe("warning");
-    expect(sInsight?.text).toMatch(/1 medication needs/);
-
-    const multiple = buildInsights({ ...baseInputs, refillCriticalCount: 3 });
-    const mInsight = multiple.find((i) => i.id === "refill-warning");
-    expect(mInsight?.text).toMatch(/3 medications need/);
+  it("leads the refill insight with the refill chip's own Reorder soon, and says the supply runs out", () => {
+    expect(
+      buildInsights({ ...baseInputs, refillCriticalCount: 1 }).find(
+        (i) => i.id === "refill-warning",
+      ),
+    ).toEqual({
+      id: "refill-warning",
+      signal: "needs-you",
+      lead: REORDER_SOON,
+      text: "1 medication runs out within 7 days",
+    });
+    expect(
+      buildInsights({ ...baseInputs, refillCriticalCount: 3 }).find(
+        (i) => i.id === "refill-warning",
+      )?.text,
+    ).toBe("3 medications run out within 7 days");
   });
 
   it("does not emit refill-warning when refillCriticalCount is 0", () => {
@@ -264,7 +287,7 @@ describe("buildInsights", () => {
     expect(insights.find((i) => i.id === "side-effects")?.text).toContain("Drowsiness");
   });
 
-  it("orders warnings before positive before info, and slices to 5", () => {
+  it("orders needs-you, then down, then up, then info, and slices to 5", () => {
     const insights = buildInsights({
       ...baseInputs,
       avgAdherence: 60,
@@ -282,8 +305,60 @@ describe("buildInsights", () => {
       refillCriticalCount: 2,
       streak: 5,
     });
-    expect(insights.length).toBeLessThanOrEqual(5);
-    expect(insights[0].severity).toBe("warning");
+    // Pushed: trend(down) highest(up) lowest(down) peak(info) refill(needs-you) side-effects(info) streak(up).
+    expect(insights.map((i) => i.id)).toEqual([
+      "refill-warning",
+      "adherence-trend",
+      "lowest-adherence-med",
+      "highest-adherence-med",
+      "streak",
+    ]);
+  });
+
+  // One fixture per rule: buildInsights slices to five, so a single fixture firing all
+  // eight would hide three of them.
+  const BEST_AND_WORST = [
+    { medicationName: "Best", adherence: 95, expectedTotal: 30 },
+    { medicationName: "Worst", adherence: 50, expectedTotal: 30 },
+  ];
+  const ONLY: Record<string, Partial<InsightInputs>> = {
+    "highest-adherence-med": { medStats: BEST_AND_WORST },
+    "lowest-adherence-med": { medStats: BEST_AND_WORST },
+    "worst-day": {
+      dayOfWeek: [5, 5, 5, 5, 5, 5, 0].map((count, dayOfWeek) => ({ dayOfWeek, count })),
+    },
+    "peak-hour": {
+      hourly: [
+        { hour: 8, count: 5 },
+        { hour: 12, count: 1 },
+        { hour: 20, count: 1 },
+      ],
+    },
+    "refill-warning": { refillCriticalCount: 2 },
+    "side-effects": { sideEffectsCount: 5, topSideEffect: "Drowsiness" },
+    streak: { streak: 7 },
+  };
+  it.each([
+    ["highest-adherence-med", "up"],
+    ["lowest-adherence-med", "down"],
+    ["worst-day", "info"],
+    ["peak-hour", "info"],
+    ["refill-warning", "needs-you"],
+    ["side-effects", "info"],
+    ["streak", "up"],
+  ] as const)("signals %s as %s", (id, signal) => {
+    expect(buildInsights({ ...baseInputs, ...ONLY[id] }).find((i) => i.id === id)?.signal).toBe(
+      signal,
+    );
+  });
+
+  it("gives no other insight a lead-in", () => {
+    for (const [id, inputs] of Object.entries(ONLY)) {
+      if (id === "refill-warning") continue;
+      for (const insight of buildInsights({ ...baseInputs, ...inputs })) {
+        expect(insight.lead, insight.id).toBeUndefined();
+      }
+    }
   });
 });
 

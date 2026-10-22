@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { toneClass } from "$lib/utils/status-tone";
+
   let {
     stats,
     trends = [],
@@ -34,7 +36,7 @@
         <div class="flex items-center gap-1.5">
           <span class="text-text-secondary">{stat.adherence}%</span>
           {#if trend && trend.direction !== "flat"}
-            <span class="text-xs {trend.direction === 'up' ? 'text-success' : 'text-danger-ink'}">
+            <span class="text-xs {toneClass('neutral', 'text')}">
               {trend.direction === "up" ? "\u2191" : "\u2193"}{trend.percent}%
             </span>
           {/if}

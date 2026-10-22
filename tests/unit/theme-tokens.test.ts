@@ -162,6 +162,12 @@ describe.each(SCHEMES)("$name — @theme parsing", ({ T }) => {
     expect(T["--color-text-primary"]).toMatch(/^#[0-9a-f]{6}$/i);
     expect(Object.keys(T).length).toBeGreaterThan(15);
   });
+
+  it("has no --color-info: neutral replaced it as a status colour", () => {
+    // Its hue sat next to the accent's, so the refill "watch" tier and a
+    // selected control looked the same. The owner scan rejects *-info classes.
+    expect(T["--color-info"]).toBeUndefined();
+  });
 });
 
 describe.each(SCHEMES)(
@@ -173,12 +179,9 @@ describe.each(SCHEMES)(
       "--color-text-muted",
       "--color-accent-ink",
       "--color-danger-ink",
-      // success and warning are asserted here too: they are used as text in 14
-      // and 15 files respectively, and both already pass, so this pins that.
+      // success and warning are the happened and needs-you text (TONE_CLASSES).
       "--color-success",
       "--color-warning",
-      // info is rendered as text on the medications list chip.
-      "--color-info",
       // --color-accent-hover is deliberately NOT here. It is a fill-only token
       // (see app.css) and would need to be near #4f46e5's lightness to work as
       // text, which is the opposite of what white-on-fill needs. It is asserted
@@ -215,8 +218,8 @@ describe.each(SCHEMES)(
 
     // The backdrops a tinted accent chip actually paints on — the sidebar /
     // mobile-header avatar initial (resting AND hovered) and the onboarding
-    // step numerals. `card` is built the same way the CHIPS table below
-    // builds it (MedicationCard: .bg-glass > page <main> on
+    // step numerals. `card` is built the same way the status-tone describe
+    // below builds it (MedicationCard: .bg-glass > page <main> on
     // --color-surface) — the onboarding numeral's real parent is exactly
     // that bg-glass card. `surface-raised` is the avatar's own resting
     // backdrop (the `<aside>` / `<header>` it sits in). `surface-overlay` is
@@ -449,93 +452,11 @@ it("would have failed danger at 90% opacity in a dark dialog", () => {
 });
 
 /**
- * Tinted chips: `bg-danger/20 text-danger-ink` and friends. The opaque
- * surfaces above are not what these render on — the chip paints a fraction of
- * its own fill over whatever is behind it, which lightens the backdrop and
- * costs the foreground contrast. Nothing asserted that, so live combinations
- * were sitting below 4.5 while every token passed on its own.
+ * Tinted chips are not rendered on the opaque surfaces above: a chip paints a
+ * fraction of its own fill over whatever is behind it, which lightens the
+ * backdrop and costs the foreground contrast. Nothing asserted that, so live
+ * combinations were sitting below 4.5 while every token passed on its own.
  *
- * Each backdrop below is the real DOM nesting, read off the component, not a
- * representative surface.
- */
-describe.each(SCHEMES)(
-  "$name — tinted chips are legible over the backdrop they actually paint on",
-  ({ T }) => {
-    const glass = alphaOf(T["--color-glass"]);
-    const glassHover = alphaOf(T["--color-glass-hover"]);
-
-    // MedicationCard: .bg-glass.hover:bg-glass-hover > page <main> on --color-surface.
-    const card = compositeOver(glass.alpha, T["--color-surface"], glass.overlay);
-    const cardHover = compositeOver(glassHover.alpha, T["--color-surface"], glassHover.overlay);
-    // SideEffectPicker severity chips: .bg-glass > DoseEditForm > Modal panel
-    // on --color-surface-raised.
-    const modalGlass = compositeOver(glass.alpha, T["--color-surface-raised"], glass.overlay);
-
-    // [fill, alpha, backdrop, foreground, threshold]. 3:1 rather than 4.5 where
-    // the foreground is a glyph in a status circle (WCAG 1.4.11), not text.
-    const CHIPS: [string, number, string, string, number, string][] = [
-      ["--color-info", 0.15, card, "--color-info", 4.5, "medications refill chip (watch)"],
-      ["--color-info", 0.15, cardHover, "--color-info", 4.5, "…hovered"],
-      ["--color-warning", 0.15, card, "--color-warning", 4.5, "medications refill chip (warning)"],
-      ["--color-warning", 0.15, cardHover, "--color-warning", 4.5, "…hovered"],
-      [
-        "--color-danger",
-        0.15,
-        card,
-        "--color-danger-ink",
-        4.5,
-        "medications refill chip (critical)",
-      ],
-      ["--color-danger", 0.15, cardHover, "--color-danger-ink", 4.5, "…hovered"],
-      [
-        "--color-danger",
-        0.2,
-        modalGlass,
-        "--color-danger-ink",
-        4.5,
-        "side effect severity: severe",
-      ],
-      [
-        "--color-warning",
-        0.2,
-        modalGlass,
-        "--color-warning",
-        4.5,
-        "side effect severity: moderate",
-      ],
-      [
-        "--color-text-secondary",
-        0.3,
-        modalGlass,
-        "--color-text-primary",
-        4.5,
-        "side effect severity: mild",
-      ],
-      // StatusMarker's two tinted states: a 20px circle inside a DueCard
-      // <li class="bg-glass"> or the Done today card (.bg-glass), each sitting
-      // directly on the page <main>, so the backdrop is `card`. Neither has a
-      // hover background, so there is no hovered row. `due-now`, `upcoming`,
-      // `skipped` and `missed` are untinted rings and carry no chip to check.
-      ["--color-success", 0.2, card, "--color-success", 3, "StatusMarker: taken"],
-      ["--color-warning", 0.2, card, "--color-warning", 3, "StatusMarker: overdue"],
-    ];
-
-    for (const [fill, alpha, base, fg, threshold, site] of CHIPS) {
-      it(`${fg} on ${fill}/${alpha * 100} — ${site}`, () => {
-        expect(T[fill], `${fill} is not defined`).toBeDefined();
-        expect(T[fg], `${fg} is not defined`).toBeDefined();
-        const chip = compositeOver(alpha, base, T[fill]);
-        const ratio = contrastRatio(T[fg], chip);
-        expect(
-          ratio,
-          `${T[fg]} on ${chip} (${T[fill]} at ${alpha} over ${base}) is ${ratio.toFixed(2)}:1`,
-        ).toBeGreaterThanOrEqual(threshold);
-      });
-    }
-  },
-);
-
-/**
  * Every status tone the owner can produce, over every backdrop its element is
  * really drawn on. The pairs are READ from TONE_CLASSES, not restated, so an
  * opacity tuned in status-tone.ts is re-measured here, and a tone or element
@@ -722,8 +643,8 @@ describe.each(SCHEMES)("$name — the heatmap ramp is distinguishable step to st
 
 // Important Finding 2: a hover affordance guards a property this file had
 // never asserted — that a hover state paints DIFFERENT pixels from the
-// resting state, not that it is legible (that is what the CHIPS/text-token
-// tests above already cover). Floor is deliberately modest (1.02, not the
+// resting state, not that it is legible (that is what the status-tone and
+// text-token tests above already cover). Floor is deliberately modest (1.02, not the
 // 4.5/3 thresholds used elsewhere) — this is not a legibility check.
 //
 // This guards --color-surface-overlay, not --color-glass-hover. The 17

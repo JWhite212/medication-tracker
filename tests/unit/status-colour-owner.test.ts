@@ -12,8 +12,8 @@ import { STATUS_TOKEN, maskFieldErrors } from "./helpers/status-token";
  * server-log.test.ts gives: a rule that is only written down re-accumulates.
  *
  * What counts as a status colour, and which field-error lines the spec keeps
- * as they are, is decided by `helpers/status-token.ts`. Both lists below are
- * two-way: a file that stops matching must leave its list, so a stale entry
+ * as they are, is decided by `helpers/status-token.ts`. The exemption list is
+ * two-way: a file that stops matching must leave it, so a stale entry
  * fails as loudly as a new offender.
  */
 
@@ -45,13 +45,6 @@ const EXEMPT: { file: string; why: string }[] = [
   },
 ];
 
-/**
- * Temporary. Every file that wrote a status class when the owner landed.
- * A task that removes a file's last status class deletes its line here in the
- * same commit (the stale check below fails otherwise). Task 13 deletes the list.
- */
-const PENDING_MIGRATION: string[] = [];
-
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
@@ -71,7 +64,6 @@ const MATCHING = new Map(
     .filter(([, found]) => found.length > 0),
 );
 const EXEMPT_FILES = new Set(EXEMPT.map((e) => e.file));
-const PENDING = new Set(PENDING_MIGRATION);
 
 describe("the field-error mask", () => {
   it("hides a field-error line in each of its spellings", () => {
@@ -101,9 +93,9 @@ describe("the field-error mask", () => {
 });
 
 describe("status colour is written only by its owner", () => {
-  it("every file that writes a status class is exempt or pending migration", () => {
+  it("every file that writes a status class is exempt", () => {
     const offenders = [...MATCHING]
-      .filter(([file]) => !EXEMPT_FILES.has(file) && !PENDING.has(file))
+      .filter(([file]) => !EXEMPT_FILES.has(file))
       .map(([file, found]) => `${file}: ${[...new Set(found)].join(" ")}`);
     expect(offenders).toEqual([]);
   });
@@ -112,19 +104,7 @@ describe("status colour is written only by its owner", () => {
     expect(EXEMPT.map((e) => e.file).filter((file) => !MATCHING.has(file))).toEqual([]);
   });
 
-  it("every pending file still writes one: a task that finishes a file deletes its line", () => {
-    expect(PENDING_MIGRATION.filter((file) => !MATCHING.has(file))).toEqual([]);
-  });
-
-  it("no file is both exempt and pending", () => {
-    expect(PENDING_MIGRATION.filter((file) => EXEMPT_FILES.has(file))).toEqual([]);
-  });
-
   it("each exemption says why", () => {
     expect(EXEMPT.filter((e) => e.why.trim() === "")).toEqual([]);
-  });
-
-  it("the pending list is sorted and unique, so tasks deleting lines in parallel merge cleanly", () => {
-    expect(PENDING_MIGRATION).toEqual([...new Set(PENDING_MIGRATION)].sort());
   });
 });

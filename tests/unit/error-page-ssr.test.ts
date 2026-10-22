@@ -7,6 +7,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
 import { writable } from "svelte/store";
+import { expectClasses } from "./helpers/alert-dom";
+import { expectAxeClean, ssrDocument } from "./helpers/axe-ssr";
+import { textOf } from "./helpers/dom-names";
 
 // Mocked ONCE, with a writable the tests move between renders. Re-mocking per
 // case (vi.resetModules + a fresh dynamic import) reloads svelte's server
@@ -73,5 +76,19 @@ describe.each([
     });
 
     expect(html).toMatch(/<code[^>]*>\s*deadbeef\s*<\/code>/);
+  });
+
+  it("offers the way back as a 44px primary Button link", () => {
+    const link = ssrDocument(
+      renderWith(Page, { status: 404, error: { message: "Not found" } }),
+    ).querySelector('a[href="/dashboard"]')!;
+    expect(textOf(link)).toBe("Back to dashboard");
+    expectClasses(link, "h-11 bg-accent text-accent-fg");
+  });
+
+  it("passes axe link-name", async () => {
+    await expectAxeClean(ssrDocument(renderWith(Page, { status: 500, error: null })), [
+      "link-name",
+    ]);
   });
 });

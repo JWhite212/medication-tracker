@@ -1,5 +1,6 @@
 <script>
   import { page } from "$app/stores";
+  import Button from "$lib/components/ui/Button.svelte";
 </script>
 
 <svelte:head>
@@ -26,11 +27,6 @@
         >
       </p>
     {/if}
-    <a
-      href="/dashboard"
-      class="bg-accent text-accent-fg mt-6 inline-block rounded-lg px-5 py-2.5 text-sm font-medium hover:opacity-90"
-    >
-      Back to dashboard
-    </a>
+    <Button variant="primary" href="/dashboard" class="mt-6">Back to dashboard</Button>
   </div>
 </div>

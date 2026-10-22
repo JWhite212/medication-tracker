@@ -1,12 +1,10 @@
-import { error, fail } from "@sveltejs/kit";
 import { desc, eq, and, gte, lt, sql, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
-import { doseEditSchema, logFilterSchema } from "$lib/utils/validation";
-import { updateDose } from "$lib/server/doses";
-import { deleteDoseAction } from "$lib/server/dose-actions";
-import { resolveEditedInstant, parseDayRangeParam } from "$lib/utils/time";
+import { logFilterSchema } from "$lib/utils/validation";
+import { deleteDoseAction, editDoseAction } from "$lib/server/dose-actions";
+import { parseDayRangeParam } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
 // Escape SQL LIKE wildcards so user input doesn't accidentally match
@@ -120,26 +118,7 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
 };
 
 export const actions: Actions = {
-  editDose: async ({ request, locals }) => {
-    // Form actions run BEFORE layout load functions, so the (app) group's
-    // auth guard has not executed at this point. Without this check an
-    // anonymous POST reaches `locals.user!.id` and 500s.
-    if (!locals.user) error(401, "Unauthorized");
-
-    const formData = Object.fromEntries(await request.formData());
-    const parsed = doseEditSchema.safeParse(formData);
-    if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
-
-    const { doseId, takenAt, originalTakenAt, quantity, notes, sideEffects } = parsed.data;
-    const updated = await updateDose(locals.user!.id, doseId, {
-      takenAt: resolveEditedInstant(takenAt, originalTakenAt, locals.user!.timezone),
-      quantity,
-      notes,
-      sideEffects: sideEffects ?? null,
-    });
-    if (!updated) return fail(404, { editErrors: { form: ["Dose no longer exists"] } });
-    return { success: true };
-  },
-  // Shared with the dashboard; see `deleteDoseAction`.
+  // Both shared with the dashboard; see `editDoseAction` and `deleteDoseAction`.
+  editDose: (event) => editDoseAction(event),
   deleteDose: (event) => deleteDoseAction(event),
 };

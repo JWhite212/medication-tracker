@@ -1,17 +1,74 @@
 import { error, fail, type ActionFailure } from "@sveltejs/kit";
-import { deleteDose, restoreDose } from "$lib/server/doses";
-import { doseDeleteSchema, doseRestoreSchema } from "$lib/utils/validation";
+import { deleteDose, restoreDose, updateDose } from "$lib/server/doses";
+import { doseDeleteSchema, doseEditSchema, doseRestoreSchema } from "$lib/utils/validation";
 import { DOSE_UNDO_WINDOW_MS, RESTORE_GONE_MESSAGE } from "$lib/utils/dose-undo";
+import { resolveEditedInstant } from "$lib/utils/time";
 
 /**
  * Dose-write form actions that more than one route serves.
  *
- * The dashboard and /log both expose `?/deleteDose`, and each used to spell
- * the action out for itself. They now share one body, so the 401 guard, the
- * parse, D8's create-Undo flag and the restore handle cannot drift apart
- * between the two routes. `restoreDoseAction`, a delete's Undo, lives here
- * too, beside the handle it consumes.
+ * The dashboard and /log both expose `?/deleteDose` and `?/editDose`, and
+ * each used to spell the actions out for itself. They now share one body
+ * each, so the 401 guard, the parse, D8's create-Undo flag, the restore
+ * handle and the edited-time rules cannot drift apart between the two
+ * routes. `restoreDoseAction`, a delete's Undo, lives here too, beside the
+ * handle it consumes.
  */
+
+/** Refusal shown beside the edit dialog's Time Taken field. */
+export const FUTURE_TAKEN_AT_MESSAGE =
+  "That time is in the future. Check the date as well as the time.";
+
+/**
+ * How far past the server's clock an edited time may sit. The field has
+ * minute precision and is typed from the device's clock, so "now" on a phone
+ * a little fast lands just ahead; five minutes covers that without letting a
+ * wrong date through.
+ */
+export const EDITED_TAKEN_AT_GRACE_MS = 5 * 60_000;
+
+/**
+ * `?/editDose`, for the dashboard and /log.
+ *
+ * - **401 first**, for the same reason as `deleteDoseAction`.
+ * - **No future times.** The Time Taken field keeps the dose's own date, so
+ *   a dose logged just after midnight and changed to 23:45 to mean the night
+ *   before names 23:45 *tonight*. That was accepted, filed under Today, sorted
+ *   above everything and shown as "just now" until the day caught up. It is
+ *   refused beside the field instead. An unchanged save of a dose already
+ *   stored ahead is refused too, so the dialog says what to fix.
+ * - **Gone** is a 404, never a success the toast would misreport.
+ *
+ * `/api/v1`'s `update_dose` is a separate door and is not covered here.
+ */
+export async function editDoseAction(event: {
+  locals: App.Locals;
+  request: Request;
+}): Promise<
+  ActionFailure<{ editErrors: Record<string, string[] | undefined> }> | { success: true }
+> {
+  const { locals, request } = event;
+  if (!locals.user) error(401, "Unauthorized");
+  const user = locals.user;
+
+  const parsed = doseEditSchema.safeParse(Object.fromEntries(await request.formData()));
+  if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
+
+  const { doseId, takenAt, originalTakenAt, quantity, notes, sideEffects } = parsed.data;
+  const instant = resolveEditedInstant(takenAt, originalTakenAt, user.timezone);
+  if (instant.getTime() > Date.now() + EDITED_TAKEN_AT_GRACE_MS) {
+    return fail(400, { editErrors: { takenAt: [FUTURE_TAKEN_AT_MESSAGE] } });
+  }
+
+  const updated = await updateDose(user.id, doseId, {
+    takenAt: instant,
+    quantity,
+    notes,
+    sideEffects: sideEffects ?? null,
+  });
+  if (!updated) return fail(404, { editErrors: { form: ["Dose no longer exists"] } });
+  return { success: true };
+}
 
 /**
  * `?/deleteDose`, for the dashboard and /log.

@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { FUTURE_TAKEN_AT_MESSAGE } from "../../src/lib/server/dose-actions";
 
 // Same contract as tests/unit/dashboard-dose-actions.test.ts, for the
 // Log page: a stale dose row (removed in another tab/session) must not
@@ -65,6 +66,48 @@ describe("log editDose action", () => {
       locals,
     } as never);
     expect(res).toEqual({ success: true });
+  });
+
+  describe("a time in the future", () => {
+    // 00:03 on 22 October, the moment the bad edit happened in production: a
+    // dose logged just after midnight, its time then changed to 23:45 to mean
+    // the evening before. The field keeps the dose's own date, so that names
+    // 23:45 on the 22nd, nearly a day ahead.
+    const NOW = new Date("2026-10-22T00:03:00.000Z");
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(NOW);
+    });
+    afterEach(() => vi.useRealTimers());
+
+    const edit = (fields: Record<string, string>) =>
+      actions.editDose({ request: formRequest({ ...validEdit, ...fields }), locals } as never);
+
+    it("is refused beside the field, and nothing is written", async () => {
+      const res = await edit({ takenAt: "2026-10-22T23:45" });
+
+      expect(res).toMatchObject({
+        status: 400,
+        data: { editErrors: { takenAt: [FUTURE_TAKEN_AT_MESSAGE] } },
+      });
+      expect(updateDose).not.toHaveBeenCalled();
+    });
+
+    it("is refused even when unchanged, so a dose already stored ahead gets fixed", async () => {
+      const res = await edit({
+        takenAt: "2026-10-22T23:45",
+        originalTakenAt: "2026-10-22T23:45:00.000Z",
+      });
+
+      expect(res).toMatchObject({ status: 400 });
+      expect(updateDose).not.toHaveBeenCalled();
+    });
+
+    it("is accepted a few minutes ahead, for a device clock running fast", async () => {
+      const res = await edit({ takenAt: "2026-10-22T00:07" });
+
+      expect(res).toEqual({ success: true });
+    });
   });
 });
 

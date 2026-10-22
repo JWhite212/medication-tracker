@@ -171,9 +171,10 @@ describe("dashboard restoreDose action", () => {
 });
 
 describe("dashboard editDose action", () => {
+  // Before NOW: an edit may not move a dose into the future.
   const validEdit = {
     doseId: "d1",
-    takenAt: "2026-08-04T10:00",
+    takenAt: "2026-04-16T08:00",
     quantity: "2",
     sideEffects: "[]",
   };
@@ -193,6 +194,21 @@ describe("dashboard editDose action", () => {
       locals,
     } as never);
     expect(res).toEqual({ success: true });
+  });
+
+  // The dashboard's edit dialog is the other door to the same write; /log's
+  // suite covers the rule itself. NOW is 19:05 on 16 April.
+  it("refuses a time in the future and writes nothing", async () => {
+    const res = await actions.editDose({
+      request: formRequest({ ...validEdit, takenAt: "2026-04-16T23:45" }),
+      locals,
+    } as never);
+
+    expect(res).toMatchObject({
+      status: 400,
+      data: { editErrors: { takenAt: [expect.any(String)] } },
+    });
+    expect(updateDose).not.toHaveBeenCalled();
   });
 });
 

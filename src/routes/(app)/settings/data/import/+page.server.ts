@@ -3,7 +3,11 @@ import { eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { medications } from "$lib/server/db/schema";
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
-import { accountHasPassword, checkDestructiveGuard } from "$lib/server/auth/destructive-guard";
+import {
+  accountHasPassword,
+  checkDestructiveGuard,
+  signedInFrom,
+} from "$lib/server/auth/destructive-guard";
 import { applyImport } from "$lib/server/import/apply";
 import { buildPlanFromFile } from "$lib/server/import/pipeline";
 import { planIsEmpty } from "$lib/server/import/plan";
@@ -72,8 +76,9 @@ export const load: PageServerLoad = async ({ locals }) => {
     medications: meds,
     // Every account types REPLACE in the replace dialog, and an account
     // with a password also enters it (checkDestructiveGuard). An OAuth-only
-    // account confirms on the word alone: being locked out of restoring your
-    // own backup would be worse than the marginal difference in gate strength.
+    // account confirms on the word and a sign-in within the last 10 minutes,
+    // which the dialog offers to refresh: being locked out of restoring your
+    // own backup would be worse than an extra sign-in.
     hasPassword,
     timezone: locals.user!.timezone,
     maxBytes: IMPORT_MAX_BYTES,
@@ -227,7 +232,7 @@ export const actions: Actions = {
     }
 
     if (options.mode === "replace") {
-      const guard = await checkDestructiveGuard(userId, upload.formData, {
+      const guard = await checkDestructiveGuard(signedInFrom(locals), upload.formData, {
         word: "REPLACE",
         purpose: "import_replace_data",
       });

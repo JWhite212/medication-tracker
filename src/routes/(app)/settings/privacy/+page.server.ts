@@ -4,7 +4,11 @@ import { db } from "$lib/server/db";
 import { doseLogs, medications, sessions, auditLogs } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
 import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
-import { accountHasPassword, checkDestructiveGuard } from "$lib/server/auth/destructive-guard";
+import {
+  accountHasPassword,
+  checkDestructiveGuard,
+  signedInFrom,
+} from "$lib/server/auth/destructive-guard";
 import { logAudit } from "$lib/server/audit";
 import {
   wipeArchivedMedications as wipeArchivedMedicationsForUser,
@@ -92,7 +96,7 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
     const formData = await request.formData();
-    const guard = await checkDestructiveGuard(userId, formData, {
+    const guard = await checkDestructiveGuard(signedInFrom(locals), formData, {
       word: "DELETE",
       purpose: "wipe_dose_history",
     });
@@ -106,7 +110,7 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
     const formData = await request.formData();
-    const guard = await checkDestructiveGuard(userId, formData, {
+    const guard = await checkDestructiveGuard(signedInFrom(locals), formData, {
       word: "DELETE",
       purpose: "wipe_archived_medications",
     });

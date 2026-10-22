@@ -6,7 +6,11 @@ import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferenc
 import { dataSchema } from "$lib/utils/validation";
 import { logAudit } from "$lib/server/audit";
 import { lucia } from "$lib/server/auth/lucia";
-import { accountHasPassword, checkDestructiveGuard } from "$lib/server/auth/destructive-guard";
+import {
+  accountHasPassword,
+  checkDestructiveGuard,
+  signedInFrom,
+} from "$lib/server/auth/destructive-guard";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -45,7 +49,7 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
     const formData = await request.formData();
-    const guard = await checkDestructiveGuard(userId, formData, {
+    const guard = await checkDestructiveGuard(signedInFrom(locals), formData, {
       word: "DELETE",
       purpose: "delete_account",
     });

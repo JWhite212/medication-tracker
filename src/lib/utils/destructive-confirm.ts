@@ -16,6 +16,21 @@
 /** The word typed to confirm. Exact, case-sensitive, trimmed. */
 export type DestructiveWord = "DELETE" | "REPLACE";
 
+/**
+ * How recently an account with no password must have signed in before any
+ * of the four deletions runs. `signedInRecently` in the server guard is the
+ * one place it is compared against.
+ */
+export const RECENT_SIGN_IN_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * The guard's refusal when that sign-in is too old, and the title of the
+ * prompt that offers a fresh one. The dialog recognises the refusal by this
+ * exact string (as Toast does `RESTORE_GONE_MESSAGE`), so the failure keeps
+ * the plain `{ error }` shape `actionErrorMessage` reads.
+ */
+export const RECENT_SIGN_IN_MESSAGE = "Sign in again to confirm.";
+
 const NUMBER = new Intl.NumberFormat("en-GB");
 
 /** A count with en-GB thousands grouping, whatever the runtime's locale. */

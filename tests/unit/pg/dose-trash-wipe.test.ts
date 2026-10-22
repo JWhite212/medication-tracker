@@ -265,7 +265,7 @@ describe("account deletion", () => {
             password: "correct horse battery staple",
           }),
         }),
-        locals: { user: { id: "u1" }, session: { id: "s1" } },
+        locals: { user: { id: "u1" }, session: { id: "s1", authenticatedAt: new Date() } },
         cookies,
       } as never),
     ).rejects.toMatchObject({ status: 302, location: "/" });

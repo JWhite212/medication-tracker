@@ -5,8 +5,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * The one server gate on the four browser deletions nothing can undo.
  *
  * fake-db, not PGlite: the guard is one read of `users.password_hash`
- * followed by a branch in TypeScript, so nothing about it is decided by the
- * database (CLAUDE.md's test-seam rule).
+ * followed by branches in TypeScript (the sign-in time arrives on the
+ * session, already read), so nothing about it is decided by the database
+ * (CLAUDE.md's test-seam rule).
  *
  * `reauthMessage`'s own wording is pinned in auth-reauth.test.ts; here the
  * mock only proves the guard delegates to it.
@@ -25,9 +26,18 @@ import { users } from "$lib/server/db/schema";
 import {
   accountHasPassword,
   checkDestructiveGuard,
+  signedInRecently,
 } from "../../src/lib/server/auth/destructive-guard";
+import {
+  RECENT_SIGN_IN_MESSAGE,
+  RECENT_SIGN_IN_WINDOW_MS,
+} from "../../src/lib/utils/destructive-confirm";
 
-const DOSES = { word: "DELETE", purpose: "wipe_dose_history" } as const;
+const NOW = new Date("2026-10-22T09:00:00Z");
+const ago = (ms: number) => new Date(NOW.getTime() - ms);
+/** Signed in a millisecond ago: the ordinary case, so every older test keeps its meaning. */
+const RECENT = { userId: "u1", authenticatedAt: ago(1) };
+const DOSES = { word: "DELETE", purpose: "wipe_dose_history", now: NOW } as const;
 
 function seedPassword() {
   fakeDb.seed(users, [{ passwordHash: "$argon2id$x" }]);
@@ -55,7 +65,7 @@ beforeEach(() => {
 
 it("refuses a missing word before reading the account or spending a password attempt", async () => {
   seedPassword();
-  expect(await checkDestructiveGuard("u1", fd({ password: "hunter2" }), DOSES)).toEqual({
+  expect(await checkDestructiveGuard(RECENT, fd({ password: "hunter2" }), DOSES)).toEqual({
     ok: false,
     error: "Type DELETE to confirm.",
   });
@@ -66,29 +76,30 @@ it("refuses a missing word before reading the account or spending a password att
 it("refuses a wrong word, case-sensitively, naming the word it wants", async () => {
   seedPasswordless();
   for (const typed of ["delete", "Delete", "DELET", "DELETE!"]) {
-    expect(await checkDestructiveGuard("u1", fd({ confirmWord: typed }), DOSES)).toEqual({
+    expect(await checkDestructiveGuard(RECENT, fd({ confirmWord: typed }), DOSES)).toEqual({
       ok: false,
       error: "Type DELETE to confirm.",
     });
   }
   expect(
-    await checkDestructiveGuard("u1", fd({ confirmWord: "DELETE" }), {
+    await checkDestructiveGuard(RECENT, fd({ confirmWord: "DELETE" }), {
       word: "REPLACE",
       purpose: "import_replace_data",
+      now: NOW,
     }),
   ).toEqual({ ok: false, error: "Type REPLACE to confirm." });
 });
 
 it("trims the typed word", async () => {
   seedPasswordless();
-  expect(await checkDestructiveGuard("u1", fd({ confirmWord: "  DELETE \n" }), DOSES)).toEqual({
+  expect(await checkDestructiveGuard(RECENT, fd({ confirmWord: "  DELETE \n" }), DOSES)).toEqual({
     ok: true,
   });
 });
 
 it("asks a password account for its password without spending an attempt", async () => {
   seedPassword();
-  expect(await checkDestructiveGuard("u1", fd({ confirmWord: "DELETE" }), DOSES)).toEqual({
+  expect(await checkDestructiveGuard(RECENT, fd({ confirmWord: "DELETE" }), DOSES)).toEqual({
     ok: false,
     error: "Password is required to confirm this action.",
   });
@@ -100,7 +111,7 @@ it("re-authenticates a password account for the purpose given, and reports a ref
   const refusal = { ok: false, rateLimited: true, retryAfterMs: 60_000 };
   confirmReauth.mockResolvedValueOnce(refusal);
   expect(
-    await checkDestructiveGuard("u1", fd({ confirmWord: "DELETE", password: "hunter2" }), DOSES),
+    await checkDestructiveGuard(RECENT, fd({ confirmWord: "DELETE", password: "hunter2" }), DOSES),
   ).toEqual({ ok: false, error: "REAUTH MESSAGE" });
   expect(confirmReauth).toHaveBeenCalledWith("u1", "hunter2", "wipe_dose_history");
   expect(reauthMessage).toHaveBeenCalledWith(refusal);
@@ -110,24 +121,101 @@ it("passes a password account with the word and a confirmed password", async () 
   seedPassword();
   confirmReauth.mockResolvedValueOnce({ ok: true, token: "t" });
   expect(
-    await checkDestructiveGuard("u1", fd({ confirmWord: "DELETE", password: "hunter2" }), DOSES),
+    await checkDestructiveGuard(RECENT, fd({ confirmWord: "DELETE", password: "hunter2" }), DOSES),
   ).toEqual({ ok: true });
 });
 
-it("passes an account with no password on the word alone, and never calls confirmReauth", async () => {
+it("passes an account with no password on the word and a recent sign-in, and never calls confirmReauth", async () => {
   seedPasswordless();
   expect(
-    await checkDestructiveGuard("u1", fd({ confirmWord: "DELETE", password: "ignored" }), DOSES),
+    await checkDestructiveGuard(RECENT, fd({ confirmWord: "DELETE", password: "ignored" }), DOSES),
   ).toEqual({ ok: true });
   expect(confirmReauth).not.toHaveBeenCalled();
 });
 
 it("reads the password state of the user it was given", async () => {
   seedPasswordless();
-  await checkDestructiveGuard("u1", fd({ confirmWord: "DELETE" }), DOSES);
+  await checkDestructiveGuard(RECENT, fd({ confirmWord: "DELETE" }), DOSES);
   const read = fakeDb.attempted.find((c) => c.op === "select" && c.table === "users");
   expect(read, "the guard should read the users table").toBeDefined();
   expect(predicateIncludes(read?.predicate, "u1")).toBe(true);
+});
+
+describe("an account with no password must have signed in recently", () => {
+  const REFUSED = { ok: false, error: RECENT_SIGN_IN_MESSAGE };
+  const asOf = (authenticatedAt: Date | null) => ({ userId: "u1", authenticatedAt });
+
+  it("passes one millisecond inside the window", async () => {
+    seedPasswordless();
+    const signedIn = asOf(ago(RECENT_SIGN_IN_WINDOW_MS - 1));
+    expect(await checkDestructiveGuard(signedIn, fd({ confirmWord: "DELETE" }), DOSES)).toEqual({
+      ok: true,
+    });
+  });
+
+  it("refuses exactly one window after signing in", async () => {
+    seedPasswordless();
+    const signedIn = asOf(ago(RECENT_SIGN_IN_WINDOW_MS));
+    expect(await checkDestructiveGuard(signedIn, fd({ confirmWord: "DELETE" }), DOSES)).toEqual(
+      REFUSED,
+    );
+  });
+
+  it("refuses a session with no recorded sign-in, as every pre-existing session has", async () => {
+    seedPasswordless();
+    expect(await checkDestructiveGuard(asOf(null), fd({ confirmWord: "DELETE" }), DOSES)).toEqual(
+      REFUSED,
+    );
+  });
+
+  it("checks the word before the sign-in time", async () => {
+    seedPasswordless();
+    expect(await checkDestructiveGuard(asOf(null), fd({ confirmWord: "delete" }), DOSES)).toEqual({
+      ok: false,
+      error: "Type DELETE to confirm.",
+    });
+  });
+
+  it("never asks a password account about its sign-in time", async () => {
+    seedPassword();
+    confirmReauth.mockResolvedValueOnce({ ok: true, token: "t" });
+    expect(
+      await checkDestructiveGuard(
+        asOf(null),
+        fd({ confirmWord: "DELETE", password: "hunter2" }),
+        DOSES,
+      ),
+    ).toEqual({ ok: true });
+    expect(confirmReauth).toHaveBeenCalledWith("u1", "hunter2", "wipe_dose_history");
+  });
+
+  it("reads the clock when none is given", async () => {
+    seedPasswordless();
+    const { now: _now, ...noClock } = DOSES;
+    const justNow = asOf(new Date(Date.now() - 1000));
+    expect(await checkDestructiveGuard(justNow, fd({ confirmWord: "DELETE" }), noClock)).toEqual({
+      ok: true,
+    });
+  });
+});
+
+describe("signedInRecently", () => {
+  it("is false with no sign-in, and false from exactly one window on", () => {
+    expect(signedInRecently(null, NOW)).toBe(false);
+    expect(signedInRecently(ago(RECENT_SIGN_IN_WINDOW_MS), NOW)).toBe(false);
+    expect(signedInRecently(ago(RECENT_SIGN_IN_WINDOW_MS + 60_000), NOW)).toBe(false);
+  });
+
+  it("is true inside the window, and for a stamp slightly in the future (clock drift)", () => {
+    expect(signedInRecently(ago(RECENT_SIGN_IN_WINDOW_MS - 1), NOW)).toBe(true);
+    expect(signedInRecently(ago(0), NOW)).toBe(true);
+    expect(signedInRecently(ago(-5_000), NOW)).toBe(true);
+  });
+
+  it("is a ten-minute window", () => {
+    expect(RECENT_SIGN_IN_WINDOW_MS).toBe(10 * 60 * 1000);
+    expect(RECENT_SIGN_IN_MESSAGE).toBe("Sign in again to confirm.");
+  });
 });
 
 describe("accountHasPassword", () => {

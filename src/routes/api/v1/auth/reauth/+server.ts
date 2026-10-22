@@ -45,7 +45,8 @@ export const POST: RequestHandler = async ({ request }) => {
   // An OAuth-only account has no password to confirm, so `confirmReauth`
   // cannot mint for it and the destructive commands stay closed at this
   // door. The browser differs, deliberately (decided 2026-10-16): it lets an
-  // account with no password delete on the typed word alone, while this door
+  // account with no password delete on the typed word and a sign-in within
+  // the last 10 minutes, while this door
   // keeps requiring a password-minted token and takes no word. So an
   // OAuth-only account cannot wipe through the API, and a stolen bearer
   // token alone never can.

@@ -52,8 +52,6 @@ const EXEMPT: { file: string; why: string }[] = [
  */
 const PENDING_MIGRATION: string[] = [
   "src/lib/components/DoseEditForm.svelte",
-  "src/lib/components/medication-form/MedicationScheduleSection.svelte",
-  "src/lib/components/medication-form/MedicationStylePicker.svelte",
   "src/lib/components/walkthrough/parts/dashboard/StageDueCard.svelte",
   "src/lib/components/walkthrough/scenes/AnalyticsScene.svelte",
   "src/lib/components/walkthrough/scenes/MedicationsScene.svelte",

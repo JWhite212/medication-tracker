@@ -19,6 +19,8 @@ vi.mock("$app/forms", () => ({ enhance: () => ({ destroy() {} }) }));
 
 import MedicationForm from "../../src/lib/components/MedicationForm.svelte";
 import InteractionWarningPanel from "../../src/lib/components/medication-form/InteractionWarningPanel.svelte";
+import ScheduleSection from "../../src/lib/components/medication-form/MedicationScheduleSection.svelte";
+import StylePicker from "../../src/lib/components/medication-form/MedicationStylePicker.svelte";
 import { toneClass, type Tone } from "$lib/utils/status-tone";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
 import { expectAxeClean, ssrDocument } from "./helpers/axe-ssr";
@@ -85,6 +87,111 @@ describe("InteractionWarningPanel", () => {
     const region = panel([]).querySelector('[role="status"]');
     expect(region).not.toBeNull();
     expect(textOf(region!)).toBe("");
+  });
+});
+
+describe("MedicationScheduleSection's controls", () => {
+  const schedule = (p: Partial<ComponentProps<typeof ScheduleSection>> = {}) =>
+    ssrDocument(
+      render(ScheduleSection, {
+        props: {
+          mode: "fixed_time",
+          intervalHours: "",
+          fixedTimes: ["08:00"],
+          daysOfWeek: [],
+          errors: {},
+          ...p,
+        },
+      }).body,
+    );
+  const MODE_GROUP = '[role="group"][aria-label="Schedule"]';
+
+  it("offers the three modes as Toggles, only the current one pressed", () => {
+    const modes = [...schedule().querySelectorAll(`${MODE_GROUP} button`)];
+    expect(modes.map(spoken)).toEqual(["Interval", "Fixed time", "As needed (PRN)"]);
+    expect(modes.map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
+    for (const b of modes) {
+      expect(b.getAttribute("type")).toBe("button");
+      expect(classes(b)).toEqual(expect.arrayContaining(["h-9", FOCUS_RING]));
+    }
+    expect(classes(modes[1])).toEqual(
+      expect.arrayContaining(["border-accent-ink", "bg-accent/15", "text-accent-ink"]),
+    );
+    for (const b of [modes[0], modes[2]]) {
+      expect(classes(b)).toContain("border-border-strong");
+      expect(classes(b)).not.toContain("border-glass-border");
+    }
+  });
+
+  it("offers the seven days as Toggles, pressed from daysOfWeek", () => {
+    const days = [
+      ...schedule({ daysOfWeek: [1, 3, 5] }).querySelectorAll("button[aria-pressed]"),
+    ].filter((b) => !b.closest(MODE_GROUP));
+    expect(days.map(spoken)).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+    expect(days.filter((b) => b.getAttribute("aria-pressed") === "true").map(spoken)).toEqual([
+      "Mon",
+      "Wed",
+      "Fri",
+    ]);
+    for (const b of days) expect(classes(b)).toContain("h-9");
+  });
+
+  it("removes a time with a neutral secondary Button, disabled only while one row is left", () => {
+    const removes = (doc: Document) => [
+      ...doc.querySelectorAll('button[aria-label="Remove this time"]'),
+    ];
+    expect(removes(schedule()).map((b) => b.hasAttribute("disabled"))).toEqual([true]);
+    const two = removes(schedule({ fixedTimes: ["08:00", "20:00"] }));
+    expect(two.map((b) => b.hasAttribute("disabled"))).toEqual([false, false]);
+    for (const b of two) {
+      expect(b.getAttribute("type")).toBe("button");
+      expect(classes(b)).toEqual(
+        expect.arrayContaining(["border-border-strong", "h-9", FOCUS_RING]),
+      );
+      expect(b.className).not.toMatch(/danger/);
+    }
+  });
+
+  it("adds a time with a secondary sm Button", () => {
+    const add = [...schedule().querySelectorAll("button")].find((b) => spoken(b) === "+ Add time")!;
+    expect(add.getAttribute("type")).toBe("button");
+    expect(classes(add)).toEqual(
+      expect.arrayContaining(["border-border-strong", "h-9", FOCUS_RING]),
+    );
+  });
+});
+
+describe("MedicationStylePicker's add and remove buttons", () => {
+  const picker = (secondary: string | null) =>
+    ssrDocument(
+      render(StylePicker, {
+        props: {
+          selectedColour: "#6366f1",
+          selectedColourSecondary: secondary,
+          selectedPattern: secondary ? "stripes" : "solid",
+          errors: {},
+        },
+      }).body,
+    );
+
+  it.each([
+    ["Add secondary colour", null],
+    ["Remove secondary colour", "#f59e0b"],
+  ] as const)(
+    "draws the %s button as a 36px IconButton with a hidden glyph",
+    (label, secondary) => {
+      const b = picker(secondary).querySelector(`button[aria-label="${label}"]`)!;
+      expect(b.getAttribute("type")).toBe("button");
+      expect(classes(b)).toEqual(
+        expect.arrayContaining(["size-9", "border-border-strong", FOCUS_RING]),
+      );
+      expect(b.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    },
+  );
+
+  it("draws Remove secondary colour neutrally, because removing a colour can be undone", () => {
+    const remove = picker("#f59e0b").querySelector('button[aria-label="Remove secondary colour"]')!;
+    expect(remove.className).not.toMatch(/danger/);
   });
 });
 

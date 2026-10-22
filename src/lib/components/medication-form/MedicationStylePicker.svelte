@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import IconButton from "$lib/components/ui/IconButton.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
   import {
     getMedicationBackground,
@@ -47,7 +48,10 @@
   // The add and remove buttons each unmount themselves when pressed, so
   // keyboard focus fell to <body> and the user had to find their way back from
   // the top of the page. Each hands focus to what the press put in its place.
-  let addSecondaryButton: HTMLButtonElement | undefined = $state();
+  // null, never undefined: `bind:ref` throws props_invalid_value on a child
+  // whose `ref` has a fallback (IconButton's null) when the bound value is
+  // undefined at the first read.
+  let addSecondaryButton: HTMLButtonElement | null = $state(null);
   let secondaryGroup: HTMLFieldSetElement | undefined = $state();
 
   async function addSecondary() {
@@ -156,12 +160,13 @@
       </div>
     </fieldset>
     {#if !showSecondary}
-      <button
-        bind:this={addSecondaryButton}
-        type="button"
-        onclick={addSecondary}
-        class="border-border-strong text-text-muted hover:text-text-secondary flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed text-lg transition-colors"
-        aria-label="Add secondary colour">+</button
+      <IconButton
+        label="Add secondary colour"
+        size="sm"
+        variant="secondary"
+        class="border-dashed"
+        bind:ref={addSecondaryButton}
+        onclick={addSecondary}><span aria-hidden="true" class="text-lg">+</span></IconButton
       >
     {/if}
   </div>
@@ -187,11 +192,11 @@
             {@render colourSwatch(colour)}
           </label>
         {/each}
-        <button
-          type="button"
-          onclick={removeSecondary}
-          class="border-danger-ink/50 text-danger-ink/70 hover:border-danger-ink hover:text-danger-ink flex h-8 w-8 items-center justify-center rounded-full border-2 border-dashed text-sm transition-colors"
-          aria-label="Remove secondary colour">&times;</button
+        <IconButton
+          label="Remove secondary colour"
+          size="sm"
+          variant="secondary"
+          onclick={removeSecondary}><span aria-hidden="true">&times;</span></IconButton
         >
       </div>
     </fieldset>

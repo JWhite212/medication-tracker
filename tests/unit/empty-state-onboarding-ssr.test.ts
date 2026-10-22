@@ -11,8 +11,10 @@
 import { describe, it, expect } from "vitest";
 import { render } from "svelte/server";
 import EmptyState from "../../src/lib/components/EmptyState.svelte";
+import OnboardingWelcome from "../../src/lib/components/OnboardingWelcome.svelte";
 import { expectClasses } from "./helpers/alert-dom";
-import { ssrDocument, withoutComments } from "./helpers/axe-ssr";
+import { expectAxeClean, ssrDocument, withoutComments } from "./helpers/axe-ssr";
+import { buttonNamed, textOf } from "./helpers/dom-names";
 
 describe("EmptyState", () => {
   it("renders its action as a 44px primary Button link whose text is the label", () => {
@@ -37,5 +39,25 @@ describe("EmptyState", () => {
         "a, button",
       ),
     ).toBeNull();
+  });
+});
+
+describe("OnboardingWelcome (first step, as SSR draws it)", () => {
+  const doc = () => ssrDocument(render(OnboardingWelcome).body);
+  it("draws its two first-step actions as 44px Buttons", () => {
+    const add = doc().querySelector('a[href="/medications/new"]')!;
+    expect(textOf(add)).toBe("Add your first medication");
+    expectClasses(add, "h-11 bg-accent text-accent-fg");
+    const more = buttonNamed(doc(), "Learn more first");
+    expect(more.type).toBe("button");
+    expectClasses(more, "h-11 text-text-secondary");
+  });
+  it("leaves the step dots bespoke", () => {
+    const dots = doc().querySelectorAll('button[aria-label^="Go to step"]');
+    expect(dots).toHaveLength(3);
+    for (const dot of dots) expectClasses(dot, "h-6 min-w-6");
+  });
+  it("passes axe", async () => {
+    await expectAxeClean(doc(), ["button-name", "link-name", "nested-interactive"]);
   });
 });

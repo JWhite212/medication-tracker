@@ -3,6 +3,7 @@
   import { goto } from "$app/navigation";
   import { trapTab } from "$lib/utils/focus-trap";
   import { findQuickLogForm } from "$lib/utils/quick-log";
+  import IconButton from "$lib/components/ui/IconButton.svelte";
 
   let { medications = [] }: { medications?: Array<{ id: string; name: string }> } = $props();
 
@@ -149,12 +150,9 @@
     >
       <div class="mb-4 flex items-center justify-between">
         <h2 class="text-text-primary text-lg font-semibold">Keyboard Shortcuts</h2>
-        <button
-          onclick={() => (showHelp = false)}
-          class="text-text-muted hover:text-text-secondary rounded-lg p-1"
-          aria-label="Close"
-        >
+        <IconButton label="Close" size="sm" onclick={() => (showHelp = false)}>
           <svg
+            aria-hidden="true"
             class="h-5 w-5"
             fill="none"
             viewBox="0 0 24 24"
@@ -163,7 +161,7 @@
           >
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
-        </button>
+        </IconButton>
       </div>
       <div class="space-y-3">
         {#each shortcuts as shortcut}

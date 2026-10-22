@@ -85,7 +85,7 @@
   // undefined. The pair also makes this a plain record: nothing here is
   // reactive, and a binding to a member of one would warn
   // binding_property_non_reactive.
-  const removeButtons: Record<string, HTMLElement | null> = {};
+  const removeButtons: Record<string, HTMLButtonElement | HTMLAnchorElement | null> = {};
 
   // A custom chip deletes itself when pressed, which drops keyboard focus to
   // <body>. Focus goes to the next chip, else the previous one, else the text

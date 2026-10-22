@@ -48,9 +48,6 @@
   // The add and remove buttons each unmount themselves when pressed, so
   // keyboard focus fell to <body> and the user had to find their way back from
   // the top of the page. Each hands focus to what the press put in its place.
-  // null, never undefined: `bind:ref` throws props_invalid_value on a child
-  // whose `ref` has a fallback (IconButton's null) when the bound value is
-  // undefined at the first read.
   let addSecondaryButton: HTMLButtonElement | null = $state(null);
   let secondaryGroup: HTMLFieldSetElement | undefined = $state();
 

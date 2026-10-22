@@ -126,7 +126,7 @@ Honest about what's complete vs. what's planned:
 | Inventory event history          | Complete; refill workflow, per-event timeline on `/medications/[id]`                                                                                           |
 | Drug interaction notice          | Experimental, behind `INTERACTIONS_ENABLED` flag                                                                                                               |
 | Medical disclaimer               | Surfaced on landing, register, medication form, analytics, exports                                                                                             |
-| Re-auth gate (sensitive actions) | Complete for change-password, enable/disable 2FA, delete account, wipe dose history, wipe archived medications, revoke other sessions                          |
+| Re-auth gate (sensitive actions) | Change-password, 2FA and revoking sessions re-auth; delete account, the wipes and import replace take a typed word, plus the password if the account has one   |
 | Medication scheduling            | Interval, fixed-time, and PRN; multi-row schedules with optional day-of-week filters                                                                           |
 | Atomic medication creation       | Complete; `createMedicationWithSchedules` runs medication + schedules + audit in one transaction                                                               |
 | Privacy & data controls          | Complete; `/settings/privacy` with stored/not-stored copy, scoped wipes, session revocation, audit-log CSV                                                     |

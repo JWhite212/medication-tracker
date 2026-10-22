@@ -78,13 +78,10 @@
   );
 
   let customInputEl: HTMLInputElement | undefined = $state();
-  // Each custom chip's remove button, by effect name. Bound through a getter
-  // and a setter, not `bind:ref={removeButtons[name]}`: a chip has no entry
-  // until it mounts, so that binding reads undefined at first, and Button's
-  // `ref` (which has a null fallback) throws props_invalid_value on a bound
-  // undefined. The pair also makes this a plain record: nothing here is
-  // reactive, and a binding to a member of one would warn
-  // binding_property_non_reactive.
+  // Each custom chip's remove button, by effect name. It is a plain record,
+  // since nothing here reacts to it, and so it is bound through a getter and
+  // a setter, not `bind:ref={removeButtons[name]}`: binding to a member of a
+  // non-reactive object warns binding_property_non_reactive in dev.
   const removeButtons: Record<string, HTMLButtonElement | HTMLAnchorElement | null> = {};
 
   // A custom chip deletes itself when pressed, which drops keyboard focus to

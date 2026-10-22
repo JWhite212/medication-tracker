@@ -14,8 +14,10 @@
 
   let { data } = $props();
 
-  // Analytics reports numbers and does not judge them, so every trend, sparkline
-  // and count below shares the one neutral ink.
+  // Analytics reports numbers and does not judge them: the trend arrows and
+  // sparklines below share this one neutral ink, and the side-effect bars and
+  // chips take the neutral tone. The day-of-week and time-of-day charts keep
+  // the accent; chart colour is outside the status-colour spec.
   const NEUTRAL_TEXT = toneClass("neutral", "text");
 
   const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

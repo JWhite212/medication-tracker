@@ -6,8 +6,11 @@
   // Exported so a surface that cannot mount this card still tints and words
   // its rows by the same rules: the landing-page walkthrough draws Refills
   // with no link, heading or landmark, and this card renders all three. The
-  // medications card's chip reads `refillChip` too, so "running low" has one
-  // rule on every surface.
+  // medications card's chip reads `refillChip` too, so "running low" is
+  // written once. Not every surface applies all of it: the medications card
+  // passes the user's alert threshold, but the dashboard's rows pass none,
+  // because the forecast carries tiers only. A medication at its threshold
+  // with an ok forecast is amber on /medications and absent here.
 
   /** The row box. A neutral row stays glass, like the dashboard's other cards. */
   export function refillSeverityClass(severity: RefillSeverity): string {
@@ -47,7 +50,9 @@
    * rows, the medications card's chip and the walkthrough. Amber when the
    * forecast tier needs you OR the count is at or below the user's own alert
    * threshold; neutral "N days left" for the watch tier; nothing otherwise.
-   * Days when there is a forecast, doses when there is not.
+   * Days when there is a forecast, doses when there is not. The threshold half
+   * applies only where a caller passes one: the dashboard's rows pass null, so
+   * there the forecast tier alone decides.
    */
   export function refillChip(input: RefillChipInput): RefillChip | null {
     const { severity, daysUntilRefill, inventoryCount, inventoryAlertThreshold } = input;

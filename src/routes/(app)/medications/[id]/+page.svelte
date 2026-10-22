@@ -1,5 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
   import MedicationForm from "$lib/components/MedicationForm.svelte";
   import { toneClass } from "$lib/utils/status-tone";
@@ -63,32 +65,36 @@
     </p>
 
     <!-- Persistent live regions: these forms use:enhance, so there is no
-         navigation and nothing else announces the outcome. -->
+         navigation and nothing else announces the outcome. Only a success sits
+         inside one. A failure is an Alert with role=alert, which announces
+         itself; inside the polite region it would be read twice. -->
     <div role="status">
       {#if form?.refillOk}
-        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-          Refill recorded. New count: {form.newCount}.
-        </p>
-      {:else if form?.refillError}
-        <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm">
-          {form.refillError}
-        </p>
+        <Alert
+          tone="happened"
+          class="mb-4"
+          title={`Refill recorded. New count: ${form.newCount}.`}
+        />
       {/if}
     </div>
+    {#if form?.refillError}
+      <Alert tone="wrong" class="mb-4" title={form.refillError} />
+    {/if}
 
     <div role="status">
       {#if form?.adjustOk}
-        <p class="bg-success/10 text-success mb-4 rounded-lg px-4 py-2 text-sm">
-          Adjustment recorded. New count: {form.newCount} ({form.quantityChange > 0
-            ? "+"
-            : ""}{form.quantityChange}).
-        </p>
-      {:else if form?.adjustError}
-        <p class="bg-danger/10 text-danger-ink mb-4 rounded-lg px-4 py-2 text-sm">
-          {form.adjustError}
-        </p>
+        <Alert
+          tone="happened"
+          class="mb-4"
+          title={`Adjustment recorded. New count: ${form.newCount} (${
+            form.quantityChange > 0 ? "+" : ""
+          }${form.quantityChange}).`}
+        />
       {/if}
     </div>
+    {#if form?.adjustError}
+      <Alert tone="wrong" class="mb-4" title={form.adjustError} />
+    {/if}
 
     <form
       method="POST"
@@ -120,12 +126,7 @@
           class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
         />
       </div>
-      <button
-        type="submit"
-        class="bg-accent text-accent-fg self-end rounded-lg px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90"
-      >
-        Mark as refilled
-      </button>
+      <Button variant="primary" type="submit" class="self-end">Mark as refilled</Button>
     </form>
 
     <details class="border-glass-border mt-4 border-t pt-4">
@@ -168,12 +169,7 @@
             class="border-border-strong bg-surface-raised text-text-primary focus:border-accent-ink focus:ring-accent-ink w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none"
           />
         </div>
-        <button
-          type="submit"
-          class="border-warning text-warning hover:bg-warning/10 self-end rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-        >
-          Adjust
-        </button>
+        <Button type="submit" class="self-end">Adjust</Button>
       </form>
     </details>
   </GlassCard>
@@ -219,12 +215,7 @@
           <p class="text-text-secondary text-sm">Restore this medication to your active list.</p>
         </div>
         <form method="POST" action="?/unarchive">
-          <button
-            type="submit"
-            class="border-accent-ink text-accent-ink hover:bg-accent/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-          >
-            Unarchive
-          </button>
+          <Button type="submit">Unarchive</Button>
         </form>
       {:else}
         <div>
@@ -232,12 +223,7 @@
           <p class="text-text-secondary text-sm">Remove this medication from your active list.</p>
         </div>
         <form method="POST" action="?/archive">
-          <button
-            type="submit"
-            class="border-danger-ink text-danger-ink hover:bg-danger/10 rounded-lg border px-4 py-2 text-sm font-medium transition-colors"
-          >
-            Archive
-          </button>
+          <Button type="submit">Archive</Button>
         </form>
       {/if}
     </div>

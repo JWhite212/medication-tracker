@@ -212,7 +212,12 @@
       <Sidebar user={data.user} />
     </div>
 
-    <main id="main-content" class="flex-1 overflow-y-auto p-4 pt-18 md:p-6 md:pt-6 lg:p-8">
+    <!-- `relative` makes main the containing block for every absolutely
+         positioned element inside it, chiefly `sr-only` text. Left static,
+         those took the page as their containing block, escaped main's
+         overflow and stretched the document below the window, so scrolling
+         past the end lifted the whole shell off a blank page. -->
+    <main id="main-content" class="relative flex-1 overflow-y-auto p-4 pt-18 md:p-6 md:pt-6 lg:p-8">
       {@render children()}
     </main>
   </div>

@@ -125,7 +125,7 @@ describe("/auth/register", () => {
       props: { form: { errors: { form: ["Too many attempts. Try again in 15 minutes."] } } },
     }).body;
 
-    expect(html).toMatch(/<div id="form-error"[^>]*role="alert"[^>]*>\s*Too many attempts/);
+    expect(html).toMatch(assertiveAlert("form-error", "Too many attempts"));
     for (const id of ["name", "email", "password"]) {
       expect(attr(control(html, id), "aria-describedby")).toBe("form-error");
       // A throttle is not a verdict on what was typed.
@@ -172,7 +172,7 @@ describe("/auth/login", () => {
       props: { data, form: { errors: { form: ["Too many attempts. Try again in 15 minutes."] } } },
     }).body;
 
-    expect(html).toMatch(/<div id="form-error"[^>]*role="alert"/);
+    expect(html).toMatch(assertiveAlert("form-error", "Too many attempts"));
     for (const id of ["email", "password"]) {
       expect(attr(control(html, id), "aria-describedby")).toBe("form-error");
       expect(attr(control(html, id), "aria-invalid")).toBeUndefined();
@@ -219,7 +219,7 @@ describe.each([
     const html = renderPage({ error: "Too many attempts. Try again in 15 minutes." });
 
     // role="alert" is what makes an enhanced submit's refusal audible at all.
-    expect(html).toMatch(/<div id="form-error"[^>]*role="alert"[^>]*>\s*Too many attempts/);
+    expect(html).toMatch(assertiveAlert("form-error", "Too many attempts"));
     for (const id of fields) {
       expect(attr(control(html, id), "aria-describedby")).toBe("form-error");
       // A throttle is not a verdict on what was typed.

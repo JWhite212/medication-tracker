@@ -1,6 +1,8 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import { ariaDescribedBy } from "$lib/utils/form-errors";
 
   let { form, data } = $props();
@@ -31,26 +33,24 @@
     <h1 class="mb-2 text-2xl font-bold">Welcome back</h1>
     <p class="text-text-secondary mb-6">Sign in to your account</p>
 
+    <!-- Needs-you, so amber and never role="alert": it arrives with the page
+         load from the OAuth redirect, and nothing here is wrong yet. -->
     {#if data.oauthError === "oauth_email_conflict"}
-      <div class="bg-warning/10 text-warning mb-4 rounded-lg p-3 text-sm" role="alert">
-        An account with that email already exists. Please sign in with your password, then link your
-        OAuth provider from settings.
-      </div>
+      <Alert tone="needs-you" title="An account with that email already exists." class="mb-4">
+        Please sign in with your password, then link your OAuth provider from settings.
+      </Alert>
     {:else if data.oauthError === "oauth_email_unverified"}
-      <div class="bg-warning/10 text-warning mb-4 rounded-lg p-3 text-sm" role="alert">
-        Your social-login provider returned an unverified email address. Verify the email with your
-        provider and try again.
-      </div>
+      <Alert
+        tone="needs-you"
+        title="Your social-login provider returned an unverified email address."
+        class="mb-4"
+      >
+        Verify the email with your provider and try again.
+      </Alert>
     {/if}
 
     {#if errors.form}
-      <div
-        id="form-error"
-        class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
-        role="alert"
-      >
-        {errors.form[0]}
-      </div>
+      <Alert tone="wrong" id="form-error" title={errors.form[0]} class="mb-4" />
     {/if}
 
     <form
@@ -115,13 +115,16 @@
           >Forgot password?</a
         >
       </div>
-      <button
+      <Button
+        variant="primary"
         type="submit"
+        block
         disabled={loading}
-        class="bg-accent hover:bg-accent-hover text-accent-fg w-full rounded-lg py-2.5 font-medium transition-colors disabled:opacity-50"
+        pending={loading}
+        pendingLabel="Signing in…"
       >
-        {loading ? "Signing in..." : "Sign in"}
-      </button>
+        Sign in
+      </Button>
     </form>
 
     {#if data.hasOAuth}
@@ -131,16 +134,8 @@
         <div class="bg-glass-border h-px flex-1"></div>
       </div>
       <div class="mt-6 flex flex-col gap-3">
-        <a
-          href="/auth/callback/google"
-          class="border-glass-border hover:bg-surface-overlay flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
-          >Continue with Google</a
-        >
-        <a
-          href="/auth/callback/github"
-          class="border-glass-border hover:bg-surface-overlay flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
-          >Continue with GitHub</a
-        >
+        <Button variant="secondary" href="/auth/callback/google" block>Continue with Google</Button>
+        <Button variant="secondary" href="/auth/callback/github" block>Continue with GitHub</Button>
       </div>
     {/if}
 

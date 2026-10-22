@@ -1,6 +1,8 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { page } from "$app/state";
+  import Alert from "$lib/components/ui/Alert.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
 
   let { form } = $props();
   let loading = $state(false);
@@ -20,11 +22,19 @@
     <h1 class="mb-2 text-2xl font-bold">Reset password</h1>
     <p class="text-text-secondary mb-6">Enter your email and we'll send you a reset link</p>
 
+    <!-- The status region is here before the result, so the sent link is
+         announced: an element that arrives already holding its text is not.
+         Only the happened Alert goes inside it; the refusal below announces
+         itself and must never sit in a polite region. -->
+    <div role="status">
+      {#if form?.success}
+        <Alert tone="happened" title="Check your email for a reset link.">
+          If an account exists for that address, you'll receive instructions shortly.
+        </Alert>
+      {/if}
+    </div>
+
     {#if form?.success}
-      <div class="bg-accent/10 text-accent-ink rounded-lg p-4 text-sm">
-        Check your email for a reset link. If an account exists for that address, you'll receive
-        instructions shortly.
-      </div>
       <p class="text-text-secondary mt-6 text-center text-sm">
         <a href="/auth/login" class="text-accent-ink hover:underline">Back to sign in</a>
       </p>
@@ -36,13 +46,7 @@
            empty address); the 429 is the rate limit, about an address that
            was fine. -->
       {#if form?.error}
-        <div
-          id="form-error"
-          class="bg-danger/10 text-danger-ink mb-4 rounded-lg p-3 text-sm"
-          role="alert"
-        >
-          {form.error}
-        </div>
+        <Alert tone="wrong" id="form-error" title={form.error} class="mb-4" />
       {/if}
 
       <form
@@ -70,13 +74,16 @@
           />
         </div>
 
-        <button
+        <Button
+          variant="primary"
           type="submit"
+          block
           disabled={loading}
-          class="bg-accent hover:bg-accent-hover text-accent-fg w-full rounded-lg py-2.5 font-medium transition-colors disabled:opacity-50"
+          pending={loading}
+          pendingLabel="Sending…"
         >
-          {loading ? "Sending..." : "Send reset link"}
-        </button>
+          Send reset link
+        </Button>
       </form>
 
       <p class="text-text-secondary mt-6 text-center text-sm">

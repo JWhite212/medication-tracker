@@ -16,6 +16,7 @@
   import { useMark } from "../marks";
   import { MOTION, clamp01 } from "../timeline";
   import Glyph from "../parts/Glyph.svelte";
+  import { stageToggle } from "../parts/stage-controls";
 
   let { load, heat }: { load: number; heat: number } = $props();
 
@@ -77,11 +78,7 @@
     </div>
     <div class="border-glass-border bg-glass flex gap-1 rounded-lg border p-1">
       {#each ["7d", "30d", "90d", "1y"] as period (period)}
-        <span
-          class="rounded-md px-3 py-1.5 text-sm font-medium {period === '90d'
-            ? 'bg-accent text-accent-fg'
-            : 'text-text-secondary'}">{period}</span
-        >
+        <span class={stageToggle(period === "90d")}>{period}</span>
       {/each}
     </div>
     <!-- Empty, as the real From/To inputs are under a preset: choosing one

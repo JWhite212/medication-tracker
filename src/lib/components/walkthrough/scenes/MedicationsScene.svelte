@@ -8,6 +8,7 @@
   import { HISTORY, MEDICATIONS } from "../demo-data";
   import { useMark } from "../marks";
   import { MOTION } from "../timeline";
+  import { stageButton } from "../parts/stage-controls";
 
   let { load, tick }: { load: number; tick: number } = $props();
 
@@ -17,10 +18,7 @@
 <div class="flex flex-col gap-6">
   <div class="flex items-center justify-between">
     <p class="text-2xl font-bold">Medications</p>
-    <span
-      class="bg-accent text-accent-fg rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap"
-      >+ Add Medication</span
-    >
+    <span class={stageButton("primary", "sm")}>+ Add Medication</span>
   </div>
   <div class="flex flex-col gap-3">
     {#each MEDICATIONS as medication, i (medication.id)}

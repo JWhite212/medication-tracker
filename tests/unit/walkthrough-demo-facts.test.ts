@@ -11,6 +11,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { createRawSnippet } from "svelte";
 import { render } from "svelte/server";
 
 // analytics.ts imports `db` for its queries; this file calls only its pure
@@ -55,11 +56,18 @@ import {
   type DemoMedication,
 } from "$lib/components/walkthrough/demo-data";
 import { STAGE_REFILLS } from "$lib/components/walkthrough/stage-dashboard";
+import { stageButton, stageToggle } from "$lib/components/walkthrough/parts/stage-controls";
 import AnalyticsScene from "$lib/components/walkthrough/scenes/AnalyticsScene.svelte";
+import DataScene from "$lib/components/walkthrough/scenes/DataScene.svelte";
+import HistoryScene from "$lib/components/walkthrough/scenes/HistoryScene.svelte";
+import MedicationsScene from "$lib/components/walkthrough/scenes/MedicationsScene.svelte";
 import SecurityScene from "$lib/components/walkthrough/scenes/SecurityScene.svelte";
 import StatusBreakdownBar from "$lib/components/StatusBreakdownBar.svelte";
+import Button from "$lib/components/ui/Button.svelte";
+import Toggle from "$lib/components/ui/Toggle.svelte";
 import { ssrDocument } from "./helpers/axe-ssr";
 import { textOf } from "./helpers/dom-names";
+import { STATUS_TOKEN } from "./helpers/status-token";
 
 /** A medication's DemoSchedule as the medication_schedules rows seed-demo.ts writes. */
 function scheduleRows(m: DemoMedication): MedicationSchedule[] {
@@ -109,6 +117,26 @@ function breakdownOf(doc: Document) {
     })),
     legend: [...legend.children].map(textOf),
   };
+}
+
+const LABEL = createRawSnippet(() => ({ render: () => "<span>Label</span>" }));
+/** Class tokens at rest: no variant-prefixed or transition token, sorted. */
+const resting = (el: Element) =>
+  [...el.classList].filter((t) => !t.includes(":") && !t.startsWith("transition")).sort();
+const split = (classes: string) => classes.split(/\s+/).filter(Boolean).sort();
+const first = (body: string) => ssrDocument(body).querySelector("main > *")!;
+// STATUS_TOKEN is global: read it with .match, never .test (lastIndex sticks).
+const statusTokens = (root: Element) =>
+  [root, ...root.querySelectorAll("*")].flatMap((el) =>
+    [...el.classList].filter((t) => t.match(STATUS_TOKEN) !== null),
+  );
+/** The one drawn element whose own text is `label`: the innermost span or div that reads it (HistoryScene draws divs). */
+function drawnControl(body: string, label: string): Element {
+  const found = [...ssrDocument(body).querySelectorAll("span, div")].filter(
+    (el) => textOf(el) === label && ![...el.children].some((c) => textOf(c) === label),
+  );
+  expect(found, label).toHaveLength(1);
+  return found[0];
 }
 
 describe("DEMO_DOSES", () => {
@@ -344,5 +372,73 @@ describe("the Refills card and the refill badge", () => {
     for (const row of STAGE_REFILLS) {
       expect(row.severity, row.medicationName).toBe(classifyRefillSeverity(row.daysUntilRefill));
     }
+  });
+});
+
+describe("the stage's drawn controls", () => {
+  it.each([
+    ["primary", "md"],
+    ["primary", "sm"],
+    ["secondary", "md"],
+    ["secondary", "sm"],
+    ["ghost", "md"],
+    ["ghost", "sm"],
+  ] as const)("stageButton(%s, %s) is Button's look at rest", (variant, size) => {
+    expect(split(stageButton(variant, size))).toEqual(
+      resting(first(render(Button, { props: { variant, size, children: LABEL } }).body)),
+    );
+  });
+  it.each([
+    [true, "sm"],
+    [false, "sm"],
+    [true, "md"],
+    [false, "md"],
+  ] as const)("stageToggle(%s, %s) is Toggle's look at rest", (pressed, size) => {
+    expect(split(stageToggle(pressed, size))).toEqual(
+      resting(first(render(Toggle, { props: { pressed, size, children: LABEL } }).body)),
+    );
+  });
+
+  // Each row: the variant and size the real page passes. If a page task
+  // landed a different one, the row and the scene both follow the page.
+  const security = () => render(SecurityScene).body;
+  const data = () => render(DataScene, { props: { hover: false } }).body;
+  const history = () =>
+    render(HistoryScene, { props: { checked: true, filtered: 1, timeFormat: "24h" } }).body;
+  const medications = () => render(MedicationsScene, { props: { load: 10, tick: 0 } }).body;
+  const analytics = () => render(AnalyticsScene, { props: { load: 10, heat: 1 } }).body;
+  const DRAWN = [
+    { scene: "Security", body: security, label: "Update Password", look: stageButton("primary") },
+    { scene: "Security", body: security, label: "Disable 2FA", look: stageButton("secondary") },
+    { scene: "Security", body: security, label: "Revoke", look: stageButton("secondary", "sm") },
+    { scene: "Data", body: data, label: "Save Format", look: stageButton("primary") },
+    { scene: "Data", body: data, label: "Download Export", look: stageButton("secondary") },
+    {
+      scene: "Data",
+      body: data,
+      label: "Download Full Backup (JSON)",
+      look: stageButton("secondary"),
+    },
+    { scene: "Data", body: data, label: "Import Data", look: stageButton("secondary") },
+    {
+      scene: "Medications",
+      body: medications,
+      label: "+ Add Medication",
+      look: stageButton("primary", "sm"),
+    },
+    { scene: "Analytics", body: analytics, label: "90d", look: stageToggle(true) },
+    { scene: "Analytics", body: analytics, label: "7d", look: stageToggle(false) },
+    { scene: "History", body: history, label: "Apply", look: stageButton("secondary", "sm") },
+    {
+      scene: "History",
+      body: history,
+      label: "Clear filters",
+      look: stageButton("secondary", "sm"),
+    },
+  ];
+  it.each(DRAWN)("$scene draws $label as its page's control", ({ body, label, look }) => {
+    const el = drawnControl(body(), label);
+    expect(resting(el)).toEqual(expect.arrayContaining(split(look)));
+    expect(statusTokens(el)).toEqual([]);
   });
 });

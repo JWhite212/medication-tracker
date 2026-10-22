@@ -130,7 +130,7 @@
       <div
         class="bg-surface-raised border-glass-border absolute top-0 right-0 left-0 z-20 flex h-14 items-center justify-between border-b px-4"
       >
-        <div class="text-text-secondary flex h-9 w-9 items-center justify-center rounded-lg">
+        <div class="text-text-secondary flex size-11 items-center justify-center rounded-lg">
           <svg
             width="20"
             height="20"

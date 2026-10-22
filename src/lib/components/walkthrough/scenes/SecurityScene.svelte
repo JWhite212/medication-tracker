@@ -4,6 +4,7 @@
   import { SESSION_EXPIRIES, WALKTHROUGH_TZ } from "../demo-data";
   import { useMark } from "../marks";
   import FieldBox from "../parts/FieldBox.svelte";
+  import { stageButton } from "../parts/stage-controls";
 
   const mark = useMark();
   const card = "border-glass-border bg-glass rounded-xl border p-6";
@@ -29,10 +30,7 @@
       <FieldBox label="Current Password" required />
       <FieldBox label="New Password" required />
       <FieldBox label="Confirm New Password" required />
-      <span
-        class="bg-accent text-accent-fg self-start rounded-lg px-5 py-2.5 text-sm font-medium whitespace-nowrap"
-        >Update Password</span
-      >
+      <span class="{stageButton('primary')} self-start">Update Password</span>
     </div>
   </div>
 
@@ -52,10 +50,7 @@
         <FieldBox label="Confirm your password" required />
         <div class="flex items-end gap-3">
           <FieldBox label="Authenticator code" required placeholder="000000" width={232} />
-          <span
-            class="border-danger-ink/30 text-danger-ink rounded-lg border px-5 py-2.5 text-sm font-medium whitespace-nowrap"
-            >Disable 2FA</span
-          >
+          <span class={stageButton("secondary")}>Disable 2FA</span>
         </div>
       </div>
     </div>
@@ -81,10 +76,7 @@
             <p class="text-text-muted text-xs">Expires {session.expires}</p>
           </div>
           {#if !session.current}
-            <span
-              class="border-danger-ink/30 text-danger-ink rounded-lg border px-3 py-1.5 text-xs font-medium whitespace-nowrap"
-              >Revoke</span
-            >
+            <span class={stageButton("secondary", "sm")}>Revoke</span>
           {/if}
         </div>
       {/each}

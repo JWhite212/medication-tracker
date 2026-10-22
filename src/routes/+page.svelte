@@ -3,6 +3,7 @@
   import heroImage from "$lib/assets/landing-hero-phone.webp";
   import wordmark from "$lib/assets/medtracker-logo-lockup-vector.svg";
   import MedicalDisclaimer from "$lib/components/MedicalDisclaimer.svelte";
+  import Button from "$lib/components/ui/Button.svelte";
   import WalkthroughVideo from "$lib/components/walkthrough/WalkthroughVideo.svelte";
 </script>
 
@@ -28,16 +29,8 @@
       <span class="text-lg font-semibold">MedTracker</span>
     </div>
     <div class="flex items-center gap-3">
-      <a
-        href="/auth/login"
-        class="text-text-secondary hover:text-text-primary rounded-lg px-4 py-2 text-sm font-medium"
-        >Sign in</a
-      >
-      <a
-        href="/auth/register"
-        class="bg-accent hover:bg-accent-hover text-accent-fg rounded-lg px-4 py-2 text-sm font-medium"
-        >Get Started</a
-      >
+      <Button variant="ghost" size="sm" href="/auth/login">Sign in</Button>
+      <Button variant="primary" size="sm" href="/auth/register">Get Started</Button>
     </div>
   </header>
 
@@ -118,7 +111,7 @@
       </div>
       <div>
         <div
-          class="bg-success/15 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl text-xl"
+          class="bg-accent/15 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl text-xl"
         >
           📊
         </div>
@@ -129,7 +122,7 @@
       </div>
       <div>
         <div
-          class="bg-warning/15 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl text-xl"
+          class="bg-accent/15 mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl text-xl"
         >
           🔒
         </div>

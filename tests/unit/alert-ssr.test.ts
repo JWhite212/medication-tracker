@@ -2,7 +2,8 @@
 //
 // Alert: one box per tone with an aria-hidden icon and a headline, an
 // optional body and action, no outer margin, and the announcement rule —
-// errors interrupt, needs-you never claims role="alert".
+// errors interrupt, needs-you never claims role="alert", and the tone alone
+// decides.
 import { describe, it, expect } from "vitest";
 import { render } from "svelte/server";
 import { createRawSnippet, type ComponentProps } from "svelte";
@@ -37,19 +38,29 @@ describe("Alert announces by tone", () => {
     });
   }
 
-  it("lets live override the default in both directions", () => {
-    expect(renderAlert({ tone: "wrong", title: "x", live: "off" }).box.hasAttribute("role")).toBe(
-      false,
-    );
-    expect(
-      renderAlert({ tone: "happened", title: "x", live: "assertive" }).box.getAttribute("role"),
-    ).toBe("alert");
-    expect(
-      renderAlert({ tone: "neutral", title: "x", live: "assertive" }).box.getAttribute("role"),
-    ).toBe("alert");
+  // There is no override: a `live` prop could only silence an error or make
+  // a warning interrupt, which is what the rule above forbids. The
+  // ts-expect-errors fail `npm run check` if the prop comes back.
+  it("lets the tone alone decide, whatever a caller passes", () => {
+    const silenced = renderAlert({
+      tone: "wrong",
+      title: "x",
+      // @ts-expect-error -- Alert takes no live prop.
+      live: "off",
+    });
+    expect(silenced.box.getAttribute("role")).toBe("alert");
+    for (const tone of ["happened", "needs-you"] as const) {
+      const raised = renderAlert({
+        tone,
+        title: "x",
+        // @ts-expect-error -- Alert takes no live prop.
+        live: "assertive",
+      });
+      expect(raised.box.hasAttribute("role")).toBe(false);
+    }
   });
 
-  it("never makes needs-you a role=alert unless the caller asks", () => {
+  it("never makes needs-you a role=alert", () => {
     // MedicationForm's focus fallback looks for [role="alert"]; a warning
     // that claimed the role caught the focus meant for the real error.
     const { html } = renderAlert({ tone: "needs-you", title: "Possible interaction" });

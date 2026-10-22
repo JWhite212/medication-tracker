@@ -6,7 +6,6 @@
     tone,
     title,
     id,
-    live,
     tabindex,
     class: className = "",
     children,
@@ -17,8 +16,6 @@
     title: string;
     /** Rendered as the FIRST attribute: tests match `<div id="form-error" … role="alert">`. */
     id?: string;
-    /** Errors interrupt; every other tone is polite. */
-    live?: "assertive" | "off";
     /** -1 only: focusable by script (MedicationForm focuses its crash error), never by Tab. */
     tabindex?: -1;
     /** The call site owns outer margin; Alert has none. */
@@ -29,19 +26,15 @@
     action?: Snippet;
   } = $props();
 
-  // Assertive is role="alert". needs-you is never an alert: MedicationForm's
-  // focus fallback looks for [role="alert"], and a warning must not catch it.
-  // happened and needs-you are announced by the caller's persistent
-  // role="status" wrapper, which exists before its content changes. A wrong
-  // Alert must never sit inside that wrapper: it announces itself, and nested
-  // in a polite region it is read twice.
-  const role = $derived(
-    (live ?? (tone === "wrong" ? "assertive" : "off")) === "assertive"
-      ? "alert"
-      : tone === "neutral"
-        ? "note"
-        : undefined,
-  );
+  // The tone alone decides the role, and there is no override. wrong is
+  // role="alert": an error interrupts. needs-you is never an alert:
+  // MedicationForm's focus fallback looks for [role="alert"], and a warning
+  // must not catch it. neutral is role="note". happened and needs-you take no
+  // role; they are announced by the caller's persistent role="status"
+  // wrapper, which exists before its content changes. A wrong Alert must
+  // never sit inside that wrapper: it announces itself, and nested in a
+  // polite region it is read twice.
+  const role = $derived(tone === "wrong" ? "alert" : tone === "neutral" ? "note" : undefined);
 </script>
 
 <!-- tabindex is typed -1: focusable by script, never a Tab stop. -->

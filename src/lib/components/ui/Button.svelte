@@ -31,7 +31,7 @@
      */
     ref?: HTMLButtonElement | HTMLAnchorElement | null | undefined;
     /**
-     * Layout only: margins, flex-1, self-*, shrink-0, w-*, border-dashed.
+     * Layout only: margins, flex-1, self-*, shrink-0, w-*, max-w-*, border-dashed.
      * Appended after the recipe. Which of two clashing utilities wins is
      * Tailwind v4's utility order, not the class order: a caller's `h-12`
      * beats the recipe's `h-11`, while its `rounded-full` loses to `rounded-lg`.

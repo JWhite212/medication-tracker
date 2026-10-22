@@ -367,7 +367,8 @@ describe("SideEffectPicker", () => {
     expect(chip, "no Remove Rash button").not.toBeNull();
     // It removes rather than toggles, so it must not claim a pressed state.
     expect(chip!.hasAttribute("aria-pressed")).toBe(false);
-    const glyph = chip!.querySelector("span");
+    // The name sits in its own span (it truncates); the × is the last child.
+    const glyph = chip!.lastElementChild;
     expect(glyph?.textContent).toBe("×");
     expect(glyph?.getAttribute("aria-hidden")).toBe("true");
 

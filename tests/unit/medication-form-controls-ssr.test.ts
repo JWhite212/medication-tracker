@@ -248,6 +248,20 @@ describe("SideEffectPicker's chips", () => {
     }
   });
 
+  // A custom name may be 100 characters and Button never wraps, so an
+  // uncapped chip ran past the edit dialog's edge on a phone and hid its ×.
+  // Class strength only: the width itself is checked in the preview pass.
+  it("caps a long custom chip at its row and truncates the name, never the ×", () => {
+    const chip = doc.querySelector('button[aria-label="Remove Rash"]')!;
+    expect(classes(chip)).toContain("max-w-full");
+    const [name, cross] = [...chip.children];
+    expect(name.textContent).toBe("Rash");
+    expect(classes(name)).toEqual(expect.arrayContaining(["min-w-0", "truncate"]));
+    expect(cross.getAttribute("aria-hidden")).toBe("true");
+    expect(classes(cross)).not.toContain("truncate");
+    expect(spoken(chip)).toBe("Remove Rash");
+  });
+
   it("adds a custom effect with a secondary sm Button, disabled while the field is empty", () => {
     const add = [...doc.querySelectorAll("button")].find((b) => spoken(b) === "Add")!;
     expect(classes(add)).toEqual(expect.arrayContaining(["border-border-strong", "h-9"]));

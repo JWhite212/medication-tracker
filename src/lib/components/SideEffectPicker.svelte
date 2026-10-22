@@ -121,14 +121,18 @@
          control still reaches it by what is on screen. Keyed by name: unkeyed,
          removing one relabelled the pressed button as its neighbour and
          deleted the last button instead, so focus never moved and nothing was
-         announced. -->
+         announced. A name can be 100 characters and Button never wraps, so the
+         chip is capped at the row and the name truncates, keeping the ×. -->
     {#each customNames as name (name)}
       <Button
         size="sm"
         shape="pill"
+        class="max-w-full"
         bind:ref={() => removeButtons[name] ?? null, (el) => (removeButtons[name] = el)}
         aria-label="Remove {name}"
-        onclick={() => removeCustom(name)}>{name} <span aria-hidden="true">&times;</span></Button
+        onclick={() => removeCustom(name)}
+        ><span class="min-w-0 truncate">{name}</span>
+        <span aria-hidden="true">&times;</span></Button
       >
     {/each}
   </div>

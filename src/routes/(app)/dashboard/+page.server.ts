@@ -8,14 +8,12 @@ import {
   logDoseAtSlot,
   logSkippedDose,
   skipDoseForSlot,
-  updateDose,
   MedicationNotFoundError,
   SlotAlreadyTakenError,
   SlotTargetChangedError,
 } from "$lib/server/doses";
-import { deleteDoseAction, restoreDoseAction } from "$lib/server/dose-actions";
-import { doseLogSchema, doseEditSchema, doseSkipSchema } from "$lib/utils/validation";
-import { resolveEditedInstant } from "$lib/utils/time";
+import { deleteDoseAction, editDoseAction, restoreDoseAction } from "$lib/server/dose-actions";
+import { doseLogSchema, doseSkipSchema } from "$lib/utils/validation";
 import { checkSlotActionTime, type SlotActionTimeProblem } from "$lib/utils/schedule";
 import type { DashboardPageData } from "$lib/types";
 import type { Actions, PageServerLoad } from "./$types";
@@ -150,23 +148,7 @@ export const actions: Actions = {
   // A delete's Undo. Every page posts it to the absolute
   // `/dashboard?/restoreDose`, so it still works after navigating away.
   restoreDose: (event) => restoreDoseAction(event),
-  editDose: async ({ request, locals }) => {
-    if (!locals.user) error(401, "Unauthorized");
-
-    const formData = Object.fromEntries(await request.formData());
-    const parsed = doseEditSchema.safeParse(formData);
-    if (!parsed.success) return fail(400, { editErrors: parsed.error.flatten().fieldErrors });
-
-    const { doseId, takenAt, originalTakenAt, quantity, notes, sideEffects } = parsed.data;
-    const updated = await updateDose(locals.user!.id, doseId, {
-      takenAt: resolveEditedInstant(takenAt, originalTakenAt, locals.user!.timezone),
-      quantity,
-      notes,
-      sideEffects: sideEffects ?? null,
-    });
-    if (!updated) return fail(404, { editErrors: { form: ["Dose no longer exists"] } });
-    return { success: true };
-  },
+  editDose: (event) => editDoseAction(event),
   skipDose: async ({ request, locals }) => {
     if (!locals.user) error(401, "Unauthorized");
     const user = locals.user;

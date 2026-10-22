@@ -69,6 +69,6 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
     return json({ challenge: "totp", preAuthToken: signPreAuthToken(user.id) });
   }
 
-  const session = await lucia.createSession(user.id, {});
+  const session = await lucia.createSession(user.id, { authenticatedAt: new Date() });
   return json({ token: session.id, user: toSessionUser(user) });
 };

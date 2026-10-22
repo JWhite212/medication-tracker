@@ -174,7 +174,9 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       redirect(302, "/auth/2fa");
     }
 
-    const session = await lucia.createSession(existingOAuth.userId, {});
+    const session = await lucia.createSession(existingOAuth.userId, {
+      authenticatedAt: new Date(),
+    });
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {
       path: ".",
@@ -213,7 +215,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
 
   await db.insert(oauthAccounts).values({ provider, providerUserId: oauthUser.id, userId });
 
-  const session = await lucia.createSession(userId, {});
+  const session = await lucia.createSession(userId, { authenticatedAt: new Date() });
   const sessionCookie = lucia.createSessionCookie(session.id);
   cookies.set(sessionCookie.name, sessionCookie.value, {
     path: ".",

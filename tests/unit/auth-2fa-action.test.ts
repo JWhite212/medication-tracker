@@ -152,7 +152,9 @@ describe("the pending_2fa cookie is a signed claim, not a user id", () => {
       location: "/dashboard",
     });
     expect(verifySecondFactorForLogin).toHaveBeenCalledWith("pending-user", "123456");
-    expect(createSession).toHaveBeenCalledWith("pending-user", {});
+    expect(createSession).toHaveBeenCalledWith("pending-user", {
+      authenticatedAt: expect.any(Date),
+    });
   });
 });
 

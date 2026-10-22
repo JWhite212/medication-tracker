@@ -61,7 +61,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
     if (u.twoFactorEnabled) {
       return json({ challenge: "totp", preAuthToken: signPreAuthToken(u.id) });
     }
-    const session = await lucia.createSession(u.id, {});
+    const session = await lucia.createSession(u.id, { authenticatedAt: new Date() });
     return json({ token: session.id, user: toSessionUser(u) });
   }
 
@@ -92,6 +92,6 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
       .values({ provider: PROVIDER, providerUserId: identity.appleUserId, userId });
   });
   const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  const session = await lucia.createSession(userId, {});
+  const session = await lucia.createSession(userId, { authenticatedAt: new Date() });
   return json({ token: session.id, user: toSessionUser(u) });
 };

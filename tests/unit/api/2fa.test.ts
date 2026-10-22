@@ -154,7 +154,7 @@ describe("POST /api/v1/auth/2fa", () => {
     expect(verifySecondFactorForLogin).toHaveBeenCalledWith("u1", "123456");
     const consume = rlCalls.find((c) => c.key === "preauth:jti-1");
     expect(consume).toMatchObject({ max: 1 });
-    expect(createSession).toHaveBeenCalledWith("u1", {});
+    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: expect.any(Date) });
   });
 
   it("returns 401 for a replayed token that was already consumed, without minting a session", async () => {

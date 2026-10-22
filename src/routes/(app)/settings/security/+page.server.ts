@@ -77,7 +77,7 @@ export const actions: Actions = {
     // device, but keep the current request authenticated by minting a fresh
     // session cookie.
     await lucia.invalidateUserSessions(userId);
-    const session = await lucia.createSession(userId, {});
+    const session = await lucia.createSession(userId, { authenticatedAt: new Date() });
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {
       path: ".",

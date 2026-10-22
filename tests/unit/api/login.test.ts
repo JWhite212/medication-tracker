@@ -199,7 +199,7 @@ describe("POST /api/v1/auth/login", () => {
         emailVerified: true,
       },
     });
-    expect(createSession).toHaveBeenCalledWith("u1", {});
+    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: expect.any(Date) });
   });
 
   it("transparently upgrades a stale Argon2 hash on successful login", async () => {

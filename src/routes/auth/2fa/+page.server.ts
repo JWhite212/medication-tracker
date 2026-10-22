@@ -88,7 +88,7 @@ export const actions: Actions = {
 
     cookies.delete("pending_2fa", { path: "/" });
 
-    const session = await lucia.createSession(claims.userId, {});
+    const session = await lucia.createSession(claims.userId, { authenticatedAt: new Date() });
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {
       path: ".",

@@ -121,7 +121,7 @@ describe("GET /auth/callback/[provider] — existing linked account", () => {
 
     await expect(call(cookies)).rejects.toMatchObject({ status: 302, location: "/dashboard" });
 
-    expect(createSession).toHaveBeenCalledWith("u1", {});
+    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: expect.any(Date) });
     expect(cookies.set).toHaveBeenCalledWith("auth_session", "sess-1", expect.anything());
     const pendingCall = cookies.set.mock.calls.find((c) => c[0] === "pending_2fa");
     expect(pendingCall).toBeUndefined();

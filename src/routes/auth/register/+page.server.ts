@@ -119,7 +119,7 @@ export const actions: Actions = {
       logWarn("verification email path threw", { scope: "auth.register" }, err);
     }
 
-    const session = await lucia.createSession(userId, {});
+    const session = await lucia.createSession(userId, { authenticatedAt: new Date() });
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {
       path: ".",

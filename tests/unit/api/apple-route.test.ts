@@ -114,7 +114,7 @@ describe("POST /api/v1/auth/apple", () => {
         emailVerified: true,
       },
     });
-    expect(createSession).toHaveBeenCalledWith("u1", {});
+    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: expect.any(Date) });
     expect(inserts()).toHaveLength(0);
   });
 
@@ -181,7 +181,7 @@ describe("POST /api/v1/auth/apple", () => {
       providerUserId: "000789.ghi",
       userId: newUserId,
     });
-    expect(createSession).toHaveBeenCalledWith(newUserId, {});
+    expect(createSession).toHaveBeenCalledWith(newUserId, { authenticatedAt: expect.any(Date) });
   });
 
   it("returns a totp challenge instead of a session when the linked user has 2FA enabled", async () => {

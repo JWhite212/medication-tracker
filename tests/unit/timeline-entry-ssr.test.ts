@@ -370,6 +370,19 @@ describe("status and severity chips say what they mean in words, coloured by the
     expect(chips[1].className).not.toMatch(/warning/);
   });
 
+  // Every write door validates the enum, so only a legacy row or direct SQL
+  // reaches this. It must cost one chip its grade, not the whole /log page.
+  it("draws a stored severity outside the enum as a neutral Mild chip instead of throwing", () => {
+    const doc = renderRow("taken", {
+      sideEffects: [{ name: "Rash", severity: "extreme" as "mild" }],
+    });
+    const chip = [...doc.querySelectorAll('[role="listitem"] span')].find(
+      (s) => textOf(s) === "Rash · Mild",
+    );
+    expect(chip, "no Rash chip").toBeDefined();
+    has(chip!, toneClass("neutral", "chip"));
+  });
+
   it("prints the relative time since in neutral text, not the accent", () => {
     const since = renderRow("taken").querySelector('[role="listitem"] time')!.parentElement!;
     expect(tokens(since)).toContain("text-text-secondary");

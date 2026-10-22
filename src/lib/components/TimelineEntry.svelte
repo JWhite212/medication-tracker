@@ -266,13 +266,16 @@
   {#if dose.sideEffects && dose.sideEffects.length > 0}
     <div class="mt-2 flex flex-wrap gap-1.5 pl-7">
       {#each dose.sideEffects as effect}
+        <!-- Every write door validates the severity; a legacy or hand-written
+             value outside the enum draws as mild rather than crashing /log. -->
+        {@const severity = SEVERITY[effect.severity] ?? SEVERITY.mild}
         <span
           class="rounded-md px-2 py-0.5 text-xs font-semibold {toneClass(
-            toneOf(SEVERITY[effect.severity].status),
+            toneOf(severity.status),
             'chip',
           )}"
         >
-          {effect.name} · {SEVERITY[effect.severity].word}
+          {effect.name} · {severity.word}
         </span>
       {/each}
     </div>

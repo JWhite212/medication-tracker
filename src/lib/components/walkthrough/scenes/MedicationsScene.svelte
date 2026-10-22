@@ -4,10 +4,13 @@
   // bars and sparklines in; `tick` (0..1) rolls the "Last taken" timers over
   // by a minute.
   import Sparkline from "$components/Sparkline.svelte";
+  import { refillChip } from "$components/RefillsCard.svelte";
   import { getMedicationBackground } from "$lib/utils/medication-style";
+  import { toneClass } from "$lib/utils/status-tone";
   import { HISTORY, MEDICATIONS } from "../demo-data";
   import { useMark } from "../marks";
   import { MOTION } from "../timeline";
+  import { STAGE_REFILLS } from "../stage-dashboard";
   import { stageButton } from "../parts/stage-controls";
 
   let { load, tick }: { load: number; tick: number } = $props();
@@ -25,6 +28,16 @@
       {@const adherence = HISTORY.weeklyAdherence[i]}
       {@const fill = MOTION.enter(load, 0.15 + i * 0.08, 0.7)}
       {@const draw = MOTION.enter(load, 0.25 + i * 0.08, 0.9)}
+      <!-- The tier is STAGE_REFILLS' (demo-facts holds it to classifyRefillSeverity,
+           a server function this scene cannot call). The demo draws no alert
+           threshold, and with a forecast and none refillChip never reads the count. -->
+      {@const refill = STAGE_REFILLS.find((r) => r.medicationId === medication.id)}
+      {@const chip = refillChip({
+        severity: refill?.severity ?? "ok",
+        daysUntilRefill: medication.supplyDays,
+        inventoryCount: null,
+        inventoryAlertThreshold: null,
+      })}
       <div class="flex items-center gap-2">
         <!-- Reorder arrows at the page's 32x44 size; the first can't move up
              and the last can't move down -->
@@ -67,12 +80,20 @@
                     </p>
                   </div>
                 </div>
-                {#if medication.refillWatch}
+                {#if chip}
                   <div class="flex flex-wrap items-center gap-2">
+                    <!-- The space after the glyph is an expression because Svelte drops a
+                         literal one at an {#if} edge. -->
+                    <!-- eslint-disable svelte/no-useless-mustaches -->
                     <span
-                      class="bg-info/15 text-info rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap"
-                      >{medication.supplyDays}d left</span
+                      class="rounded-md px-2 py-1 text-xs font-semibold whitespace-nowrap {toneClass(
+                        chip.tone,
+                        'chip',
+                      )}"
+                      >{#if chip.glyph}<span aria-hidden="true">{chip.glyph}</span
+                        >{" "}{/if}{chip.text}</span
                     >
+                    <!-- eslint-enable svelte/no-useless-mustaches -->
                   </div>
                 {/if}
               </div>
@@ -102,9 +123,7 @@
                     </span>
                   {/if}
                 </span>
-                <span class="whitespace-nowrap {medication.supplyDays <= 7 ? 'text-warning' : ''}"
-                  >~{medication.supplyDays}d supply left</span
-                >
+                <span class="whitespace-nowrap">~{medication.supplyDays}d supply left</span>
               </div>
               <div class="mt-2 flex items-center gap-2">
                 <div class="bg-glass h-1.5 flex-1 overflow-hidden rounded-full">

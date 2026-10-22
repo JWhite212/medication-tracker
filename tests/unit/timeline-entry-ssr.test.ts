@@ -32,6 +32,10 @@ vi.mock("$app/state", () => ({
 }));
 
 const { default: TimelineEntry } = await import("../../src/lib/components/TimelineEntry.svelte");
+// The landing page draws this row without mounting it; DoseEntry is that drawing.
+const { default: DoseEntry } =
+  await import("../../src/lib/components/walkthrough/parts/DoseEntry.svelte");
+const { MEDICATION_BY_ID } = await import("../../src/lib/components/walkthrough/demo-data");
 // × is a dose write, and every dose write reads the (app) layout's lock.
 const { doseWriteContext } = await import("./helpers/dashboard-context");
 
@@ -133,6 +137,53 @@ describe("a skipped or missed dose row stays legible (WCAG 1.4.3)", () => {
     expect(restingOpacity(dot(renderRow("skipped"))!)).not.toBeNull();
     expect(restingOpacity(dot(renderRow("missed"))!)).not.toBeNull();
   });
+});
+
+describe("the landing page's walkthrough draws this row's time-since and side-effect chip as it does", () => {
+  /** Colour and border tokens: the size utilities (text-xs, text-sm, …) are not paint. */
+  const paint = (el: Element) =>
+    tokens(el)
+      .filter(
+        (t) =>
+          (/^(?:text|bg|border|ring)-/.test(t) && !/^text-(?:xs|sm|base|lg|\d?xl)$/.test(t)) ||
+          t === "border",
+      )
+      .sort();
+  const withoutSrOnly = (el: Element) => {
+    const clone = el.cloneNode(true) as Element;
+    clone.querySelectorAll(".sr-only").forEach((node) => node.remove());
+    return textOf(clone);
+  };
+
+  for (const severity of ["mild", "moderate", "severe"] as const) {
+    it(`matches the real row for ${severity}`, () => {
+      const real = renderRow("taken", { sideEffects: [{ name: "Upset stomach", severity }] });
+      const stage = ssrDocument(
+        render(DoseEntry, {
+          props: {
+            medication: MEDICATION_BY_ID.ibu,
+            time: "14:12",
+            since: "17h 50m ago",
+            sideEffect: { name: "Upset stomach", severity },
+          },
+        }).body,
+      );
+
+      const realSince = real.querySelector("time[datetime]")!.parentElement!;
+      const stageSince = [...stage.querySelectorAll("span")].find(
+        (el) => textOf(el) === "17h 50m ago",
+      )!;
+      expect(paint(realSince), "the real time-since carries paint").not.toEqual([]);
+      expect(paint(stageSince)).toEqual(paint(realSince));
+
+      // `.mt-2.pl-7`, not `.pl-7`: the row's time line is a `.pl-7` too.
+      const realChip = real.querySelector(".mt-2.pl-7 > span")!;
+      const stageChip = stage.querySelector(".mt-2.pl-7 > span")!;
+      expect(paint(stageChip)).toEqual(paint(realChip));
+      expect(withoutSrOnly(stageChip)).toBe(withoutSrOnly(realChip));
+      expect(withoutSrOnly(realChip)).toMatch(/^Upset stomach · (?:Mild|Moderate|Severe)$/);
+    });
+  }
 });
 
 const HOVER_MEDIA = /@media \(hover: ?hover\)/;

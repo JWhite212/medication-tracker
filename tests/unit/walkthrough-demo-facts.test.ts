@@ -31,6 +31,8 @@ import {
   type MedicationStatusCounts,
 } from "$lib/server/analytics/status-breakdown";
 import { classifyRefillSeverity } from "$lib/server/inventory";
+import type { RefillForecastEntry, RefillSeverity } from "$lib/types";
+import { toneClass, toneOf } from "$lib/utils/status-tone";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import {
   formatTimeSince,
@@ -46,6 +48,7 @@ import {
   HISTORY,
   LOGGED_DOSE,
   LOG_ALL,
+  LOG_WITH_SIDE_EFFECTS,
   MEDICATIONS,
   PHONE_NOW,
   SESSION_EXPIRIES,
@@ -57,11 +60,13 @@ import {
 } from "$lib/components/walkthrough/demo-data";
 import { STAGE_REFILLS } from "$lib/components/walkthrough/stage-dashboard";
 import { stageButton, stageToggle } from "$lib/components/walkthrough/parts/stage-controls";
+import StageRefills from "$lib/components/walkthrough/parts/dashboard/StageRefills.svelte";
 import AnalyticsScene from "$lib/components/walkthrough/scenes/AnalyticsScene.svelte";
 import DataScene from "$lib/components/walkthrough/scenes/DataScene.svelte";
 import HistoryScene from "$lib/components/walkthrough/scenes/HistoryScene.svelte";
 import MedicationsScene from "$lib/components/walkthrough/scenes/MedicationsScene.svelte";
 import SecurityScene from "$lib/components/walkthrough/scenes/SecurityScene.svelte";
+import RefillsCard, { refillChip } from "$lib/components/RefillsCard.svelte";
 import StatusBreakdownBar from "$lib/components/StatusBreakdownBar.svelte";
 import Button from "$lib/components/ui/Button.svelte";
 import Toggle from "$lib/components/ui/Toggle.svelte";
@@ -115,7 +120,13 @@ function breakdownOf(doc: Document) {
       fill: [...el.classList].find((c) => c.startsWith("bg-")),
       width: (el as HTMLElement).style.width,
     })),
-    legend: [...legend.children].map(textOf),
+    // The dot's fill as well as the words: STATUS_BREAKDOWN.skippedEvents is 0,
+    // so no skipped segment is ever drawn and the legend is where its colour
+    // shows.
+    legend: [...legend.children].map((el) => ({
+      dot: [...(el.querySelector("span")?.classList ?? [])].find((c) => c.startsWith("bg-")),
+      text: textOf(el),
+    })),
   };
 }
 
@@ -227,6 +238,21 @@ describe("the History scene", () => {
   });
 });
 
+describe("the History scene's side effects", () => {
+  it("gives the side effect the severity scripts/seed-demo.ts seeds", () => {
+    const seed = readFileSync(
+      fileURLToPath(new URL("../../scripts/seed-demo.ts", import.meta.url)),
+      "utf8",
+    );
+    const [, name, severity] = seed.match(/\{ name: "([^"]+)", severity: "(\w+)" as const \}/)!;
+    for (const list of [LOG_ALL, LOG_WITH_SIDE_EFFECTS]) {
+      const shown = list.flatMap((group) => group.doses).filter((d) => d.sideEffect !== undefined);
+      expect(shown.length).toBeGreaterThan(0);
+      for (const dose of shown) expect(dose.sideEffect).toEqual({ name, severity });
+    }
+  });
+});
+
 describe("the Medications scene", () => {
   it("times each medication's last taken dose as formatTimeSince does, at DESKTOP_NOW and a minute on", () => {
     const aMinuteOn = new Date(DESKTOP_NOW.getTime() + 60_000);
@@ -255,6 +281,40 @@ describe("the Security scene", () => {
     expect(expiries).toEqual(
       SESSION_EXPIRIES.map((d) => `Expires ${formatUserDate(d, WALKTHROUGH_TZ, "DD/MM/YYYY")}`),
     );
+  });
+});
+
+describe("the Security scene's state chip", () => {
+  it("draws the 2FA state as T8's neutral chip", () => {
+    const enabled = drawnControl(render(SecurityScene).body, "Enabled");
+    expect(resting(enabled)).toEqual(
+      expect.arrayContaining(
+        split(`${toneClass(toneOf("state"), "chip")} rounded-md px-2 py-0.5 text-xs font-semibold`),
+      ),
+    );
+    expect(statusTokens(enabled)).toEqual([]);
+  });
+});
+
+describe("the Analytics scene's stat cards", () => {
+  it("draws the stat cards with no status or accent colour, as the page does", () => {
+    const doc = ssrDocument(render(AnalyticsScene, { props: { load: 10, heat: 1 } }).body);
+    const grid = doc.querySelector(".grid.grid-cols-3")!;
+    expect(statusTokens(grid)).toEqual([]);
+    expect(grid.innerHTML.match(STATUS_TOKEN)).toBeNull();
+    expect(grid.innerHTML).not.toMatch(/color:\s*var\(--color-accent-ink\)/);
+    for (const t of ["↑3%", "↑2%"]) {
+      expect([...drawnControl(grid.outerHTML, t).classList], t).toContain("text-text-secondary");
+    }
+    expect(
+      [...grid.querySelectorAll("svg")].map((s) =>
+        [...s.parentElement!.classList].includes("text-text-secondary"),
+      ),
+    ).toEqual([true, true]);
+    const perMedication = [...doc.querySelectorAll("p")].find(
+      (p) => textOf(p) === "Per-Medication Adherence (90 days)",
+    )!.parentElement!;
+    expect(statusTokens(perMedication)).toEqual([]);
   });
 });
 
@@ -372,6 +432,81 @@ describe("the Refills card and the refill badge", () => {
     for (const row of STAGE_REFILLS) {
       expect(row.severity, row.medicationName).toBe(classifyRefillSeverity(row.daysUntilRefill));
     }
+  });
+
+  it("draws each card's chip and stats row as MedicationCard does", () => {
+    const html = render(MedicationsScene, { props: { load: 10, tick: 0 } }).body;
+    const doc = ssrDocument(html);
+    for (const m of MEDICATIONS) {
+      // With a forecast and no alert threshold, refillChip never reads the
+      // stock count, so the demo needs no stock figure.
+      const chip = refillChip({
+        severity: classifyRefillSeverity(m.supplyDays),
+        daysUntilRefill: m.supplyDays,
+        inventoryCount: null,
+        inventoryAlertThreshold: null,
+      });
+      const card = [...doc.querySelectorAll("p")]
+        .find((p) => textOf(p) === m.name)!
+        .closest(".rounded-xl")!;
+      if (chip) {
+        const words = chip.glyph ? `${chip.glyph} ${chip.text}` : chip.text;
+        expect(resting(drawnControl(card.outerHTML, words)), m.name).toEqual(
+          expect.arrayContaining(
+            split(`rounded-md px-2 py-1 text-xs font-semibold ${toneClass(chip.tone, "chip")}`),
+          ),
+        );
+      } else {
+        const spans = [...card.querySelectorAll("span")].map(textOf);
+        expect(
+          spans.filter((text) => text.endsWith("days left")),
+          m.name,
+        ).toEqual([]);
+      }
+      expect([...card.querySelectorAll("span")].map(textOf), m.name).toContain(
+        `~${m.supplyDays}d supply left`,
+      );
+    }
+    // Ibuprofen's 8 days is the watch tier, which is neutral, and the supply
+    // line is neutral at every count.
+    expect(statusTokens(doc.body)).toEqual([]);
+  });
+
+  it("draws each row as RefillsCard draws it, for every tier", () => {
+    const row = (
+      medicationId: string,
+      severity: RefillSeverity,
+      daysUntilRefill: number,
+    ): RefillForecastEntry => ({
+      medicationId,
+      medicationName: `Medication ${medicationId}`,
+      colour: "#3b82f6",
+      inventoryCount: daysUntilRefill * 2,
+      dailyRate: 2,
+      daysUntilRefill,
+      severity,
+    });
+    const entries = [
+      row("a", "critical", 2),
+      row("b", "warning", 6),
+      row("c", "watch", 8),
+      row("d", "ok", 30),
+    ];
+    const card = ssrDocument(render(RefillsCard, { props: { entries } }).body);
+    const stage = ssrDocument(render(StageRefills, { props: { entries } }).body);
+    const cardRows = [...card.querySelectorAll("section a")];
+    const stageRows = [...stage.querySelectorAll(".space-y-2 > div")];
+    expect(cardRows).toHaveLength(entries.length);
+    expect(stageRows).toHaveLength(entries.length);
+    cardRows.forEach((real, i) => {
+      const drawn = stageRows[i];
+      expect(textOf(drawn), entries[i].severity).toBe(textOf(real));
+      // The stage's documented difference is exactly the hover and transition
+      // classes, which `resting` drops.
+      expect([drawn, ...drawn.querySelectorAll("*")].map(resting), entries[i].severity).toEqual(
+        [real, ...real.querySelectorAll("*")].map(resting),
+      );
+    });
   });
 });
 

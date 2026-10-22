@@ -4,7 +4,11 @@
   // activity heatmap week by week.
   import Sparkline from "$components/Sparkline.svelte";
   import { DISCLAIMER_TEXT } from "$components/MedicalDisclaimer.svelte";
-  import { statusBreakdownSegments } from "$components/StatusBreakdownBar.svelte";
+  import {
+    STATUS_BREAKDOWN_FILLS,
+    statusBreakdownSegments,
+  } from "$components/StatusBreakdownBar.svelte";
+  import { toneClass } from "$lib/utils/status-tone";
   import {
     ADHERENCE_TRENDS,
     HEATMAP_WEEKS,
@@ -29,20 +33,25 @@
   // here: it renders an <h2>, and the stage has no headings.
   const segments = statusBreakdownSegments(STATUS_BREAKDOWN);
   const legend = [
-    { label: "Taken", value: STATUS_BREAKDOWN.takenEvents, dot: "bg-success" },
-    { label: "Skipped", value: STATUS_BREAKDOWN.skippedEvents, dot: "bg-warning" },
-    { label: "Missed", value: STATUS_BREAKDOWN.missedEvents, dot: "bg-danger" },
+    { label: "Taken", value: STATUS_BREAKDOWN.takenEvents, dot: STATUS_BREAKDOWN_FILLS.taken },
+    {
+      label: "Skipped",
+      value: STATUS_BREAKDOWN.skippedEvents,
+      dot: STATUS_BREAKDOWN_FILLS.skipped,
+    },
+    { label: "Missed", value: STATUS_BREAKDOWN.missedEvents, dot: STATUS_BREAKDOWN_FILLS.missed },
   ];
+  // Analytics reports numbers and does not judge them: every trend and
+  // sparkline is neutral, as on the page.
+  const NEUTRAL = toneClass("neutral", "text");
 
   const stats = $derived([
     {
       value: String(Math.round(HISTORY.streak * count)),
-      color: "var(--color-accent-ink)",
       label: "Day Streak",
     },
     {
       value: `${Math.round(HISTORY.averageAdherence * count)}%`,
-      color: "var(--color-success)",
       label: "Avg Adherence",
       // Placeholder trend, as in the design.
       trend: "↑3%",
@@ -50,7 +59,6 @@
     },
     {
       value: String(Math.round(HISTORY.total * count)),
-      color: "var(--color-warning)",
       label: "Doses (90 days)",
       trend: "↑2%",
       spark: HISTORY.daily,
@@ -102,15 +110,14 @@
         style:opacity={p}
         style:transform="translateY({(1 - p) * 10}px)"
       >
-        <p class="text-3xl font-bold tabular-nums" style:color={stat.color}>{stat.value}</p>
+        <p class="text-text-primary text-3xl font-bold tabular-nums">{stat.value}</p>
         <div class="mt-1 flex items-center justify-center gap-1.5">
           <span class="text-text-secondary text-sm">{stat.label}</span>
-          {#if stat.trend}<span class="text-success text-xs">{stat.trend}</span>{/if}
+          {#if stat.trend}<span class="text-xs {NEUTRAL}">{stat.trend}</span>{/if}
         </div>
         {#if stat.spark}
           <div
-            class="mt-2"
-            style:color={stat.color}
+            class="{NEUTRAL} mt-2"
             style:clip-path={draw < 1
               ? `inset(0 ${((1 - draw) * 100).toFixed(2)}% 0 0)`
               : undefined}
@@ -162,9 +169,7 @@
             <div class="flex items-center gap-1.5">
               <span class="text-text-secondary">{stat.adherence}%</span>
               {#if trend}
-                <span class="text-xs {trend.up ? 'text-success' : 'text-danger-ink'}"
-                  >{trend.up ? "↑" : "↓"}{trend.points}%</span
-                >
+                <span class="text-xs {NEUTRAL}">{trend.up ? "↑" : "↓"}{trend.points}%</span>
               {/if}
             </div>
           </div>
@@ -186,13 +191,22 @@
     <div class="flex flex-col gap-2">
       <div class="bg-surface-overlay flex h-3 w-full overflow-hidden rounded-full">
         {#if segments.takenPct > 0}
-          <div class="bg-success h-full" style:width="{segments.takenPct}%"></div>
+          <div
+            class="h-full {STATUS_BREAKDOWN_FILLS.taken}"
+            style:width="{segments.takenPct}%"
+          ></div>
         {/if}
         {#if segments.skippedPct > 0}
-          <div class="bg-warning h-full" style:width="{segments.skippedPct}%"></div>
+          <div
+            class="h-full {STATUS_BREAKDOWN_FILLS.skipped}"
+            style:width="{segments.skippedPct}%"
+          ></div>
         {/if}
         {#if segments.missedPct > 0}
-          <div class="bg-danger h-full" style:width="{segments.missedPct}%"></div>
+          <div
+            class="h-full {STATUS_BREAKDOWN_FILLS.missed}"
+            style:width="{segments.missedPct}%"
+          ></div>
         {/if}
       </div>
       <div class="text-text-secondary flex flex-wrap gap-x-4 gap-y-1 text-xs">

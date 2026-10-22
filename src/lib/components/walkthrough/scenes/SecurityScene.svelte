@@ -1,5 +1,6 @@
 <script lang="ts">
   // routes/(app)/settings/security/+page.svelte with two-factor enabled.
+  import { toneClass, toneOf } from "$lib/utils/status-tone";
   import { formatUserDate } from "$lib/utils/time";
   import { SESSION_EXPIRIES, WALKTHROUGH_TZ } from "../demo-data";
   import { useMark } from "../marks";
@@ -38,9 +39,12 @@
     <p class="mb-4 text-lg font-semibold">Two-Factor Authentication</p>
     <div class="flex flex-col gap-4">
       <div class="flex items-center gap-3">
+        <!-- "Enabled" is a state, not a verdict: neutral, as on the page. -->
         <span
-          class="bg-success/10 text-success rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap"
-          >Enabled</span
+          class="{toneClass(
+            toneOf('state'),
+            'chip',
+          )} rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap">Enabled</span
         >
         <p class="text-text-secondary text-sm">
           Your account is protected with two-factor authentication.

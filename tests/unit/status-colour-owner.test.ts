@@ -50,12 +50,7 @@ const EXEMPT: { file: string; why: string }[] = [
  * A task that removes a file's last status class deletes its line here in the
  * same commit (the stale check below fails otherwise). Task 13 deletes the list.
  */
-const PENDING_MIGRATION: string[] = [
-  "src/lib/components/walkthrough/parts/dashboard/StageDueCard.svelte",
-  "src/lib/components/walkthrough/scenes/AnalyticsScene.svelte",
-  "src/lib/components/walkthrough/scenes/MedicationsScene.svelte",
-  "src/lib/components/walkthrough/scenes/SecurityScene.svelte",
-];
+const PENDING_MIGRATION: string[] = [];
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

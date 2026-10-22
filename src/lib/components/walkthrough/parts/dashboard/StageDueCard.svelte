@@ -14,6 +14,7 @@
   import type { DueCard, DueRow } from "$lib/types";
   import type { TimeFormat } from "$lib/utils/time";
   import { formatSlotTime, rowStatusLine, tookItAtLabel } from "$lib/utils/dashboard-copy";
+  import { toneClass, toneOf } from "$lib/utils/status-tone";
   import MedicationGlyph from "$components/dashboard/MedicationGlyph.svelte";
   import StatusMarker from "$components/dashboard/StatusMarker.svelte";
   import { useMark } from "../../marks";
@@ -41,7 +42,10 @@
   const top = $derived(card.rows[0]);
   const rest = $derived(card.rows.slice(1));
   const dose = $derived(`${card.dosageAmount}${card.dosageUnit}`);
-  const border = $derived(top.state === "due-now" ? "border-accent-ink/50" : "border-warning/50");
+  // DueCard's expression: the due-now edge is accent, not status.
+  const border = $derived(
+    top.state === "due-now" ? "border-accent-ink/50" : toneClass(toneOf("dose-overdue"), "border"),
+  );
 
   function markerFor(row: DueRow): "due-now" | "overdue" {
     return row.state === "due-now" ? "due-now" : "overdue";

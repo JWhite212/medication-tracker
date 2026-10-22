@@ -137,6 +137,19 @@ describe("/auth/reset-password", () => {
     );
     expect(doc.querySelector("form")).toBeNull();
   });
+
+  // The status region and the refusal are neighbours, so an edit could nest
+  // them; a role="alert" inside a polite region is read twice (R6).
+  it("announces a refusal itself, outside the status region", () => {
+    const doc = ssrDocument(
+      render(ResetPassword, { props: { form: { error: "Email is required." } } }).body,
+    );
+    const alert = alertTitled(doc, "Email is required.")!;
+    expect(alert).not.toBeNull();
+    expect(alert.getAttribute("role")).toBe("alert");
+    expect(alert.closest('[role="status"]')).toBeNull();
+    expectClasses(alert, toneClass("wrong", "alert"));
+  });
 });
 
 describe("axe on the auth pages", () => {

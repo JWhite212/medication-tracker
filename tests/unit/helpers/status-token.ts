@@ -36,8 +36,8 @@ const OPACITY = String.raw`(?:\/(?:\d+(?:\.\d+)?|\[[^\]\s]+\]|\([^)\s]+\)))?`;
  *
  * Not caught: an arbitrary colour literal such as `bg-[#f59e0b]`. The landing
  * walkthrough draws its browser frame that way (`ChromeWindow`'s greys and
- * macOS window buttons, `WalkthroughVideo`'s backdrop), so that arm waits on
- * a decision about those.
+ * macOS window buttons, `WalkthroughVideo`'s backdrop) — browser chrome and
+ * a stage backdrop, not app status — so that arm is deliberately left out.
  */
 export const STATUS_TOKEN = new RegExp(
   String.raw`\b${UTILITY}-${STATUS}${OPACITY}(?!\w)` +

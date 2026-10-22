@@ -17,6 +17,7 @@ import RefillsCard, {
 import { toneClass } from "$lib/utils/status-tone";
 import type { RefillForecastEntry, RefillSeverity } from "$lib/types";
 import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
+import { compiledRule } from "./helpers/compiled-rule";
 import { accessibleName, textOf } from "./helpers/dom-names";
 
 const SEVERITIES: RefillSeverity[] = ["critical", "warning", "watch", "ok"];
@@ -187,6 +188,22 @@ describe("RefillsCard", () => {
     has(label(rows[2]), toneClass("neutral", "text"));
     expect(accessibleName(label(rows[2]))).toBe("10 days left");
     expect(label(rows[2]).querySelector('[aria-hidden="true"]')).toBeNull();
+  });
+
+  // A row used to fade on hover (hover:opacity-90), which took the amber
+  // label to 4.19:1 in light. It now swaps its background for glass-hover,
+  // the hover every glass row here takes, and theme-tokens.test.ts measures
+  // each tone's label over that ("refillsRowHover").
+  it("answers hover with the glass-hover background, never a fade", async () => {
+    for (const row of rows) {
+      const hovers = [...row.classList].filter((c) => c.startsWith("hover:"));
+      expect(hovers, row.className).toEqual(["hover:bg-glass-hover"]);
+    }
+    // A real rule, and one that replaces the tint: the :hover selector
+    // outranks the row's plain bg- class.
+    expect(await compiledRule("hover:bg-glass-hover")).toMatch(
+      /&:hover \{[^}]*background-color: var\(--color-glass-hover\)/,
+    );
   });
 
   it("paints no info or danger anywhere", () => {

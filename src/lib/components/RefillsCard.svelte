@@ -95,9 +95,11 @@
           inventoryCount: entry.inventoryCount,
           inventoryAlertThreshold: null,
         })}
+        <!-- Hover swaps the background for glass-hover rather than fading the
+             row: at 90% opacity the amber label fell below 4.5:1 in light. -->
         <a
           href="/medications/{entry.medicationId}"
-          class="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:opacity-90 {refillSeverityClass(
+          class="hover:bg-glass-hover flex items-center gap-3 rounded-lg border p-3 transition-colors {refillSeverityClass(
             entry.severity,
           )}"
         >

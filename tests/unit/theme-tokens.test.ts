@@ -451,6 +451,20 @@ it("would have failed danger at 90% opacity in a dark dialog", () => {
   expect(ratio).toBeLessThan(4.5);
 });
 
+// Guard the guard: the Refills row's old hover, 90% opacity on the whole
+// row, took its amber label below AA in light. That is why it hovers with
+// glass-hover instead ("refillsRowHover" below).
+it("would have failed a Refills row's amber label at 90% opacity in light", () => {
+  const surface = LIGHT["--color-surface"];
+  const fill = fillOf(TONE_CLASSES["needs-you"].alert)!;
+  const row = compositeOver(fill.alpha, surface, LIGHT[fill.token]);
+  const ratio = contrastRatio(
+    compositeOver(0.9, surface, LIGHT[inkOf(TONE_CLASSES["needs-you"].text)]),
+    compositeOver(0.9, surface, row),
+  );
+  expect(ratio).toBeLessThan(4.5);
+});
+
 /**
  * Tinted chips are not rendered on the opaque surfaces above: a chip paints a
  * fraction of its own fill over whatever is behind it, which lightens the
@@ -471,7 +485,9 @@ it("would have failed danger at 90% opacity in a dark dialog", () => {
  *
  * Text on opaque surfaces and on a resting card is already in the text-token
  * table above (surfaces() includes surface-raised and glass-on-surface), so
- * `text` adds only the hovered card, which surfaces() does not composite.
+ * `text` adds only glass-hover over the page, which surfaces() does not
+ * composite: a hovered card, and a hovered Refills row, whose hover replaces
+ * its tint.
  */
 describe.each(SCHEMES)(
   "$name — every status tone is legible over the backdrops its element is drawn on",
@@ -503,7 +519,14 @@ describe.each(SCHEMES)(
           "DoseEditForm's and DestructiveConfirm's error, in the Modal panel",
         ],
       ],
-      text: [["cardHover", cardHover, "a status word on a hovered Log row or medication card"]],
+      text: [
+        ["cardHover", cardHover, "a status word on a hovered Log row or medication card"],
+        [
+          "refillsRowHover",
+          cardHover,
+          "a hovered Refills row's label: hover:bg-glass-hover replaces the row's tint (refills-card-ssr pins the class)",
+        ],
+      ],
     };
 
     for (const tone of Object.keys(TONE_CLASSES) as Tone[]) {

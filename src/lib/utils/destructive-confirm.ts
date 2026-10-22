@@ -31,6 +31,34 @@ export const RECENT_SIGN_IN_WINDOW_MS = 10 * 60 * 1000;
  */
 export const RECENT_SIGN_IN_MESSAGE = "Sign in again to confirm.";
 
+/** The providers a browser can sign in again with. Apple exists only on `/api/v1`. */
+export type WebProvider = "google" | "github";
+
+/**
+ * The only pages "Sign in again" may send the user back to: the three that
+ * host one of the four deletions. Matched EXACTLY — no prefix, query,
+ * fragment, trailing slash or decoding — because the candidate arrives in a
+ * query string and is then held in a cookie the user can edit, and any looser
+ * match is an open redirect.
+ */
+export const RETURN_PATHS = [
+  "/settings/privacy",
+  "/settings/data",
+  "/settings/data/import",
+] as const;
+export type ReturnPath = (typeof RETURN_PATHS)[number];
+
+export function returnPathOrNull(candidate: string | null | undefined): ReturnPath | null {
+  return (RETURN_PATHS as readonly string[]).includes(candidate ?? "")
+    ? (candidate as ReturnPath)
+    : null;
+}
+
+/** The OAuth start leg, told where to come back to. */
+export function signInAgainHref(provider: WebProvider, returnTo: ReturnPath): string {
+  return `/auth/callback/${provider}?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 const NUMBER = new Intl.NumberFormat("en-GB");
 
 /** A count with en-GB thousands grouping, whatever the runtime's locale. */

@@ -9,6 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { RequestHandler } from "./$types";
 import { signPreAuthToken } from "$lib/server/api/preauth";
+import { rememberReturnPath, takeReturnPath } from "$lib/server/auth/return-path";
 
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -87,6 +88,8 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   const code = url.searchParams.get("code");
 
   if (!code) {
+    // "Sign in again to confirm" passes the page to come back to.
+    rememberReturnPath(cookies, url.searchParams.get("returnTo"));
     const state = crypto.randomUUID();
     const cookieOpts = {
       path: "/",
@@ -182,7 +185,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       path: ".",
       ...sessionCookie.attributes,
     });
-    redirect(302, "/dashboard");
+    redirect(302, takeReturnPath(cookies) ?? "/dashboard");
   }
 
   const [existingUser] = await db
@@ -221,5 +224,5 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     path: ".",
     ...sessionCookie.attributes,
   });
-  redirect(302, "/dashboard");
+  redirect(302, takeReturnPath(cookies) ?? "/dashboard");
 };

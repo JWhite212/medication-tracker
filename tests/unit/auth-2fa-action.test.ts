@@ -59,18 +59,23 @@ vi.mock("$lib/server/audit", () => ({ logAudit: async () => {} }));
 const { signPreAuthToken } = await import("../../src/lib/server/api/preauth");
 const { actions, load } = await import("../../src/routes/auth/2fa/+page.server");
 
-function makeCookies(pendingValue: string | undefined) {
+function makeCookies(pendingValue: string | undefined, returnTo?: string) {
   return {
-    get: (name: string) => (name === "pending_2fa" ? pendingValue : undefined),
+    get: (name: string) =>
+      name === "pending_2fa" ? pendingValue : name === "auth_return_to" ? returnTo : undefined,
     set: vi.fn(),
     delete: vi.fn(),
   };
 }
 
-const call = (code: string, pendingValue: string | undefined) =>
+const call = (
+  code: string,
+  pendingValue: string | undefined,
+  cookies = makeCookies(pendingValue),
+) =>
   actions.default({
     request: new Request("http://x", { method: "POST", body: new URLSearchParams({ code }) }),
-    cookies: makeCookies(pendingValue),
+    cookies,
     getClientAddress: () => "1.1.1.1",
   } as never);
 
@@ -261,5 +266,28 @@ describe("rate limiting", () => {
     expect(result.status).toBe(400);
     expect(checkRateLimit).not.toHaveBeenCalled();
     expect(verifySecondFactorForLogin).not.toHaveBeenCalled();
+  });
+});
+
+describe("returning to the page that asked for a sign-in", () => {
+  it("sends the user to the page the OAuth start leg remembered, and forgets it", async () => {
+    state.totpResult = true;
+    const token = validToken();
+    const cookies = makeCookies(token, "/settings/data/import");
+
+    await expect(call("123456", token, cookies)).rejects.toMatchObject({
+      status: 302,
+      location: "/settings/data/import",
+    });
+    expect(cookies.delete).toHaveBeenCalledWith("auth_return_to", expect.anything());
+  });
+
+  it("goes to the dashboard for a remembered value that is not one of the pages", async () => {
+    state.totpResult = true;
+    const token = validToken();
+
+    await expect(call("123456", token, makeCookies(token, "//evil.example"))).rejects.toMatchObject(
+      { status: 302, location: "/dashboard" },
+    );
   });
 });

@@ -56,8 +56,8 @@ function githubFetchStub() {
   });
 }
 
-function makeCookies() {
-  const jar = new Map<string, string>([["oauth_state", "st-1"]]);
+function makeCookies(extra: Record<string, string> = {}) {
+  const jar = new Map<string, string>([["oauth_state", "st-1"], ...Object.entries(extra)]);
   return {
     get: (name: string) => jar.get(name),
     set: vi.fn((name: string, value: string) => {
@@ -125,5 +125,62 @@ describe("GET /auth/callback/[provider] — existing linked account", () => {
     expect(cookies.set).toHaveBeenCalledWith("auth_session", "sess-1", expect.anything());
     const pendingCall = cookies.set.mock.calls.find((c) => c[0] === "pending_2fa");
     expect(pendingCall).toBeUndefined();
+  });
+});
+
+describe("GET /auth/callback/[provider] — returning to the page that asked for a sign-in", () => {
+  const start = (cookies: ReturnType<typeof makeCookies>, query: string) =>
+    GET({
+      params: { provider: "github" },
+      url: new URL(`http://localhost/auth/callback/github${query}`),
+      cookies,
+    } as never);
+
+  it("remembers an allowed returnTo on the way out to the provider", async () => {
+    const cookies = makeCookies();
+    await expect(start(cookies, "?returnTo=%2Fsettings%2Fprivacy")).rejects.toMatchObject({
+      status: 302,
+      location: "https://github.com/login/oauth/authorize",
+    });
+    expect(cookies.set).toHaveBeenCalledWith(
+      "auth_return_to",
+      "/settings/privacy",
+      expect.objectContaining({ httpOnly: true, maxAge: 600, path: "/", sameSite: "lax" }),
+    );
+  });
+
+  it("clears any remembered path for a returnTo it does not allow", async () => {
+    const cookies = makeCookies({ auth_return_to: "/settings/data" });
+    await expect(start(cookies, "?returnTo=%2F%2Fevil.example")).rejects.toMatchObject({
+      status: 302,
+    });
+    expect(cookies.set.mock.calls.some((c) => c[0] === "auth_return_to")).toBe(false);
+    expect(cookies.delete).toHaveBeenCalledWith("auth_return_to", expect.anything());
+  });
+
+  it("sends a signed-in user back to the remembered page, once", async () => {
+    fakeDb.seed(oauthAccounts, [{ userId: "u1" }]);
+    fakeDb.seed(users, [{ ...baseUser }]);
+    const cookies = makeCookies({ auth_return_to: "/settings/data" });
+
+    await expect(call(cookies)).rejects.toMatchObject({ status: 302, location: "/settings/data" });
+    expect(cookies.delete).toHaveBeenCalledWith("auth_return_to", expect.anything());
+  });
+
+  it("ignores a remembered value that is not one of the pages", async () => {
+    fakeDb.seed(oauthAccounts, [{ userId: "u1" }]);
+    fakeDb.seed(users, [{ ...baseUser }]);
+    const cookies = makeCookies({ auth_return_to: "https://evil.example" });
+
+    await expect(call(cookies)).rejects.toMatchObject({ status: 302, location: "/dashboard" });
+  });
+
+  it("leaves the remembered page for /auth/2fa to use when a second factor is due", async () => {
+    fakeDb.seed(oauthAccounts, [{ userId: "u1" }]);
+    fakeDb.seed(users, [{ ...baseUser, twoFactorEnabled: true }]);
+    const cookies = makeCookies({ auth_return_to: "/settings/privacy" });
+
+    await expect(call(cookies)).rejects.toMatchObject({ status: 302, location: "/auth/2fa" });
+    expect(cookies.delete.mock.calls.some((c) => c[0] === "auth_return_to")).toBe(false);
   });
 });

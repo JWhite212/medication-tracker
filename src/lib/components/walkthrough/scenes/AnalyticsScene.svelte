@@ -81,7 +81,8 @@
   <p class="text-text-muted text-xs">{DISCLAIMER_TEXT}</p>
   <div class="flex flex-wrap items-center justify-between gap-3">
     <p class="text-2xl font-bold">Analytics</p>
-    <div class="{control} bg-glass! px-3 py-2 font-medium">
+    <!-- MedicationFilterSelect's trigger: a fixed h-9, as the real one is. -->
+    <div class="{control} bg-glass! h-9 px-3 font-medium">
       All medications<Glyph name="chevron" />
     </div>
     <div class="border-glass-border bg-glass flex gap-1 rounded-lg border p-1">

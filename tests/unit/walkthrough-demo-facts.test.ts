@@ -68,6 +68,7 @@ import MedicationsScene from "$lib/components/walkthrough/scenes/MedicationsScen
 import SecurityScene from "$lib/components/walkthrough/scenes/SecurityScene.svelte";
 import RefillsCard, { refillChip } from "$lib/components/RefillsCard.svelte";
 import StatusBreakdownBar from "$lib/components/StatusBreakdownBar.svelte";
+import MedicationFilterSelect from "$lib/components/MedicationFilterSelect.svelte";
 import Button from "$lib/components/ui/Button.svelte";
 import Toggle from "$lib/components/ui/Toggle.svelte";
 import { ssrDocument } from "./helpers/axe-ssr";
@@ -575,5 +576,19 @@ describe("the stage's drawn controls", () => {
     const el = drawnControl(body(), label);
     expect(resting(el)).toEqual(expect.arrayContaining(split(look)));
     expect(statusTokens(el)).toEqual([]);
+  });
+
+  // The medication filter is bespoke on its page (MedicationFilterSelect), so
+  // it has no stage-controls recipe; its height is the one thing the stage
+  // restates, and it was drawn from padding at 38px beside the real 36px.
+  it("Analytics draws the medication filter at the real trigger's fixed height", () => {
+    const heights = (el: Element) => [...el.classList].filter((c) => /^(min-)?h-|^py-/.test(c));
+    const real = ssrDocument(
+      render(MedicationFilterSelect, {
+        props: { medications: [], selectedIds: [], onchange: () => {} },
+      }).body,
+    ).querySelector("button[aria-expanded]")!;
+    expect(heights(real)).toEqual(["h-9"]);
+    expect(heights(drawnControl(analytics(), "All medications"))).toEqual(heights(real));
   });
 });

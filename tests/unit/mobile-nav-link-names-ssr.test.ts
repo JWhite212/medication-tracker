@@ -153,7 +153,7 @@ const pages: PageCase[] = [
   [
     "data",
     DataPage,
-    { user, preferences, counts: { medications: 0, doses: 0 }, hasPassword: true },
+    { user, preferences, counts: { medications: 0, doses: 0 }, confirmation: { kind: "password" } },
     "/settings",
     "← Settings",
   ],
@@ -172,7 +172,7 @@ const pages: PageCase[] = [
         sessions: 1,
         auditLogs: 0,
       },
-      hasPassword: true,
+      confirmation: { kind: "password" },
     },
     "/settings",
     "← Settings",
@@ -180,7 +180,14 @@ const pages: PageCase[] = [
   [
     "import",
     ImportPage,
-    { user, preferences, medications: [], hasPassword: true, maxBytes: 5_000_000, timezone: "UTC" },
+    {
+      user,
+      preferences,
+      medications: [],
+      confirmation: { kind: "password" },
+      maxBytes: 5_000_000,
+      timezone: "UTC",
+    },
     "/settings/data",
     "← Data Management",
   ],

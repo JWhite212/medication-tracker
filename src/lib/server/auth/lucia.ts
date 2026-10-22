@@ -13,6 +13,15 @@ export const lucia = new Lucia(adapter, {
       secure: !dev,
     },
   },
+  // The adapter hands back every `sessions` column besides id, userId and
+  // expiresAt as an attribute. The widening to `Date | null` is the point: a
+  // session created before `authenticated_at` existed reads NULL even though
+  // the registered creation type below says Date, and checkDestructiveGuard
+  // treats null as not recent. (Drizzle already yields null, not undefined,
+  // for a NULL column, so no `?? null` is needed.)
+  getSessionAttributes: (attributes) => ({
+    authenticatedAt: attributes.authenticatedAt as Date | null,
+  }),
   getUserAttributes: (attributes): SessionUser => ({
     id: attributes.id,
     email: attributes.email,
@@ -27,6 +36,11 @@ export const lucia = new Lucia(adapter, {
 declare module "lucia" {
   interface Register {
     Lucia: typeof lucia;
+    // Required, so `createSession(userId, {})` does not compile: every
+    // caller is a sign-in and must say when it happened.
+    DatabaseSessionAttributes: {
+      authenticatedAt: Date;
+    };
     DatabaseUserAttributes: {
       id: string;
       email: string;

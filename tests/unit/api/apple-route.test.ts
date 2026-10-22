@@ -3,6 +3,7 @@ import { LIMITS } from "$lib/server/auth/rate-limit-policy";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "../helpers/fake-db";
 import { users, oauthAccounts } from "$lib/server/db/schema";
+import { stampedSince } from "../helpers/session-stamp";
 
 // Module-level switches the mocks read. `identityResult` drives what
 // verifyAppleIdentityToken resolves to; `identityThrows` simulates an
@@ -74,12 +75,16 @@ const baseUser = {
   emailVerified: true,
 };
 
+/** When this test began: a sign-in's stamp must fall after it. */
+let testStart = 0;
+
 beforeEach(() => {
   state.identityResult = null;
   state.identityThrows = false;
   fakeDb.reset();
   verifyAppleIdentityToken.mockClear();
   createSession.mockClear();
+  testStart = Date.now();
 });
 
 describe("POST /api/v1/auth/apple", () => {
@@ -114,7 +119,7 @@ describe("POST /api/v1/auth/apple", () => {
         emailVerified: true,
       },
     });
-    expect(createSession).toHaveBeenCalledWith("u1", {});
+    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: stampedSince(testStart) });
     expect(inserts()).toHaveLength(0);
   });
 
@@ -181,7 +186,9 @@ describe("POST /api/v1/auth/apple", () => {
       providerUserId: "000789.ghi",
       userId: newUserId,
     });
-    expect(createSession).toHaveBeenCalledWith(newUserId, {});
+    expect(createSession).toHaveBeenCalledWith(newUserId, {
+      authenticatedAt: stampedSince(testStart),
+    });
   });
 
   it("returns a totp challenge instead of a session when the linked user has 2FA enabled", async () => {

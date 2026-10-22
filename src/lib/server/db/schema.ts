@@ -44,6 +44,14 @@ export const sessions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // When this session's holder last proved who they are: stamped by every
+    // `lucia.createSession`, and read by `checkDestructiveGuard` to require a
+    // recent sign-in from an account with no password. Nullable with NO
+    // default on purpose: production applies schema with `drizzle-kit push`,
+    // and a `now()` default would fill every pre-existing row with the deploy
+    // instant, so every live session (stolen ones included) would briefly
+    // count as freshly signed in. NULL means "not recent".
+    authenticatedAt: timestamp("authenticated_at", { withTimezone: true }),
   },
   (table) => [index("sessions_user_id_idx").on(table.userId)],
 );

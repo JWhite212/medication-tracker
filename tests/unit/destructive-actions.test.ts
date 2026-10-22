@@ -4,8 +4,8 @@
 // two wipes, Data's account deletion and Import's replace mode. Each runs
 // `checkDestructiveGuard` after its 401 check and before any write, so a POST
 // that skips the dialog still has to carry the typed word, and the password
-// where the account has one. An account with no password now runs all four
-// on the word alone.
+// where the account has one. An account with no password runs all four on
+// the word and a sign-in within the last 10 minutes.
 //
 // `node`, not jsdom: the import cases post a real `File`, and jsdom's `File`
 // and undici's `FormData` are different realms. fake-db, because nothing here
@@ -59,6 +59,10 @@ vi.mock("$lib/server/import/apply", () => ({ applyImport: h.applyImport }));
 
 import { fakeDb } from "./helpers/fake-db";
 import { users } from "$lib/server/db/schema";
+import {
+  RECENT_SIGN_IN_MESSAGE,
+  RECENT_SIGN_IN_WINDOW_MS,
+} from "../../src/lib/utils/destructive-confirm";
 
 const privacy = await import("../../src/routes/(app)/settings/privacy/+page.server");
 const data = await import("../../src/routes/(app)/settings/data/+page.server");
@@ -75,13 +79,21 @@ function seedPasswordless() {
   fakeDb.seed(users, [{ passwordHash: null }]);
 }
 
-/** Post `fields` to the named action as the signed-in user u1. */
-async function call(actions: ActionMap, name: string, fields: Record<string, string | File>) {
+/** A session signed in one window ago: too old for an account with no password. */
+const stale = () => new Date(Date.now() - RECENT_SIGN_IN_WINDOW_MS);
+
+/** Post `fields` to the named action as the signed-in user u1, by default signed in just now. */
+async function call(
+  actions: ActionMap,
+  name: string,
+  fields: Record<string, string | File>,
+  authenticatedAt: Date | null = new Date(),
+) {
   const body = new FormData();
   for (const [key, value] of Object.entries(fields)) body.set(key, value);
   return actions[name]({
     request: new Request("http://localhost/settings", { method: "POST", body }),
-    locals: { user: { id: "u1", timezone: "UTC" }, session: { id: "s1" } },
+    locals: { user: { id: "u1", timezone: "UTC" }, session: { id: "s1", authenticatedAt } },
     cookies: { set: vi.fn() },
   } as never);
 }
@@ -150,11 +162,22 @@ describe.each([
     expect(wipeFn).toHaveBeenCalledWith("u1");
   });
 
-  it("now runs for an account with no password, on the word alone", async () => {
+  it("runs for an account with no password, on the word and a recent sign-in", async () => {
     seedPasswordless();
     expect(await call(privacy.actions, name, { confirmWord: "DELETE" })).toEqual(okResult);
     expect(confirmReauth).not.toHaveBeenCalled();
     expect(wipeFn).toHaveBeenCalledWith("u1");
+  });
+
+  it("refuses an account with no password whose sign-in is not recent, deleting nothing", async () => {
+    for (const signedInAt of [stale(), null]) {
+      fakeDb.reset();
+      seedPasswordless();
+      expect(
+        await call(privacy.actions, name, { confirmWord: "DELETE" }, signedInAt),
+      ).toMatchObject({ status: 400, data: { error: RECENT_SIGN_IN_MESSAGE } });
+    }
+    expect(wipeFn).not.toHaveBeenCalled();
   });
 });
 
@@ -208,7 +231,17 @@ describe("data ?/deleteAccount", () => {
     expect(h.invalidateUserSessions).toHaveBeenCalledWith("u1");
   });
 
-  it("now deletes an account with no password on the word alone", async () => {
+  it("refuses an account with no password whose sign-in is not recent, deleting nothing", async () => {
+    seedPasswordless();
+    expect(
+      await call(data.actions, "deleteAccount", { confirmWord: "DELETE" }, stale()),
+    ).toMatchObject({ status: 400, data: { error: RECENT_SIGN_IN_MESSAGE } });
+    expect(deletedUser()).toBe(false);
+    expect(h.invalidateUserSessions).not.toHaveBeenCalled();
+    expect(h.logAudit).not.toHaveBeenCalled();
+  });
+
+  it("deletes an account with no password on the word and a recent sign-in", async () => {
     seedPasswordless();
     await expect(
       call(data.actions, "deleteAccount", { confirmWord: "DELETE" }),
@@ -220,11 +253,13 @@ describe("data ?/deleteAccount", () => {
 
 describe("import ?/commit", () => {
   const { PLAN, applyImport } = h;
-  const commit = (fields: Record<string, string | File>) =>
-    call(dataImport.actions, "commit", {
-      file: new File(["{}"], "backup.json", { type: "application/json" }),
-      ...fields,
-    });
+  const commit = (fields: Record<string, string | File>, authenticatedAt?: Date | null) =>
+    call(
+      dataImport.actions,
+      "commit",
+      { file: new File(["{}"], "backup.json", { type: "application/json" }), ...fields },
+      authenticatedAt,
+    );
 
   it("refuses a replace posted without the word, for both kinds of account, writing nothing", async () => {
     for (const seed of [seedPassword, seedPasswordless]) {
@@ -268,7 +303,7 @@ describe("import ?/commit", () => {
     expect(applyImport).toHaveBeenCalledTimes(1);
   });
 
-  it("replaces for an account with no password on REPLACE, now posted as confirmWord", async () => {
+  it("replaces for an account with no password on REPLACE and a recent sign-in, now posted as confirmWord", async () => {
     seedPasswordless();
     expect(await commit({ mode: "replace", confirmPhrase: "REPLACE" })).toMatchObject({
       status: 400,
@@ -280,6 +315,23 @@ describe("import ?/commit", () => {
       importId: "i1",
     });
     expect(confirmReauth).not.toHaveBeenCalled();
+  });
+
+  it("refuses a replace from an account with no password whose sign-in is not recent, writing nothing", async () => {
+    seedPasswordless();
+    expect(await commit({ mode: "replace", confirmWord: "REPLACE" }, stale())).toMatchObject({
+      status: 400,
+      data: { error: RECENT_SIGN_IN_MESSAGE },
+    });
+    expect(applyImport).not.toHaveBeenCalled();
+  });
+
+  it("asks no sign-in of a merge, however old the session", async () => {
+    seedPasswordless();
+    expect(await commit({ mode: "merge" }, null)).toEqual({
+      imported: PLAN.summary,
+      importId: "i1",
+    });
   });
 
   it("asks nothing of a merge", async () => {

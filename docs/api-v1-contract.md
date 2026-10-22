@@ -156,7 +156,8 @@ token is bound to the purpose it was minted for.
   token at all; the destructive commands stay closed for those accounts. This differs
   from the browser on purpose (decided 2026-10-16): the web app's permanent deletions
   (`checkDestructiveGuard`) take a typed word from every account plus the password where
-  there is one, so an account with no password deletes there on the word alone. This
+  there is one, so an account with no password deletes there on the word and a sign-in
+  within the last 10 minutes. This
   door keeps requiring a password-minted token and takes no word, so an OAuth-only
   account cannot wipe through the API, and a stolen bearer token alone never can.
 - `429` when the attempt budget is spent (§6B shape). The budget lives in `confirmReauth`
@@ -529,7 +530,8 @@ redeems it single-use. An OAuth-only account has no password to confirm and so
 cannot mint one. The browser differs here on purpose (decided 2026-10-16): its
 `settings/privacy` wipes take a typed word from every account plus the password
 where there is one (`checkDestructiveGuard`), so an account with no password
-wipes there on the word alone. This door keeps requiring a password-minted token
+wipes there on the word and a sign-in within the last 10 minutes. This door keeps
+requiring a password-minted token
 and takes no word, so an OAuth-only account cannot wipe through the API, and a
 stolen bearer token alone never can.
 

@@ -98,7 +98,8 @@
     title="Delete your account?"
     summary={accountDeletionSummary(data.counts)}
     word="DELETE"
-    hasPassword={data.hasPassword}
+    confirmation={data.confirmation}
+    returnTo="/settings/data"
     confirmLabel="Delete account"
     pending={account.pending}
     error={account.error}

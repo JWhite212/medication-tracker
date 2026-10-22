@@ -51,7 +51,7 @@ const preferences = {
 const PRIVACY = {
   user,
   preferences,
-  hasPassword: true,
+  confirmation: { kind: "password" },
   counts: {
     activeMedications: 4,
     archivedMedications: 2,
@@ -244,7 +244,12 @@ describe("privacy page", () => {
 });
 
 describe("data page", () => {
-  const DATA = { user, preferences, counts: { medications: 6, doses: 1204 }, hasPassword: false };
+  const DATA = {
+    user,
+    preferences,
+    counts: { medications: 6, doses: 1204 },
+    confirmation: { kind: "recentSignIn", recent: true, providers: ["google"] },
+  };
 
   it("Save Format is the primary submit", () => {
     const doc = page(DataPage, DATA, null);
@@ -319,7 +324,7 @@ describe("import page", () => {
     user,
     preferences,
     medications: [],
-    hasPassword: true,
+    confirmation: { kind: "password" },
     maxBytes: 5_242_880,
     timezone: "UTC",
   };

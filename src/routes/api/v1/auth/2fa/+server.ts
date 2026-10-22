@@ -50,6 +50,6 @@ export const POST: RequestHandler = async ({ request }) => {
   const [user] = await db.select().from(users).where(eq(users.id, claims.userId)).limit(1);
   if (!user) throw error(401, "Unknown user");
 
-  const session = await lucia.createSession(user.id, {});
+  const session = await lucia.createSession(user.id, { authenticatedAt: new Date() });
   return json({ token: session.id, user: toSessionUser(user) });
 };

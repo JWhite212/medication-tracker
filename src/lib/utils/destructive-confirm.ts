@@ -16,6 +16,59 @@
 /** The word typed to confirm. Exact, case-sensitive, trimmed. */
 export type DestructiveWord = "DELETE" | "REPLACE";
 
+/**
+ * How recently an account with no password must have signed in before any
+ * of the four deletions runs. `signedInRecently` in the server guard is the
+ * one place it is compared against.
+ */
+export const RECENT_SIGN_IN_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * The guard's refusal when that sign-in is too old, and the title of the
+ * prompt that offers a fresh one. The dialog recognises the refusal by this
+ * exact string (as Toast does `RESTORE_GONE_MESSAGE`), so the failure keeps
+ * the plain `{ error }` shape `actionErrorMessage` reads.
+ */
+export const RECENT_SIGN_IN_MESSAGE = "Sign in again to confirm.";
+
+/** The providers a browser can sign in again with. Apple exists only on `/api/v1`. */
+export type WebProvider = "google" | "github";
+
+/**
+ * The only pages "Sign in again" may send the user back to: the three that
+ * host one of the four deletions. Matched EXACTLY — no prefix, query,
+ * fragment, trailing slash or decoding — because the candidate arrives in a
+ * query string and is then held in a cookie the user can edit, and any looser
+ * match is an open redirect.
+ */
+export const RETURN_PATHS = [
+  "/settings/privacy",
+  "/settings/data",
+  "/settings/data/import",
+] as const;
+export type ReturnPath = (typeof RETURN_PATHS)[number];
+
+export function returnPathOrNull(candidate: string | null | undefined): ReturnPath | null {
+  return (RETURN_PATHS as readonly string[]).includes(candidate ?? "")
+    ? (candidate as ReturnPath)
+    : null;
+}
+
+/**
+ * What a deletion's dialog asks for, decided on the server by the guard's
+ * own rules (`destructiveConfirmation`): a password, or (for an account with
+ * none) the word and a recent sign-in, which `recent` says the session has
+ * and `providers` say how to refresh.
+ */
+export type DestructiveConfirmation =
+  | { kind: "password" }
+  | { kind: "recentSignIn"; recent: boolean; providers: WebProvider[] };
+
+/** The OAuth start leg, told where to come back to. */
+export function signInAgainHref(provider: WebProvider, returnTo: ReturnPath): string {
+  return `/auth/callback/${provider}?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 const NUMBER = new Intl.NumberFormat("en-GB");
 
 /** A count with en-GB thousands grouping, whatever the runtime's locale. */

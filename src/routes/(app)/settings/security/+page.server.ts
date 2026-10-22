@@ -75,9 +75,10 @@ export const actions: Actions = {
 
     // Rotate sessions: a successful password change must log out every other
     // device, but keep the current request authenticated by minting a fresh
-    // session cookie.
+    // session cookie. Stamping it as a sign-in now is honest: confirmReauth
+    // has just verified the current password above.
     await lucia.invalidateUserSessions(userId);
-    const session = await lucia.createSession(userId, {});
+    const session = await lucia.createSession(userId, { authenticatedAt: new Date() });
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {
       path: ".",

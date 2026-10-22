@@ -2,6 +2,7 @@ import { rateLimitSurface } from "../helpers/rate-limit";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "../helpers/fake-db";
 import { users } from "$lib/server/db/schema";
+import { stampedSince } from "../helpers/session-stamp";
 
 // The row the user lookup finds; null means "no such user".
 function seedUser(row: Record<string, unknown> | null) {
@@ -78,6 +79,9 @@ const baseUser = {
 
 const claims = () => ({ userId: "u1", jti: "jti-1", exp: Date.now() + 300_000 });
 
+/** When this test began: a sign-in's stamp must fall after it. */
+let testStart = 0;
+
 beforeEach(() => {
   state.preAuthClaims = null;
   state.totpResult = false;
@@ -91,6 +95,7 @@ beforeEach(() => {
   verifySecondFactorForLogin.mockClear();
   checkRateLimit.mockClear();
   createSession.mockClear();
+  testStart = Date.now();
 });
 
 describe("POST /api/v1/auth/2fa", () => {
@@ -154,7 +159,7 @@ describe("POST /api/v1/auth/2fa", () => {
     expect(verifySecondFactorForLogin).toHaveBeenCalledWith("u1", "123456");
     const consume = rlCalls.find((c) => c.key === "preauth:jti-1");
     expect(consume).toMatchObject({ max: 1 });
-    expect(createSession).toHaveBeenCalledWith("u1", {});
+    expect(createSession).toHaveBeenCalledWith("u1", { authenticatedAt: stampedSince(testStart) });
   });
 
   it("returns 401 for a replayed token that was already consumed, without minting a session", async () => {

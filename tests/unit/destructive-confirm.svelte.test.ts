@@ -4,17 +4,23 @@
 // `$state` the test can change. The server's checkDestructiveGuard is the
 // real gate (destructive-guard.test.ts); this file pins the explanation and
 // the controls.
-import { it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { flushSync, mount, tick, unmount } from "svelte";
 import DestructiveConfirm from "$lib/components/ui/DestructiveConfirm.svelte";
 import { collectFocusable } from "$lib/utils/focus-trap";
 import { withoutComments } from "./helpers/axe-ssr";
+import {
+  RECENT_SIGN_IN_MESSAGE,
+  type DestructiveConfirmation,
+} from "$lib/utils/destructive-confirm";
 
 type Props = {
   title: string;
   summary: string;
   word: "DELETE" | "REPLACE";
-  hasPassword: boolean;
+  confirmation: DestructiveConfirmation;
+  returnTo: "/settings/privacy" | "/settings/data" | "/settings/data/import";
+  signInNote?: string;
   confirmLabel: string;
   pending: boolean;
   error: string | null;
@@ -41,7 +47,9 @@ beforeEach(() => {
     title: "Delete dose history?",
     summary: "This deletes 1,204 doses for 6 medications.",
     word: "DELETE",
-    hasPassword: true,
+    confirmation: { kind: "password" },
+    returnTo: "/settings/privacy",
+    signInNote: undefined,
     confirmLabel: "Delete dose history",
     pending: false,
     error: null,
@@ -99,7 +107,7 @@ function type(input: HTMLInputElement, value: string) {
 
 function fillReady(word: string = props.word, password = "hunter2") {
   type(q('input[name="confirmWord"]'), word);
-  if (props.hasPassword) type(q('input[name="password"]'), password);
+  if (props.confirmation.kind === "password") type(q('input[name="password"]'), password);
 }
 
 it("says what goes, with the server's counts, and that it can't be undone", async () => {
@@ -125,8 +133,26 @@ it("names its inputs confirmWord and password, labelled, with the right autocomp
   expect(pw.labels![0].textContent!.trim()).toBe("Your password");
 });
 
-it("asks an account with no password for the word alone", async () => {
-  props.hasPassword = false;
+/** An account with no password, signed in recently: the word is all it needs. */
+const RECENT_NO_PASSWORD: DestructiveConfirmation = {
+  kind: "recentSignIn",
+  recent: true,
+  providers: ["google"],
+};
+const STALE_NO_PASSWORD: DestructiveConfirmation = {
+  kind: "recentSignIn",
+  recent: false,
+  providers: ["google", "github"],
+};
+
+const signInLinks = () =>
+  [...form.querySelectorAll<HTMLAnchorElement>('a[href^="/auth/callback/"]')].map((a) => [
+    a.textContent!.trim(),
+    a.getAttribute("href"),
+  ]);
+
+it("asks an account with no password for the word alone, when its sign-in is recent", async () => {
+  props.confirmation = RECENT_NO_PASSWORD;
   await openFrom(opener);
   expect(form.querySelector('input[name="password"]')).toBeNull();
   type(q('input[name="confirmWord"]'), "DELETE");
@@ -146,7 +172,7 @@ it("keeps its one danger button aria-disabled, not disabled, until the word and 
 });
 
 it("matches the word case-sensitively after trimming, as the server does", async () => {
-  props.hasPassword = false;
+  props.confirmation = RECENT_NO_PASSWORD;
   await openFrom(opener);
   type(q('input[name="confirmWord"]'), "delete");
   expect(danger().getAttribute("aria-disabled")).toBe("true");
@@ -269,4 +295,101 @@ it("passes formaction to its submit", async () => {
 it("renders nothing of its own while closed", () => {
   mountClosed();
   expect(withoutComments(form.innerHTML).trim()).toBe("");
+});
+
+describe("an account with no password whose sign-in is not recent", () => {
+  it("shows the sign-in prompt with one link per provider, back to this page, and no password field", async () => {
+    props.confirmation = STALE_NO_PASSWORD;
+    await openFrom(opener);
+    expect(form.textContent).toContain(RECENT_SIGN_IN_MESSAGE);
+    expect(signInLinks()).toEqual([
+      ["Sign in again with Google", "/auth/callback/google?returnTo=%2Fsettings%2Fprivacy"],
+      ["Sign in again with GitHub", "/auth/callback/github?returnTo=%2Fsettings%2Fprivacy"],
+    ]);
+    expect(form.querySelector('input[name="password"]')).toBeNull();
+    // The word field stays, so they can see what they will type when they return.
+    type(q('input[name="confirmWord"]'), "DELETE");
+    expect(danger().getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("swaps a sign-in refusal for the sign-in prompt, never a red alert beside it", async () => {
+    props.confirmation = RECENT_NO_PASSWORD;
+    await openFrom(opener);
+    type(q('input[name="confirmWord"]'), "DELETE");
+    expect(danger().getAttribute("aria-disabled")).not.toBe("true");
+    expect(signInLinks()).toEqual([]);
+
+    // Loaded at 9:59, submitted at 10:01: the server's refusal is the only news.
+    props.error = RECENT_SIGN_IN_MESSAGE;
+    await settle();
+
+    expect(form.querySelector('[role="alert"]')).toBeNull();
+    expect(signInLinks()).toEqual([
+      ["Sign in again with Google", "/auth/callback/google?returnTo=%2Fsettings%2Fprivacy"],
+    ]);
+    expect(danger().getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("remembers a sign-in refusal after Cancel, so reopening does not invite a doomed retry", async () => {
+    props.confirmation = RECENT_NO_PASSWORD;
+    await openFrom(opener);
+    props.error = RECENT_SIGN_IN_MESSAGE;
+    await settle();
+
+    // Cancel, then reopen: createDestructiveDialog's show() clears the error.
+    props.open = false;
+    props.error = null;
+    await settle();
+    props.open = true;
+    await settle();
+
+    expect(signInLinks()).toEqual([
+      ["Sign in again with Google", "/auth/callback/google?returnTo=%2Fsettings%2Fprivacy"],
+    ]);
+    type(q('input[name="confirmWord"]'), "DELETE");
+    expect(danger().getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("announces the sign-in prompt through a status region that was there before it", async () => {
+    props.confirmation = RECENT_NO_PASSWORD;
+    await openFrom(opener);
+    const region = q('[role="dialog"] [role="status"]');
+    expect(region.textContent!.trim()).toBe("");
+
+    props.error = RECENT_SIGN_IN_MESSAGE;
+    await settle();
+
+    expect(q('[role="dialog"] [role="status"]')).toBe(region);
+    expect(region.textContent).toContain(RECENT_SIGN_IN_MESSAGE);
+    expect(region.querySelector('a[href^="/auth/callback/google"]')).not.toBeNull();
+  });
+
+  it("keeps any other refusal as a red alert", async () => {
+    props.confirmation = STALE_NO_PASSWORD;
+    props.error = "Too many attempts. Try again in 5 minutes.";
+    await openFrom(opener);
+    expect(q('[role="alert"]').textContent).toContain("Too many attempts");
+    expect(signInLinks()).toHaveLength(2);
+  });
+
+  it("explains Forgot password, and never only 'sign out', when no provider can sign in again", async () => {
+    props.confirmation = { kind: "recentSignIn", recent: false, providers: [] };
+    await openFrom(opener);
+    expect(signInLinks()).toEqual([]);
+    const prompt = q('[role="dialog"] [role="status"]').textContent!.replace(/\s+/g, " ");
+    expect(prompt).toContain("this account has no way to sign in again here");
+    expect(prompt).toContain("Forgot password");
+    expect(danger().getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("adds the page's note to the prompt", async () => {
+    props.confirmation = STALE_NO_PASSWORD;
+    props.returnTo = "/settings/data/import";
+    props.signInNote = "You'll need to choose the file again.";
+    await openFrom(opener);
+    expect(q('[role="dialog"] [role="status"]').textContent).toContain(
+      "You'll need to choose the file again.",
+    );
+    expect(signInLinks()[0][1]).toBe("/auth/callback/google?returnTo=%2Fsettings%2Fdata%2Fimport");
+  });
 });

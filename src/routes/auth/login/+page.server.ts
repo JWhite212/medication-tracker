@@ -110,7 +110,7 @@ export const actions: Actions = {
       redirect(302, "/auth/2fa");
     }
 
-    const session = await lucia.createSession(user.id, {});
+    const session = await lucia.createSession(user.id, { authenticatedAt: new Date() });
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {
       path: ".",

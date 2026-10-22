@@ -4,7 +4,11 @@ import { db } from "$lib/server/db";
 import { doseLogs, medications, sessions, auditLogs } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
 import { confirmReauth, reauthMessage } from "$lib/server/auth/reauth";
-import { accountHasPassword, checkDestructiveGuard } from "$lib/server/auth/destructive-guard";
+import {
+  destructiveConfirmation,
+  checkDestructiveGuard,
+  signedInFrom,
+} from "$lib/server/auth/destructive-guard";
 import { logAudit } from "$lib/server/audit";
 import {
   wipeArchivedMedications as wipeArchivedMedicationsForUser,
@@ -22,7 +26,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     archivedMedRow,
     sessionRow,
     auditRow,
-    hasPassword,
+    confirmation,
   ] = await Promise.all([
     // One query for both numbers the dose-history dialog states: how many
     // doses, and how many medications they span.
@@ -46,7 +50,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       .where(and(eq(medications.userId, userId), eq(medications.isArchived, true))),
     db.select({ value: count() }).from(sessions).where(eq(sessions.userId, userId)),
     db.select({ value: count() }).from(auditLogs).where(eq(auditLogs.userId, userId)),
-    accountHasPassword(userId),
+    destructiveConfirmation(signedInFrom(locals)),
   ]);
 
   return {
@@ -59,7 +63,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       sessions: sessionRow[0]?.value ?? 0,
       auditLogs: auditRow[0]?.value ?? 0,
     },
-    hasPassword,
+    confirmation,
   };
 };
 
@@ -92,7 +96,7 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
     const formData = await request.formData();
-    const guard = await checkDestructiveGuard(userId, formData, {
+    const guard = await checkDestructiveGuard(signedInFrom(locals), formData, {
       word: "DELETE",
       purpose: "wipe_dose_history",
     });
@@ -106,7 +110,7 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
     const userId = locals.user.id;
     const formData = await request.formData();
-    const guard = await checkDestructiveGuard(userId, formData, {
+    const guard = await checkDestructiveGuard(signedInFrom(locals), formData, {
       word: "DELETE",
       purpose: "wipe_archived_medications",
     });

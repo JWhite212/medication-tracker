@@ -1,5 +1,6 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { lucia } from "$lib/server/auth/lucia";
+import { takeReturnPath } from "$lib/server/auth/return-path";
 import { verifySecondFactorForLogin } from "$lib/server/auth/totp";
 import { verifyPreAuthToken } from "$lib/server/api/preauth";
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
@@ -88,7 +89,7 @@ export const actions: Actions = {
 
     cookies.delete("pending_2fa", { path: "/" });
 
-    const session = await lucia.createSession(claims.userId, {});
+    const session = await lucia.createSession(claims.userId, { authenticatedAt: new Date() });
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {
       path: ".",
@@ -96,6 +97,7 @@ export const actions: Actions = {
     });
 
     await logAudit(claims.userId, "session", session.id, "create");
-    redirect(302, "/dashboard");
+    // The OAuth callback leaves this for us when a second factor is due.
+    redirect(302, takeReturnPath(cookies) ?? "/dashboard");
   },
 };

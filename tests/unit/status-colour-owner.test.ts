@@ -92,6 +92,85 @@ describe("the field-error mask", () => {
   });
 });
 
+/**
+ * What the scan sees, pinned, so a later edit to the regex cannot quietly
+ * narrow it. Each must-match row is a spelling that compiles to real CSS
+ * under this app's Tailwind (app.css does not reset the default palette), so
+ * a miss is a way to invent amber with the suite green. The must-not-match
+ * rows are the app's own neutral and accent classes, which share words with
+ * the status tokens.
+ */
+describe("what counts as a status colour", () => {
+  const MUST_MATCH: [source: string, found: string[]][] = [
+    // The six tokens behind the colour utilities, with variants and opacities.
+    ["text-warning", ["text-warning"]],
+    ["bg-danger/10", ["bg-danger/10"]],
+    ["md:hover:text-danger-fg", ["text-danger-fg"]],
+    ["border-danger-ink/35", ["border-danger-ink/35"]],
+    ["ring-success fill-info", ["ring-success", "fill-info"]],
+    ["stroke-warning outline-danger", ["stroke-warning", "outline-danger"]],
+    ["divide-success decoration-warning", ["divide-success", "decoration-warning"]],
+    ["from-warning via-danger to-success", ["from-warning", "via-danger", "to-success"]],
+    // One side or one axis of a border.
+    ["border-l-warning", ["border-l-warning"]],
+    ["border-t-danger-ink/50", ["border-t-danger-ink/50"]],
+    ["border-x-success border-y-info", ["border-x-success", "border-y-info"]],
+    ["border-r-danger border-b-warning", ["border-r-danger", "border-b-warning"]],
+    ["border-s-warning border-e-danger", ["border-s-warning", "border-e-danger"]],
+    // A side letter that is also a token's first letter is not a side.
+    ["border-success border-emerald-500", ["border-success", "border-emerald-500"]],
+    ["border-red-500 border-r-red-500", ["border-red-500", "border-r-red-500"]],
+    // Shadows, rings and form-control colours.
+    ["shadow-warning/20", ["shadow-warning/20"]],
+    ["inset-shadow-danger drop-shadow-warning", ["inset-shadow-danger", "drop-shadow-warning"]],
+    ["text-shadow-success", ["text-shadow-success"]],
+    ["ring-offset-danger inset-ring-warning", ["ring-offset-danger", "inset-ring-warning"]],
+    ["accent-warning caret-danger", ["accent-warning", "caret-danger"]],
+    ["placeholder-warning", ["placeholder-warning"]],
+    // Arbitrary and variable opacities.
+    ["hover:bg-warning/[0.08]", ["bg-warning/[0.08]"]],
+    ["text-warning/[0.15]", ["text-warning/[0.15]"]],
+    ["bg-danger/(--alpha)", ["bg-danger/(--alpha)"]],
+    // Tailwind v4's variable shorthand, behind any utility.
+    ["text-(--color-warning)", ["text-(--color-warning)"]],
+    ["bg-(color:--color-danger)/40", ["bg-(color:--color-danger)/40"]],
+    ["border-l-(--color-success)/[0.2]", ["border-l-(--color-success)/[0.2]"]],
+    ["hover:shadow-(--color-danger-ink)", ["shadow-(--color-danger-ink)"]],
+    // An inline read, which a class regex alone would miss.
+    ['style="color: var(--color-warning)"', ["var(--color-warning)"]],
+    // Tailwind's default palette, in the status hues.
+    ["text-amber-500 bg-red-600", ["text-amber-500", "bg-red-600"]],
+    ["text-green-500 border-rose-300/50", ["text-green-500", "border-rose-300/50"]],
+    ["from-orange-50 fill-yellow-400", ["from-orange-50", "fill-yellow-400"]],
+    ["ring-emerald-700 hover:bg-lime-950", ["ring-emerald-700", "bg-lime-950"]],
+    ["text-(--color-amber-500)", ["text-(--color-amber-500)"]],
+    ["fill: var(--color-red-500)", ["var(--color-red-500)"]],
+  ];
+
+  const MUST_NOT_MATCH = [
+    "text-dangerous",
+    "bg-accent",
+    "bg-accent/15",
+    "text-accent-ink ring-accent-ink accent-accent",
+    "text-text-secondary text-text-primary text-text-muted",
+    "border-border-strong border-l-border-strong border-glass-border",
+    "bg-surface bg-surface-raised placeholder-text-muted",
+    "shadow-2xl drop-shadow-lg caret-transparent",
+    "border-l-4 border-x",
+    "text-red bg-amber text-green-5000",
+    'variant="danger" tone="wrong"',
+    "var(--color-text-secondary)",
+  ];
+
+  it.each(MUST_MATCH)("finds %s", (source, found) => {
+    expect(source.match(STATUS_TOKEN)).toEqual(found);
+  });
+
+  it.each(MUST_NOT_MATCH)("ignores %s", (source) => {
+    expect(source.match(STATUS_TOKEN)).toBeNull();
+  });
+});
+
 describe("status colour is written only by its owner", () => {
   it("every file that writes a status class is exempt", () => {
     const offenders = [...MATCHING]

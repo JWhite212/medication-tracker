@@ -6,7 +6,7 @@
 // reason as tests/unit/appearance-page-ssr.test.ts.
 import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
-import { withoutComments } from "./helpers/axe-ssr";
+import { expectAxeClean, ssrDocument, withoutComments } from "./helpers/axe-ssr";
 
 // Mocked ONCE, with an object the tests repoint between renders. Re-mocking
 // per case reloads svelte's server internals, whose SSR context is
@@ -158,6 +158,9 @@ function filterForm(html: string): string {
   return html.slice(start, html.indexOf("</form>", start) + "</form>".length);
 }
 
+/** The class tokens of an opening tag, or [""] when there is no tag. */
+const tokens = (tag: string | undefined) => (tag?.match(/class="([^"]*)"/)?.[1] ?? "").split(/\s+/);
+
 describe("dose log pagination", () => {
   const FILTERED: Filters = {
     medication: "m1",
@@ -258,7 +261,9 @@ describe("Clear filters", () => {
   ];
 
   it.each(ACTIVE)("is offered in the filter bar when %s is active", (_label, query, active) => {
-    const form = filterForm(renderAt(`/log?${query}`, { filters: { ...NO_FILTERS, ...active } }));
+    const form = withoutComments(
+      filterForm(renderAt(`/log?${query}`, { filters: { ...NO_FILTERS, ...active } })),
+    );
 
     expect(form, "no Clear filters link in the filter bar").toMatch(
       /<a\b[^>]*href="\/log"[^>]*>\s*Clear filters\s*<\/a>/,
@@ -296,5 +301,35 @@ describe("Clear filters", () => {
     expect(html).toContain("No dose history yet");
     expect(withoutComments(html)).toMatch(/<a\b[^>]*href="\/dashboard"[^>]*>\s*Log a dose\s*<\/a>/);
     expect(html).not.toContain("Clear filters");
+  });
+});
+
+describe("the filter bar's and the pagination's controls are the shared Button", () => {
+  const html = renderAt(`/log?status=missed&page=2`, {
+    page: 2,
+    hasMore: true,
+    filters: { ...NO_FILTERS, status: "missed" },
+  });
+
+  it.each([
+    ["Apply", () => filterForm(html).match(/<button\b[^>]*type="submit"[^>]*>/)?.[0], "h-9"],
+    ["Clear filters", () => anchorWith(filterForm(html), /href="\/log"/), "h-9"],
+    ["Previous", () => anchorWith(html, /rel="prev"/), "h-11"],
+    ["Next", () => anchorWith(html, /rel="next"/), "h-11"],
+  ])(
+    "draws %s at a fixed height with the control boundary and the focus ring",
+    (_name, tag, height) => {
+      expect(tokens(tag())).toEqual(
+        expect.arrayContaining([
+          height,
+          "border-border-strong",
+          "focus-visible:outline-accent-ink",
+        ]),
+      );
+    },
+  );
+
+  it("passes axe: button-name, link-name", async () => {
+    await expectAxeClean(ssrDocument(html), ["button-name", "link-name"]);
   });
 });

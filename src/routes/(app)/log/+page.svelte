@@ -3,6 +3,7 @@
   import Modal from "$components/ui/Modal.svelte";
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import EmptyState from "$components/EmptyState.svelte";
+  import Button from "$components/ui/Button.svelte";
   import { onDestroy } from "svelte";
   import { afterNavigate, beforeNavigate } from "$app/navigation";
   import { page } from "$app/state";
@@ -270,23 +271,12 @@
       />
       With side effects
     </label>
-    <button
-      type="submit"
-      class="border-border-strong bg-surface-raised text-text-secondary hover:text-text-primary rounded-lg border px-3 py-2 text-sm"
-    >
-      Apply
-    </button>
+    <Button type="submit" size="sm">Apply</Button>
     {#if hasActiveFilter}
       <!-- A link to the bare route rather than a reset button: like the rest
            of this form it works without JavaScript, and it lands on the same
            clean URL as an unfiltered visit, back on page 1. -->
-      <a
-        href="/log"
-        onclick={armRefocusAfterClear}
-        class="border-border-strong bg-surface-raised text-text-secondary hover:text-text-primary rounded-lg border px-3 py-2 text-center text-sm"
-      >
-        Clear filters
-      </a>
+      <Button href="/log" size="sm" onclick={armRefocusAfterClear}>Clear filters</Button>
     {/if}
   </form>
 
@@ -334,23 +324,11 @@
 
   <nav aria-label="Dose history pagination" class="flex items-center justify-between">
     {#if data.page > 1}
-      <a
-        href={previousPageHref}
-        rel="prev"
-        aria-label="Go to previous page"
-        class="border-border-strong hover:bg-surface-overlay rounded-lg border px-4 py-2 text-sm"
-        >Previous</a
-      >
+      <Button href={previousPageHref} rel="prev" aria-label="Go to previous page">Previous</Button>
     {:else}<div></div>{/if}
     <span class="text-text-secondary text-sm" aria-current="page">Page {data.page}</span>
     {#if data.hasMore}
-      <a
-        href={nextPageHref}
-        rel="next"
-        aria-label="Go to next page"
-        class="border-border-strong hover:bg-surface-overlay rounded-lg border px-4 py-2 text-sm"
-        >Next</a
-      >
+      <Button href={nextPageHref} rel="next" aria-label="Go to next page">Next</Button>
     {:else}<div></div>{/if}
   </nav>
 </div>

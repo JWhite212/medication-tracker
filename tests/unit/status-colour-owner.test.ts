@@ -62,7 +62,6 @@ const PENDING_MIGRATION: string[] = [
   "src/lib/components/walkthrough/scenes/SecurityScene.svelte",
   "src/routes/(app)/medications/[id]/+page.svelte",
   "src/routes/+page.svelte",
-  "src/routes/auth/verify/+page.svelte",
 ];
 
 function walk(dir: string, out: string[] = []): string[] {

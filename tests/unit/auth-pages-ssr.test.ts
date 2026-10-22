@@ -28,6 +28,7 @@ import Register from "../../src/routes/auth/register/+page.svelte";
 import TwoFactor from "../../src/routes/auth/2fa/+page.svelte";
 import ResetPassword from "../../src/routes/auth/reset-password/+page.svelte";
 import ResetConfirm from "../../src/routes/auth/reset-password/confirm/+page.svelte";
+import Verify from "../../src/routes/auth/verify/+page.svelte";
 
 const LOGIN_DATA = { user: null, hasOAuth: false, oauthError: null };
 
@@ -180,6 +181,37 @@ describe("axe on the auth pages", () => {
     await expectAxeClean(
       ssrDocument(render(ResetPassword, { props: { form: { success: true } } }).body),
       ["link-name", "aria-hidden-focus", "aria-allowed-role"],
+    );
+  });
+});
+
+describe("/auth/verify", () => {
+  it.each([
+    [{ user: null, verified: true }, "Email Verified", "happened", "✓"],
+    [
+      { user: null, verified: false, error: "Invalid or expired token" },
+      "Verification Failed",
+      "wrong",
+      "✗",
+    ],
+  ] as const)(
+    "colours the heading from the owner and hides the glyph (%o)",
+    (data, heading, tone, glyph) => {
+      const doc = ssrDocument(render(Verify, { props: { data } }).body);
+      const h1 = doc.querySelector("h1")!;
+      expect(textOf(h1)).toBe(heading);
+      expectClasses(h1, toneClass(tone, "text"));
+      expect(textOf(doc.querySelector('[aria-hidden="true"]')!)).toBe(glyph);
+      expectClasses(doc.querySelector('a[href="/dashboard"]')!, "h-11 bg-accent text-accent-fg");
+    },
+  );
+  it("passes axe", async () => {
+    await expectAxeClean(
+      ssrDocument(
+        render(Verify, { props: { data: { user: null, verified: false, error: "Missing token" } } })
+          .body,
+      ),
+      ["link-name", "aria-hidden-focus"],
     );
   });
 });

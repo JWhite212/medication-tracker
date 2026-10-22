@@ -1,10 +1,12 @@
 <script lang="ts">
+  import Button from "$lib/components/ui/Button.svelte";
+
   type Props = {
     illustration?: string;
     illustrationAlt?: string;
     title: string;
     body?: string;
-    action?: { href?: string; label: string; onclick?: () => void };
+    action?: { href: string; label: string };
   };
 
   let { illustration, illustrationAlt = "", title, body, action }: Props = $props();
@@ -27,21 +29,6 @@
     <p class="text-text-secondary mt-2 max-w-sm text-sm">{body}</p>
   {/if}
   {#if action}
-    {#if action.href}
-      <a
-        href={action.href}
-        class="bg-accent text-accent-fg mt-4 rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-      >
-        {action.label}
-      </a>
-    {:else}
-      <button
-        type="button"
-        onclick={action.onclick}
-        class="bg-accent text-accent-fg mt-4 rounded-lg px-5 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
-      >
-        {action.label}
-      </button>
-    {/if}
+    <Button variant="primary" href={action.href} class="mt-4">{action.label}</Button>
   {/if}
 </div>

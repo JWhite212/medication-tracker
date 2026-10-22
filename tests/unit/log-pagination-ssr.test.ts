@@ -6,6 +6,7 @@
 // reason as tests/unit/appearance-page-ssr.test.ts.
 import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
+import { withoutComments } from "./helpers/axe-ssr";
 
 // Mocked ONCE, with an object the tests repoint between renders. Re-mocking
 // per case reloads svelte's server internals, whose SSR context is
@@ -284,7 +285,7 @@ describe("Clear filters", () => {
 
     // Scoped to what follows the form so the filter bar's own link cannot
     // satisfy the assertion.
-    const afterForm = html.slice(html.indexOf("</form>"));
+    const afterForm = withoutComments(html.slice(html.indexOf("</form>")));
     expect(afterForm).toContain("No doses match these filters");
     expect(afterForm).toMatch(/<a\b[^>]*href="\/log"[^>]*>\s*Clear filters\s*<\/a>/);
   });
@@ -293,7 +294,7 @@ describe("Clear filters", () => {
     const html = renderAt(`/log`, { doses: [] });
 
     expect(html).toContain("No dose history yet");
-    expect(html).toMatch(/<a\b[^>]*href="\/dashboard"[^>]*>\s*Log a dose\s*<\/a>/);
+    expect(withoutComments(html)).toMatch(/<a\b[^>]*href="\/dashboard"[^>]*>\s*Log a dose\s*<\/a>/);
     expect(html).not.toContain("Clear filters");
   });
 });

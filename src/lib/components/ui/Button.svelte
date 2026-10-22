@@ -23,8 +23,13 @@
     ariaDisabled?: boolean;
     /** rounded-lg, or rounded-full for a pill. */
     shape?: "rect" | "pill";
-    /** The rendered <button> or <a>, for a caller that hands focus to it. */
-    ref?: HTMLButtonElement | HTMLAnchorElement | null;
+    /**
+     * The rendered <button> or <a>, for a caller that hands focus to it. A
+     * bound variable may start undefined or null: `$bindable()` carries no
+     * fallback, because a fallback makes Svelte throw props_invalid_value for
+     * `bind:ref={x}` while x is undefined.
+     */
+    ref?: HTMLButtonElement | HTMLAnchorElement | null | undefined;
     /**
      * Layout only: margins, flex-1, self-*, shrink-0, w-*, border-dashed.
      * Appended after the recipe. Which of two clashing utilities wins is
@@ -53,7 +58,7 @@
     disabled = false,
     ariaDisabled = false,
     shape = "rect",
-    ref = $bindable(null),
+    ref = $bindable(),
     class: className = "",
     children,
     ...rest

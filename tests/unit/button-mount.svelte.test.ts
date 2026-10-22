@@ -98,6 +98,53 @@ describe("ref", () => {
     flushSync();
     expect(props.ref).toBe(document.querySelector('button[aria-label="Toggle menu"]'));
   });
+
+  // `ref = $bindable(null)` made Svelte throw props_invalid_value for
+  // `bind:ref={x}` whenever x began undefined (a fallback value cannot be bound
+  // to undefined). A getter and a setter are what `bind:ref={x}` compiles to.
+  describe("bound to a variable that starts undefined", () => {
+    type Bound = HTMLButtonElement | HTMLAnchorElement | null | undefined;
+
+    for (const href of [undefined, "/log"]) {
+      it(`hands Button's ${href ? "<a>" : "<button>"} to the variable without throwing`, () => {
+        const held: { el: Bound } = $state({ el: undefined });
+        app = mount(Button, {
+          target: document.body,
+          props: {
+            href,
+            get ref() {
+              return held.el;
+            },
+            set ref(el: Bound) {
+              held.el = el;
+            },
+            children: label("Save"),
+          },
+        });
+        flushSync();
+        expect(held.el).toBe(document.querySelector(href ? "a" : "button"));
+      });
+    }
+
+    it("hands IconButton's <button> to the variable without throwing", () => {
+      const held: { el: Bound } = $state({ el: undefined });
+      app = mount(IconButton, {
+        target: document.body,
+        props: {
+          label: "Toggle menu",
+          get ref() {
+            return held.el;
+          },
+          set ref(el: Bound) {
+            held.el = el;
+          },
+          children: label("≡"),
+        },
+      });
+      flushSync();
+      expect(held.el).toBe(document.querySelector('button[aria-label="Toggle menu"]'));
+    });
+  });
 });
 
 describe("Toggle, mounted", () => {

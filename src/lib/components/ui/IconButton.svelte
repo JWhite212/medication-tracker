@@ -10,8 +10,13 @@
     variant?: "ghost" | "secondary";
     href?: string;
     type?: "button" | "submit";
-    /** The rendered <button> or <a>, for a caller that hands focus to it. */
-    ref?: HTMLButtonElement | HTMLAnchorElement | null;
+    /**
+     * The rendered <button> or <a>, for a caller that hands focus to it. A
+     * bound variable may start undefined or null: `$bindable()` carries no
+     * fallback, because a fallback makes Svelte throw props_invalid_value for
+     * `bind:ref={x}` while x is undefined.
+     */
+    ref?: HTMLButtonElement | HTMLAnchorElement | null | undefined;
     /** Layout only: margins, shrink-0, self-*. Use `variant` and `size` for the look. */
     class?: string;
     /** The icon. The caller marks it aria-hidden; `label` names the control. */
@@ -27,7 +32,7 @@
     variant = "ghost",
     href,
     type = "button",
-    ref = $bindable(null),
+    ref = $bindable(),
     class: className = "",
     children,
     ...rest

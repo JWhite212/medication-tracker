@@ -240,6 +240,7 @@ const CASES: Case[] = [
     action: "resetDashboardLayout",
     actions: dashboardSettings.actions,
   },
+  { route: "settings/dashboard", action: "applyPreset", actions: dashboardSettings.actions, fields: { preset: "focused" } }, // prettier-ignore
 
   { route: "settings/data", action: "updateFormat", actions: data.actions, fields: { exportFormat: "csv" } }, // prettier-ignore
   { route: "settings/data", action: "deleteAccount", actions: data.actions, fields: { confirmWord: "DELETE", password: "hunter2" } }, // prettier-ignore

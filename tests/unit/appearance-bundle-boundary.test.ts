@@ -172,7 +172,11 @@ describe("the client bundle boundary", () => {
   });
 
   it("keeps the dashboard layout and preference domains zod-free", () => {
-    for (const rel of ["src/lib/dashboard/layout.ts", "src/lib/preferences/domains.ts"]) {
+    for (const rel of [
+      "src/lib/dashboard/layout.ts",
+      "src/lib/dashboard/presets.ts",
+      "src/lib/preferences/domains.ts",
+    ]) {
       const r = reachablePackages(path.join(ROOT, rel));
       expect(r.unresolved).toEqual([]);
       expect([...r.packages]).toEqual([]);

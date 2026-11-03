@@ -12,11 +12,14 @@ import { TEST_PUSH_SHOWN_MESSAGE } from "../../src/lib/utils/push";
 import { alertTitled, expectClasses } from "./helpers/alert-dom";
 import { buttonNamed, textOf } from "./helpers/dom-names";
 
-type Sent = { action: string; finish: (result: ActionResult) => Promise<void> };
+type Sent = { action: string; formData: FormData; finish: (result: ActionResult) => Promise<void> };
 const sent = vi.hoisted(() => [] as Sent[]);
 const goto = vi.hoisted(() => vi.fn(async (_url: string) => {}));
-vi.mock("$app/navigation", () => ({ goto }));
-vi.mock("$lib/components/ui/Toast.svelte", () => ({ showToast: vi.fn() }));
+const invalidateAll = vi.hoisted(() => vi.fn(async () => {}));
+const showToast = vi.hoisted(() => vi.fn());
+const cancelled = vi.hoisted(() => ({ count: 0 }));
+vi.mock("$app/navigation", () => ({ goto, invalidateAll, beforeNavigate: () => {} }));
+vi.mock("$lib/components/ui/Toast.svelte", () => ({ showToast }));
 // SvelteKit's enhance reduced to its two-phase contract
 // (log-page-mount.svelte.test.ts): the SubmitFunction runs on submit (it is
 // undefined for a bare use:enhance), and the callback it returns runs when
@@ -26,18 +29,26 @@ vi.mock("$app/forms", () => ({
   enhance: (form: HTMLFormElement, submit?: SubmitFunction) => {
     const onSubmit = (e: SubmitEvent) => {
       e.preventDefault();
-      const formData = new FormData(form);
+      // The submitter's name/value ride along, as in kit's own enhance.
+      const formData = new FormData(form, e.submitter);
       const action = new URL(form.getAttribute("action") ?? "", "https://medtracker.test/settings");
+      let wasCancelled = false;
       const callback = submit?.({
         action,
         formData,
         formElement: form,
         controller: new AbortController(),
         submitter: e.submitter,
-        cancel: () => {},
+        cancel: () => {
+          wasCancelled = true;
+          cancelled.count++;
+        },
       });
+      // A cancelled submit sends nothing, so it is not "sent".
+      if (wasCancelled) return;
       sent.push({
         action: form.getAttribute("action") ?? "",
+        formData,
         finish: async (result) => {
           const run = await callback;
           if (typeof run === "function") {
@@ -52,6 +63,7 @@ vi.mock("$app/forms", () => ({
 }));
 
 import Security from "../../src/routes/(app)/settings/security/+page.svelte";
+import Appearance from "../../src/routes/(app)/settings/appearance/+page.svelte";
 import Notifications from "../../src/routes/(app)/settings/notifications/+page.svelte";
 import { preferencesFixture } from "./helpers/preferences-fixture";
 
@@ -96,6 +108,9 @@ afterEach(() => {
   delete (window as unknown as Record<string, unknown>).PushManager;
   sent.length = 0;
   goto.mockClear();
+  invalidateAll.mockClear();
+  showToast.mockClear();
+  cancelled.count = 0;
   document.body.innerHTML = "";
 });
 
@@ -242,5 +257,94 @@ describe("push card and test confirmation", () => {
     expect(
       alertTitled(target, "This device didn't confirm it displayed the notification."),
     ).toBeNull();
+  });
+});
+
+describe("Appearance: show days instead of hours after", () => {
+  const mountAppearance = () => mountPage(Appearance, { user, preferences });
+  const preset = (target: HTMLElement, label: string) => buttonNamed(target, label);
+  const timeSinceSends = () => sent.filter((s) => s.action === "?/timeSinceDaysFromHours");
+
+  it("a press posts one request carrying the preset's hours", () => {
+    const target = mountAppearance();
+    preset(target, "3 days").click();
+    expect(timeSinceSends()).toHaveLength(1);
+    expect(timeSinceSends()[0].formData.get("timeSinceDaysFromHours")).toBe("72");
+  });
+
+  it("reloads on success and is usable again", async () => {
+    const target = mountAppearance();
+    preset(target, "3 days").click();
+    await timeSinceSends()[0].finish({
+      type: "success",
+      status: 200,
+      data: { success: true, key: "timeSinceDaysFromHours" },
+    });
+    flushSync();
+    expect(invalidateAll).toHaveBeenCalledTimes(1);
+    expect(preset(target, "1 week").getAttribute("aria-disabled")).toBeNull();
+    preset(target, "1 week").click();
+    expect(timeSinceSends()).toHaveLength(2);
+  });
+
+  it("is inert while a save is in flight: aria-disabled, and a second press is cancelled", () => {
+    const target = mountAppearance();
+    preset(target, "3 days").click();
+    flushSync();
+    for (const label of ["1 day", "2 days (default)", "3 days", "1 week"]) {
+      const b = preset(target, label);
+      expect(b.getAttribute("aria-disabled"), label).toBe("true");
+      expect(b.disabled, label).toBe(false);
+    }
+    preset(target, "1 week").click();
+    expect(timeSinceSends()).toHaveLength(1);
+    expect(cancelled.count).toBe(1);
+  });
+
+  it("toasts the 429's own sentence and does not reload", async () => {
+    const target = mountAppearance();
+    preset(target, "3 days").click();
+    await timeSinceSends()[0].finish({
+      type: "failure",
+      status: 429,
+      data: {
+        key: "timeSinceDaysFromHours",
+        saveError: "Too many changes. Try again in 30 seconds.",
+        retryAfterMs: 30_000,
+      },
+    });
+    flushSync();
+    expect(showToast).toHaveBeenCalledWith("Too many changes. Try again in 30 seconds.", "error");
+    expect(invalidateAll).not.toHaveBeenCalled();
+    expect(preset(target, "1 week").getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("toasts a validation failure and leaves the pressed option as confirmed", async () => {
+    const target = mountAppearance();
+    preset(target, "3 days").click();
+    await timeSinceSends()[0].finish({
+      type: "failure",
+      status: 400,
+      data: { key: "timeSinceDaysFromHours", errors: { timeSinceDaysFromHours: ["Too long."] } },
+    });
+    flushSync();
+    expect(showToast).toHaveBeenCalledWith("Too long.", "error");
+    expect(preset(target, "2 days (default)").getAttribute("aria-pressed")).toBe("true");
+    expect(preset(target, "3 days").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("toasts a crash with its reference", async () => {
+    const target = mountAppearance();
+    preset(target, "3 days").click();
+    await timeSinceSends()[0].finish({
+      type: "error",
+      status: 500,
+      error: { message: "Something went wrong on our end.", errorId: "a3f10c9e" },
+    });
+    flushSync();
+    expect(showToast).toHaveBeenCalledWith(
+      "Something went wrong on our end. (reference a3f10c9e)",
+      "error",
+    );
   });
 });

@@ -338,7 +338,9 @@ describe("createLayoutDraft: sync from a new payload", () => {
 
     calls[0].resolve(SUCCESS);
     await settle();
-    // Idle again: the next payload is the truth for this key too.
+    // Idle again: once a payload has echoed the saved value, the next payload
+    // is the truth for this key too.
+    draft.sync({ ...DEFAULTS, order: ["later", "done", "quickLog", "refills"] });
     draft.sync({ ...DEFAULTS, order: ["refills", "done", "later", "quickLog"] });
     expect([...draft.values.order]).toEqual(["refills", "done", "later", "quickLog"]);
   });
@@ -369,6 +371,74 @@ describe("createLayoutDraft: sync from a new payload", () => {
     await settle();
 
     expect([...draft.values.order]).toEqual(["quickLog", "done", "later", "refills"]);
+  });
+});
+
+describe("createLayoutDraft: a stale payload after a confirmed write", () => {
+  // A payload already in flight when the write committed (the dashboard
+  // clock's invalidateAll, say) still carries the pre-write value. Once the
+  // key is idle, applying it would snap the move back, and the next move
+  // would be computed from — and post — the snapped-back order.
+  it("a stale payload landing after a confirmed move does not snap it back", async () => {
+    const { calls, post } = stubPost();
+    const draft = createLayoutDraft(DEFAULTS, { post, online: () => true });
+
+    draft.move("later", "up", "scheduled"); // later, done, quickLog, refills
+    calls[0].resolve(SUCCESS);
+    await settle();
+    draft.sync(DEFAULTS); // started before the write committed
+
+    expect([...draft.values.order]).toEqual(["later", "done", "quickLog", "refills"]);
+    draft.move("refills", "up", "scheduled");
+    expect(calls[1].fields.dashboardSectionOrder).toBe("later,done,refills,quickLog");
+
+    // The server side of the draft stayed on the confirmed value too, so a
+    // failure reverts to it rather than to the stale payload.
+    calls[1].resolve({ type: "failure", status: 400 });
+    await settle();
+    expect([...draft.values.order]).toEqual(["later", "done", "quickLog", "refills"]);
+  });
+
+  it("the payload after that is applied", async () => {
+    const { calls, post } = stubPost();
+    const draft = createLayoutDraft(DEFAULTS, { post, online: () => true });
+
+    draft.setShown("refills", false);
+    calls[0].resolve(SUCCESS);
+    await settle();
+    draft.sync(DEFAULTS); // stale: ignored once
+    expect(draft.values.showRefills).toBe(false);
+
+    // Another device turned Refills back on: it arrives on the next payload.
+    draft.sync(DEFAULTS);
+    expect(draft.values.showRefills).toBe(true);
+  });
+
+  it("a payload agreeing with the confirmed value clears the guard", async () => {
+    const { calls, post } = stubPost();
+    const draft = createLayoutDraft(DEFAULTS, { post, online: () => true });
+
+    draft.move("later", "up", "scheduled");
+    calls[0].resolve(SUCCESS);
+    await settle();
+    draft.sync({ ...DEFAULTS, order: ["later", "done", "quickLog", "refills"] }); // the echo
+    draft.sync({ ...DEFAULTS, order: ["refills", "done", "later", "quickLog"] }); // a real change
+
+    expect([...draft.values.order]).toEqual(["refills", "done", "later", "quickLog"]);
+  });
+
+  it("a confirmed preset guards all six keys", async () => {
+    const { calls, post } = stubPost();
+    const draft = createLayoutDraft(DEFAULTS, { post, online: () => true });
+
+    draft.applyPreset("justLog");
+    calls[0].resolve(SUCCESS);
+    await settle();
+    draft.sync(DEFAULTS);
+
+    expect(plain(draft.values)).toEqual(presetValues("justLog"));
+    draft.sync(DEFAULTS);
+    expect(plain(draft.values)).toEqual(DEFAULTS);
   });
 });
 
@@ -484,6 +554,21 @@ describe("createLayoutDraft: presets and keys queue behind each other", () => {
     expect(plain(draft.values)).toEqual(presetValues("justLog"));
     expect(calls[1].fields).toEqual({ preset: "justLog" });
     expect(h.showToast).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createLayoutDraft: a redirect result", () => {
+  it("is a failure: it reverts and toasts actionErrorMessage's words", async () => {
+    const { calls, post } = stubPost();
+    const draft = createLayoutDraft(DEFAULTS, { post, online: () => true });
+
+    draft.setShown("later", false);
+    calls[0].resolve({ type: "redirect", status: 303, location: "/auth/login" });
+    await settle();
+
+    expect(draft.values.showLater).toBe(true);
+    expect(h.showToast).toHaveBeenCalledWith("Something went wrong — please try again.", "error");
+    expect(draft.pending()).toBe(false);
   });
 });
 

@@ -19,7 +19,11 @@
  * after it waits for it, so the server always ends on the LAST thing the user
  * did. A new payload re-syncs the draft except for keys with a write in
  * flight or queued: without that, the dashboard clock's refresh landing
- * mid-edit would snap a just-moved section back.
+ * mid-edit would snap a just-moved section back. A key just saved is guarded
+ * one step further: a payload that was already on its way before the write
+ * committed still carries the old value, so after a success the draft
+ * remembers what it confirmed, ignores ONE payload that disagrees with it,
+ * and accepts the next (or stops guarding as soon as a payload agrees).
  *
  * Not a dose write: no dose-write lock is taken, and the page content is inert
  * while editing.
@@ -168,6 +172,12 @@ export function createLayoutDraft(initial: StoredLayout, deps: LayoutDraftDeps =
   const queued = new SvelteSet<LayoutKey>();
   /** A preset waiting for the keys in flight. While set, every queued key was edited after it. */
   let queuedPreset = $state<PresetId | null>(null);
+  /**
+   * What a successful write confirmed, per key, as the field's encoded value,
+   * until a payload agrees with it or one payload disagreeing has been
+   * ignored. Not reactive: only `sync` reads it.
+   */
+  const confirmed = new Map<LayoutKey, string>();
 
   function setValue<K extends LayoutKey>(key: K, value: LayoutValues[K]) {
     values[key] = (Array.isArray(value) ? [...value] : value) as LayoutValues[K];
@@ -181,7 +191,10 @@ export function createLayoutDraft(initial: StoredLayout, deps: LayoutDraftDeps =
   function settle(keys: LayoutKey[], sent: LayoutValues, result: ActionResult | string) {
     for (const key of keys) inFlight.delete(key);
     if (typeof result !== "string" && result.type === "success") {
-      for (const key of keys) setServer(key, sent[key]);
+      for (const key of keys) {
+        setServer(key, sent[key]);
+        confirmed.set(key, encode(key, sent));
+      }
     } else {
       // A newer value for the key is queued: it carries the user's latest
       // intent and goes next, so it is left on screen rather than reverted.
@@ -196,7 +209,12 @@ export function createLayoutDraft(initial: StoredLayout, deps: LayoutDraftDeps =
   }
 
   function send(keys: LayoutKey[], action: string, body: FormData, sent: LayoutValues) {
-    for (const key of keys) inFlight.add(key);
+    for (const key of keys) {
+      inFlight.add(key);
+      // A newer write is under way: its own success re-arms the guard, and
+      // until it settles the key is in flight, which `sync` respects anyway.
+      confirmed.delete(key);
+    }
     if (!online()) {
       settle(keys, sent, OFFLINE_LAYOUT_TOAST);
       return;
@@ -286,8 +304,16 @@ export function createLayoutDraft(initial: StoredLayout, deps: LayoutDraftDeps =
 
     sync(stored) {
       const next = normalise(stored);
-      server = copy(next);
       for (const key of LAYOUT_KEYS) {
+        const saved = confirmed.get(key);
+        if (saved !== undefined) {
+          // Either way the guard is spent: an agreeing payload proves the
+          // write is visible, and a disagreeing one is ignored only once, so
+          // a genuine change from another device arrives on the next payload.
+          confirmed.delete(key);
+          if (encode(key, next) !== saved) continue; // stale: keep values and server
+        }
+        setServer(key, next[key]);
         if (inFlight.has(key) || supersededLater(key)) continue;
         setValue(key, next[key]);
       }

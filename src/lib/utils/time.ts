@@ -1,12 +1,12 @@
 import { TIME_SINCE_DAYS_FROM_HOURS_BOUNDS } from "$lib/preferences/domains";
 
 /**
- * The default, and the fallback for a threshold that is not an integer
- * Callers that have the user's stored value pass that instead.
- * Below this many hours, `formatTimeSince` counts hours and minutes; from it,
- * whole days. 48 rather than 24 because a dose taken yesterday morning is
- * still read in hours ("26h 10m ago") when deciding about the next one, and
- * "1d ago" said nothing between 24 and 47 hours.
+ * The product default for the hour count from which `formatTimeSince` shows
+ * whole days instead of hours and minutes, and its fallback for a threshold
+ * that is not an integer: 48 rather than 24, because a dose taken yesterday
+ * morning is still judged in hours ("26h 10m ago"). Every caller with an
+ * account passes the user's stored `timeSinceDaysFromHours`, and only the
+ * landing-page walkthrough, which has no account, passes this constant.
  */
 export const TIME_SINCE_DAYS_FROM_HOURS = 48;
 

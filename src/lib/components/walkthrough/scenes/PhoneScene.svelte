@@ -193,6 +193,7 @@
 
         <div class="mt-6">
           <StageDoneList
+            phone
             before={before.done}
             after={after.done}
             logged={state.logged}

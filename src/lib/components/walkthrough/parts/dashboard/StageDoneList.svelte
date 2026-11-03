@@ -32,6 +32,7 @@
     todayStart,
     tz,
     timeFormat,
+    phone = false,
     mark,
   }: {
     before: StageDone[];
@@ -41,6 +42,13 @@
     todayStart: Date;
     tz: string;
     timeFormat: TimeFormat;
+    /**
+     * Draw DoneList's phone layout (below `sm`): the name on its own line,
+     * the dose and status word under it, and × for Remove skip. The stage is
+     * a picture at a fixed size, so the drawn phone cannot reach the real
+     * component's breakpoint and is told which layout it is instead.
+     */
+    phone?: boolean;
     mark?: string;
   } = $props();
 
@@ -69,7 +77,7 @@
       <StageCollapse factor={beforeKeys.has(row.key) ? 1 : logged}>
         <div
           data-stage-row
-          class="flex min-h-11 items-center gap-3 py-1 {index > 0
+          class="flex min-h-11 items-center {phone ? 'gap-2' : 'gap-3'} py-1 {index > 0
             ? 'border-glass-border border-t'
             : ''}"
         >
@@ -90,12 +98,14 @@
             size="sm"
           />
           <div class="min-w-0 flex-1">
-            <p class="flex min-w-0 items-baseline gap-2 text-sm">
+            <p class="flex min-w-0 text-sm {phone ? 'flex-col' : 'items-baseline gap-2'}">
               <span class="text-text-primary truncate font-medium">{row.dose.name}</span>
-              <span class="text-text-secondary shrink-0">{v.dose}</span>
-              {#if row.dose.status === "skipped"}
-                <span class="text-text-secondary shrink-0">Skipped</span>
-              {/if}
+              <span class="flex min-w-0 items-baseline gap-x-2 {phone ? 'flex-wrap' : 'shrink-0'}">
+                <span class="text-text-secondary shrink-0">{v.dose}</span>
+                {#if row.dose.status === "skipped"}
+                  <span class="text-text-secondary shrink-0">Skipped</span>
+                {/if}
+              </span>
             </p>
             {#if v.covers}
               <p class="text-text-secondary truncate text-xs">{v.covers}</p>
@@ -109,7 +119,7 @@
           {:else}
             <span
               class="text-text-secondary inline-flex h-11 min-w-11 shrink-0 items-center justify-center rounded-lg px-3 text-sm font-medium"
-              >Remove skip</span
+              >{#if phone}<span class="text-base leading-none">&times;</span>{:else}Remove skip{/if}</span
             >
           {/if}
         </div>

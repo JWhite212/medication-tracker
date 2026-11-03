@@ -39,9 +39,9 @@
   }
 </script>
 
-<!-- The bar's height is fixed (min-h-30, 7.5rem: two h-11 rows, the gap,
+<!-- The bar has a minimum height (min-h-30, 7.5rem: two h-11 rows, the gap,
      the padding and the border, with a little to spare), because app.css
-     reserves exactly that much as the scroll container's
+     reserves that plus <main>'s bottom padding as the scroll container's
      scroll-padding-bottom while this toolbar exists, so a control Tab
      scrolls into view is never hidden under it (WCAG 2.2 2.4.11). Change one
      and change the other; edit-toolbar-scroll-reserve.svelte.test.ts holds

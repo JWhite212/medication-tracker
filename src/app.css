@@ -206,10 +206,29 @@
 /* Edit mode's toolbar is sticky at the bottom of <main>, the (app) layout's
    scroll container. While it exists, the container reserves its height, so a
    control that Tab scrolls into view lands above the toolbar rather than
-   under it (WCAG 2.2 2.4.11). 7.5rem is the bar's fixed min-h-30 in
-   EditToolbar.svelte; the safe area is its own bottom padding. */
+   under it (WCAG 2.2 2.4.11).
+   reserve = the bar's min height (7.5rem, min-h-30 in EditToolbar.svelte)
+           + <main>'s bottom padding + the safe area.
+   The padding term is there because a sticky element sticks inside the scroll
+   container's PADDING box: the bar's bottom sits that padding above the
+   scrollport edge, while scroll-padding is measured from the edge itself.
+   COUPLING: the padding values are the layout's own classes on
+   main#main-content (p-4, md:p-6, lg:p-8 = 1rem, 1.5rem, 2rem) and the
+   breakpoints are Tailwind's md (48rem) and lg (64rem). Change one and change
+   the other; edit-toolbar-scroll-reserve.svelte.test.ts holds them together.
+   (Compact density trims the padding, which only over-reserves.) */
 main:has([data-edit-toolbar]) {
-  scroll-padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
+  scroll-padding-bottom: calc(7.5rem + 1rem + env(safe-area-inset-bottom));
+}
+@media (min-width: 48rem) {
+  main:has([data-edit-toolbar]) {
+    scroll-padding-bottom: calc(7.5rem + 1.5rem + env(safe-area-inset-bottom));
+  }
+}
+@media (min-width: 64rem) {
+  main:has([data-edit-toolbar]) {
+    scroll-padding-bottom: calc(7.5rem + 2rem + env(safe-area-inset-bottom));
+  }
 }
 
 /* padding-inline/bottom only. The `padding` shorthand here also reset

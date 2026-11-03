@@ -65,11 +65,12 @@ export class CommandRefusedError extends Error {
 }
 
 /**
- * Parse a payload's `takenAt`, refusing a time in the future. The same rule
- * and words as the edit dialog (`editDoseAction`): this door used to accept
- * any time, so a dose a day ahead was stored and shown as "just now".
+ * A payload's `takenAt` as an instant, or a refusal when it is further ahead
+ * than the grace allows. The same rule and words as the edit dialog
+ * (`editDoseAction`): this door used to accept any time, so a dose a day
+ * ahead was stored and shown as "just now".
  */
-function pastTakenAt(takenAt: string | undefined): Date | undefined {
+function acceptedTakenAt(takenAt: string | undefined): Date | undefined {
   if (!takenAt) return undefined;
   const instant = new Date(takenAt);
   if (isFutureTakenAt(instant, Date.now())) {
@@ -109,7 +110,7 @@ const handlers: Record<string, Handler> = {
       userId,
       p.medicationId,
       p.quantity,
-      pastTakenAt(p.takenAt),
+      acceptedTakenAt(p.takenAt),
       p.notes,
       p.sideEffects,
     );
@@ -124,7 +125,7 @@ const handlers: Record<string, Handler> = {
     const row = await updateDose(userId, p.doseId, {
       // Judged only when sent: an edit without `takenAt` leaves the time as
       // it is, so there is nothing new to refuse.
-      takenAt: pastTakenAt(p.takenAt),
+      takenAt: acceptedTakenAt(p.takenAt),
       quantity: p.quantity,
       notes: p.notes,
       // Pass through null (explicit "clear side effects") vs undefined ("don't touch") — updateDose distinguishes them.

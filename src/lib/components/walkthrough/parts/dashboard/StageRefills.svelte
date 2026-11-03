@@ -23,7 +23,7 @@
 </script>
 
 {#if entries.length > 0}
-  <div>
+  <div data-stage-section="refills">
     <p class="text-text-muted mb-3 text-sm font-medium tracking-wider uppercase">Refills</p>
     <div class="space-y-2">
       {#each entries as entry (entry.medicationId)}

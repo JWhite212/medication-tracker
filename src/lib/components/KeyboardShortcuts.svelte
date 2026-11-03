@@ -5,7 +5,18 @@
   import { findQuickLogForm } from "$lib/utils/quick-log";
   import IconButton from "$lib/components/ui/IconButton.svelte";
 
-  let { medications = [] }: { medications?: Array<{ id: string; name: string }> } = $props();
+  let {
+    medications = [],
+    quickLog = true,
+  }: {
+    medications?: Array<{ id: string; name: string }>;
+    /**
+     * Whether the page shows the Quick log chips. The 1–9 keys submit a chip's
+     * form, so with the chips hidden they do nothing, and the help says how to
+     * get them back rather than describing keys that cannot work.
+     */
+    quickLog?: boolean;
+  } = $props();
 
   let showHelp = $state(false);
   let helpEl: HTMLDivElement | undefined = $state();
@@ -94,7 +105,7 @@
     }
 
     const num = parseInt(e.key);
-    if (num >= 1 && num <= 9 && medications.length > 0) {
+    if (quickLog && num >= 1 && num <= 9 && medications.length > 0) {
       const idx = num - 1;
       if (idx < medications.length) {
         e.preventDefault();
@@ -116,13 +127,22 @@
     if (showHelp) tick().then(() => helpEl?.querySelector("button")?.focus());
   });
 
-  const shortcuts = [
-    { keys: ["1-9"], description: "Log a medication now, by its position in the chip list" },
+  const LOG_SHORTCUT = {
+    keys: ["1-9"],
+    description: "Log a medication now, by its position in the chip list",
+  };
+  const NUMBERS_OFF = {
+    keys: ["1-9"],
+    description: "Number shortcuts need Quick log on your dashboard",
+    href: "/settings/dashboard",
+  };
+  const shortcuts: Array<{ keys: string[]; description: string; href?: string }> = $derived([
+    quickLog ? LOG_SHORTCUT : NUMBERS_OFF,
     { keys: ["n"], description: "Add new medication" },
     { keys: ["/"], description: "Focus first filter input" },
     { keys: ["?"], description: "Toggle this help overlay" },
     { keys: ["Esc"], description: "Close this overlay" },
-  ];
+  ]);
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -166,7 +186,13 @@
       <div class="space-y-3">
         {#each shortcuts as shortcut}
           <div class="flex items-center justify-between">
-            <span class="text-text-secondary text-sm">{shortcut.description}</span>
+            {#if shortcut.href}
+              <a href={shortcut.href} class="text-accent-ink text-sm underline"
+                >{shortcut.description}</a
+              >
+            {:else}
+              <span class="text-text-secondary text-sm">{shortcut.description}</span>
+            {/if}
             <div class="flex gap-1">
               {#each shortcut.keys as key}
                 <kbd

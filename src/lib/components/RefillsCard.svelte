@@ -71,8 +71,16 @@
 </script>
 
 <script lang="ts">
-  type Props = { entries: RefillForecastEntry[] };
-  let { entries }: Props = $props();
+  type Props = {
+    entries: RefillForecastEntry[];
+    /**
+     * One neutral line under the heading. The dashboard passes it when
+     * Refills is hidden and only the urgent rows are forced back in, so the
+     * card says why it is showing fewer rows than it has.
+     */
+    note?: string;
+  };
+  let { entries, note }: Props = $props();
 </script>
 
 {#if entries.length > 0}
@@ -83,6 +91,9 @@
     >
       Refills
     </h2>
+    {#if note}
+      <p class="text-text-secondary mb-3 text-sm">{note}</p>
+    {/if}
     <div class="space-y-2">
       {#each entries as entry (entry.medicationId)}
         <!-- The entry is the whole input, alert threshold included, as the

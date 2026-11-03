@@ -115,7 +115,8 @@ describe("sendReminderEmail copy", () => {
     { gap: "30 seconds", ms: 30_000, clause: "last logged just now" },
     { gap: "5 minutes", ms: 5 * MINUTE, clause: "last logged 5m ago" },
     { gap: "2 hours 3 minutes", ms: (2 * 60 + 3) * MINUTE, clause: "last logged 2h 3m ago" },
-    { gap: "25 hours", ms: 25 * 60 * MINUTE, clause: "last logged 1d ago" },
+    { gap: "25 hours", ms: 25 * 60 * MINUTE, clause: "last logged 25h 0m ago" },
+    { gap: "3 days", ms: 72 * 60 * MINUTE, clause: "last logged 3d ago" },
   ])("$gap after the last event says $clause", async ({ ms, clause }) => {
     nextSendResult = { data: { id: "msg_r" }, error: null };
 

@@ -168,6 +168,45 @@ export function doneCoversLine(
   return `for ${times.join(", ")}`;
 }
 
+/**
+ * Later slots within this long of a group's first slot are drawn as one
+ * group: one "in 6 hours" and no divider between them. Three supplements at
+ * 13:05, 13:06 and 13:07 are one moment of the day, not three. Measured from
+ * the group's FIRST slot, never chained slot to slot, so a run of slots five
+ * minutes apart cannot stretch one group across an hour.
+ */
+export const LATER_GROUP_WINDOW_MS = 10 * 60_000;
+
+/**
+ * Later rows split into groups of nearby slots, in the order given. The
+ * composer hands Later over sorted by slot time, which is what makes
+ * "nearby" a matter of neighbours. Every row keeps its own exact time; a
+ * group only decides where dividers and the "in …" fall.
+ */
+export function groupLaterRows<R extends { key: string; expectedTime: string }>(
+  rows: readonly R[],
+  windowMs: number = LATER_GROUP_WINDOW_MS,
+): { key: string; rows: R[] }[] {
+  const groups: { key: string; rows: R[] }[] = [];
+  let headAt = Number.NaN;
+  for (const row of rows) {
+    const at = Date.parse(row.expectedTime);
+    const current = groups.at(-1);
+    if (current && at >= headAt && at - headAt <= windowMs) {
+      current.rows.push(row);
+    } else {
+      groups.push({ key: row.key, rows: [row] });
+      headAt = at;
+    }
+  }
+  return groups;
+}
+
+/** The Later disclosure's label: "Show 8 more" while collapsed, "Show fewer" while open. */
+export function laterToggleLabel(expanded: boolean, hiddenCount: number): string {
+  return expanded ? "Show fewer" : `Show ${hiddenCount} more`;
+}
+
 /** How far off a Later row is, "in 3 hours": long style, one unit, floored. */
 export function laterUntil(expectedTime: string, serverNow: Date): string {
   const ms = Date.parse(expectedTime) - serverNow.getTime();

@@ -245,11 +245,3 @@ export const PHONE_AFTER: StageMoment = {
   later: [LATER_IBUPROFEN_1410, LATER_METFORMIN_1948, LATER_MAGNESIUM_2205, LATER_IBUPROFEN_2210],
   medications: STAGE_MEDICATIONS,
 };
-
-/**
- * How many of the phone's Later rows PhoneScene shows: `later.slice(0, PHONE_LATER_ROWS)`.
- * A whole-row prefix, so no row is cut through; the phone's 732px content box
- * has room below it. The phone-before screenshot confirms it fits; the number
- * is chosen, not derived.
- */
-export const PHONE_LATER_ROWS = 2;

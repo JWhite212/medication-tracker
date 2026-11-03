@@ -23,7 +23,7 @@ const SPEC: Record<StatusMarkerState, { label: string; classes: string[] }> = {
   taken: { label: "Taken", classes: toneClass("happened", "marker").split(" ") },
   overdue: { label: "Overdue", classes: toneClass("needs-you", "marker").split(" ") },
   "due-now": { label: "Due now", classes: ["ring-2", "ring-accent-ink"] },
-  upcoming: { label: "Upcoming", classes: ["border", "border-border-strong"] },
+  upcoming: { label: "Upcoming", classes: [] },
   skipped: { label: "Skipped", classes: toneClass("neutral", "marker").split(" ") },
   missed: { label: "Missed", classes: toneClass("wrong", "marker").split(" ") },
 };
@@ -77,7 +77,9 @@ describe("StatusMarker", () => {
     // dose is something that went wrong, and it now looks it.
     expect(new Set(glyphs.values()).size).toBe(STATUS_MARKER_STATES.length);
     expect(glyphs.get("due-now")).toContain("bg-accent-ink");
-    expect(glyphs.get("upcoming")).toBe("");
+    // A small dot and no ring: a hollow ring read as a checkbox nobody can tick.
+    expect(glyphs.get("upcoming")).toContain("bg-text-muted");
+    expect(classesOf(outerTag(renderMarker("upcoming")))).not.toContain("border");
   });
 
   it("draws missed as a two-stroke cross and skipped as a single dash", () => {

@@ -12,7 +12,9 @@ import {
   doneDoseText,
   formatDoseLabel,
   formatSlotTime,
+  groupLaterRows,
   headerEyebrow,
+  laterToggleLabel,
   laterUntil,
   rowStatusLine,
   tookItAtLabel,
@@ -23,6 +25,7 @@ import {
   lastLoggedPhrase,
   type TimeFormat,
 } from "$lib/utils/time";
+import { formatDosage } from "$lib/utils/dosage";
 import { logToastFromReload } from "$lib/components/dashboard/dose-toasts";
 import type { DoseLogWithMedication, Medication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
@@ -40,7 +43,6 @@ import {
   DESKTOP_BEFORE,
   PHONE_AFTER,
   PHONE_BEFORE,
-  PHONE_LATER_ROWS,
   type StageMoment,
 } from "$lib/components/walkthrough/demo-dashboard";
 import { WALKTHROUGH_DATE_FORMAT } from "$lib/components/walkthrough/stage-dashboard";
@@ -497,14 +499,6 @@ describe("walkthrough dashboard moments: data", () => {
       { medicationId: lis.id, lastTakenAt: null, lastEventAt: at("2026-09-24T08:00:00Z") },
     ]);
   });
-
-  it("PHONE_LATER_ROWS shows a non-empty prefix of the phone's Later list, before and after the tap", () => {
-    expect(Number.isInteger(PHONE_LATER_ROWS)).toBe(true);
-    expect(PHONE_LATER_ROWS).toBeGreaterThanOrEqual(1);
-    expect(PHONE_LATER_ROWS).toBeLessThanOrEqual(
-      Math.min(PHONE_BEFORE.later.length, PHONE_AFTER.later.length),
-    );
-  });
 });
 
 // ── T7: the desktop scene, rendered ──────────────────────────────────────
@@ -599,7 +593,7 @@ function expectedSections(
     for (const card of cards) {
       card.rows.forEach((row, index) => {
         const slot = new Date(row.expectedTime);
-        if (index === 0) due.push(card.name, `${card.dosageAmount}${card.dosageUnit}`);
+        if (index === 0) due.push(card.name, formatDosage(card.dosageAmount, card.dosageUnit));
         due.push(
           rowStatusLine({ state: row.state, expectedTime: slot }, now, todayStart, tz, timeFormat),
         );
@@ -632,12 +626,18 @@ function expectedSections(
     ];
   });
 
-  const later = p.later.flatMap((row) => [
+  // Later as it first renders: collapsed to its first group of nearby
+  // slots, "in …" on that group's first line only, then the disclosure.
+  const laterGroups = groupLaterRows(p.later);
+  const laterShown = laterGroups[0]?.rows ?? [];
+  const later = laterShown.flatMap((row, i) => [
     formatSlotTime(new Date(row.expectedTime), todayStart, tz, timeFormat),
     row.name,
-    `${row.dosageAmount}${row.dosageUnit}`,
-    laterUntil(row.expectedTime, now),
+    formatDosage(row.dosageAmount, row.dosageUnit),
+    ...(i === 0 ? [laterUntil(row.expectedTime, now)] : []),
   ]);
+  const laterToggle =
+    laterGroups.length > 1 ? [laterToggleLabel(false, p.later.length - laterShown.length)] : [];
 
   return {
     header: {
@@ -651,7 +651,10 @@ function expectedSections(
     },
     due: { text: due, rows: [...p.earlier, ...p.today].reduce((n, c) => n + c.rows.length, 0) },
     done: { text: [asNeededOnly ? "Logged today" : "Done today", ...done], rows: p.done.length },
-    later: { text: later.length > 0 ? ["Later today", ...later] : [], rows: p.later.length },
+    later: {
+      text: later.length > 0 ? ["Later today", ...later, ...laterToggle] : [],
+      rows: laterShown.length,
+    },
     chips: {
       text: [
         asNeededOnly ? "Log a dose" : "Log something else",
@@ -784,9 +787,9 @@ describe("the desktop stage for a visitor far from the story", () => {
 //
 // The desktop's check, at PHONE_NOW: every section the phone draws reads
 // what the real helpers say over the composer's own payload, before and
-// after the fingertip's tap. The phone draws Later only as far as
-// PHONE_LATER_ROWS and draws no chips, so its oracle is the desktop's with
-// Later cut to that prefix and the chips left out. Each check reads the
+// after the fingertip's tap. The phone draws Later collapsed, as the desktop
+// does, and draws no chips, so its oracle is the desktop's with the chips
+// left out. Each check reads the
 // phone layer of the whole stage, so a section drawn on the wrong surface,
 // or twice, fails.
 
@@ -799,7 +802,7 @@ function expectedPhoneSections(
   p: ComposedPayload,
   timeFormat: TimeFormat,
 ): Record<PhoneSectionName, { text: string[]; rows: number | null }> {
-  const all = expectedSections({ ...p, later: p.later.slice(0, PHONE_LATER_ROWS) }, timeFormat);
+  const all = expectedSections(p, timeFormat);
   return { header: all.header, due: all.due, done: all.done, later: all.later };
 }
 

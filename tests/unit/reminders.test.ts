@@ -675,7 +675,8 @@ describe("checkOverdueMedications — the 'last logged' copy", () => {
     { gap: "30 seconds", ms: 30_000, body: "Last logged just now" },
     { gap: "5 minutes", ms: 5 * MINUTE, body: "Last logged 5m ago" },
     { gap: "2 hours 3 minutes", ms: (2 * 60 + 3) * MINUTE, body: "Last logged 2h 3m ago" },
-    { gap: "25 hours", ms: 25 * 60 * MINUTE, body: "Last logged 1d ago" },
+    { gap: "25 hours", ms: 25 * 60 * MINUTE, body: "Last logged 25h 0m ago" },
+    { gap: "3 days", ms: 72 * 60 * MINUTE, body: "Last logged 3d ago" },
   ])("a reminder $gap after the last event reads $body", async ({ ms, body }) => {
     // An 18-second interval, so every gap above is overdue and the cases
     // differ only in how long ago the last event was. The form door admits

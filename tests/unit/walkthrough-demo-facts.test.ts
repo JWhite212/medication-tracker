@@ -66,6 +66,8 @@ import DataScene from "$lib/components/walkthrough/scenes/DataScene.svelte";
 import HistoryScene from "$lib/components/walkthrough/scenes/HistoryScene.svelte";
 import MedicationsScene from "$lib/components/walkthrough/scenes/MedicationsScene.svelte";
 import SecurityScene from "$lib/components/walkthrough/scenes/SecurityScene.svelte";
+import DashboardScene from "$lib/components/walkthrough/scenes/DashboardScene.svelte";
+import { computeFrame } from "$lib/components/walkthrough/timeline";
 import RefillsCard, { refillChip } from "$lib/components/RefillsCard.svelte";
 import StatusBreakdownBar from "$lib/components/StatusBreakdownBar.svelte";
 import MedicationFilterSelect from "$lib/components/MedicationFilterSelect.svelte";
@@ -551,7 +553,12 @@ describe("the stage's drawn controls", () => {
     render(HistoryScene, { props: { checked: true, filtered: 1, timeFormat: "24h" } }).body;
   const medications = () => render(MedicationsScene, { props: { load: 10, tick: 0 } }).body;
   const analytics = () => render(AnalyticsScene, { props: { load: 10, heat: 1 } }).body;
+  const dashboard = () =>
+    render(DashboardScene, { props: { state: computeFrame(0, {}).dashboard, timeFormat: "24h" } })
+      .body;
   const DRAWN = [
+    // LaterList's disclosure: <Button variant="ghost" size="sm">.
+    { scene: "Dashboard", body: dashboard, label: "Show 4 more", look: stageButton("ghost", "sm") },
     { scene: "Security", body: security, label: "Update Password", look: stageButton("primary") },
     { scene: "Security", body: security, label: "Disable 2FA", look: stageButton("secondary") },
     { scene: "Security", body: security, label: "Revoke", look: stageButton("secondary", "sm") },

@@ -7,12 +7,14 @@
   let { state: marker }: { state: StatusMarkerState } = $props();
 
   // Shape first, colour as reinforcement. The four statuses take the owner's
-  // marker recipe; due-now and upcoming are not statuses and keep their rings.
+  // marker recipe; due-now is not a status and keeps its ring. Upcoming has
+  // no ring at all: a hollow circle beside a row read as an unticked
+  // checkbox, and a Later row has nothing to tick.
   const RECIPES: Record<StatusMarkerState, string> = {
     taken: toneClass(toneOf("dose-taken"), "marker"),
     overdue: toneClass(toneOf("dose-overdue"), "marker"),
     "due-now": "ring-2 ring-accent-ink",
-    upcoming: "border border-border-strong",
+    upcoming: "",
     skipped: toneClass(toneOf("dose-skipped"), "marker"),
     missed: toneClass(toneOf("dose-missed"), "marker"),
   };
@@ -57,6 +59,8 @@
     </svg>
   {:else if marker === "due-now"}
     <span class="bg-accent-ink h-2 w-2 rounded-full"></span>
+  {:else if marker === "upcoming"}
+    <span class="bg-text-muted h-1.5 w-1.5 rounded-full"></span>
   {:else if marker === "skipped"}
     <svg
       class="h-3 w-3"

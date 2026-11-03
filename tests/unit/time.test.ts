@@ -78,8 +78,8 @@ describe("formatTimeSince threshold", () => {
     expect(formatTimeSince(before(h * HOUR), NOW, h)).toBe(`${Math.floor(h / 24)}d ago`);
   });
 
-  it.each([undefined, NaN, 0, 12, 47.5, 1000])("never reads 0d ago at 30h for %s", (bad) => {
-    expect(formatTimeSince(before(30 * HOUR), NOW, bad as unknown as number)).not.toBe("0d ago");
+  it.each([undefined, NaN, 0, 12, 47.5, 1000])("never reads 0d ago at 13h for %s", (bad) => {
+    expect(formatTimeSince(before(13 * HOUR), NOW, bad as unknown as number)).not.toBe("0d ago");
   });
 
   it("falls back to 48 when the threshold is not an integer", () => {

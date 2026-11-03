@@ -8,6 +8,7 @@ import {
   preferencePayloadShape,
 } from "$lib/preferences/schema";
 import { isCalendarDay } from "$lib/utils/time";
+import { PRESET_IDS } from "$lib/dashboard/presets";
 
 export const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -402,6 +403,13 @@ export const dashboardSettingsFieldSchemas = {
   }),
   dashboardDoneTime: z.strictObject({ dashboardDoneTime: preferenceFieldTypes.dashboardDoneTime }),
 };
+
+/**
+ * The dashboard's presets. The client posts only the id, never the patch, so
+ * this door cannot be used to write an arbitrary multi-key blob. `PRESET_IDS`
+ * comes from the zod-free presets module, which owns the ids.
+ */
+export const applyPresetSchema = z.strictObject({ preset: z.enum(PRESET_IDS) });
 
 export const logFilterSchema = z.object({
   status: z.enum(["any", "taken", "skipped", "missed"]).default("any"),

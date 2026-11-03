@@ -33,6 +33,8 @@ const SHARED_OWNERS = [
   "src/routes/(app)/settings/dashboard/+page.server.ts",
   "src/routes/(app)/settings/dashboard/+page.svelte",
   "src/routes/(app)/dashboard/+page.svelte",
+  // The presets name all six dashboard keys: a preset is a patch over them.
+  "src/lib/dashboard/presets.ts",
 ];
 
 /**

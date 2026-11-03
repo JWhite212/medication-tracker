@@ -15,6 +15,7 @@
     orderValue,
     type DashboardSectionId,
   } from "$lib/dashboard/layout";
+  import { PRESET_IDS, PRESETS, activePreset } from "$lib/dashboard/presets";
   import {
     DASHBOARD_LATER_MODES,
     DONE_TIME_DISPLAYS,
@@ -53,15 +54,35 @@
   });
   // `[]` is non-null, so an account an API client gave an empty order still
   // sees the default page and is still offered the way back (Review Focus 1).
-  const customised = $derived(
-    preferences.dashboardSectionOrder !== null || !shown.later || !shown.quickLog || !shown.refills,
-  );
   // The two single-choice options. Read tolerantly, like the dashboard does.
   const laterMode = $derived(
     normaliseOption(preferences.dashboardLaterMode, DASHBOARD_LATER_MODES, "next"),
   );
   const doneTime = $derived(
     normaliseOption(preferences.dashboardDoneTime, DONE_TIME_DISPLAYS, "both"),
+  );
+  // Reset now means Standard, so it is offered whenever any of the six
+  // preset keys is off Standard's value.
+  const customised = $derived(
+    preferences.dashboardSectionOrder !== null ||
+      !shown.later ||
+      !shown.quickLog ||
+      !shown.refills ||
+      laterMode !== PRESETS.standard.patch.dashboardLaterMode ||
+      doneTime !== PRESETS.standard.patch.dashboardDoneTime,
+  );
+  // Matched from the confirmed values, never stored. The two options go
+  // through the same tolerant read as above so an unknown value matches
+  // Standard's default, like the dashboard.
+  const activeId = $derived(
+    activePreset({
+      dashboardSectionOrder: preferences.dashboardSectionOrder,
+      dashboardShowLater: preferences.dashboardShowLater,
+      dashboardShowQuickLog: preferences.dashboardShowQuickLog,
+      dashboardShowRefills: preferences.dashboardShowRefills,
+      dashboardLaterMode: laterMode,
+      dashboardDoneTime: doneTime,
+    }),
   );
   const LATER_OPTIONS: { value: DashboardLaterMode; label: string }[] = [
     { value: "next", label: "Next few" },
@@ -99,6 +120,7 @@
     | { kind: "move"; id: DashboardSectionId; direction: "up" | "down" }
     | { kind: "visibility"; id: HideableId }
     | { kind: "option"; key: "laterMode" | "doneTime" }
+    | { kind: "preset" }
     | { kind: "reset" };
 
   // One page-level flag. While a save is in flight every control is
@@ -133,6 +155,10 @@
         ? `${SECTION_LABELS.later}: ${LATER_OPTIONS.find((o) => o.value === laterMode)!.label.toLowerCase()}`
         : `${SECTION_LABELS.done}: ${DONE_OPTIONS.find((o) => o.value === doneTime)!.label.toLowerCase()}`;
     }
+    // One form serves all four presets, so the intent cannot name which; the
+    // reload has made the applied preset the active one.
+    if (intent.kind === "preset")
+      return activeId ? `${PRESETS[activeId].label} applied` : "Preset applied";
     return "Dashboard layout reset to default";
   }
 
@@ -214,6 +240,36 @@
   <!-- The page's one polite region, before the first form, so a control is
        not re-announced when its own state changes. Failures are toasts. -->
   <p role="status" class="sr-only">{announcement}</p>
+
+  <GlassCard>
+    <fieldset data-presets class="min-w-0">
+      <legend class="mb-1 text-lg font-semibold">Start from</legend>
+      <p class="text-text-muted mb-3 text-sm">
+        A starting point for the sections and options below. Change anything afterwards.
+      </p>
+      <form
+        method="POST"
+        action="?/applyPreset"
+        use:enhance={save({ kind: "preset" })}
+        class="space-y-2"
+      >
+        {#each PRESET_IDS as id (id)}
+          <div>
+            <Toggle
+              size="md"
+              pressed={activeId === id}
+              submit={{ name: "preset", value: id }}
+              aria-disabled={saving ? "true" : undefined}>{PRESETS[id].label}</Toggle
+            >
+            <p class="text-text-muted mt-1 text-sm">{PRESETS[id].blurb}</p>
+          </div>
+        {/each}
+      </form>
+      {#if activeId === null}
+        <p data-custom class="text-text-secondary mt-3 text-sm">Custom: your own arrangement</p>
+      {/if}
+    </fieldset>
+  </GlassCard>
 
   <GlassCard>
     <h2 class="mb-1 text-lg font-semibold">Sections</h2>

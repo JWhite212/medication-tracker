@@ -5,20 +5,10 @@ import { getActiveMedications } from "$lib/server/medications";
 import { getSchedulesForUser } from "$lib/server/schedules";
 import { dashboardVariantFor } from "$lib/server/dashboard/page-data";
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
-import { dashboardSettingsFieldSchemas } from "$lib/utils/validation";
+import { PRESETS } from "$lib/dashboard/presets";
+import { applyPresetSchema, dashboardSettingsFieldSchemas } from "$lib/utils/validation";
 import type { UserPreferences } from "$lib/types";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
-
-/**
- * The layout's whole reset, written once: one `updatePreferences` call, so
- * one write and one audit row rather than four.
- */
-const RESET_LAYOUT = {
-  dashboardSectionOrder: null,
-  dashboardShowLater: true,
-  dashboardShowQuickLog: true,
-  dashboardShowRefills: true,
-} as const satisfies Partial<UserPreferences>;
 
 export const load: PageServerLoad = async ({ locals }) => {
   const userId = locals.user!.id;
@@ -84,11 +74,27 @@ export const actions = {
   dashboardShowRefills: fieldAction("dashboardShowRefills"),
   dashboardLaterMode: fieldAction("dashboardLaterMode"),
   dashboardDoneTime: fieldAction("dashboardDoneTime"),
+  // Reset means "Standard": one write, one audit row, and it also restores
+  // the Later mode and Done time options.
   resetDashboardLayout: async ({ locals }) => {
     const { userId, refused } = await admit("resetDashboardLayout", locals);
     if (refused) return refused;
 
-    await updatePreferences(userId, RESET_LAYOUT);
+    await updatePreferences(userId, PRESETS.standard.patch);
     return { success: true, key: "resetDashboardLayout" };
+  },
+  // The client posts only a preset id; the patch is the server's own, so this
+  // door cannot write an arbitrary multi-key blob.
+  applyPreset: async ({ request, locals }) => {
+    const { userId, refused } = await admit("applyPreset", locals);
+    if (refused) return refused;
+
+    const parsed = applyPresetSchema.safeParse(Object.fromEntries(await request.formData()));
+    if (!parsed.success) {
+      return fail(400, { key: "applyPreset", errors: parsed.error.flatten().fieldErrors });
+    }
+
+    await updatePreferences(userId, PRESETS[parsed.data.preset].patch);
+    return { success: true, key: "applyPreset" };
   },
 } satisfies Actions;

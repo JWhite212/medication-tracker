@@ -22,6 +22,7 @@ import {
   type DashboardSectionId,
   type DashboardVariant,
 } from "../../src/lib/dashboard/layout";
+import { PRESETS, PRESET_IDS, type PresetId } from "../../src/lib/dashboard/presets";
 import type { UserPreferences } from "../../src/lib/types";
 import { formatTimeSince, formatUserTime } from "../../src/lib/utils/time";
 import { preferencesFixture } from "./helpers/preferences-fixture";
@@ -252,6 +253,64 @@ describe("/settings/dashboard SSR", () => {
       expect(moveButton(doc, "done", "down")!.getAttribute("value")).toBe(
         "refills,later,quickLog,done",
       );
+    });
+  });
+
+  describe("Start from (presets)", () => {
+    const fieldset = (doc: Document) =>
+      doc.querySelector<HTMLFieldSetElement>("fieldset[data-presets]")!;
+    const presetButtons = (doc: Document) => [
+      ...fieldset(doc).querySelectorAll<HTMLButtonElement>("button[aria-pressed]"),
+    ];
+
+    it("is a fieldset above Sections with four Toggles posting preset=<id>", () => {
+      const doc = renderPage();
+      expect(textOf(fieldset(doc).querySelector("legend")!)).toBe("Start from");
+      expect(
+        fieldset(doc).compareDocumentPosition(doc.querySelector("ol[data-sections]")!) & 4,
+      ).toBeTruthy();
+      const buttons = presetButtons(doc);
+      expect(buttons.map((b) => accessibleName(b))).toEqual([
+        "Standard",
+        "Focused",
+        "Full day",
+        "Just log",
+      ]);
+      expect(buttons.map((b) => b.getAttribute("value"))).toEqual([...PRESET_IDS]);
+      for (const b of buttons) {
+        expect(b.getAttribute("type")).toBe("submit");
+        expect(b.getAttribute("name")).toBe("preset");
+        expect(b.closest("form")!.getAttribute("action")).toBe("?/applyPreset");
+        expect(b.closest("form")!.getAttribute("method")).toBe("POST");
+      }
+    });
+
+    it("shows each preset's blurb under its Toggle", () => {
+      const text = textOf(fieldset(renderPage()));
+      for (const id of PRESET_IDS) expect(text).toContain(PRESETS[id].blurb);
+    });
+
+    for (const id of PRESET_IDS) {
+      it(`sets aria-pressed on ${id} alone when its patch is stored`, () => {
+        const doc = renderPage(PRESETS[id].patch as Overrides);
+        expect(presetButtons(doc).map((b) => b.getAttribute("aria-pressed"))).toEqual(
+          PRESET_IDS.map((other: PresetId) => String(other === id)),
+        );
+        expect(textOf(fieldset(doc))).not.toContain("Custom: your own arrangement");
+      });
+    }
+
+    it("renders a static Custom line, with nothing pressed, for any other arrangement", () => {
+      const doc = renderPage({ dashboardShowRefills: false });
+      expect(presetButtons(doc).map((b) => b.getAttribute("aria-pressed"))).toEqual([
+        "false",
+        "false",
+        "false",
+        "false",
+      ]);
+      const custom = fieldset(doc).querySelector("[data-custom]")!;
+      expect(textOf(custom)).toBe("Custom: your own arrangement");
+      expect(custom.querySelector("button, a, input")).toBeNull();
     });
   });
 

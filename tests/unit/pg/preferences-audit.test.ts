@@ -13,6 +13,7 @@ import { pgDb } from "../helpers/pg-db";
 
 const { updatePreferences, getOrCreatePreferences } =
   await import("../../../src/lib/server/preferences");
+const { PRESETS } = await import("../../../src/lib/dashboard/presets");
 const { TIME_SINCE_DAYS_FROM_HOURS } = await import("../../../src/lib/utils/time");
 
 const A = "#4f46e5";
@@ -166,6 +167,45 @@ describe("updatePreferences — the dashboard layout columns", () => {
       dashboardSectionOrder: { from: ["refills", "done"], to: null },
       dashboardShowLater: { from: false, to: true },
       dashboardShowRefills: { from: false, to: true },
+    });
+  });
+});
+
+describe("updatePreferences — dashboard presets", () => {
+  it("applying Focused over the defaults audits exactly the two keys it changes, in one row", async () => {
+    await updatePreferences("u1", PRESETS.focused.patch);
+    const rows = await pgDb.db.select().from(auditLogs);
+    expect(rows).toHaveLength(1);
+    expect(Object.keys(rows[0].changes as object).sort()).toEqual([
+      "dashboardDoneTime",
+      "dashboardShowLater",
+    ]);
+    expect(rows[0].changes).toEqual({
+      dashboardShowLater: { from: true, to: false },
+      dashboardDoneTime: { from: "both", to: "since" },
+    });
+  });
+
+  it("re-applying the preset already in force audits nothing", async () => {
+    await updatePreferences("u1", PRESETS.focused.patch);
+    await updatePreferences("u1", PRESETS.focused.patch);
+    expect(await pgDb.db.select().from(auditLogs)).toHaveLength(1);
+  });
+
+  it("Standard after Just log restores every changed key in one row", async () => {
+    await updatePreferences("u1", PRESETS.justLog.patch);
+    await updatePreferences("u1", PRESETS.standard.patch);
+    const rows = await pgDb.db.select().from(auditLogs);
+    expect(rows).toHaveLength(2);
+    const last = rows.find(
+      (r) =>
+        "dashboardSectionOrder" in (r.changes as object) &&
+        (r.changes as Record<string, { to: unknown }>).dashboardSectionOrder.to === null,
+    )!;
+    expect(last.changes).toEqual({
+      dashboardSectionOrder: { from: ["quickLog", "done", "refills", "later"], to: null },
+      dashboardShowLater: { from: false, to: true },
+      dashboardDoneTime: { from: "since", to: "both" },
     });
   });
 });

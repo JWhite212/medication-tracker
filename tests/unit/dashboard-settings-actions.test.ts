@@ -1,6 +1,7 @@
 import { rateLimitSurface } from "./helpers/rate-limit";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { dashboardSettingsFieldSchemas } from "../../src/lib/utils/validation";
+import { PRESETS, PRESET_IDS } from "../../src/lib/dashboard/presets";
 
 const updatePreferences = vi.fn(async () => ({}) as never);
 const getOrCreatePreferences = vi.fn(async () => ({ userId: "u1" }) as never);
@@ -40,7 +41,7 @@ beforeEach(() => {
 });
 
 describe("the dashboard settings page's actions", () => {
-  it("defines exactly the seven dashboard actions and no default", () => {
+  it("defines exactly the eight dashboard actions and no default", () => {
     expect(Object.keys(actions).sort()).toEqual(
       [
         "dashboardSectionOrder",
@@ -50,6 +51,7 @@ describe("the dashboard settings page's actions", () => {
         "dashboardLaterMode",
         "dashboardDoneTime",
         "resetDashboardLayout",
+        "applyPreset",
       ].sort(),
     );
     expect(actions).not.toHaveProperty("default");
@@ -195,16 +197,49 @@ describe("the dashboard settings page's actions", () => {
     expect(result).toMatchObject({ status: 400 });
   });
 
-  it("resets the layout in ONE write: order to null and every flag on", async () => {
+  it("resets the layout in ONE write: exactly PRESETS.standard.patch", async () => {
     const result = await call(actions.resetDashboardLayout, {});
     expect(updatePreferences).toHaveBeenCalledTimes(1);
-    expect(updatePreferences).toHaveBeenCalledWith("u1", {
-      dashboardSectionOrder: null,
-      dashboardShowLater: true,
-      dashboardShowQuickLog: true,
-      dashboardShowRefills: true,
-    });
+    expect(updatePreferences).toHaveBeenCalledWith("u1", PRESETS.standard.patch);
     expect(result).toMatchObject({ success: true, key: "resetDashboardLayout" });
+  });
+
+  describe("applyPreset", () => {
+    for (const id of PRESET_IDS) {
+      it(`${id} writes the full patch in one call`, async () => {
+        const result = await call(actions.applyPreset, { preset: id });
+        expect(updatePreferences).toHaveBeenCalledTimes(1);
+        expect(updatePreferences).toHaveBeenCalledWith("u1", PRESETS[id].patch);
+        expect(result).toMatchObject({ success: true, key: "applyPreset" });
+      });
+    }
+
+    it("400s an unknown id, a missing id and an extra key without writing", async () => {
+      for (const fields of [
+        { preset: "everything" },
+        { preset: "" },
+        { preset: "Standard" },
+        {},
+        { preset: "focused", dashboardShowLater: "off" },
+      ]) {
+        const result = await call(actions.applyPreset, fields as Record<string, string>);
+        expect(result, JSON.stringify(fields)).toMatchObject({
+          status: 400,
+          data: { key: "applyPreset" },
+        });
+      }
+      expect(updatePreferences).not.toHaveBeenCalled();
+    });
+
+    it("passes a 429 through without writing", async () => {
+      checkRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 9_000 });
+      const result = await call(actions.applyPreset, { preset: "focused" });
+      expect(updatePreferences).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        status: 429,
+        data: { key: "applyPreset", saveError: expect.any(String), retryAfterMs: 9_000 },
+      });
+    });
   });
 
   for (const name of [
@@ -215,22 +250,25 @@ describe("the dashboard settings page's actions", () => {
     "dashboardLaterMode",
     "dashboardDoneTime",
     "resetDashboardLayout",
+    "applyPreset",
   ]) {
     it(`${name} rate-limits per account before writing, and the 429 says when`, async () => {
       checkRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 30_000 });
       const fields: Record<string, string> =
         name === "resetDashboardLayout"
           ? {}
-          : {
-              [name]:
-                name === "dashboardSectionOrder"
-                  ? "default"
-                  : name === "dashboardLaterMode"
-                    ? "all"
-                    : name === "dashboardDoneTime"
-                      ? "both"
-                      : "on",
-            };
+          : name === "applyPreset"
+            ? { preset: "focused" }
+            : {
+                [name]:
+                  name === "dashboardSectionOrder"
+                    ? "default"
+                    : name === "dashboardLaterMode"
+                      ? "all"
+                      : name === "dashboardDoneTime"
+                        ? "both"
+                        : "on",
+              };
 
       const result = await call(actions[name], fields);
 

@@ -53,6 +53,7 @@ vi.mock("$app/forms", () => ({
 
 import Security from "../../src/routes/(app)/settings/security/+page.svelte";
 import Notifications from "../../src/routes/(app)/settings/notifications/+page.svelte";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 const user = {
   id: "u1",
@@ -65,20 +66,11 @@ const user = {
 };
 
 const preferences = {
-  userId: "u1",
+  ...preferencesFixture,
   accentColor: "#6366f1",
   theme: "system",
-  dateFormat: "DD/MM/YYYY",
   timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
   lowInventoryPushAlerts: true,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 };
 

@@ -14,6 +14,7 @@ import type { Component } from "svelte";
 import { render } from "svelte/server";
 import { ssrDocument, runAxe, evaluatedRules } from "./helpers/axe-ssr";
 import { STATUS_TOKEN } from "./helpers/status-token";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 const { default: PrivacyPage } =
   await import("../../src/routes/(app)/settings/privacy/+page.svelte");
@@ -31,22 +32,7 @@ const user = {
   emailVerified: true,
 };
 
-const preferences = {
-  userId: "u1",
-  accentColor: "#4f46e5",
-  theme: "system",
-  dateFormat: "DD/MM/YYYY",
-  timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
-};
+const preferences = { ...preferencesFixture, theme: "system", timeFormat: "24h" };
 
 const PRIVACY = {
   user,

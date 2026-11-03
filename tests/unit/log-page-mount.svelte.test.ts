@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { flushSync, mount, tick, unmount } from "svelte";
 import type { ActionResult, SubmitFunction } from "@sveltejs/kit";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 // Mocked ONCE, with reactive objects the tests repoint, for the same reason as
 // the SSR suite: re-mocking per case reloads svelte's internals.
@@ -94,20 +95,8 @@ const { currentUndo, resetUndoRegistry } =
 const { doseWriteContext } = await import("./helpers/dashboard-context");
 
 const preferences = {
-  userId: "u1",
-  accentColor: "#4f46e5",
-  theme: "dark",
-  dateFormat: "DD/MM/YYYY",
+  ...preferencesFixture,
   timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 };
 

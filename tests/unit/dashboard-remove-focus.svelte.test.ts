@@ -57,26 +57,11 @@ import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
 import { doseWriteContext } from "./helpers/dashboard-context";
 import { finishSubmit, startSubmit } from "./helpers/dose-action-form-harness";
 import { buttonNamed } from "./helpers/dom-names";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 // The (app) layout adds `user` and `preferences` to the merged PageData, and
 // svelte-check types this fixture against it.
-const preferences = {
-  userId: "u1",
-  accentColor: "#4f46e5",
-  theme: "dark",
-  dateFormat: "DD/MM/YYYY",
-  timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
-  updatedAt: new Date("2026-04-01T00:00:00Z"),
-};
+const preferences = { ...preferencesFixture, timeFormat: "24h" };
 
 const user = {
   id: "u1",

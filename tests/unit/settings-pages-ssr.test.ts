@@ -17,6 +17,7 @@ import { toneClass } from "../../src/lib/utils/status-tone";
 import { alertTitled, expectClasses } from "./helpers/alert-dom";
 import { expectAxeClean, ssrDocument } from "./helpers/axe-ssr";
 import { accessibleName, textOf } from "./helpers/dom-names";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 const { default: Profile } = await import("../../src/routes/(app)/settings/+page.svelte");
 const { default: Security } = await import("../../src/routes/(app)/settings/security/+page.svelte");
@@ -37,20 +38,11 @@ const user = {
 };
 
 const preferences = {
-  userId: "u1",
+  ...preferencesFixture,
   accentColor: "#6366f1",
   theme: "system",
-  dateFormat: "DD/MM/YYYY",
   timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
   lowInventoryPushAlerts: true,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 };
 

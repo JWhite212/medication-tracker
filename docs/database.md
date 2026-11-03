@@ -155,10 +155,21 @@ One row per user (`user_id` PK). Settings such as accent colour,
 theme (`"dark" | "light" | "system"`, default `"dark"`),
 date/time format, UI density, reduced motion, per-channel reminder
 toggles (overdue and low-inventory, each split email/push), dose log
-page size, heatmap period, and export format. All have non-null
+page size, heatmap period, and export format. All but one have non-null
 defaults so a new user works without a settings touch. These are the
 account-wide reminder defaults; `medications` carries the
 per-medication overrides described above.
+
+Dashboard layout and the time-since threshold (migration 0023, five
+`ADD COLUMN`s, no backfill):
+
+| Column                       | Type      | Default | Meaning                                                                                                                           |
+| ---------------------------- | --------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `dashboard_section_order`    | `jsonb`   | NULL    | Subset array of `done \| later \| quickLog \| refills`. NULL is the product default for the account's variant; Reset writes NULL. |
+| `dashboard_show_later`       | `boolean` | `true`  | Whether the Later section is shown.                                                                                               |
+| `dashboard_show_quick_log`   | `boolean` | `true`  | Whether the Quick log section is shown.                                                                                           |
+| `dashboard_show_refills`     | `boolean` | `true`  | Whether the Refills section is shown (urgent refills still surface).                                                              |
+| `time_since_days_from_hours` | `integer` | `48`    | Hours before "time since" switches from hours to days. Domain 24 to 168.                                                          |
 
 Writes go through `updatePreferences`, which reads its audit
 before-image inside the write (`WITH previous AS (SELECT … FOR

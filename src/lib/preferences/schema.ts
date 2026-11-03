@@ -6,7 +6,7 @@
  * Why this exists, and why it is not just a second copy of
  * `$lib/appearance/schema.ts`:
  *
- * These seven keys were hand-restated at both API doors in `validation.ts`.
+ * These twelve keys were hand-restated at both API doors in `validation.ts`.
  * `heatmapPeriod` proved what that costs — it was `z.number().int()` at the
  * `/api/v1` door and `z.number().int().min(1).max(3650)` on import, and the
  * unbounded value reached the activity heatmap's per-day render loop. The
@@ -47,10 +47,15 @@
 import { z } from "zod";
 import type { AppearanceKey, PreferenceKey } from "$lib/appearance/registry";
 import type { UserPreferences } from "$lib/types";
-import type { NumericBound } from "./domains";
+import { DASHBOARD_SECTIONS } from "$lib/dashboard/layout";
+import {
+  TIME_SINCE_DAYS_FROM_HOURS_BOUNDS,
+  TIME_SINCE_PRESETS,
+  type NumericBound,
+} from "./domains";
 
 /**
- * The seven mutable `user_preferences` columns the appearance registry does
+ * The twelve mutable `user_preferences` columns the appearance registry does
  * not own, derived by subtraction rather than listed. A column added to the
  * table is therefore a compile error in `preferenceFieldTypes` below unless
  * it is also added to the appearance registry — neither door can be left
@@ -60,6 +65,13 @@ export type NonAppearancePreferenceKey = Exclude<PreferenceKey, AppearanceKey>;
 
 /** An inclusive integer range. Defined in `domains.ts` so client code can use it without zod. */
 export type { NumericBound };
+
+/**
+ * The time-since threshold's domain is stated once, in `domains.ts`, so client
+ * code can read it without zod; re-exported here so the doors and their tests
+ * have one place to import every domain from.
+ */
+export { TIME_SINCE_DAYS_FROM_HOURS_BOUNDS, TIME_SINCE_PRESETS };
 
 /**
  * The numeric domains, as data rather than as method calls, so the doors and
@@ -98,6 +110,17 @@ export const preferenceFieldTypes = {
   doseLogPageSize: boundedInt(DOSE_LOG_PAGE_SIZE_BOUNDS),
   heatmapPeriod: boundedInt(HEATMAP_PERIOD_BOUNDS),
   exportFormat: z.enum(EXPORT_FORMATS),
+  // null is a value: "use the product default for this account". A subset is
+  // valid, unknown ids and duplicates are not; tolerance applies only on read.
+  dashboardSectionOrder: z
+    .array(z.enum(DASHBOARD_SECTIONS))
+    .max(DASHBOARD_SECTIONS.length)
+    .refine((ids) => new Set(ids).size === ids.length, "Duplicate section")
+    .nullable(),
+  dashboardShowLater: z.boolean(),
+  dashboardShowQuickLog: z.boolean(),
+  dashboardShowRefills: z.boolean(),
+  timeSinceDaysFromHours: boundedInt(TIME_SINCE_DAYS_FROM_HOURS_BOUNDS),
 } satisfies { [K in NonAppearancePreferenceKey]: z.ZodType<UserPreferences[K]> };
 
 export const NON_APPEARANCE_PREFERENCE_KEYS = Object.keys(
@@ -131,7 +154,7 @@ function optionalise<T extends PreferenceShape>(shape: T): Optionalised<T> {
 export const preferencePayloadShape = optionalise(preferenceFieldTypes);
 
 /**
- * ARITY 3 — backup import: all optional. Identical to arity 2 for all seven
+ * ARITY 3 — backup import: all optional. Identical to arity 2 for all twelve
  * today. It stays its own `optionalise()` call rather than an alias of arity
  * 2 so that a deliberate divergence has somewhere to be written, in the same
  * shape as `appearanceImportShape`.

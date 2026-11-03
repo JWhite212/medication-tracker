@@ -17,6 +17,7 @@ import { formatUserTime } from "../../src/lib/utils/time";
 import { parseBackup } from "../../src/lib/server/import/backup";
 import { parseDoseCsv } from "../../src/lib/server/import/csv";
 import { DOSE_CSV_HEADER } from "../../src/lib/server/import/detect";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 const { escapeCsvCell } = await import("../../src/lib/server/export-csv");
 
@@ -132,17 +133,12 @@ function buildExportJson(): string {
       emailVerified: true,
     }),
     preferences: s.serializePreferences({
+      ...preferencesFixture,
       userId: USER_ID,
-      accentColor: "#4f46e5",
-      theme: "dark",
-      dateFormat: "DD/MM/YYYY",
       timeFormat: "24h",
       uiDensity: "compact",
       reducedMotion: true,
       overdueEmailReminders: false,
-      overduePushReminders: true,
-      lowInventoryEmailAlerts: true,
-      lowInventoryPushAlerts: false,
       doseLogPageSize: 50,
       heatmapPeriod: 180,
       exportFormat: "csv",
@@ -290,12 +286,10 @@ describe("JSON backup round trip", () => {
     const envelope = JSON.stringify({
       version: 1,
       preferences: s.serializePreferences({
+        ...preferencesFixture,
         userId: USER_ID,
         ...appearance,
         overdueEmailReminders: false,
-        overduePushReminders: true,
-        lowInventoryEmailAlerts: true,
-        lowInventoryPushAlerts: false,
         doseLogPageSize: 50,
         heatmapPeriod: 180,
         exportFormat: "csv",

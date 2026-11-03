@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, getTableColumns } from "drizzle-orm";
 import { auditLogs, userPreferences } from "../../../src/lib/server/db/schema";
 
 // Real Postgres, not the fake: the assertion below is about WHICH row
@@ -11,7 +11,9 @@ vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock)
 
 import { pgDb } from "../helpers/pg-db";
 
-const { updatePreferences } = await import("../../../src/lib/server/preferences");
+const { updatePreferences, getOrCreatePreferences } =
+  await import("../../../src/lib/server/preferences");
+const { TIME_SINCE_DAYS_FROM_HOURS } = await import("../../../src/lib/utils/time");
 
 const A = "#4f46e5";
 const B = "#ff0000";
@@ -90,5 +92,71 @@ describe("updatePreferences — the before-image under a double-click", () => {
     const rows = await pgDb.db.select().from(auditLogs);
     expect(rows).toHaveLength(1);
     expect(rows[0].changes).toEqual({ accentColor: { from: C, to: B } });
+  });
+});
+
+describe("updatePreferences — the dashboard layout columns", () => {
+  it("a freshly seeded user reads the Phase 1 defaults", async () => {
+    // Through the real migrations, so this proves 0023 and not just schema.ts.
+    await pgDb.reset();
+    await pgDb.seedUser();
+    const prefs = await getOrCreatePreferences("u1");
+    expect(prefs.dashboardSectionOrder).toBeNull();
+    expect(prefs.dashboardShowLater).toBe(true);
+    expect(prefs.dashboardShowQuickLog).toBe(true);
+    expect(prefs.dashboardShowRefills).toBe(true);
+    expect(prefs.timeSinceDaysFromHours).toBe(48);
+  });
+
+  it("pins the column default to the named constant", () => {
+    expect(getTableColumns(userPreferences).timeSinceDaysFromHours.default).toBe(
+      TIME_SINCE_DAYS_FROM_HOURS,
+    );
+  });
+
+  it("saving an order audits once and an identical re-save audits nothing", async () => {
+    const order = ["refills", "done", "later", "quickLog"] as const;
+    await updatePreferences("u1", { dashboardSectionOrder: [...order] });
+    let rows = await pgDb.db.select().from(auditLogs);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].changes).toEqual({ dashboardSectionOrder: { from: null, to: [...order] } });
+
+    await updatePreferences("u1", { dashboardSectionOrder: [...order] });
+    rows = await pgDb.db.select().from(auditLogs);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("the threshold audits only its own key", async () => {
+    await updatePreferences("u1", { timeSinceDaysFromHours: 72 });
+    const rows = await pgDb.db.select().from(auditLogs);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].changes).toEqual({ timeSinceDaysFromHours: { from: 48, to: 72 } });
+  });
+
+  it("reset audits the order back to null and the flags back to true in one row", async () => {
+    await pgDb.db
+      .update(userPreferences)
+      .set({
+        dashboardSectionOrder: ["refills", "done"],
+        dashboardShowLater: false,
+        dashboardShowRefills: false,
+      })
+      .where(eq(userPreferences.userId, "u1"));
+
+    await updatePreferences("u1", {
+      dashboardSectionOrder: null,
+      dashboardShowLater: true,
+      dashboardShowQuickLog: true,
+      dashboardShowRefills: true,
+    });
+
+    const rows = await pgDb.db.select().from(auditLogs);
+    expect(rows).toHaveLength(1);
+    // dashboardShowQuickLog did not change, so it is absent.
+    expect(rows[0].changes).toEqual({
+      dashboardSectionOrder: { from: ["refills", "done"], to: null },
+      dashboardShowLater: { from: false, to: true },
+      dashboardShowRefills: { from: false, to: true },
+    });
   });
 });

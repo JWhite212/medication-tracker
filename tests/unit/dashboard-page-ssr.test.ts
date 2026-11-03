@@ -34,6 +34,7 @@ import type {
   Medication,
   RefillForecastEntry,
 } from "$lib/types";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 // 09:30 BST on Thursday 16 April 2026. Local midnight was 23:00Z the day before.
 const NOW = "2026-04-16T08:30:00.000Z";
@@ -41,23 +42,7 @@ const TODAY_START = "2026-04-15T23:00:00.000Z";
 
 // The (app) layout adds `user` and `preferences` to the merged PageData, and
 // svelte-check types this fixture against it.
-const preferences = {
-  userId: "u1",
-  accentColor: "#4f46e5",
-  theme: "dark",
-  dateFormat: "DD/MM/YYYY",
-  timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
-  updatedAt: new Date("2026-04-01T00:00:00Z"),
-};
+const preferences = { ...preferencesFixture, timeFormat: "24h" };
 
 const user = {
   id: "u1",

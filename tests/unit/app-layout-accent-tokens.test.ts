@@ -9,6 +9,7 @@ import { createRawSnippet, flushSync, mount, unmount } from "svelte";
 import { readable } from "svelte/store";
 import { entryFor } from "$lib/appearance/registry";
 import { readableForeground, readableHover } from "$lib/utils/contrast";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 // The same seams app-shell-scroll.test.ts mounts the layout through.
 vi.mock("$app/navigation", () => ({ afterNavigate: () => {} }));
@@ -39,20 +40,10 @@ const user = {
 
 function preferences(accentColor: string) {
   return {
-    userId: "u1",
+    ...preferencesFixture,
     accentColor,
     theme: "system",
-    dateFormat: "DD/MM/YYYY",
     timeFormat: "24h",
-    uiDensity: "comfortable",
-    reducedMotion: false,
-    overdueEmailReminders: true,
-    overduePushReminders: true,
-    lowInventoryEmailAlerts: true,
-    lowInventoryPushAlerts: false,
-    doseLogPageSize: 20,
-    heatmapPeriod: 90,
-    exportFormat: "pdf",
     updatedAt: new Date("2026-08-01T00:00:00Z"),
   } as const;
 }

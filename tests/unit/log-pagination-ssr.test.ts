@@ -7,6 +7,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "svelte/server";
 import { expectAxeClean, ssrDocument, withoutComments } from "./helpers/axe-ssr";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 // Mocked ONCE, with an object the tests repoint between renders. Re-mocking
 // per case reloads svelte's server internals, whose SSR context is
@@ -35,20 +36,8 @@ const { doseWriteContext } = await import("./helpers/dashboard-context");
  */
 
 const preferences = {
-  userId: "u1",
-  accentColor: "#4f46e5",
-  theme: "dark",
-  dateFormat: "DD/MM/YYYY",
+  ...preferencesFixture,
   timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 };
 

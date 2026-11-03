@@ -31,6 +31,7 @@ import {
   users,
   syncTombstones,
 } from "$lib/server/db/schema";
+import { preferencesFixture } from "../helpers/preferences-fixture";
 
 // Schedules are synced as children of medications — getSchedulesForUser
 // returns a Map<medicationId, schedule[]> that sync.ts merges in.
@@ -125,19 +126,8 @@ const auditLogRow = {
 };
 
 const preferencesRow = {
-  userId: "u1",
+  ...preferencesFixture,
   accentColor: "#6366f1",
-  dateFormat: "DD/MM/YYYY",
-  timeFormat: "12h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-01-02T00:00:00Z"),
 };
 

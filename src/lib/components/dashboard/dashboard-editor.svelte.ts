@@ -43,6 +43,7 @@ import {
   type HIDEABLE_SECTIONS,
 } from "$lib/dashboard/layout";
 import {
+  activePreset,
   PREFERENCE_KEY_OF,
   PRESETS,
   type PresetId,
@@ -127,6 +128,22 @@ function fromPatch(patch: PresetPatch): LayoutValues {
     showRefills: patch[PREFERENCE_KEY_OF.showRefills],
     laterMode: patch[PREFERENCE_KEY_OF.laterMode],
     doneTime: patch[PREFERENCE_KEY_OF.doneTime],
+  });
+}
+
+/**
+ * The preset the draft matches, else null ("Custom"), by `activePreset`'s
+ * rule. Keyed through `PREFERENCE_KEY_OF`, so the dashboard page asks this
+ * rather than naming the preference keys a second time.
+ */
+export function draftPreset(values: LayoutValues): PresetId | null {
+  return activePreset({
+    [PREFERENCE_KEY_OF.order]: values.order,
+    [PREFERENCE_KEY_OF.showLater]: values.showLater,
+    [PREFERENCE_KEY_OF.showQuickLog]: values.showQuickLog,
+    [PREFERENCE_KEY_OF.showRefills]: values.showRefills,
+    [PREFERENCE_KEY_OF.laterMode]: values.laterMode,
+    [PREFERENCE_KEY_OF.doneTime]: values.doneTime,
   });
 }
 

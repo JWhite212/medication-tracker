@@ -232,7 +232,7 @@ describe("KeyboardShortcuts with Quick log hidden", () => {
     vi.restoreAllMocks();
   });
 
-  function mountWith(quickLog: boolean) {
+  function mountWith(quickLog: boolean, editing = false) {
     // A chip form on the page regardless, so the only thing that can stop a
     // digit is the prop.
     document.body.innerHTML = logForm('data-quick-log data-testid="chip-m1"', "m1");
@@ -243,7 +243,7 @@ describe("KeyboardShortcuts with Quick log hidden", () => {
     document.body.append(target);
     const component = mount(KeyboardShortcuts, {
       target,
-      props: { medications: [{ id: "m1", name: "A" }], quickLog },
+      props: { medications: [{ id: "m1", name: "A" }], quickLog, editing },
     });
     flushSync();
     destroy = () => unmount(component);
@@ -288,5 +288,19 @@ describe("KeyboardShortcuts with Quick log hidden", () => {
     press("?");
     press("1");
     expect(requestSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("(d) ignores 1 while the dashboard is being customised, even with Quick log shown", () => {
+    const { requestSubmit } = mountWith(true, true);
+    press("1");
+    expect(requestSubmit).not.toHaveBeenCalled();
+  });
+
+  it("(e) says the shortcuts are paused while customising", () => {
+    mountWith(true, true);
+    press("?");
+    const help = overlay();
+    expect(help!.textContent).toContain("Shortcuts are paused while you customise");
+    expect(help!.textContent).not.toContain("Log a medication now");
   });
 });

@@ -171,6 +171,14 @@ describe("the client bundle boundary", () => {
     expect(reachablePackages(serverDoor).packages.has("zod")).toBe(true);
   });
 
+  it("keeps the dashboard layout and preference domains zod-free", () => {
+    for (const rel of ["src/lib/dashboard/layout.ts", "src/lib/preferences/domains.ts"]) {
+      const r = reachablePackages(path.join(ROOT, rel));
+      expect(r.unresolved).toEqual([]);
+      expect([...r.packages]).toEqual([]);
+    }
+  });
+
   it("reaches the appearance registry from the appearance page, and zod from the schema module", () => {
     const page = path.join(ROOT, "src/routes/(app)/settings/appearance/+page.svelte");
     expect(reachablePackages(page).packages.has("zod")).toBe(false);

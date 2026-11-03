@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  groupLaterRows,
+  laterToggleLabel,
   dashboardHeaderCopy,
   doneCoversLine,
   doneDoseText,
@@ -400,6 +402,56 @@ describe("headerEyebrow", () => {
     const late = at("2026-09-24T23:30:00.000Z");
     expect(headerEyebrow(late, "UTC", "YYYY-MM-DD")).toBe("Thu, 2026-09-24");
     expect(headerEyebrow(late, "Pacific/Auckland", "YYYY-MM-DD")).toBe("Fri, 2026-09-25");
+  });
+});
+
+describe("groupLaterRows", () => {
+  const at = (hhmm: string, key = hhmm) => ({ key, expectedTime: `2026-05-01T${hhmm}:00.000Z` });
+  const keys = (rows: { key: string }[]) => rows.map((r) => r.key);
+
+  it("groups slots within ten minutes of a group's first slot", () => {
+    // The screenshot's supplements: three slots a minute apart are one moment.
+    const groups = groupLaterRows([
+      at("08:55"),
+      at("09:00"),
+      at("11:00"),
+      at("13:05"),
+      at("13:06"),
+      at("13:07"),
+      at("22:37"),
+    ]);
+    expect(groups.map((g) => keys(g.rows))).toEqual([
+      ["08:55", "09:00"],
+      ["11:00"],
+      ["13:05", "13:06", "13:07"],
+      ["22:37"],
+    ]);
+    expect(groups.map((g) => g.key)).toEqual(["08:55", "11:00", "13:05", "22:37"]);
+  });
+
+  it("includes a slot exactly ten minutes after the head and starts a new group one minute later", () => {
+    expect(groupLaterRows([at("10:00"), at("10:10")])).toHaveLength(1);
+    expect(groupLaterRows([at("10:00"), at("10:11")])).toHaveLength(2);
+  });
+
+  it("measures from the group's first slot, never chaining neighbour to neighbour", () => {
+    // Five minutes apart each, but 10:15 is fifteen from the head.
+    const groups = groupLaterRows([at("10:00"), at("10:05"), at("10:10"), at("10:15")]);
+    expect(groups.map((g) => keys(g.rows))).toEqual([["10:00", "10:05", "10:10"], ["10:15"]]);
+  });
+
+  it("keeps two doses at the same instant together, and returns nothing for nothing", () => {
+    expect(groupLaterRows([at("09:00", "a"), at("09:00", "b")]).map((g) => keys(g.rows))).toEqual([
+      ["a", "b"],
+    ]);
+    expect(groupLaterRows([])).toEqual([]);
+  });
+});
+
+describe("laterToggleLabel", () => {
+  it("names how many more slots are hidden, or offers to hide them again", () => {
+    expect(laterToggleLabel(false, 8)).toBe("Show 8 more");
+    expect(laterToggleLabel(true, 8)).toBe("Show fewer");
   });
 });
 

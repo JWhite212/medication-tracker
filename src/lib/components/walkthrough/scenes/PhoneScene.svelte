@@ -13,13 +13,14 @@
   // every T; the card collapses and the new Done row grows through
   // StageCollapse, never through {#if}.
   //
-  // Later shows a chosen prefix of whole rows (PHONE_LATER_ROWS); the content
-  // box (732px, 820 − 72 − 16) has room below it. The phone draws no chips or
-  // Refills: on a real phone they would be below the fold.
+  // Later is drawn as LaterList first renders it, collapsed to the next group
+  // of slots; the content box (732px, 820 − 72 − 16) has room below it. The
+  // phone draws no chips or Refills: on a real phone they would be below the
+  // fold.
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
   import { formatUserTime, lastLoggedPhrase, type TimeFormat } from "$lib/utils/time";
   import { LOGGED_DOSE, PHONE_NOW, WALKTHROUGH_TZ } from "../demo-data";
-  import { PHONE_AFTER, PHONE_BEFORE, PHONE_LATER_ROWS } from "../demo-dashboard";
+  import { PHONE_AFTER, PHONE_BEFORE } from "../demo-dashboard";
   import { PHONE_ROOT, useMark } from "../marks";
   import { beatRow, lastEventBefore, stageLogToast } from "../stage-dashboard";
   import type { Frame } from "../timeline";
@@ -47,8 +48,6 @@
    */
   const dueCards = [...before.earlier, ...before.today];
   const dueStays = after.earlier.length + after.today.length > 0;
-  /** A prefix of the composer's Later list, cut at a whole row. */
-  const laterRows = before.later.slice(0, PHONE_LATER_ROWS);
   // The status bar shows the device clock, which is independent of the app's
   // time-format preference; we draw it in 24h. At the story's 10:12 the 24h
   // and 12h forms (less am/pm) agree.
@@ -197,7 +196,7 @@
 
         <div class="mt-6">
           <StageLaterList
-            rows={laterRows}
+            rows={before.later}
             now={before.now}
             todayStart={before.todayStart}
             tz={WALKTHROUGH_TZ}

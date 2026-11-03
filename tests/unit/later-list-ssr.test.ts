@@ -65,3 +65,52 @@ describe("LaterList", () => {
     expect(html).not.toContain("tabindex");
   });
 });
+
+// The screenshot this was built from: nine rows, three of them a minute
+// apart, every one carrying its own "in N hours".
+describe("LaterList, collapsed to the next group", () => {
+  const slot = (key: string, hhmm: string, name = "Zinc"): LaterRow => ({
+    ...ROW,
+    key,
+    name,
+    expectedTime: `2026-05-01T${hhmm}:00.000Z`,
+  });
+  const DAY = [
+    slot("a", "13:05", "Vitamin D3/K2"),
+    slot("b", "13:06", "Fish Oil"),
+    slot("c", "13:07", "Zinc"),
+    slot("d", "22:37", "Multivitamin"),
+    slot("e", "23:05", "Magnesium"),
+  ];
+
+  it("shows only the first group, with one 'in …' for the whole group", () => {
+    const doc = ssrDocument(renderList(DAY));
+    const lis = [...doc.querySelectorAll("li")];
+    expect(lis.map((li) => textOf(li).split(" ")[0])).toEqual(["13:05", "13:06", "13:07"]);
+    expect(lis.filter((li) => /\bin \d/.test(textOf(li)))).toHaveLength(1);
+    expect(lis[0].hasAttribute("data-later-group-start")).toBe(true);
+    expect(lis[1].hasAttribute("data-later-group-start")).toBe(false);
+  });
+
+  it("offers one ghost button naming the hidden count, collapsed, controlling the list", () => {
+    const doc = ssrDocument(renderList(DAY));
+    const buttons = [...doc.querySelectorAll("button")];
+    expect(buttons).toHaveLength(1);
+    expect(textOf(buttons[0])).toBe("Show 2 more");
+    expect(buttons[0].getAttribute("aria-expanded")).toBe("false");
+    expect(buttons[0].getAttribute("aria-controls")).toBe("later-list");
+    expect(doc.getElementById("later-list")?.tagName).toBe("UL");
+    expect(buttons[0].getAttribute("type")).toBe("button");
+  });
+
+  it("has no button when every slot is in one group", () => {
+    const html = renderList([slot("a", "13:05"), slot("b", "13:07")]);
+    expect(html).not.toMatch(/<button\b/);
+    expect(ssrDocument(html).querySelectorAll("li")).toHaveLength(2);
+  });
+
+  it("spaces a word unit from its amount", () => {
+    const doc = ssrDocument(renderList([{ ...ROW, dosageAmount: "1", dosageUnit: "Serving" }]));
+    expect(textOf(doc.querySelector("li")!)).toContain("1 Serving");
+  });
+});

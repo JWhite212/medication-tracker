@@ -128,6 +128,7 @@ function mountList(rows: DoneRow[] = [TAKEN, SKIPPED, MISSED]) {
     props: {
       rows,
       title: "Done today",
+      serverNow: new Date(TODAY_START.getTime() + 14 * 3_600_000),
       todayStart: TODAY_START,
       timezone: "UTC",
       timeFormat: "24h",

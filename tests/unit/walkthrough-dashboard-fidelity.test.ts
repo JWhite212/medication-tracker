@@ -52,6 +52,7 @@ import DashboardScene from "$lib/components/walkthrough/scenes/DashboardScene.sv
 import PhoneScene from "$lib/components/walkthrough/scenes/PhoneScene.svelte";
 import WalkthroughStage from "$lib/components/walkthrough/WalkthroughStage.svelte";
 import { ssrDocument } from "./helpers/axe-ssr";
+import { resolveDashboardLayout, type DashboardSectionId } from "$lib/dashboard/layout";
 
 /*
  * The walkthrough's dashboard, checked against the app (spec D7).
@@ -940,6 +941,59 @@ describe("the phone stage for a visitor far from the story", () => {
       vi.useRealTimers();
       if (zone === undefined) delete process.env.TZ;
       else process.env.TZ = zone;
+    }
+  });
+});
+
+// ── The stage's section order against the resolver ─────────────────────────
+//
+// The app renders the header, then the pinned block, then
+// `resolveDashboardLayout`'s sections. The stage draws one layout by hand:
+// the default for a scheduled account (every demo medication has a schedule)
+// with nothing hidden. So the order it draws must equal the resolver's
+// default, or a change to DEFAULT_ORDER leaves the landing page advertising
+// the old one. The phone draws the same page cut off below the fold, so its
+// sequence is a prefix of the desktop's.
+
+/** The stage's name for each resolver section. */
+const STAGE_SECTION: Record<DashboardSectionId, string> = {
+  done: "done",
+  later: "later",
+  quickLog: "chips",
+  refills: "refills",
+};
+
+function stageSequence(root: Element): string[] {
+  return [...root.querySelectorAll("[data-stage-section]")]
+    .map((el) => el.getAttribute("data-stage-section")!)
+    .filter((name) => name !== "offer");
+}
+
+describe("the stage's section order", () => {
+  const layout = resolveDashboardLayout({
+    order: null,
+    showLater: true,
+    showQuickLog: true,
+    showRefills: true,
+    variant: "scheduled",
+    hasUrgentRefill: false,
+  });
+  const expected = ["header", layout.pinned, ...layout.sections.map((id) => STAGE_SECTION[id])];
+
+  it("is the resolver's default for a scheduled account, pinned Due first", () => {
+    expect(layout.pinned).toBe("due");
+    expect(expected).toEqual(["header", "due", "done", "later", "chips", "refills"]);
+    for (const T of [T_LOG - 0.1, T_LOG + 1.0]) {
+      const doc = ssrDocument(renderDashboardScene(computeFrame(T, {}).dashboard, "24h"));
+      expect(stageSequence(doc.body), `at ${T}`).toEqual(expected);
+    }
+  });
+
+  it("on the phone, is that same order cut off below the fold", () => {
+    for (const T of [T_TAP - 0.1, T_TAP + 1.0]) {
+      const drawnOrder = stageSequence(phoneSurface(T, "24h"));
+      expect(drawnOrder.length, `at ${T}`).toBeGreaterThan(1);
+      expect(drawnOrder, `at ${T}`).toEqual(expected.slice(0, drawnOrder.length));
     }
   });
 });

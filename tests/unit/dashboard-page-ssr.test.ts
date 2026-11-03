@@ -33,7 +33,9 @@ import type {
   LaterRow,
   Medication,
   RefillForecastEntry,
+  UserPreferences,
 } from "$lib/types";
+import { SECTION_LABELS, type DashboardSectionId } from "$lib/dashboard/layout";
 import { preferencesFixture } from "./helpers/preferences-fixture";
 
 // 09:30 BST on Thursday 16 April 2026. Local midnight was 23:00Z the day before.
@@ -163,6 +165,7 @@ function laterRow(med: Medication, expectedTime: string): LaterRow {
 function renderPage(
   overrides: Partial<DashboardPageData> = {},
   context: Map<symbol, unknown> = doseWriteContext(),
+  prefs: Partial<UserPreferences> = {},
 ) {
   const dash: DashboardPageData = {
     now: NOW,
@@ -179,7 +182,10 @@ function renderPage(
     ...overrides,
   };
   // No `form`: the page destructures only `data`, and svelte-check rejects an unknown prop.
-  return render(Page, { props: { data: { ...dash, user, preferences } }, context });
+  return render(Page, {
+    props: { data: { ...dash, user, preferences: { ...preferences, ...prefs } } },
+    context,
+  });
 }
 
 /** Whitespace or Svelte hydration comments (`<!--[-->`, `<!---->`). */
@@ -358,5 +364,228 @@ describe("dashboard page wiring (SSR)", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     void renderPage(SCHEDULED).body;
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+// ── Layout preferences ──────────────────────────────────────────────────────
+//
+// The page renders Header, then the pinned block (Due on a scheduled account,
+// "Log a dose" on an as-needed-only one), then `resolveDashboardLayout`'s
+// sections in the account's order, then one footer line. These cases hold
+// the pinned block outside the order, the urgent-refill floor, and the
+// footer's wording.
+
+const URGENT_NOTE = "Showing urgent refills only. Refills is hidden on your dashboard.";
+
+function refill(
+  id: string,
+  over: Partial<RefillForecastEntry> & Pick<RefillForecastEntry, "severity">,
+): RefillForecastEntry {
+  return {
+    medicationId: id,
+    medicationName: `Refill ${id}`,
+    colour: "#3b82f6",
+    inventoryCount: 20,
+    inventoryAlertThreshold: null,
+    dailyRate: 1,
+    daysUntilRefill: 20,
+    ...over,
+  };
+}
+
+/** A watch-tier row: drawn neutral, never urgent. */
+const watchRow = refill("watch", { severity: "watch", daysUntilRefill: 10, inventoryCount: 10 });
+
+/** The three ways a row needs you, plus one that does not. */
+const URGENT_MIX: RefillForecastEntry[] = [
+  // A forecast of 7 days: the warning tier.
+  refill("week", { severity: "warning", daysUntilRefill: 7, inventoryCount: 7 }),
+  // Weeks of forecast, but stock at the user's own alert level.
+  refill("threshold", {
+    severity: "ok",
+    daysUntilRefill: 40,
+    inventoryCount: 5,
+    inventoryAlertThreshold: 5,
+  }),
+  // No rate, so no forecast at all ("Refill needed"), at the alert level.
+  refill("norate", {
+    severity: "ok",
+    daysUntilRefill: null,
+    dailyRate: 0,
+    inventoryCount: 3,
+    inventoryAlertThreshold: 5,
+  }),
+  watchRow,
+];
+
+/** Every h2's text, in document order. */
+function h2s(html: string): string[] {
+  return [...html.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/g)].map((m) =>
+    m[1].replace(/<!--[^>]*-->/g, "").trim(),
+  );
+}
+
+/** The footer line's link: its href and its visible text. */
+function footer(html: string): { href: string; text: string } | null {
+  const tag = html.match(/<a\b[^>]*href="(\/settings\/dashboard[^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+  if (!tag) return null;
+  const text = tag[2]
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { href: tag[1].replace(/&amp;/g, "&"), text };
+}
+
+describe("dashboard layout preferences (SSR)", () => {
+  it("default order: h1, due, done, later, quick log, refills", () => {
+    const html = renderPage(SCHEDULED).body;
+    expect(headingAt(html, 1, "Today")).toBeGreaterThan(-1);
+    expect(headingAt(html, 1, "Today")).toBeLessThan(headingAt(html, 2, "Due"));
+    expect(h2s(html)).toEqual([
+      "Due",
+      "Done today",
+      "Later today",
+      "Log something else",
+      "Refills",
+    ]);
+    expect(footer(html)).toEqual({
+      href: "/settings/dashboard?from=dashboard",
+      text: "Customise this page",
+    });
+  });
+
+  it("Done first with something due still renders Due right after the header", () => {
+    const orders: DashboardSectionId[][] = [
+      ["done", "refills", "quickLog", "later"],
+      ["refills", "quickLog", "later", "done"],
+    ];
+    for (const order of orders) {
+      const html = renderPage(SCHEDULED, undefined, {
+        dashboardSectionOrder: order,
+      }).body;
+      const h1 = headingAt(html, 1, "Today");
+      const due = headingAt(html, 2, "Due");
+      expect(h1, order.join()).toBeGreaterThan(-1);
+      expect(due, order.join()).toBeGreaterThan(h1);
+      expect(h2s(html), order.join()).toEqual(["Due", ...order.map((id) => SECTION_LABELS[id])]);
+    }
+  });
+
+  it("hidden Later and Refills are absent and the footer names them", () => {
+    const html = renderPage({ ...SCHEDULED, refillForecast: [watchRow] }, undefined, {
+      dashboardShowLater: false,
+      dashboardShowRefills: false,
+    }).body;
+    expect(headingAt(html, 2, "Later today")).toBe(-1);
+    expect(headingAt(html, 2, "Refills")).toBe(-1);
+    expect(html).not.toContain('id="later-heading"');
+    expect(html).not.toContain('id="refills-heading"');
+    expect(footer(html)).toEqual({
+      href: "/settings/dashboard?from=dashboard",
+      text: "Later today and Refills are hidden · Customise",
+    });
+  });
+
+  it("names one hidden section with 'is' and three with commas and 'and'", () => {
+    const one = renderPage(SCHEDULED, undefined, { dashboardShowQuickLog: false }).body;
+    expect(footer(one)?.text).toBe("Log something else is hidden · Customise");
+    const three = renderPage({ ...SCHEDULED, refillForecast: [watchRow] }, undefined, {
+      dashboardShowLater: false,
+      dashboardShowQuickLog: false,
+      dashboardShowRefills: false,
+    }).body;
+    expect(footer(three)?.text).toBe(
+      "Later today, Log something else and Refills are hidden · Customise",
+    );
+  });
+
+  it("hidden Quick log removes form[data-quick-log]", () => {
+    const html = renderPage(SCHEDULED, undefined, { dashboardShowQuickLog: false }).body;
+    expect(chipForms(html)).toEqual([]);
+    expect(html).not.toContain("data-quick-log");
+    expect(headingAt(html, 2, "Log something else")).toBe(-1);
+    expect(html).not.toContain('id="quick-log-heading"');
+  });
+
+  it("urgent floor renders only needs-you rows plus the note", () => {
+    const html = renderPage({ ...SCHEDULED, refillForecast: URGENT_MIX }, undefined, {
+      dashboardShowRefills: false,
+    }).body;
+    // In its stored place: last, by the default order.
+    expect(h2s(html)).toEqual([
+      "Due",
+      "Done today",
+      "Later today",
+      "Log something else",
+      "Refills",
+    ]);
+    const refills = sectionAfter(html, "Refills");
+    expect(refills).toContain(URGENT_NOTE);
+    for (const id of ["week", "threshold", "norate"]) {
+      expect(refills, id).toContain(`href="/medications/${id}"`);
+    }
+    expect(refills).not.toContain('href="/medications/watch"');
+    // Forced in, so the footer does not call it hidden.
+    expect(footer(html)?.text).toBe("Customise this page");
+  });
+
+  it("shows every row and no note while Refills is on", () => {
+    const html = renderPage({ ...SCHEDULED, refillForecast: URGENT_MIX }).body;
+    const refills = sectionAfter(html, "Refills");
+    expect(refills).not.toContain(URGENT_NOTE);
+    for (const id of ["week", "threshold", "norate", "watch"]) {
+      expect(refills, id).toContain(`href="/medications/${id}"`);
+    }
+  });
+
+  it("renders no Refills card at all when Refills is hidden and nothing is urgent", () => {
+    const html = renderPage({ ...SCHEDULED, refillForecast: [watchRow] }, undefined, {
+      dashboardShowRefills: false,
+    }).body;
+    expect(html).not.toContain('id="refills-heading"');
+    expect(html).not.toContain(URGENT_NOTE);
+  });
+
+  it("as-needed-only: Log a dose is first whatever the stored order, and the floor applies there too", () => {
+    const html = renderPage(
+      { status: status("as-needed-only"), refillForecast: URGENT_MIX },
+      undefined,
+      {
+        dashboardSectionOrder: ["refills", "quickLog", "later", "done"],
+        dashboardShowQuickLog: false,
+        dashboardShowLater: false,
+        dashboardShowRefills: false,
+      },
+    ).body;
+    expect(headingAt(html, 1, "Today")).toBeLessThan(headingAt(html, 2, "Log a dose"));
+    expect(h2s(html)).toEqual(["Log a dose", "Refills", "Logged today"]);
+    expect(chipForms(html)).toHaveLength(2);
+    const refills = sectionAfter(html, "Refills");
+    expect(refills).toContain(URGENT_NOTE);
+    expect(refills).not.toContain('href="/medications/watch"');
+    // Later and Quick log are not part of this page, so nothing is "hidden".
+    expect(footer(html)?.text).toBe("Customise this page");
+  });
+
+  it("#done-heading exists in every combination", () => {
+    const flags = [true, false];
+    for (const showLater of flags) {
+      for (const showQuickLog of flags) {
+        for (const showRefills of flags) {
+          for (const overrides of [
+            { ...SCHEDULED, refillForecast: [watchRow] },
+            { status: status("as-needed-only") },
+          ]) {
+            const html = renderPage(overrides, undefined, {
+              dashboardShowLater: showLater,
+              dashboardShowQuickLog: showQuickLog,
+              dashboardShowRefills: showRefills,
+            }).body;
+            const label = `${overrides.status?.kind} later=${showLater} quickLog=${showQuickLog} refills=${showRefills}`;
+            expect(html.match(/id="done-heading"/g), label).toHaveLength(1);
+          }
+        }
+      }
+    }
   });
 });

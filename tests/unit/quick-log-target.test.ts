@@ -222,3 +222,69 @@ describe("KeyboardShortcuts guards", () => {
     expect(overlay()).toBeNull();
   });
 });
+
+describe("KeyboardShortcuts with Quick log hidden", () => {
+  let destroy: (() => void) | null = null;
+
+  afterEach(() => {
+    destroy?.();
+    destroy = null;
+    vi.restoreAllMocks();
+  });
+
+  function mountWith(quickLog: boolean) {
+    // A chip form on the page regardless, so the only thing that can stop a
+    // digit is the prop.
+    document.body.innerHTML = logForm('data-quick-log data-testid="chip-m1"', "m1");
+    const requestSubmit = vi
+      .spyOn(HTMLFormElement.prototype, "requestSubmit")
+      .mockImplementation(() => {});
+    const target = document.createElement("div");
+    document.body.append(target);
+    const component = mount(KeyboardShortcuts, {
+      target,
+      props: { medications: [{ id: "m1", name: "A" }], quickLog },
+    });
+    flushSync();
+    destroy = () => unmount(component);
+    return { requestSubmit };
+  }
+
+  function press(key: string) {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    );
+    flushSync();
+  }
+
+  const overlay = () => document.querySelector('[aria-label="Keyboard shortcuts"]');
+
+  it("(a) ignores 1 when quickLog is false, even with a chip form on the page", () => {
+    const { requestSubmit } = mountWith(false);
+    press("1");
+    expect(requestSubmit).not.toHaveBeenCalled();
+  });
+
+  it("(b) says the number shortcuts need Quick log, linking to its setting", () => {
+    mountWith(false);
+    press("?");
+    const help = overlay();
+    expect(help).not.toBeNull();
+    expect(help!.textContent).toContain("Number shortcuts need Quick log on your dashboard");
+    const link = help!.querySelector<HTMLAnchorElement>('a[href="/settings/dashboard"]');
+    expect(link).not.toBeNull();
+    expect(link!.textContent).toContain("Number shortcuts need Quick log on your dashboard");
+    expect(help!.textContent).not.toContain("Log a medication now");
+  });
+
+  it("(c) keeps the 1–9 row when quickLog is true", () => {
+    const { requestSubmit } = mountWith(true);
+    press("?");
+    const help = overlay();
+    expect(help!.textContent).toContain("Log a medication now, by its position in the chip list");
+    expect(help!.querySelector('a[href="/settings/dashboard"]')).toBeNull();
+    press("?");
+    press("1");
+    expect(requestSubmit).toHaveBeenCalledOnce();
+  });
+});

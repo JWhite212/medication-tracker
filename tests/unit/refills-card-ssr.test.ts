@@ -225,3 +225,42 @@ describe("RefillsCard", () => {
     for (const rule of rules) expect(evaluatedRules(results).has(rule), rule).toBe(true);
   });
 });
+
+describe("RefillsCard's note", () => {
+  const entries: RefillForecastEntry[] = [
+    {
+      medicationId: "m1",
+      medicationName: "Ibuprofen",
+      colour: "#e46b6b",
+      inventoryCount: 2,
+      inventoryAlertThreshold: null,
+      dailyRate: 1,
+      daysUntilRefill: 2,
+      severity: "critical",
+    },
+  ];
+  const NOTE = "Showing urgent refills only. Refills is hidden on your dashboard.";
+
+  it("draws one neutral line straight under the heading", () => {
+    const doc = ssrDocument(render(RefillsCard, { props: { entries, note: NOTE } }).body);
+    const heading = doc.querySelector("#refills-heading")!;
+    const line = heading.nextElementSibling!;
+    expect(line.tagName).toBe("P");
+    expect(textOf(line)).toBe(NOTE);
+    expect([...line.classList]).toEqual(expect.arrayContaining(["text-text-secondary", "text-sm"]));
+    expect(line.className).not.toMatch(STATUS_LITERAL);
+    expect(doc.querySelectorAll("section p")).toHaveLength(1);
+  });
+
+  it("draws no line without a note", () => {
+    const doc = ssrDocument(render(RefillsCard, { props: { entries } }).body);
+    expect(doc.querySelector("section p")).toBeNull();
+  });
+
+  it("still renders nothing for no entries, note or not", () => {
+    expect(render(RefillsCard, { props: { entries: [], note: NOTE } }).body).not.toContain(NOTE);
+    expect(render(RefillsCard, { props: { entries: [], note: NOTE } }).body).not.toContain(
+      "<section",
+    );
+  });
+});

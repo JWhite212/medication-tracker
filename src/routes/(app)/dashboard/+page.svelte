@@ -5,7 +5,8 @@
   import Modal from "$components/ui/Modal.svelte";
   import DoseEditForm from "$components/DoseEditForm.svelte";
   import KeyboardShortcuts from "$components/KeyboardShortcuts.svelte";
-  import RefillsCard from "$components/RefillsCard.svelte";
+  import RefillsCard, { refillChip } from "$components/RefillsCard.svelte";
+  import Button from "$components/ui/Button.svelte";
   import QuickLogBar from "$components/QuickLogBar.svelte";
   import DashboardHeader from "$components/dashboard/DashboardHeader.svelte";
   import DueCard from "$components/dashboard/DueCard.svelte";
@@ -17,7 +18,12 @@
   import { pageHeading } from "$components/dose-writes/focus-after";
   import { formatDoseLabel, toastForDoseRemoved } from "$lib/utils/dashboard-copy";
   import { formatUserTime, type DateFormat, type TimeFormat } from "$lib/utils/time";
-  import type { DoseLogWithMedication } from "$lib/types";
+  import type { DoseLogWithMedication, RefillForecastEntry } from "$lib/types";
+  import {
+    resolveDashboardLayout,
+    SECTION_LABELS,
+    type DashboardSectionId,
+  } from "$lib/dashboard/layout";
 
   let { data } = $props();
 
@@ -30,6 +36,41 @@
   const asNeededOnly = $derived(data.status.kind === "as-needed-only");
   const doneTitle = $derived(asNeededOnly ? "Logged today" : "Done today");
   const hasDue = $derived(data.earlier.length + data.today.length > 0);
+
+  /**
+   * "Urgent" for the hidden-Refills floor: every row the card draws as
+   * needing you, by the card's own rule. One predicate decides both whether
+   * the floor applies and which rows it keeps.
+   */
+  const needsYou = (entry: RefillForecastEntry) => refillChip(entry)?.tone === "needs-you";
+
+  // Order and visibility only. What each section holds is the composer's.
+  const layout = $derived(
+    resolveDashboardLayout({
+      order: data.preferences.dashboardSectionOrder,
+      showLater: data.preferences.dashboardShowLater,
+      showQuickLog: data.preferences.dashboardShowQuickLog,
+      showRefills: data.preferences.dashboardShowRefills,
+      variant: asNeededOnly ? "as-needed-only" : "scheduled",
+      hasUrgentRefill: data.refillForecast.some(needsYou),
+    }),
+  );
+  const refillEntries = $derived(
+    layout.refillsUrgentOnly ? data.refillForecast.filter(needsYou) : data.refillForecast,
+  );
+  const URGENT_REFILLS_NOTE = "Showing urgent refills only. Refills is hidden on your dashboard.";
+  const quickLogShown = $derived(
+    layout.pinned === "quickLog" || layout.sections.includes("quickLog"),
+  );
+
+  /** "Customise this page", or which sections a preference hides. */
+  function footerLine(hidden: readonly DashboardSectionId[]): string {
+    if (hidden.length === 0) return "Customise this page";
+    const names = hidden.map((id) => SECTION_LABELS[id]);
+    const list =
+      names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+    return `${list} ${hidden.length === 1 ? "is" : "are"} hidden · Customise`;
+  }
 
   // One server-relative clock. Every DoseActionForm, DueCard and chip reads
   // it from context; nothing here re-implements a timer or a skew. The write
@@ -128,6 +169,38 @@
   </section>
 {/snippet}
 
+<!-- One section of the account's order, with today's exact markup and props.
+     A hidden section is not rendered at all, so no id is ever duplicated. -->
+{#snippet section(id: DashboardSectionId)}
+  {#if id === "done"}
+    <DoneList
+      rows={data.done}
+      title={doneTitle}
+      serverNow={renderNow}
+      {todayStart}
+      timezone={data.timezone}
+      {timeFormat}
+      {timeSinceDaysFromHours}
+      onedit={(dose) => (editingDose = dose)}
+    />
+  {:else if id === "later"}
+    <LaterList
+      rows={data.later}
+      serverNow={renderNow}
+      {todayStart}
+      timezone={data.timezone}
+      {timeFormat}
+    />
+  {:else if id === "quickLog"}
+    {@render chips("Log something else")}
+  {:else if id === "refills"}
+    <RefillsCard
+      entries={refillEntries}
+      note={layout.refillsUrgentOnly ? URGENT_REFILLS_NOTE : undefined}
+    />
+  {/if}
+{/snippet}
+
 {#if data.medications.length === 0}
   <OnboardingWelcome />
 {:else}
@@ -140,82 +213,59 @@
       {dateFormat}
     />
 
-    {#if asNeededOnly}
+    <!-- The pinned block sits outside the account's order, so "Due first"
+         holds by construction rather than by a sort. -->
+    {#if layout.pinned === "quickLog"}
       <!-- No active medication has an interval or fixed-time schedule, so
            nothing can be due: the chips are the page. -->
       {@render chips("Log a dose")}
-      <DoneList
-        rows={data.done}
-        title={doneTitle}
-        serverNow={renderNow}
-        {todayStart}
-        timezone={data.timezone}
-        {timeFormat}
-        {timeSinceDaysFromHours}
-        onedit={(dose) => (editingDose = dose)}
-      />
-    {:else}
-      {#if hasDue}
-        <section aria-labelledby="due-heading" class="space-y-3">
-          <h2 id="due-heading" class="sr-only">Due</h2>
+    {:else if hasDue}
+      <section aria-labelledby="due-heading" class="space-y-3">
+        <h2 id="due-heading" class="sr-only">Due</h2>
+        {#if data.earlier.length > 0}
+          <h3 class="text-text-secondary text-sm font-semibold">Earlier</h3>
+          <ul role="list" data-due-list="earlier" class="space-y-3">
+            {#each data.earlier as card (card.key)}
+              <DueCard
+                {card}
+                serverNow={renderNow}
+                {todayStart}
+                timezone={data.timezone}
+                {timeFormat}
+                focusAfter={pageHeading}
+              />
+            {/each}
+          </ul>
+        {/if}
+        {#if data.today.length > 0}
           {#if data.earlier.length > 0}
-            <h3 class="text-text-secondary text-sm font-semibold">Earlier</h3>
-            <ul role="list" data-due-list="earlier" class="space-y-3">
-              {#each data.earlier as card (card.key)}
-                <DueCard
-                  {card}
-                  serverNow={renderNow}
-                  {todayStart}
-                  timezone={data.timezone}
-                  {timeFormat}
-                  focusAfter={pageHeading}
-                />
-              {/each}
-            </ul>
+            <h3 class="text-text-secondary text-sm font-semibold">Today</h3>
           {/if}
-          {#if data.today.length > 0}
-            {#if data.earlier.length > 0}
-              <h3 class="text-text-secondary text-sm font-semibold">Today</h3>
-            {/if}
-            <ul role="list" data-due-list="today" class="space-y-3">
-              {#each data.today as card (card.key)}
-                <DueCard
-                  {card}
-                  serverNow={renderNow}
-                  {todayStart}
-                  timezone={data.timezone}
-                  {timeFormat}
-                  focusAfter={pageHeading}
-                />
-              {/each}
-            </ul>
-          {/if}
-        </section>
-      {/if}
-
-      <DoneList
-        rows={data.done}
-        title={doneTitle}
-        serverNow={renderNow}
-        {todayStart}
-        timezone={data.timezone}
-        {timeFormat}
-        {timeSinceDaysFromHours}
-        onedit={(dose) => (editingDose = dose)}
-      />
-
-      <LaterList
-        rows={data.later}
-        serverNow={renderNow}
-        {todayStart}
-        timezone={data.timezone}
-        {timeFormat}
-      />
-
-      {@render chips("Log something else")}
+          <ul role="list" data-due-list="today" class="space-y-3">
+            {#each data.today as card (card.key)}
+              <DueCard
+                {card}
+                serverNow={renderNow}
+                {todayStart}
+                timezone={data.timezone}
+                {timeFormat}
+                focusAfter={pageHeading}
+              />
+            {/each}
+          </ul>
+        {/if}
+      </section>
     {/if}
 
-    <RefillsCard entries={data.refillForecast} />
+    {#each layout.sections as id (id)}
+      {@render section(id)}
+    {/each}
+
+    <div>
+      <Button variant="ghost" size="sm" href="/settings/dashboard?from=dashboard">
+        {footerLine(layout.hidden)}
+      </Button>
+    </div>
   </div>
 {/if}
 
@@ -257,4 +307,4 @@
   {/if}
 </Modal>
 
-<KeyboardShortcuts medications={data.medications} />
+<KeyboardShortcuts medications={data.medications} quickLog={quickLogShown} />

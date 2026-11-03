@@ -96,6 +96,7 @@
       try {
         if (result.type === "success") {
           await invalidateAll();
+          announce("Show days instead of hours after saved.");
         } else {
           showToast(
             actionErrorMessage(result, "Could not save when time since switches to days."),
@@ -163,6 +164,13 @@
   // save. The status text next to each control is aria-hidden, so there
   // is no fallback channel; this is the only thing a screen reader hears.
   let announceParity = false;
+  /** The one writer of the polite status region; every save announces through it. */
+  function announce(text: string) {
+    announceParity = !announceParity;
+    // Trailing zero-width space forces a distinct string on every save
+    // without changing what a screen reader actually reads aloud.
+    announcement = `${text}${announceParity ? "​" : ""}`;
+  }
   // Set once, after hydration -- there is no onMount in this codebase, so
   // an effect is the idiom (log/+page.svelte:16 has the same disable for
   // the same reason: this can't be a $derived because it doesn't derive
@@ -315,11 +323,7 @@
         if (result.type === "success") {
           acked[key] = attempted;
           status[key] = "saved";
-          announceParity = !announceParity;
-          // Trailing zero-width space forces a distinct string on every
-          // save (see the announceParity declaration above) without
-          // changing what a screen reader actually reads aloud.
-          announcement = `${labelOf(key)} saved${announceParity ? "​" : ""}`;
+          announce(`${labelOf(key)} saved`);
         } else {
           // `data` is unchanged on a failure, so the re-seed effect above
           // does NOT run: this assignment is the only thing that puts the

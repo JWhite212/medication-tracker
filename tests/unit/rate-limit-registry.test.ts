@@ -129,6 +129,15 @@ describe("no door routes around the registry", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("budgets the dashboard settings door per account, beside appearance", () => {
+    expect(LIMITS.dashboardSettingsSave).toEqual({
+      namespace: "dashboard-settings",
+      max: 60,
+      windowMs: 60_000,
+      identity: "account",
+    });
+  });
+
   it("every policy in the table is actually named by some door", () => {
     // An unused policy is either a door that lost its limiter or a rule
     // nobody enforces. Either way the table should not claim it.

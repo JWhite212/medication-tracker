@@ -3,6 +3,7 @@ import { MAX_INTERVAL_HOURS } from "$lib/utils/schedule-rate";
 import { appearanceImportShape, appearancePayloadShape } from "$lib/appearance/schema";
 import {
   EXPORT_FORMATS,
+  preferenceFieldTypes,
   preferenceImportShape,
   preferencePayloadShape,
 } from "$lib/preferences/schema";
@@ -357,6 +358,45 @@ export const notificationSchema = z.object({
 export const dataSchema = z.object({
   exportFormat: z.enum(EXPORT_FORMATS),
 });
+
+/** A layout flag's form value: each button posts its explicit value, so absence is never "off". */
+const onOffField = z.enum(["on", "off"]).transform((v) => v === "on");
+
+/**
+ * Arity 1 for the dashboard layout and the time-since threshold: one
+ * `strictObject` per action, each with exactly one REQUIRED key, the same
+ * contract as `appearanceFieldSchemas`. A mistyped or extra field is a 400,
+ * and an empty post never writes a default over the user's setting.
+ *
+ * Every value domain comes from `preferenceFieldTypes`, so the form door
+ * accepts exactly what `/api/v1` and import accept — only the INPUT type
+ * differs (a form posts strings).
+ */
+export const dashboardSettingsFieldSchemas = {
+  // "default" means "use the product's order for this account" (null). Any
+  // other value is a comma-separated id list, piped into the shared domain,
+  // so unknown ids, "due", "header" and duplicates are 400s here too.
+  dashboardSectionOrder: z.strictObject({
+    dashboardSectionOrder: z
+      .string()
+      .max(128)
+      .transform((v) => (v === "default" ? null : v.split(",")))
+      .pipe(preferenceFieldTypes.dashboardSectionOrder),
+  }),
+  dashboardShowLater: z.strictObject({ dashboardShowLater: onOffField }),
+  dashboardShowQuickLog: z.strictObject({ dashboardShowQuickLog: onOffField }),
+  dashboardShowRefills: z.strictObject({ dashboardShowRefills: onOffField }),
+  // The whole 24..168 range, not only the presets, so a value set elsewhere
+  // (the Mac app's 60) can be posted back unchanged. The regex keeps "4.5",
+  // "1e2" and "" from reaching Number(); the domain does the bounds.
+  timeSinceDaysFromHours: z.strictObject({
+    timeSinceDaysFromHours: z
+      .string()
+      .regex(/^\d{1,3}$/)
+      .transform(Number)
+      .pipe(preferenceFieldTypes.timeSinceDaysFromHours),
+  }),
+};
 
 export const logFilterSchema = z.object({
   status: z.enum(["any", "taken", "skipped", "missed"]).default("any"),

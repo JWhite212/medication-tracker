@@ -137,6 +137,7 @@ const medication = await import("../../src/routes/(app)/medications/[id]/+page.s
 const newMedication = await import("../../src/routes/(app)/medications/new/+page.server");
 const settings = await import("../../src/routes/(app)/settings/+page.server");
 const appearance = await import("../../src/routes/(app)/settings/appearance/+page.server");
+const dashboardSettings = await import("../../src/routes/(app)/settings/dashboard/+page.server");
 const data = await import("../../src/routes/(app)/settings/data/+page.server");
 const dataImport = await import("../../src/routes/(app)/settings/data/import/+page.server");
 const notifications = await import("../../src/routes/(app)/settings/notifications/+page.server");
@@ -225,6 +226,18 @@ const CASES: Case[] = [
   { route: "settings/appearance", action: "timeFormat", actions: appearance.actions, fields: { timeFormat: "24h" } }, // prettier-ignore
   { route: "settings/appearance", action: "uiDensity", actions: appearance.actions, fields: { uiDensity: "comfortable" } }, // prettier-ignore
   { route: "settings/appearance", action: "reducedMotion", actions: appearance.actions, fields: { reducedMotion: "on" } }, // prettier-ignore
+  // Hand-added beside the registry's six: the time-since threshold.
+  { route: "settings/appearance", action: "timeSinceDaysFromHours", actions: appearance.actions, fields: { timeSinceDaysFromHours: "72" } }, // prettier-ignore
+
+  { route: "settings/dashboard", action: "dashboardSectionOrder", actions: dashboardSettings.actions, fields: { dashboardSectionOrder: "done,later" } }, // prettier-ignore
+  { route: "settings/dashboard", action: "dashboardShowLater", actions: dashboardSettings.actions, fields: { dashboardShowLater: "off" } }, // prettier-ignore
+  { route: "settings/dashboard", action: "dashboardShowQuickLog", actions: dashboardSettings.actions, fields: { dashboardShowQuickLog: "on" } }, // prettier-ignore
+  { route: "settings/dashboard", action: "dashboardShowRefills", actions: dashboardSettings.actions, fields: { dashboardShowRefills: "off" } }, // prettier-ignore
+  {
+    route: "settings/dashboard",
+    action: "resetDashboardLayout",
+    actions: dashboardSettings.actions,
+  },
 
   { route: "settings/data", action: "updateFormat", actions: data.actions, fields: { exportFormat: "csv" } }, // prettier-ignore
   { route: "settings/data", action: "deleteAccount", actions: data.actions, fields: { confirmWord: "DELETE", password: "hunter2" } }, // prettier-ignore
@@ -289,6 +302,7 @@ describe("every (app) form action rejects an anonymous POST with 401", () => {
       ["medications/new", newMedication.actions],
       ["settings", settings.actions],
       ["settings/appearance", appearance.actions],
+      ["settings/dashboard", dashboardSettings.actions],
       ["settings/data", data.actions],
       ["settings/data/import", dataImport.actions],
       ["settings/notifications", notifications.actions],

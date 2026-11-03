@@ -125,6 +125,14 @@ export const LIMITS = {
 
   // --- Account surfaces -------------------------------------------------
   appearanceSave: { namespace: "appearance", max: 60, windowMs: MINUTE, identity: "account" },
+  // Its own budget rather than appearance's: the two pages are separate
+  // surfaces, and a burst of reorders must not lock the user out of theme.
+  dashboardSettingsSave: {
+    namespace: "dashboard-settings",
+    max: 60,
+    windowMs: MINUTE,
+    identity: "account",
+  },
   emailResend: { namespace: "email-resend", max: 3, windowMs: QUARTER_HOUR, identity: "account" },
   pushTest: { namespace: "push-test", max: 5, windowMs: QUARTER_HOUR, identity: "account" },
   pushSubscribe: { namespace: "push-sub", max: 10, windowMs: MINUTE, identity: "account" },

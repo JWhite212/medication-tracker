@@ -11,6 +11,12 @@
     shape?: "rect" | "pill";
     /** Layout only: margins, flex-1, self-*. Use `size` and `shape` for the look. */
     class?: string;
+    /**
+     * Opt in to submitting the enclosing form with this field. Without it the
+     * toggle is always `type="button"`; with it, `type="submit"` carrying
+     * exactly this name and value. The look does not change.
+     */
+    submit?: { name: string; value: string };
     children: Snippet;
   } & Omit<HTMLButtonAttributes, "type" | "class" | "children" | "aria-pressed">;
 
@@ -19,6 +25,7 @@
     size = "sm",
     shape = "rect",
     class: className = "",
+    submit,
     children,
     ...rest
   }: Props = $props();
@@ -40,7 +47,21 @@
   ]);
 </script>
 
-<!-- `type` comes after the rest props, so nothing can turn a toggle into a submit. -->
-<button {...rest} type="button" class={classes} aria-pressed={pressed ? "true" : "false"}
-  >{@render children()}</button
->
+<!--
+  `type`, `name` and `value` come after the rest props, so only `submit` can
+  turn a toggle into a submit, and nothing in a spread can change what it posts.
+-->
+{#if submit}
+  <button
+    {...rest}
+    type="submit"
+    name={submit.name}
+    value={submit.value}
+    class={classes}
+    aria-pressed={pressed ? "true" : "false"}>{@render children()}</button
+  >
+{:else}
+  <button {...rest} type="button" class={classes} aria-pressed={pressed ? "true" : "false"}
+    >{@render children()}</button
+  >
+{/if}

@@ -772,7 +772,6 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
       userEmailVerified: true,
       userOverdueEmailReminders: true,
       userOverduePushReminders: true,
-      userTimeSinceDaysFromHours: 48,
       userLowInventoryEmailAlerts: true,
       userLowInventoryPushAlerts: false,
       medNotificationsEnabled: true,

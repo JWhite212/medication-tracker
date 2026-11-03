@@ -270,7 +270,6 @@ export async function checkLowInventoryMedications() {
       userOverduePushReminders: userPreferences.overduePushReminders,
       userLowInventoryEmailAlerts: userPreferences.lowInventoryEmailAlerts,
       userLowInventoryPushAlerts: userPreferences.lowInventoryPushAlerts,
-      userTimeSinceDaysFromHours: userPreferences.timeSinceDaysFromHours,
       medNotificationsEnabled: medications.notificationsEnabled,
       medNotifyOverdueEmail: medications.notifyOverdueEmail,
       medNotifyOverduePush: medications.notifyOverduePush,

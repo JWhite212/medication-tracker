@@ -37,6 +37,8 @@ import type {
 } from "$lib/types";
 import { SECTION_LABELS, type DashboardSectionId } from "$lib/dashboard/layout";
 import { preferencesFixture } from "./helpers/preferences-fixture";
+import { ssrDocument } from "./helpers/axe-ssr";
+import { textOf } from "./helpers/dom-names";
 
 // 09:30 BST on Thursday 16 April 2026. Local midnight was 23:00Z the day before.
 const NOW = "2026-04-16T08:30:00.000Z";
@@ -431,22 +433,16 @@ const URGENT_MIX: RefillForecastEntry[] = [
   watchRow,
 ];
 
-/** Every h2's text, in document order. */
+/** Every h2's text, in document order, read through a parsed DOM rather than stripped with regexes. */
 function h2s(html: string): string[] {
-  return [...html.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/g)].map((m) =>
-    m[1].replace(/<!--[^>]*-->/g, "").trim(),
-  );
+  return [...ssrDocument(html).querySelectorAll("h2")].map(textOf);
 }
 
 /** The footer line's link: its href and its visible text. */
 function footer(html: string): { href: string; text: string } | null {
-  const tag = html.match(/<a\b[^>]*href="(\/settings\/dashboard[^"]*)"[^>]*>([\s\S]*?)<\/a>/);
-  if (!tag) return null;
-  const text = tag[2]
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return { href: tag[1].replace(/&amp;/g, "&"), text };
+  const link = ssrDocument(html).querySelector('a[href^="/settings/dashboard"]');
+  if (!link) return null;
+  return { href: link.getAttribute("href") ?? "", text: textOf(link) };
 }
 
 describe("dashboard layout preferences (SSR)", () => {

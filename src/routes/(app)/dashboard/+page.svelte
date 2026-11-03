@@ -146,6 +146,7 @@
       <DoneList
         rows={data.done}
         title={doneTitle}
+        serverNow={renderNow}
         {todayStart}
         timezone={data.timezone}
         {timeFormat}
@@ -193,6 +194,7 @@
       <DoneList
         rows={data.done}
         title={doneTitle}
+        serverNow={renderNow}
         {todayStart}
         timezone={data.timezone}
         {timeFormat}

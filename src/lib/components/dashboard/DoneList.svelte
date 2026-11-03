@@ -22,7 +22,7 @@
 
 <script lang="ts">
   import type { DoneRow, DoseLogWithMedication } from "$lib/types";
-  import { formatUserTime, type TimeFormat } from "$lib/utils/time";
+  import { formatTimeSince, formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { doneCoversLine, doneDoseText, formatDoseLabel } from "$lib/utils/dashboard-copy";
   import { toneClass, toneOf } from "$lib/utils/status-tone";
   import DoseActionForm from "./DoseActionForm.svelte";
@@ -32,6 +32,7 @@
   let {
     rows,
     title,
+    serverNow,
     todayStart,
     timezone,
     timeFormat,
@@ -40,6 +41,12 @@
     rows: DoneRow[];
     /** "Done today", or "Logged today" on an as-needed-only account. */
     title: string;
+    /**
+     * The page's server-relative 60-second tick. A taken row's "2h 15m ago"
+     * is measured from it, never from the device clock, so it agrees with
+     * every other duration on the page.
+     */
+    serverNow: Date;
     /** Covered slots before this instant are prefixed "yesterday". */
     todayStart: Date;
     timezone: string;
@@ -55,7 +62,8 @@
     const { dose } = row;
     const med = dose.medication;
     const label = formatDoseLabel(med.name, med.dosageAmount, med.dosageUnit);
-    const time = formatUserTime(new Date(dose.takenAt), timezone, timeFormat);
+    const takenAt = new Date(dose.takenAt);
+    const time = formatUserTime(takenAt, timezone, timeFormat);
     const when = row.dayLabel === "yesterday" ? `yesterday ${time}` : time;
     const skipped = dose.status === "skipped";
     const removeToast = skipped ? `${label}: skip removed` : `${label}: missed entry removed`;
@@ -63,6 +71,10 @@
       label,
       time,
       when,
+      // Taken rows only: the question it answers is "when did I last take
+      // this?". A skip or missed row's instant is a slot, not an intake.
+      since: dose.status === "taken" ? formatTimeSince(takenAt, serverNow) : null,
+      takenAtIso: takenAt.toISOString(),
       dose: doneDoseText({
         dosageAmount: med.dosageAmount,
         dosageUnit: med.dosageUnit,
@@ -96,19 +108,26 @@
   >
     {title}
   </h2>
-  <div class="border-glass-border bg-glass rounded-xl border px-3 backdrop-blur-xl">
-    {#if rows.length === 0}
-      <p class="text-text-secondary py-3 text-sm">Nothing logged yet today</p>
-    {:else}
+  {#if rows.length === 0}
+    <!-- One plain line, not an empty card: a card here was the biggest
+         thing on the page and said nothing. -->
+    <p class="text-text-secondary text-sm">Nothing logged yet today</p>
+  {:else}
+    <div class="border-glass-border bg-glass rounded-xl border px-3 backdrop-blur-xl">
       <ul role="list" class="divide-glass-border divide-y">
         {#each rows as row (row.key)}
           {@const v = view(row)}
           <!-- data-dose-id and data-edit are how an Undo finds the restored
                row after the reload has re-rendered it. -->
           <li data-dose-id={row.dose.id} class="flex min-h-11 items-center gap-3 py-1">
-            <span class="text-text-secondary min-w-14 shrink-0 text-sm tabular-nums">
+            <span class="text-text-secondary min-w-20 shrink-0 text-sm tabular-nums">
               {#if row.dayLabel === "yesterday"}<span class="block text-xs">Yesterday</span
-                >{/if}{v.time}
+                >{/if}<span class="block">{v.time}</span>
+              {#if v.since}
+                <!-- Not a live region: re-announcing every minute would bury
+                     everything else a screen reader is saying. -->
+                <time datetime={v.takenAtIso} data-time-since class="block text-xs">{v.since}</time>
+              {/if}
             </span>
             <StatusMarker state={row.dose.status} />
             <MedicationGlyph
@@ -157,6 +176,6 @@
           </li>
         {/each}
       </ul>
-    {/if}
-  </div>
+    </div>
+  {/if}
 </section>

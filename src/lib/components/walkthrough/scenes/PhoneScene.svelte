@@ -188,6 +188,7 @@
             before={before.done}
             after={after.done}
             logged={state.logged}
+            now={before.now}
             todayStart={before.todayStart}
             tz={WALKTHROUGH_TZ}
             {timeFormat}

@@ -134,7 +134,7 @@
   const NUMBERS_OFF = {
     keys: ["1-9"],
     description: "Number shortcuts need Quick log on your dashboard",
-    href: "/settings/dashboard",
+    href: "/settings/dashboard?from=dashboard",
   };
   const shortcuts: Array<{ keys: string[]; description: string; href?: string }> = $derived([
     quickLog ? LOG_SHORTCUT : NUMBERS_OFF,

@@ -89,6 +89,17 @@
       </a>
 
       <a
+        href="/settings/dashboard"
+        class="border-glass-border hover:bg-surface-raised flex items-center justify-between rounded-lg border px-4 py-3 transition-colors"
+      >
+        <div>
+          <p class="font-medium">Dashboard</p>
+          <p class="text-text-muted text-sm">Section order and what's shown</p>
+        </div>
+        <span class="text-text-muted">›</span>
+      </a>
+
+      <a
         href="/settings/notifications"
         class="border-glass-border hover:bg-surface-raised flex items-center justify-between rounded-lg border px-4 py-3 transition-colors"
       >

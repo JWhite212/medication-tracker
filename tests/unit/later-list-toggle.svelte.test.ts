@@ -24,7 +24,7 @@ const row = (key: string, hhmm: string): LaterRow => ({
   expectedTime: `2026-05-01T${hhmm}:00.000Z`,
 });
 
-function mountList(rows: LaterRow[]) {
+function mountList(rows: LaterRow[], mode?: "next" | "all") {
   const target = document.body.appendChild(document.createElement("div"));
   const component = mount(LaterList, {
     target,
@@ -34,6 +34,7 @@ function mountList(rows: LaterRow[]) {
       todayStart: new Date("2026-05-01T00:00:00.000Z"),
       timezone: "UTC",
       timeFormat: "24h",
+      ...(mode === undefined ? {} : { mode }),
     },
   });
   teardown.push(() => {
@@ -152,5 +153,43 @@ describe("LaterList disclosure across a reload", () => {
     flushSync();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(document.activeElement).toBe(elsewhere);
+  });
+});
+
+describe("LaterList mode all", () => {
+  it("renders every group on mount, with the toggle expanded", () => {
+    const target = mountList([row("a", "08:55"), row("b", "11:00"), row("c", "13:05")], "all");
+    expect(target.querySelectorAll("li")).toHaveLength(3);
+    const button = target.querySelector("button")!;
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.textContent!.trim()).toBe("Show fewer");
+  });
+
+  it("is still expanded after a reload leaves one group and then two again", () => {
+    const props = $state({
+      rows: [row("a", "12:00"), row("c", "18:00")],
+      serverNow: new Date("2026-05-01T07:00:00.000Z"),
+      todayStart: new Date("2026-05-01T00:00:00.000Z"),
+      timezone: "UTC",
+      timeFormat: "24h" as const,
+      mode: "all" as const,
+    });
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(LaterList, { target, props });
+    teardown.push(() => {
+      unmount(component);
+      target.remove();
+    });
+    expect(target.querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
+
+    props.rows = [row("c", "18:00")];
+    flushSync();
+    expect(target.querySelector("button")).toBeNull();
+
+    props.rows = [row("c", "18:00"), row("d", "21:00")];
+    flushSync();
+    const again = target.querySelector("button")!;
+    expect(again.getAttribute("aria-expanded")).toBe("true");
+    expect(target.querySelectorAll("li")).toHaveLength(2);
   });
 });

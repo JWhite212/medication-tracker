@@ -8,6 +8,10 @@
   // but mounted, before the log. A row only `before` has is not drawn at all,
   // and the fidelity test's before-render fails if one ever appears.
   //
+  // The `dashboardDoneTime` preference (clock only, since only, or both) is
+  // deliberately not modelled: the stage draws the default, "both", which is
+  // what a visitor without an account sees.
+  //
   // DoneList's `divide-y` is written out as `border-t` on every row after the
   // first, so a growing row's divider sits inside its collapse and is hidden
   // with it.

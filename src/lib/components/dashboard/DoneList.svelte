@@ -22,6 +22,7 @@
 
 <script lang="ts">
   import type { DoneRow, DoseLogWithMedication } from "$lib/types";
+  import type { DoneTimeDisplay } from "$lib/preferences/domains";
   import { formatTimeSince, formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { doneCoversLine, doneDoseText, formatDoseLabel } from "$lib/utils/dashboard-copy";
   import { toneClass, toneOf } from "$lib/utils/status-tone";
@@ -37,6 +38,7 @@
     timezone,
     timeFormat,
     timeSinceDaysFromHours,
+    timeDisplay = "both",
     onedit,
   }: {
     rows: DoneRow[];
@@ -54,6 +56,13 @@
     timeFormat: TimeFormat;
     /** The account's hours-before-days switch for a taken row's "ago". */
     timeSinceDaysFromHours: number;
+    /**
+     * What a taken row's time column shows: the clock and how long ago
+     * ("both"), only how long ago with the clock in a tooltip and for
+     * assistive tech ("since"), or only the clock ("clock"). A skip or
+     * missed row's instant is a slot, so it always shows its clock.
+     */
+    timeDisplay?: DoneTimeDisplay;
     onedit: (dose: DoseLogWithMedication) => void;
   } = $props();
 
@@ -126,13 +135,34 @@
           <!-- data-dose-id and data-edit are how an Undo finds the restored
                row after the reload has re-rendered it. -->
           <li data-dose-id={row.dose.id} class="flex min-h-11 items-center gap-2 py-1 sm:gap-3">
-            <span class="text-text-secondary min-w-20 shrink-0 text-sm tabular-nums">
+            <!-- since mode takes min-w-24 from sm up. On a phone the extra 16px
+                 came out of the name and dose and ran "×4" under Edit at 320px,
+                 so it keeps the 80px every mode had. -->
+            <span
+              class="text-text-secondary {timeDisplay === 'since'
+                ? 'min-w-24 max-sm:min-w-20'
+                : 'min-w-20'} shrink-0 text-sm tabular-nums"
+            >
               {#if row.dayLabel === "yesterday"}<span class="block text-xs">Yesterday</span
-                >{/if}<span class="block">{v.time}</span>
-              {#if v.since}
-                <!-- Not a live region: re-announcing every minute would bury
-                     everything else a screen reader is saying. -->
-                <time datetime={v.takenAtIso} data-time-since class="block text-xs">{v.since}</time>
+                >{/if}{#if timeDisplay === "since" && v.since}
+                <!-- The since text is the line; the clock stays in the tooltip
+                     and, for a screen reader, after it. Not a live region:
+                     re-announcing every minute would bury everything else a
+                     screen reader is saying. -->
+                <time
+                  datetime={v.takenAtIso}
+                  data-time-since
+                  title={v.time}
+                  class="text-text-primary block text-sm"
+                  >{v.since}<span class="sr-only">{` at ${v.time}`}</span></time
+                >
+              {:else}
+                <span class="block">{v.time}</span>
+                {#if timeDisplay === "both" && v.since}
+                  <time datetime={v.takenAtIso} data-time-since class="block text-xs"
+                    >{v.since}</time
+                  >
+                {/if}
               {/if}
             </span>
             <StatusMarker state={row.dose.status} />

@@ -8,6 +8,7 @@ import { render } from "svelte/server";
 import type { DoneRow, DoseLogWithMedication } from "$lib/types";
 import { formatSlotTime } from "$lib/utils/dashboard-copy";
 import { toneClass } from "$lib/utils/status-tone";
+import type { DoneTimeDisplay } from "$lib/preferences/domains";
 
 vi.mock("$app/forms", () => ({
   enhance: () => ({ destroy() {} }),
@@ -103,6 +104,27 @@ function renderList(rows: DoneRow[], title = "Done today"): Document {
     context: dashboardContext({ now: NOW }),
   });
   return ssrDocument(body);
+}
+
+function renderMode(
+  rows: DoneRow[],
+  timeDisplay?: DoneTimeDisplay,
+): { doc: Document; body: string } {
+  const { body } = render(DoneList, {
+    props: {
+      rows,
+      title: "Done today",
+      serverNow: NOW,
+      todayStart: TODAY_START,
+      timezone: TZ,
+      timeFormat: "24h",
+      timeSinceDaysFromHours: 48,
+      onedit: () => {},
+      ...(timeDisplay === undefined ? {} : { timeDisplay }),
+    },
+    context: dashboardContext({ now: NOW }),
+  });
+  return { doc: ssrDocument(body), body };
 }
 
 const items = (doc: Document) => [...doc.querySelectorAll<HTMLLIElement>("section ul > li")];
@@ -344,5 +366,75 @@ describe("DoneList", () => {
     const offenders = results.violations.flatMap((v) => v.nodes.map((n) => `${v.id}: ${n.html}`));
     expect(offenders, offenders.join("\n")).toEqual([]);
     for (const rule of rules) expect(evaluatedRules(results).has(rule), rule).toBe(true);
+  });
+
+  describe("timeDisplay", () => {
+    it("renders the same markup with no prop as with 'both'", () => {
+      expect(renderMode(ROWS).body).toBe(renderMode(ROWS, "both").body);
+    });
+
+    it("'since' makes the since text the primary line, with the clock for assistive tech and the tooltip", () => {
+      const li = items(renderMode(ROWS, "since").doc)[3];
+      const since = li.querySelector("time[data-time-since]")!;
+      expect(since.getAttribute("datetime")).toBe("2026-05-01T13:31:00.000Z");
+      expect(since.getAttribute("title")).toBe("13:31");
+      expect([...since.classList]).toEqual(
+        expect.arrayContaining(["block", "text-sm", "text-text-primary"]),
+      );
+      expect(since.textContent).toBe("29m ago at 13:31");
+      const hidden = since.querySelector(".sr-only")!;
+      expect(hidden.textContent).toBe(" at 13:31");
+      // The visible clock is gone: the column holds only the <time>.
+      const column = since.parentElement!;
+      expect(column.querySelectorAll(":scope > span.block")).toHaveLength(0);
+      expect(column.classList.contains("min-w-24")).toBe(true);
+      expect(column.classList.contains("min-w-20")).toBe(false);
+    });
+
+    it("'since' keeps the Yesterday line above", () => {
+      const li = items(renderMode(ROWS, "since").doc)[0];
+      expect(textOf(li.querySelector("span.text-xs")!)).toBe("Yesterday");
+      expect(li.querySelector("time[data-time-since]")).not.toBeNull();
+    });
+
+    it("'clock' renders no since element, and 'both' keeps min-w-20", () => {
+      const doc = renderMode(ROWS, "clock").doc;
+      expect(doc.querySelector("[data-time-since]")).toBeNull();
+      expect(textOf(items(doc)[3])).toContain("13:31");
+      expect(items(renderMode(ROWS, "both").doc)[3].querySelector(".min-w-20")).not.toBeNull();
+    });
+
+    it.each(["both", "since", "clock"] as const)(
+      "%s: skipped and missed rows show their clock and no since",
+      (mode) => {
+        const lis = items(renderMode(ROWS, mode).doc);
+        for (const [i, clock] of [
+          [1, "11:00"],
+          [2, "12:00"],
+        ] as const) {
+          expect(lis[i].querySelector("[data-time-since]")).toBeNull();
+          expect(textOf(lis[i].querySelector("span.tabular-nums")!)).toBe(clock);
+        }
+      },
+    );
+
+    it.each(["both", "since", "clock"] as const)(
+      "%s: two doses minutes apart stay two rows",
+      (mode) => {
+        const a: DoneRow = {
+          key: "a",
+          dose: dose({ id: "a", takenAt: new Date("2026-05-01T08:55:00.000Z") }),
+          covers: [],
+          dayLabel: null,
+        };
+        const b: DoneRow = {
+          key: "b",
+          dose: dose({ id: "b", takenAt: new Date("2026-05-01T09:00:00.000Z") }),
+          covers: [],
+          dayLabel: null,
+        };
+        expect(items(renderMode([a, b], mode).doc)).toHaveLength(2);
+      },
+    );
   });
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { LaterRow } from "$lib/types";
+  import type { DashboardLaterMode } from "$lib/preferences/domains";
   import { formatDosage } from "$lib/utils/dosage";
   import type { TimeFormat } from "$lib/utils/time";
   import {
@@ -20,6 +21,7 @@
     todayStart,
     timezone,
     timeFormat,
+    mode = "next",
   }: {
     rows: LaterRow[];
     /** The page's server-relative 60-second tick. */
@@ -27,12 +29,16 @@
     todayStart: Date;
     timezone: string;
     timeFormat: TimeFormat;
+    /** "next" folds to the next group of slots; "all" starts with every slot shown. */
+    mode?: DashboardLaterMode;
   } = $props();
 
   // Collapsed to the next group of slots by default: the rest of the day is
   // a glance, not a to-do list, and listing it all made Later the biggest
-  // thing on the page. Not remembered across loads (yet).
-  let expanded = $state(false);
+  // thing on the page. "all" is the account's choice to start unfolded; the
+  // toggle still folds it for the visit. `untrack`: the mode seeds the state,
+  // it is not a dependency of it.
+  let expanded = $state(untrack(() => mode === "all"));
 
   const groups = $derived(groupLaterRows(rows));
   const shown = $derived(expanded ? groups : groups.slice(0, 1));
@@ -46,10 +52,10 @@
   // h1 instead (without scrolling), the dashboard's usual last resort.
   // `pre`: the toggle is still in the DOM here, so we can ask whether it
   // held focus. Collapsing again means a later second group starts folded,
-  // as the list first renders.
+  // as the list first renders (expanded again under mode "all").
   $effect.pre(() => {
     if (hasToggle) return;
-    expanded = false;
+    expanded = mode === "all";
     if (toggle !== null && document.activeElement === toggle) {
       void tick().then(() => focusIfLost(pageHeading));
     }

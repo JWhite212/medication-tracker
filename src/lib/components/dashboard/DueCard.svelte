@@ -2,6 +2,7 @@
   import { page } from "$app/state";
   import type { DueCard as DueCardData, DueRow } from "$lib/types";
   import type { TimeFormat } from "$lib/utils/time";
+  import { formatDosage } from "$lib/utils/dosage";
   import {
     formatDoseLabel,
     formatSlotTime,
@@ -196,7 +197,7 @@
       <p id={nameId} class="flex min-w-0 items-baseline gap-2">
         <span class="text-text-primary text-base font-semibold">{card.name}</span>
         <span class="text-text-secondary truncate text-sm"
-          >{card.dosageAmount}{card.dosageUnit}</span
+          >{formatDosage(card.dosageAmount, card.dosageUnit)}</span
         >
       </p>
       <p class="text-text-primary text-sm">{topView.status}</p>

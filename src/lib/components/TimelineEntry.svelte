@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { enhance } from "$app/forms";
   import TimeSince from "$components/TimeSince.svelte";
+  import { formatDosage } from "$lib/utils/dosage";
   import { createDoseWrite } from "$components/dose-writes/dose-write.svelte";
   import { focusTargetAfterResolve, pageHeading } from "$components/dose-writes/focus-after";
   import { formatUserTime, type TimeFormat } from "$lib/utils/time";
@@ -172,7 +173,7 @@
           {dose.medication.name}
         </span>
         <span class="text-text-secondary text-sm">
-          {dose.medication.dosageAmount}{dose.medication.dosageUnit}
+          {formatDosage(dose.medication.dosageAmount, dose.medication.dosageUnit)}
           {#if dose.status === "taken" && dose.quantity > 1}&times; {dose.quantity}{/if}
         </span>
         {#if dose.status === "skipped" || dose.status === "missed"}

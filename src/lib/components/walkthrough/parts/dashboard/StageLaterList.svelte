@@ -5,6 +5,7 @@
   // nothing when there are no rows, but its root stays mounted so its mark
   // is registered either way.
   import type { LaterRow } from "$lib/types";
+  import { formatDosage } from "$lib/utils/dosage";
   import type { TimeFormat } from "$lib/utils/time";
   import { formatSlotTime, laterUntil } from "$lib/utils/dashboard-copy";
   import MedicationGlyph from "$components/dashboard/MedicationGlyph.svelte";
@@ -48,7 +49,9 @@
           />
           <p class="flex min-w-0 flex-1 items-baseline gap-2 text-sm">
             <span class="text-text-primary truncate font-medium">{row.name}</span>
-            <span class="text-text-secondary shrink-0">{row.dosageAmount}{row.dosageUnit}</span>
+            <span class="text-text-secondary shrink-0"
+              >{formatDosage(row.dosageAmount, row.dosageUnit)}</span
+            >
           </p>
           <span class="text-text-secondary shrink-0 text-sm"
             >{laterUntil(row.expectedTime, now)}</span

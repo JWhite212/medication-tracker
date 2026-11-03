@@ -2,6 +2,7 @@
   import { applyAction, enhance } from "$app/forms";
   import { tick, untrack } from "svelte";
   import type { SubmitFunction } from "@sveltejs/kit";
+  import { formatDosage } from "$lib/utils/dosage";
   import { showToast } from "$components/ui/Toast.svelte";
   import SideEffectPicker from "$components/SideEffectPicker.svelte";
   import Alert from "$components/ui/Alert.svelte";
@@ -151,7 +152,7 @@
     <div class="h-4 w-4 rounded-full" style="background-color: {dose.medication.colour}"></div>
     <h3 class="text-lg font-semibold">{dose.medication.name}</h3>
     <span class="text-text-secondary text-sm"
-      >{dose.medication.dosageAmount}{dose.medication.dosageUnit}</span
+      >{formatDosage(dose.medication.dosageAmount, dose.medication.dosageUnit)}</span
     >
   </div>
 

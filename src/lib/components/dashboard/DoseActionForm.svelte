@@ -23,6 +23,7 @@
     focusAfter,
     onSuccess,
     children,
+    iconOnlyOnPhone = false,
     class: className = "",
   }: {
     /** The form action, e.g. "?/logDose". */
@@ -50,6 +51,13 @@
     onSuccess?: () => void;
     /** Rendered inside the button BEFORE the label (a chip's sr-only "Log " and its glyph). */
     children?: Snippet;
+    /**
+     * Below the `sm` breakpoint, show only `children` (an icon the caller
+     * hides from `sm` up) and keep `label` and `pendingLabel` for assistive
+     * technology alone. For a row too narrow to give a worded button its
+     * width without squeezing the name beside it to nothing.
+     */
+    iconOnlyOnPhone?: boolean;
     /** Classes for the <form> (layout inside the parent); the button's look is the variant's. */
     class?: string;
   } = $props();
@@ -119,7 +127,7 @@
           ? 'invisible'
           : ''}"
         aria-hidden={write.pending ? "true" : undefined}
-        >{@render children?.()}<span
+        >{@render children?.()}<span class={iconOnlyOnPhone ? "max-sm:sr-only" : undefined}
           >{label}{#if srContext}<span class="sr-only">{srContext}</span>{/if}</span
         ></span
       >
@@ -132,7 +140,8 @@
         ><span
           class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
           aria-hidden="true"
-        ></span>{pendingLabel}</span
+        ></span><span class={iconOnlyOnPhone ? "max-sm:sr-only" : undefined}>{pendingLabel}</span
+        ></span
       >
     </span>
   </button>

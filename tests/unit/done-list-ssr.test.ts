@@ -254,6 +254,39 @@ describe("DoneList", () => {
     expect(hiddenFields(form)).toEqual({ doseId: "d3" });
   });
 
+  // A phone screenshot: on one line beside a worded "Remove skip" the name
+  // was squeezed to nothing and "5000IU Skipped" ran over the button.
+  it("gives the name its own line below sm, with the dose and status word under it", () => {
+    const li = items(renderList(ROWS))[1];
+    const line = li.querySelector("div > p")!;
+    expect([...line.classList]).toEqual(expect.arrayContaining(["flex-col", "sm:flex-row"]));
+    const [name, details] = [...line.children];
+    expect(textOf(name)).toBe("Metformin");
+    expect(name.classList.contains("truncate")).toBe(true);
+    // The dose and the word travel together, and wrap rather than truncate.
+    expect(textOf(details)).toBe("500mg Skipped");
+    expect([...details.classList]).toEqual(expect.arrayContaining(["flex-wrap", "sm:flex-nowrap"]));
+  });
+
+  it("shows a skip or missed row's Remove as × below sm, keeping its words for assistive tech", () => {
+    const doc = renderList(ROWS);
+    for (const [index, name] of [
+      [1, "Remove skip: Metformin 500mg, skipped at 11:00"],
+      [2, "Remove: Metformin 500mg, missed at 12:00"],
+    ] as const) {
+      const button = buttonNamed(items(doc)[index], name);
+      const glyph = button.querySelector('[aria-hidden="true"].sm\\:hidden')!;
+      expect(textOf(glyph)).toBe("×");
+      const label = button.querySelector('[data-part="label"] > .max-sm\\:sr-only')!;
+      expect(label.textContent).toBe(name);
+      // The pending label shares the button's width cell, so it must shrink too.
+      const pending = button.querySelector('[data-part="pending"] > .max-sm\\:sr-only')!;
+      expect(textOf(pending)).toBe("Removing…");
+    }
+    // A taken row's Edit keeps its word at every width.
+    expect(doc.querySelector("[data-edit] .max-sm\\:sr-only")).toBeNull();
+  });
+
   it("marks every row with its dose id, and only a taken row's Edit with data-edit", () => {
     // What an Undo's focus target reads once the restore's reload has
     // re-rendered the row: the row by its id, then its Edit.

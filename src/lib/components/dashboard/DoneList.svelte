@@ -125,7 +125,7 @@
           {@const v = view(row)}
           <!-- data-dose-id and data-edit are how an Undo finds the restored
                row after the reload has re-rendered it. -->
-          <li data-dose-id={row.dose.id} class="flex min-h-11 items-center gap-3 py-1">
+          <li data-dose-id={row.dose.id} class="flex min-h-11 items-center gap-2 py-1 sm:gap-3">
             <span class="text-text-secondary min-w-20 shrink-0 text-sm tabular-nums">
               {#if row.dayLabel === "yesterday"}<span class="block text-xs">Yesterday</span
                 >{/if}<span class="block">{v.time}</span>
@@ -142,15 +142,23 @@
               pattern={row.dose.medication.pattern}
               size="sm"
             />
+            <!-- On a phone the name has a line to itself and the dose and status
+                 word go under it: on one line beside a worded button, the
+                 name was squeezed to nothing and the words ran over the
+                 button. From sm up there is room for one line. -->
             <div class="min-w-0 flex-1">
-              <p class="flex min-w-0 items-baseline gap-2 text-sm">
+              <p class="flex min-w-0 flex-col text-sm sm:flex-row sm:items-baseline sm:gap-2">
                 <span class="text-text-primary truncate font-medium"
                   >{row.dose.medication.name}</span
                 >
-                <span class="text-text-secondary shrink-0">{v.dose}</span>
-                {#if v.statusWord}
-                  <span class="shrink-0 {v.statusClass}">{v.statusWord}</span>
-                {/if}
+                <span
+                  class="flex min-w-0 flex-wrap items-baseline gap-x-2 sm:shrink-0 sm:flex-nowrap"
+                >
+                  <span class="text-text-secondary shrink-0">{v.dose}</span>
+                  {#if v.statusWord}
+                    <span class="shrink-0 {v.statusClass}">{v.statusWord}</span>
+                  {/if}
+                </span>
               </p>
               {#if v.coversText}
                 <p class="text-text-secondary truncate text-xs">{v.coversText}</p>
@@ -177,7 +185,12 @@
                 undo={{ kind: "restore", focusTarget: v.restoreFocus }}
                 withdrawsUndoFor={row.dose.id}
                 focusAfter={focusDoneHeading}
-              />
+                iconOnlyOnPhone
+              >
+                <!-- × on a phone, where "Remove skip" plus its pending label
+                     took a third of the row. /log's delete is the same ×. -->
+                <span aria-hidden="true" class="text-base leading-none sm:hidden">&times;</span>
+              </DoseActionForm>
             {/if}
           </li>
         {/each}

@@ -153,6 +153,7 @@ const sentEmails: Array<{
   medicationName: string;
   lastEventAt: Date | null;
   now: Date;
+  daysFromHours: number;
 }> = [];
 // The two senders record separately. They used to share `sentEmails`,
 // which only `sendReminderEmail` ever wrote to — so every
@@ -173,8 +174,9 @@ vi.mock("$lib/server/email", () => ({
     medicationName: string,
     lastEventAt: Date | null,
     now: Date,
+    daysFromHours: number,
   ) => {
-    sentEmails.push({ to, medicationName, lastEventAt, now });
+    sentEmails.push({ to, medicationName, lastEventAt, now, daysFromHours });
     return emailResults.shift() ?? { ok: true, id: "msg-r" };
   },
   sendLowInventoryEmail: async (
@@ -284,6 +286,7 @@ function pushDefaultOverdueRow(): void {
     userTimezone: "UTC",
     userOverdueEmailReminders: true,
     userOverduePushReminders: true,
+    userTimeSinceDaysFromHours: 48,
     userLowInventoryEmailAlerts: true,
     userLowInventoryPushAlerts: false,
     medNotificationsEnabled: true,
@@ -353,6 +356,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userTimezone: "UTC",
       userOverdueEmailReminders: true,
       userOverduePushReminders: true,
+      userTimeSinceDaysFromHours: 48,
     });
     // Supplied by the taken-or-skipped aggregate, so a skip reaches this map.
     lastEventRows.push({ medicationId: "med-A", lastEventAt: oneHourAgo });
@@ -451,6 +455,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userTimezone: "UTC",
       userOverdueEmailReminders: true,
       userOverduePushReminders: true,
+      userTimeSinceDaysFromHours: 48,
       userLowInventoryEmailAlerts: true,
       userLowInventoryPushAlerts: false,
       medNotificationsEnabled: true,
@@ -530,6 +535,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userTimezone: "UTC",
       userOverdueEmailReminders: false,
       userOverduePushReminders: true,
+      userTimeSinceDaysFromHours: 48,
       userLowInventoryEmailAlerts: true,
       userLowInventoryPushAlerts: false,
       medNotificationsEnabled: true,
@@ -571,6 +577,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userTimezone: "UTC",
       userOverdueEmailReminders: false,
       userOverduePushReminders: true,
+      userTimeSinceDaysFromHours: 48,
       userLowInventoryEmailAlerts: true,
       userLowInventoryPushAlerts: false,
       medNotificationsEnabled: true,
@@ -607,6 +614,7 @@ describe("checkOverdueMedications — claim/complete with per-channel status", (
       userTimezone: "UTC",
       userOverdueEmailReminders: true,
       userOverduePushReminders: false,
+      userTimeSinceDaysFromHours: 48,
       userLowInventoryEmailAlerts: true,
       userLowInventoryPushAlerts: false,
       medNotificationsEnabled: true,
@@ -660,6 +668,7 @@ describe("checkOverdueMedications — the 'last logged' copy", () => {
       userTimezone: "UTC",
       userOverdueEmailReminders: true,
       userOverduePushReminders: true,
+      userTimeSinceDaysFromHours: 48,
       userLowInventoryEmailAlerts: true,
       userLowInventoryPushAlerts: false,
       medNotificationsEnabled: true,
@@ -690,9 +699,41 @@ describe("checkOverdueMedications — the 'last logged' copy", () => {
     expect(sentPushes).toHaveLength(1);
     expect(sentPushes[0]).toMatchObject({ title: "Ibuprofen overdue", body });
     expect(sentEmails).toEqual([
-      { to: "user@example.com", medicationName: "Ibuprofen", lastEventAt, now: NOW },
+      {
+        to: "user@example.com",
+        medicationName: "Ibuprofen",
+        lastEventAt,
+        now: NOW,
+        daysFromHours: 48,
+      },
     ]);
   });
+
+  it.each([
+    { threshold: 24, body: "Last logged 1d ago" },
+    { threshold: 48, body: "Last logged 30h 0m ago" },
+  ])(
+    "an account whose threshold is $threshold hours words a 30-hour-old event as $body",
+    async ({ threshold, body }) => {
+      const lastEventAt = new Date(NOW.getTime() - 30 * 60 * MINUTE);
+      scheduleRows.push(
+        overdueRow({
+          scheduleKind: "interval",
+          intervalHours: "0.005",
+          userTimeSinceDaysFromHours: threshold,
+        }),
+      );
+      lastEventRows.push({ medicationId: "med-A", lastEventAt });
+
+      await checkOverdueMedications();
+
+      expect(sentPushes).toHaveLength(1);
+      expect(sentPushes[0]).toMatchObject({ body });
+      // The email gets the same account value, so both channels agree.
+      expect(sentEmails).toHaveLength(1);
+      expect(sentEmails[0]).toMatchObject({ daysFromHours: threshold });
+    },
+  );
 
   it('a reminder for a medication never logged reads "Not yet logged"', async () => {
     // Only a fixed-time slot is overdue with no anchor at all: the interval
@@ -705,7 +746,13 @@ describe("checkOverdueMedications — the 'last logged' copy", () => {
     expect(sentPushes).toHaveLength(1);
     expect(sentPushes[0]).toMatchObject({ title: "Ibuprofen overdue", body: "Not yet logged" });
     expect(sentEmails).toEqual([
-      { to: "user@example.com", medicationName: "Ibuprofen", lastEventAt: null, now: NOW },
+      {
+        to: "user@example.com",
+        medicationName: "Ibuprofen",
+        lastEventAt: null,
+        now: NOW,
+        daysFromHours: 48,
+      },
     ]);
   });
 });
@@ -725,6 +772,7 @@ describe("checkLowInventoryMedications — split prefs, mixed channels", () => {
       userEmailVerified: true,
       userOverdueEmailReminders: true,
       userOverduePushReminders: true,
+      userTimeSinceDaysFromHours: 48,
       userLowInventoryEmailAlerts: true,
       userLowInventoryPushAlerts: false,
       medNotificationsEnabled: true,

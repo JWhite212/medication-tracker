@@ -95,6 +95,7 @@ describe("EmailResult mapping", () => {
       "Aspirin",
       new Date("2026-09-23T10:12:00.000Z"),
       new Date("2026-09-24T10:12:00.000Z"),
+      48,
     );
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -125,6 +126,7 @@ describe("sendReminderEmail copy", () => {
       "Ibuprofen",
       new Date(NOW.getTime() - ms),
       NOW,
+      48,
     );
 
     expect(r).toEqual({ ok: true, id: "msg_r" });
@@ -135,10 +137,32 @@ describe("sendReminderEmail copy", () => {
     expect(sentPayloads[0].html).toContain(`<p><strong>Ibuprofen</strong> is due — ${clause}.</p>`);
   });
 
+  it.each([
+    { threshold: 24, clause: "last logged 1d ago" },
+    { threshold: 48, clause: "last logged 30h 0m ago" },
+  ])(
+    "a 30-hour-old event at a $threshold-hour threshold says $clause",
+    async ({ threshold, clause }) => {
+      nextSendResult = { data: { id: "msg_r" }, error: null };
+
+      await sendReminderEmail(
+        "u@example.test",
+        "Ibuprofen",
+        new Date(NOW.getTime() - 30 * 60 * MINUTE),
+        NOW,
+        threshold,
+      );
+
+      expect(sentPayloads[0].html).toContain(
+        `<p><strong>Ibuprofen</strong> is due — ${clause}.</p>`,
+      );
+    },
+  );
+
   it('says "not yet logged" when nothing has ever been logged', async () => {
     nextSendResult = { data: { id: "msg_r" }, error: null };
 
-    await sendReminderEmail("u@example.test", "Ibuprofen", null, NOW);
+    await sendReminderEmail("u@example.test", "Ibuprofen", null, NOW, 48);
 
     expect(sentPayloads).toHaveLength(1);
     expect(sentPayloads[0].html).toContain(

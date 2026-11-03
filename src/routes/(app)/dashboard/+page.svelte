@@ -24,6 +24,7 @@
   let editingDose = $state<DoseLogWithMedication | null>(null);
 
   const timeFormat = $derived(data.preferences.timeFormat as TimeFormat);
+  const timeSinceDaysFromHours = $derived(data.preferences.timeSinceDaysFromHours);
   const dateFormat = $derived(data.preferences.dateFormat as DateFormat);
   const todayStart = $derived(new Date(data.todayStart));
   const asNeededOnly = $derived(data.status.kind === "as-needed-only");
@@ -150,6 +151,7 @@
         {todayStart}
         timezone={data.timezone}
         {timeFormat}
+        {timeSinceDaysFromHours}
         onedit={(dose) => (editingDose = dose)}
       />
     {:else}
@@ -198,6 +200,7 @@
         {todayStart}
         timezone={data.timezone}
         {timeFormat}
+        {timeSinceDaysFromHours}
         onedit={(dose) => (editingDose = dose)}
       />
 

@@ -97,6 +97,7 @@ function renderList(rows: DoneRow[], title = "Done today"): Document {
       todayStart: TODAY_START,
       timezone: TZ,
       timeFormat: "24h",
+      timeSinceDaysFromHours: 48,
       onedit: () => {},
     },
     context: dashboardContext({ now: NOW }),
@@ -146,12 +147,37 @@ describe("DoneList", () => {
         todayStart: TODAY_START,
         timezone: TZ,
         timeFormat: "24h",
+        timeSinceDaysFromHours: 48,
         onedit: () => {},
       },
       context: dashboardContext({ now: NOW }),
     });
     expect(textOf(ssrDocument(body).querySelector("time[data-time-since]")!)).toBe("26h 30m ago");
   });
+
+  it.each([
+    { threshold: 24, since: "1d ago" },
+    { threshold: 48, since: "30h 0m ago" },
+  ])(
+    "words a 30-hour-old dose as $since at a $threshold-hour threshold",
+    ({ threshold, since }) => {
+      const { body } = render(DoneList, {
+        props: {
+          rows: [ROWS[3]],
+          title: "Done today",
+          // ROWS[3] was taken at 13:31 on 1 May: 30 hours before this.
+          serverNow: new Date("2026-05-02T19:31:00.000Z"),
+          todayStart: TODAY_START,
+          timezone: TZ,
+          timeFormat: "24h",
+          timeSinceDaysFromHours: threshold,
+          onedit: () => {},
+        },
+        context: dashboardContext({ now: NOW }),
+      });
+      expect(textOf(ssrDocument(body).querySelector("time[data-time-since]")!)).toBe(since);
+    },
+  );
 
   it("gives skipped, missed and yesterday's rows the right time-since treatment", () => {
     const lis = items(renderList(ROWS));

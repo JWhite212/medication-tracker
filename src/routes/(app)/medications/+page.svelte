@@ -22,6 +22,7 @@
   const lock = getDoseWriteLock();
 
   const timeFormat = $derived(data.preferences.timeFormat as TimeFormat);
+  const timeSinceDaysFromHours = $derived(data.preferences.timeSinceDaysFromHours);
 
   let announcement = $state("");
 
@@ -138,7 +139,12 @@
                unbreakable in the card (it was a long medication name) widened
                it past a 320px screen and pushed the Log button off the edge. -->
           <div class="min-w-0 flex-1">
-            <MedicationCard {medication} timezone={data.user.timezone} {timeFormat} />
+            <MedicationCard
+              {medication}
+              timezone={data.user.timezone}
+              {timeFormat}
+              {timeSinceDaysFromHours}
+            />
           </div>
         </div>
       {/each}

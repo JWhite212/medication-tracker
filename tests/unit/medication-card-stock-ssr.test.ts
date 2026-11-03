@@ -2,7 +2,7 @@
 //
 // The medications card's one stock chip. `node` is load-bearing: see
 // tests/unit/medication-card-targets-ssr.test.ts's header.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render } from "svelte/server";
 import type { MedicationWithStats } from "$lib/types";
 import MedicationCard from "../../src/lib/components/MedicationCard.svelte";
@@ -36,11 +36,49 @@ function card(stock: Stock): Document {
   };
   return ssrDocument(
     render(MedicationCard, {
-      props: { medication, timezone: "UTC", timeFormat: "24h" },
+      props: { medication, timezone: "UTC", timeFormat: "24h", timeSinceDaysFromHours: 48 },
       context: doseWriteContext(),
     }).body,
   );
 }
+describe("the card's last-taken time honours the account's threshold", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    { threshold: 24, since: "1d ago" },
+    { threshold: 48, since: "30h 0m ago" },
+  ])("words a 30-hour-old dose as $since at $threshold hours", ({ threshold, since }) => {
+    const NOW = new Date("2026-05-02T19:31:00.000Z");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    const medication: Listed = {
+      ...BASE_MEDICATION_ROW,
+      lowInventoryEpisodeAt: null,
+      lastTakenAt: new Date(NOW.getTime() - 30 * 3_600_000),
+      weeklyDoseCount: 14,
+      avgDailyConsumption: 2,
+      expectedDailyDoses: 3,
+      sparkline: [1, 2, 3],
+      refillSeverity: "ok",
+      daysUntilRefill: null,
+      inventoryCount: null,
+      inventoryAlertThreshold: null,
+    };
+    const doc = ssrDocument(
+      render(MedicationCard, {
+        props: {
+          medication,
+          timezone: "UTC",
+          timeFormat: "24h",
+          timeSinceDaysFromHours: threshold,
+        },
+        context: doseWriteContext(),
+      }).body,
+    );
+    expect(textOf(doc.querySelector("time[datetime]")!)).toBe(since);
+  });
+});
+
 const chips = (doc: Document) => [...doc.querySelectorAll("[data-stock-chip]")];
 const has = (el: Element, recipe: string) =>
   expect([...el.classList]).toEqual(expect.arrayContaining(recipe.split(" ")));

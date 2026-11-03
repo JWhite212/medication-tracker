@@ -129,7 +129,12 @@ afterEach(() => {
 function mountCard() {
   app = mount(MedicationCard, {
     target,
-    props: { medication: medication(), timezone: ZONE, timeFormat: "24h" },
+    props: {
+      medication: medication(),
+      timezone: ZONE,
+      timeFormat: "24h",
+      timeSinceDaysFromHours: 48,
+    },
     context: doseWriteContext(lock),
   });
   flushSync();

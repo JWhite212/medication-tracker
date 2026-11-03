@@ -5,6 +5,8 @@ import { getSchedulesForUser } from "$lib/server/schedules";
 import { expectedPerDayForSchedules } from "$lib/server/analytics";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
+import { atOrBelowAlertThreshold } from "$lib/utils/low-stock";
+import { refillStatus, toneOf } from "$lib/utils/status-tone";
 // Types live in $lib/types so client components (RefillsCard) can
 // import without crossing the $lib/server boundary. Re-exported here
 // for backward-compatible callers.
@@ -67,6 +69,7 @@ export async function getRefillForecast(userId: string): Promise<RefillForecastE
         name: medications.name,
         colour: medications.colour,
         inventoryCount: medications.inventoryCount,
+        inventoryAlertThreshold: medications.inventoryAlertThreshold,
         scheduleType: medications.scheduleType,
         scheduleIntervalHours: medications.scheduleIntervalHours,
       })
@@ -107,18 +110,35 @@ export async function getRefillForecast(userId: string): Promise<RefillForecastE
     );
     const days = daysUntilRefill(med.inventoryCount, dailyRate);
     const severity = classifyRefillSeverity(days);
-    if (severity === "ok") continue;
+    // Listed exactly when RefillsCard's `refillChip` draws a chip for it: a
+    // tier that needs watching, or stock at the user's own alert level
+    // whatever the tier, which is the medications card's amber chip and the
+    // low-stock alert's trigger.
+    const low = atOrBelowAlertThreshold(med.inventoryCount, med.inventoryAlertThreshold);
+    if (severity === "ok" && !low) continue;
     out.push({
       medicationId: med.id,
       medicationName: med.name,
       colour: med.colour,
       inventoryCount: med.inventoryCount,
+      inventoryAlertThreshold: med.inventoryAlertThreshold,
       dailyRate,
       daysUntilRefill: days,
       severity,
     });
   }
 
-  out.sort((a, b) => (a.daysUntilRefill ?? Infinity) - (b.daysUntilRefill ?? Infinity));
+  // Amber rows first, then fewest days left. A row at its alert level asks
+  // for a reorder, so it sorts with critical and warning rather than under a
+  // neutral watch row, and its days put it after them: an ok forecast is
+  // over 14 days or none at all.
+  const needsYou = (e: RefillForecastEntry) =>
+    atOrBelowAlertThreshold(e.inventoryCount, e.inventoryAlertThreshold) ||
+    toneOf(refillStatus(e.severity)) === "needs-you";
+  out.sort(
+    (a, b) =>
+      Number(needsYou(b)) - Number(needsYou(a)) ||
+      (a.daysUntilRefill ?? Infinity) - (b.daysUntilRefill ?? Infinity),
+  );
   return out;
 }

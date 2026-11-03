@@ -89,6 +89,7 @@ const lowStock: RefillForecastEntry = {
   medicationName: "Metformin",
   colour: "#ff0000",
   inventoryCount: 2,
+  inventoryAlertThreshold: null,
   dailyRate: 1,
   daysUntilRefill: 2,
   severity: "critical",

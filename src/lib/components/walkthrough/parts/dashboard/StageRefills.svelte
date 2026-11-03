@@ -9,14 +9,15 @@
   import {
     refillChip,
     refillDaysLabel,
-    refillSeverityClass,
-    refillSeverityLabel,
+    refillLabelClass,
+    refillRowClass,
   } from "$components/RefillsCard.svelte";
 
   type Entry = Pick<
     RefillForecastEntry,
     "medicationId" | "medicationName" | "colour" | "daysUntilRefill" | "severity"
-  >;
+  > &
+    Partial<Pick<RefillForecastEntry, "inventoryCount" | "inventoryAlertThreshold">>;
 
   let { entries }: { entries: readonly Entry[] } = $props();
 </script>
@@ -26,24 +27,21 @@
     <p class="text-text-muted mb-3 text-sm font-medium tracking-wider uppercase">Refills</p>
     <div class="space-y-2">
       {#each entries as entry (entry.medicationId)}
-        <!-- inventoryCount is null because the stage's Entry carries none; with no
-             threshold, refillChip reads the count only when the days are null,
-             and every forecast row has days. -->
+        <!-- STAGE_REFILLS carries no count or alert threshold, because the demo
+             draws none. With no threshold, refillChip reads the count only
+             when the days are null, and every stage row has days. -->
         {@const label = refillChip({
           severity: entry.severity,
           daysUntilRefill: entry.daysUntilRefill,
-          inventoryCount: null,
-          inventoryAlertThreshold: null,
+          inventoryCount: entry.inventoryCount ?? null,
+          inventoryAlertThreshold: entry.inventoryAlertThreshold ?? null,
         })}
-        <div
-          class="flex items-center gap-3 rounded-lg border p-3 {refillSeverityClass(
-            entry.severity,
-          )}"
-        >
+        {@const tone = label?.tone ?? "neutral"}
+        <div class="flex items-center gap-3 rounded-lg border p-3 {refillRowClass(tone)}">
           <span class="h-2.5 w-2.5 shrink-0 rounded-full" style:background-color={entry.colour}
           ></span>
           <span class="min-w-0 flex-1 truncate font-medium">{entry.medicationName}</span>
-          <span class="shrink-0 text-xs {refillSeverityLabel(entry.severity)}">
+          <span class="shrink-0 text-xs {refillLabelClass(tone)}">
             <!-- The space is an expression because Svelte drops a literal one at an {#if} edge. -->
             <!-- eslint-disable-next-line svelte/no-useless-mustaches -->
             {#if label?.glyph}<span aria-hidden="true">{label.glyph}</span>{" "}{/if}{label?.text ??

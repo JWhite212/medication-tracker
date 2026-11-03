@@ -17,16 +17,17 @@
      cannot be one token: #4f46e5 scores 1.99:1 as text, and #8f92f5 scores
      2.76:1 with white on it.
      All three accent values here are the LOGGED-OUT fallback only. The (app)
-     layout sets --color-accent, --color-accent-fg and --color-accent-ink
-     inline from the user's stored hex (readableForeground / readableInk in
-     utils/contrast.ts), and an inline style beats every rule below. */
+     layout sets --color-accent, --color-accent-fg and --color-accent-hover
+     inline from the user's stored hex (readableForeground / readableHover in
+     utils/contrast.ts), and an inline style beats every rule below; the
+     theme block it emits derives --color-accent-ink per scheme. */
   --color-accent: #4f46e5;
-  /* accent-hover is a FILL ONLY, and only on the logged-out routes: every
-     authenticated accent button uses `hover:opacity-90`, because in there
-     --color-accent and --color-accent-fg are inline from the user's stored
-     hex and a fixed hover colour cannot pair with both a light and a dark
-     accent-fg. It darkens rather than lightens because nothing lighter than
-     #4f46e5 keeps white above 4.5:1 — #6366f1 was 4.47. */
+  /* accent-hover is a FILL ONLY: every solid accent fill hovers with
+     `hover:bg-accent-hover`, never a fade or a filter, because 90% opacity
+     let the backdrop through and took three presets' labels below 4.5:1.
+     Signed in it is readableHover(the user's hex), which pairs with that
+     hex's accent-fg. It darkens rather than lightens because nothing lighter
+     than #4f46e5 keeps white above 4.5:1 — #6366f1 was 4.47. */
   --color-accent-hover: #4338ca;
   --color-accent-fg: #ffffff;
   --color-accent-ink: #8f92f5;

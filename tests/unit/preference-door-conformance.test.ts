@@ -74,7 +74,7 @@ describe("preference door conformance", () => {
     // ever returned an empty (or truncated) list -- a drizzle refactor, a
     // mis-merge, or an accidental re-export would all still leave this
     // test green with zero real assertions run.
-    expect(columns).toHaveLength(18);
+    expect(columns).toHaveLength(20);
     for (const column of columns) {
       expect(apiKeys, `/api/v1 door is missing ${column}`).toContain(column);
       expect(importKeys, `import door is missing ${column}`).toContain(column);
@@ -213,7 +213,7 @@ describe("preference door conformance — value domains", () => {
   it("checks every key both doors carry", () => {
     // Guards the generated cases below against silently covering nothing.
     // Key-set equality itself is asserted above; this is the count.
-    expect(sharedKeys).toHaveLength(18);
+    expect(sharedKeys).toHaveLength(20);
   });
 
   for (const key of sharedKeys) {
@@ -371,11 +371,41 @@ describe("preference door conformance — the domains that shipped", () => {
     }
   });
 
+  it("holds the Phase 2 enums to the values that shipped, at every door", () => {
+    const cases = [
+      { key: "dashboardLaterMode", ok: ["next", "all"], bad: ["off", "next3", "", "ALL", null] },
+      {
+        key: "dashboardDoneTime",
+        ok: ["both", "since", "clock"],
+        bad: ["relative", "", "BOTH", null, 1],
+      },
+    ] as const;
+    const shapes = [updatePreferencesPayload.shape, shapeObject(importPreferences).shape];
+    for (const { key, ok, bad } of cases) {
+      for (const shape of shapes) {
+        const schema = at(shape, key);
+        for (const v of ok)
+          expect(schema.safeParse({ [key]: v }).success, `${key} ${v}`).toBe(true);
+        for (const v of bad) {
+          expect(schema.safeParse({ [key]: v }).success, `${key} ${String(v)}`).toBe(false);
+        }
+      }
+      const form = dashboardSettingsFieldSchemas[key];
+      expect(form.safeParse({}).success, key).toBe(false);
+      for (const v of ok) {
+        expect(form.safeParse({ [key]: v })).toEqual({ success: true, data: { [key]: v } });
+      }
+      for (const v of bad.filter((b) => typeof b === "string")) {
+        expect(form.safeParse({ [key]: v }).success, `${key} form ${v}`).toBe(false);
+      }
+    }
+  });
+
   it("carries every substrate key at both doors", () => {
     // NON_APPEARANCE_PREFERENCE_KEYS is Object.keys of the substrate's field
     // types, so this fails if a key is dropped from the substrate even
     // though both doors would still agree with each other about its absence.
-    expect(NON_APPEARANCE_PREFERENCE_KEYS).toHaveLength(12);
+    expect(NON_APPEARANCE_PREFERENCE_KEYS).toHaveLength(14);
     for (const key of NON_APPEARANCE_PREFERENCE_KEYS) {
       expect(apiKeys, `/api/v1 door is missing ${key}`).toContain(key);
       expect(importKeys, `import door is missing ${key}`).toContain(key);

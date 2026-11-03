@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { DashboardSectionId } from "$lib/dashboard/layout";
+import type { DashboardLaterMode, DoneTimeDisplay } from "$lib/preferences/domains";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -361,6 +362,13 @@ export const userPreferences = pgTable("user_preferences", {
   dashboardShowRefills: boolean("dashboard_show_refills").notNull().default(true),
   // formatTimeSince's hours-before-days switch, in hours. 48 = Phase 0 behaviour.
   timeSinceDaysFromHours: integer("time_since_days_from_hours").notNull().default(48),
+  // Phase 2. text + a zod enum, like time_format / export_format. The DEFAULTs
+  // are today's page. Later mode has no "off": dashboardShowLater owns that.
+  dashboardLaterMode: text("dashboard_later_mode")
+    .$type<DashboardLaterMode>()
+    .notNull()
+    .default("next"),
+  dashboardDoneTime: text("dashboard_done_time").$type<DoneTimeDisplay>().notNull().default("both"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

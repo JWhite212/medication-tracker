@@ -396,6 +396,11 @@ export const dashboardSettingsFieldSchemas = {
       .transform(Number)
       .pipe(preferenceFieldTypes.timeSinceDaysFromHours),
   }),
+  // Enums post as plain strings, so no transform: the domain does the work.
+  dashboardLaterMode: z.strictObject({
+    dashboardLaterMode: preferenceFieldTypes.dashboardLaterMode,
+  }),
+  dashboardDoneTime: z.strictObject({ dashboardDoneTime: preferenceFieldTypes.dashboardDoneTime }),
 };
 
 export const logFilterSchema = z.object({

@@ -40,13 +40,15 @@ beforeEach(() => {
 });
 
 describe("the dashboard settings page's actions", () => {
-  it("defines exactly the five layout actions and no default", () => {
+  it("defines exactly the seven dashboard actions and no default", () => {
     expect(Object.keys(actions).sort()).toEqual(
       [
         "dashboardSectionOrder",
         "dashboardShowLater",
         "dashboardShowQuickLog",
         "dashboardShowRefills",
+        "dashboardLaterMode",
+        "dashboardDoneTime",
         "resetDashboardLayout",
       ].sort(),
     );
@@ -146,6 +148,38 @@ describe("the dashboard settings page's actions", () => {
     });
   }
 
+  describe("the Phase 2 enum actions", () => {
+    const enums = {
+      dashboardLaterMode: { ok: ["next", "all"], bad: ["off", "next3", "", "ALL"] },
+      dashboardDoneTime: { ok: ["both", "since", "clock"], bad: ["relative", "", "BOTH"] },
+    } as const;
+    for (const [key, { ok, bad }] of Object.entries(enums)) {
+      for (const value of ok) {
+        it(`${key} saves ${JSON.stringify(value)} with exactly its key`, async () => {
+          const result = await call(actions[key], { [key]: value });
+          expect(updatePreferences).toHaveBeenCalledTimes(1);
+          expect(updatePreferences).toHaveBeenCalledWith("u1", { [key]: value });
+          expect(result).toMatchObject({ success: true, key });
+        });
+      }
+      for (const value of bad) {
+        it(`${key} 400s ${JSON.stringify(value)} without writing`, async () => {
+          const result = await call(actions[key], { [key]: value });
+          expect(updatePreferences).not.toHaveBeenCalled();
+          expect(result).toMatchObject({ status: 400, data: { key } });
+        });
+      }
+      it(`${key} 400s a missing field and a second field riding along`, async () => {
+        expect(await call(actions[key], {})).toMatchObject({ status: 400 });
+        const other = key === "dashboardLaterMode" ? "dashboardDoneTime" : "dashboardLaterMode";
+        expect(await call(actions[key], { [key]: ok[0], [other]: "both" })).toMatchObject({
+          status: 400,
+        });
+        expect(updatePreferences).not.toHaveBeenCalled();
+      });
+    }
+  });
+
   it("400s a mistyped field name (one required key, strict)", async () => {
     const result = await call(actions.dashboardShowLater, { dashboardShowLatr: "on" });
     expect(updatePreferences).not.toHaveBeenCalled();
@@ -178,6 +212,8 @@ describe("the dashboard settings page's actions", () => {
     "dashboardShowLater",
     "dashboardShowQuickLog",
     "dashboardShowRefills",
+    "dashboardLaterMode",
+    "dashboardDoneTime",
     "resetDashboardLayout",
   ]) {
     it(`${name} rate-limits per account before writing, and the 429 says when`, async () => {
@@ -185,7 +221,16 @@ describe("the dashboard settings page's actions", () => {
       const fields: Record<string, string> =
         name === "resetDashboardLayout"
           ? {}
-          : { [name]: name === "dashboardSectionOrder" ? "default" : "on" };
+          : {
+              [name]:
+                name === "dashboardSectionOrder"
+                  ? "default"
+                  : name === "dashboardLaterMode"
+                    ? "all"
+                    : name === "dashboardDoneTime"
+                      ? "both"
+                      : "on",
+            };
 
       const result = await call(actions[name], fields);
 

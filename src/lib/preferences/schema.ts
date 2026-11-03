@@ -6,7 +6,7 @@
  * Why this exists, and why it is not just a second copy of
  * `$lib/appearance/schema.ts`:
  *
- * These twelve keys were hand-restated at both API doors in `validation.ts`.
+ * These fourteen keys were hand-restated at both API doors in `validation.ts`.
  * `heatmapPeriod` proved what that costs — it was `z.number().int()` at the
  * `/api/v1` door and `z.number().int().min(1).max(3650)` on import, and the
  * unbounded value reached the activity heatmap's per-day render loop. The
@@ -53,13 +53,15 @@ import type { AppearanceKey, PreferenceKey } from "$lib/appearance/registry";
 import type { UserPreferences } from "$lib/types";
 import { DASHBOARD_SECTIONS } from "$lib/dashboard/layout";
 import {
+  DASHBOARD_LATER_MODES,
+  DONE_TIME_DISPLAYS,
   TIME_SINCE_DAYS_FROM_HOURS_BOUNDS,
   TIME_SINCE_PRESETS,
   type NumericBound,
 } from "./domains";
 
 /**
- * The twelve mutable `user_preferences` columns the appearance registry does
+ * The fourteen mutable `user_preferences` columns the appearance registry does
  * not own, derived by subtraction rather than listed. A column added to the
  * table is therefore a compile error in `preferenceFieldTypes` below unless
  * it is also added to the appearance registry — neither door can be left
@@ -125,6 +127,9 @@ export const preferenceFieldTypes = {
   dashboardShowQuickLog: z.boolean(),
   dashboardShowRefills: z.boolean(),
   timeSinceDaysFromHours: boundedInt(TIME_SINCE_DAYS_FROM_HOURS_BOUNDS),
+  // Presentation advice. No "off" for Later: dashboardShowLater owns that.
+  dashboardLaterMode: z.enum(DASHBOARD_LATER_MODES),
+  dashboardDoneTime: z.enum(DONE_TIME_DISPLAYS),
 } satisfies { [K in NonAppearancePreferenceKey]: z.ZodType<UserPreferences[K]> };
 
 export const NON_APPEARANCE_PREFERENCE_KEYS = Object.keys(
@@ -158,7 +163,7 @@ function optionalise<T extends PreferenceShape>(shape: T): Optionalised<T> {
 export const preferencePayloadShape = optionalise(preferenceFieldTypes);
 
 /**
- * ARITY 3 — backup import: all optional. Identical to arity 2 for all twelve
+ * ARITY 3 — backup import: all optional. Identical to arity 2 for all fourteen
  * today. It stays its own `optionalise()` call rather than an alias of arity
  * 2 so that a deliberate divergence has somewhere to be written, in the same
  * shape as `appearanceImportShape`.

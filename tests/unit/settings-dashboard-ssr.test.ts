@@ -15,6 +15,7 @@ import { JSDOM } from "jsdom";
 import {
   HIDEABLE_SECTIONS,
   SECTION_LABELS,
+  mergeVisibleOrder,
   moveSection,
   normaliseSectionOrder,
   orderValue,
@@ -91,13 +92,24 @@ describe("/settings/dashboard SSR", () => {
   });
 
   it("pins Due first on a scheduled account", () => {
-    const pinned = renderPage().querySelector("ol[data-sections] > li[data-pinned]");
+    const doc = renderPage();
+    const pinned = doc.querySelector("[data-pinned]");
     expect(textOf(pinned!)).toBe(
       "Due now: always first whenever something is due, so nothing overdue sits below the fold.",
     );
     expect(pinned!.querySelector("button, a, input")).toBeNull();
-    // It is the first row.
-    expect(pinned!.parentElement!.firstElementChild).toBe(pinned);
+    // A paragraph directly above the list, not an item in it, so the list's
+    // own numbering matches the visible positions and the announcements.
+    expect(pinned!.tagName).toBe("P");
+    expect(pinned!.nextElementSibling).toBe(doc.querySelector("ol[data-sections]"));
+  });
+
+  it("numbers only the movable sections in the list (Review Minor 8)", () => {
+    const list = renderPage().querySelector("ol[data-sections]")!;
+    expect(list.querySelector("[data-pinned]")).toBeNull();
+    const items = [...list.children];
+    expect(items).toHaveLength(4);
+    expect(items.every((li) => li.tagName === "LI" && li.hasAttribute("data-section"))).toBe(true);
   });
 
   it("lists the four sections in the confirmed order", () => {
@@ -203,18 +215,42 @@ describe("/settings/dashboard SSR", () => {
 
     it("pins Log a dose and lists only Done and Refills, normalised for the variant", () => {
       const doc = renderPage({ dashboardSectionOrder: stored }, "as-needed-only");
-      expect(textOf(doc.querySelector("li[data-pinned]")!)).toBe("Log a dose: always first");
+      expect(textOf(doc.querySelector("p[data-pinned]")!)).toBe("Log a dose: always first");
       const expected = normaliseSectionOrder(stored, "as-needed-only");
       expect(expected).toEqual(["refills", "done"]);
       expect(rows(doc).map((r) => r.dataset.section)).toEqual(expected);
+      const full = normaliseSectionOrder(stored, "scheduled");
       expect(moveButton(doc, "done", "up")!.getAttribute("value")).toBe(
-        orderValue(moveSection(expected, "done", "up")),
+        orderValue(mergeVisibleOrder(moveSection(expected, "done", "up"), full)),
       );
       expect(moveButton(doc, "refills", "down")!.getAttribute("value")).toBe(
-        orderValue(moveSection(expected, "refills", "down")),
+        orderValue(mergeVisibleOrder(moveSection(expected, "refills", "down"), full)),
       );
       expect(moveButton(doc, "refills", "up")!.getAttribute("aria-disabled")).toBe("true");
       expect(moveButton(doc, "done", "down")!.getAttribute("aria-disabled")).toBe("true");
+    });
+
+    it("posts every stored id, moving only Done and Refills within their own slots (Review Minor 4)", () => {
+      const doc = renderPage(
+        { dashboardSectionOrder: ["later", "refills", "quickLog", "done"] },
+        "as-needed-only",
+      );
+      expect(rows(doc).map((r) => r.dataset.section)).toEqual(["refills", "done"]);
+      // Later keeps slot 1 and Quick log slot 3; Done and Refills swap.
+      expect(moveButton(doc, "refills", "down")!.getAttribute("value")).toBe(
+        "later,done,quickLog,refills",
+      );
+      expect(moveButton(doc, "done", "up")!.getAttribute("value")).toBe(
+        "later,done,quickLog,refills",
+      );
+    });
+
+    it("posts every id from the default order too", () => {
+      const doc = renderPage({}, "as-needed-only");
+      expect(rows(doc).map((r) => r.dataset.section)).toEqual(["done", "refills"]);
+      expect(moveButton(doc, "done", "down")!.getAttribute("value")).toBe(
+        "refills,later,quickLog,done",
+      );
     });
   });
 
@@ -234,6 +270,20 @@ describe("/settings/dashboard SSR", () => {
       [...doc.querySelectorAll("button")].find(
         (b) => textOf(b) === "Default: Done, Later, Quick log, Refills",
       );
+    const resetButton = (doc: Document) =>
+      doc.querySelector<HTMLButtonElement>('form[action="?/resetDashboardLayout"] button');
+
+    it("names a scheduled account's default sections", () => {
+      const reset = resetButton(renderPage({ dashboardShowLater: false }));
+      expect(textOf(reset!)).toBe("Default: Done, Later, Quick log, Refills");
+    });
+
+    it("names only Done and Refills on an as-needed-only account (Review Important 3)", () => {
+      const reset = resetButton(
+        renderPage({ dashboardSectionOrder: ["refills", "done"] }, "as-needed-only"),
+      );
+      expect(textOf(reset!)).toBe("Default: Done, Refills");
+    });
 
     it("is absent at the defaults", () => {
       expect(resetIn(renderPage())).toBeUndefined();

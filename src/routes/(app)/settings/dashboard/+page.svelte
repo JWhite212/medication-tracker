@@ -5,12 +5,16 @@
   import { invalidateAll } from "$app/navigation";
   import { page } from "$app/state";
   import {
+    DEFAULT_ORDER,
     SECTION_LABELS,
+    SHORT_SECTION_LABELS,
+    mergeVisibleOrder,
     moveSection,
     normaliseSectionOrder,
     orderValue,
     type DashboardSectionId,
   } from "$lib/dashboard/layout";
+  import { focusIfLost, pageHeading } from "$lib/components/dose-writes/focus-after";
   import { actionErrorMessage } from "$lib/utils/form-errors";
   import { showToast } from "$lib/components/ui/Toast.svelte";
   import Button from "$lib/components/ui/Button.svelte";
@@ -25,6 +29,15 @@
   // changes only when the reload after it lands.
   const preferences = $derived(data.preferences);
   const order = $derived(normaliseSectionOrder(preferences.dashboardSectionOrder, data.variant));
+  // Every id the account stores, placed as the scheduled page would place
+  // them. A move posts `order`'s change written back into this, so an
+  // as-needed-only account's stored places for Later and Quick log survive
+  // a reorder of the two sections it can see. On a scheduled account the two
+  // orders are the same and the posted value is exactly `moveSection(order)`.
+  const fullOrder = $derived(normaliseSectionOrder(preferences.dashboardSectionOrder, "scheduled"));
+  const resetLabel = $derived(
+    `Default: ${DEFAULT_ORDER[data.variant].map((id) => SHORT_SECTION_LABELS[id]).join(", ")}`,
+  );
   const shown = $derived({
     later: preferences.dashboardShowLater,
     quickLog: preferences.dashboardShowQuickLog,
@@ -114,6 +127,12 @@
             if (intent.kind === "move") {
               await tick();
               focusMoved(intent.id, intent.direction);
+            } else if (intent.kind === "reset") {
+              // The reload made the page uncustomised, which removed the
+              // Reset button that held focus. Park it on the h1 rather than
+              // leave the next Tab to start from the top of the document.
+              await tick();
+              focusIfLost(pageHeading);
             }
           } else if (result.type === "redirect") {
             await applyAction(result);
@@ -157,18 +176,21 @@
     <h2 class="mb-1 text-lg font-semibold">Sections</h2>
     <p class="text-text-muted mb-4 text-sm">The order your dashboard shows them in.</p>
 
-    <ol data-sections class="space-y-2">
-      <li
-        data-pinned
-        class="border-glass-border text-text-secondary rounded-lg border px-4 py-3 text-sm"
-      >
-        {#if data.variant === "scheduled"}
-          Due now: always first whenever something is due, so nothing overdue sits below the fold.
-        {:else}
-          Log a dose: always first
-        {/if}
-      </li>
+    <!-- Above the list, not in it: the pinned region cannot move, and as an
+         item it would make "Done today" item 2 of a list whose visible
+         numbers and announcements call it position 1. -->
+    <p
+      data-pinned
+      class="border-glass-border text-text-secondary mb-2 rounded-lg border px-4 py-3 text-sm"
+    >
+      {#if data.variant === "scheduled"}
+        Due now: always first whenever something is due, so nothing overdue sits below the fold.
+      {:else}
+        Log a dose: always first
+      {/if}
+    </p>
 
+    <ol data-sections class="space-y-2">
       {#each order as id, index (id)}
         {@const label = SECTION_LABELS[id]}
         <li data-section={id} class="border-glass-border rounded-lg border px-4 py-2">
@@ -191,7 +213,9 @@
                   type={atEnd ? "button" : "submit"}
                   label="Move {label} {direction}"
                   name={atEnd ? undefined : "dashboardSectionOrder"}
-                  value={atEnd ? undefined : orderValue(moveSection(order, id, direction))}
+                  value={atEnd
+                    ? undefined
+                    : orderValue(mergeVisibleOrder(moveSection(order, id, direction), fullOrder))}
                   aria-disabled={atEnd || saving ? "true" : undefined}
                 >
                   <span aria-hidden="true">{direction === "up" ? "↑" : "↓"}</span>
@@ -233,9 +257,7 @@
         use:enhance={save({ kind: "reset" })}
         class="mt-4"
       >
-        <Button variant="secondary" type="submit" ariaDisabled={saving}
-          >Default: Done, Later, Quick log, Refills</Button
-        >
+        <Button variant="secondary" type="submit" ariaDisabled={saving}>{resetLabel}</Button>
       </form>
     {/if}
   </GlassCard>

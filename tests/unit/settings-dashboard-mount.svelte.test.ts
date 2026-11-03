@@ -317,3 +317,34 @@ describe("/settings/dashboard after a move", () => {
     expect(status(root)).toBe("Refills shown");
   });
 });
+
+describe("/settings/dashboard after Reset", () => {
+  it("parks focus on the h1 once the reload removes the Reset button (Review Important 1)", async () => {
+    const root = mountPage(["refills", "done", "later", "quickLog"]);
+    const reset = root.querySelector<HTMLButtonElement>(
+      'form[action="?/resetDashboardLayout"] button',
+    )!;
+    reset.focus();
+    reset.click();
+    await settle();
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+
+    h.invalidateAll.mockImplementationOnce(async () => {
+      props.data = dataWith(null);
+      flushSync();
+    });
+    await h.pending[0].finish({
+      type: "success",
+      status: 200,
+      data: { success: true, key: "resetDashboardLayout" },
+    });
+    flushSync();
+
+    // The button went with the customised state.
+    expect(root.querySelector('form[action="?/resetDashboardLayout"]')).toBeNull();
+    expect(reset.isConnected).toBe(false);
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe(root.querySelector("h1"));
+    expect(status(root)).toBe("Dashboard layout reset to default");
+  });
+});

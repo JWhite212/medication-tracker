@@ -375,7 +375,7 @@ export const LOG_ALL: readonly DoseGroup[] = [
       { id: "met", time: "19:51", since: "12h 11m ago" },
       { id: "ibu", time: "14:12", since: "17h 50m ago", sideEffect: UPSET_STOMACH },
       { id: "vitd", time: "09:05", since: "22h 57m ago" },
-      { id: "lis", time: "08:01", since: "1d ago" },
+      { id: "lis", time: "08:01", since: "24h 1m ago" },
     ],
   },
 ];

@@ -41,6 +41,15 @@ describe("formatTimeSince", () => {
     expect(formatTimeSince(twoDaysAgo)).toBe("2d ago");
   });
 
+  // Hours, not days, until two full days have passed: "1d ago" said the
+  // same thing about a dose taken 24 hours ago and one taken 47 hours ago.
+  it("keeps counting hours between 24 and 48 hours", () => {
+    expect(formatTimeSince(new Date("2026-04-14T14:30:00Z"))).toBe("24h 0m ago");
+    expect(formatTimeSince(new Date("2026-04-14T12:15:00Z"))).toBe("26h 15m ago");
+    expect(formatTimeSince(new Date("2026-04-13T14:31:00Z"))).toBe("47h 59m ago");
+    expect(formatTimeSince(new Date("2026-04-13T14:30:00Z"))).toBe("2d ago");
+  });
+
   it("formats exact hours", () => {
     const oneHourAgo = new Date("2026-04-15T13:30:00Z");
     expect(formatTimeSince(oneHourAgo)).toBe("1h 0m ago");
@@ -73,7 +82,9 @@ describe("lastLoggedPhrase", () => {
     { gap: "59m", ms: 59 * MINUTE, expected: "Last logged 59m ago" },
     { gap: "60m", ms: 60 * MINUTE, expected: "Last logged 1h 0m ago" },
     { gap: "23h59m", ms: 23 * HOUR + 59 * MINUTE, expected: "Last logged 23h 59m ago" },
-    { gap: "24h", ms: 24 * HOUR, expected: "Last logged 1d ago" },
+    { gap: "24h", ms: 24 * HOUR, expected: "Last logged 24h 0m ago" },
+    { gap: "47h59m", ms: 47 * HOUR + 59 * MINUTE, expected: "Last logged 47h 59m ago" },
+    { gap: "48h", ms: 48 * HOUR, expected: "Last logged 2d ago" },
   ])("$gap before now reads $expected", ({ ms, expected }) => {
     expect(lastLoggedPhrase(before(ms), NOW)).toBe(expected);
   });

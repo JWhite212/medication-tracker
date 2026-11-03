@@ -1,5 +1,13 @@
 /**
- * "just now", "5m ago", "2h 3m ago" or "1d ago": how long before `now` the
+ * Below this many hours, `formatTimeSince` counts hours and minutes; from it,
+ * whole days. 48 rather than 24 because a dose taken yesterday morning is
+ * still read in hours ("26h 10m ago") when deciding about the next one, and
+ * "1d ago" said nothing between 24 and 47 hours.
+ */
+export const TIME_SINCE_DAYS_FROM_HOURS = 48;
+
+/**
+ * "just now", "5m ago", "26h 3m ago" or "2d ago": how long before `now` the
  * instant `date` was. Every result already reads as a complete phrase, so a
  * caller must never append its own "ago".
  *
@@ -17,7 +25,7 @@ export function formatTimeSince(date: Date, now: Date = new Date()): string {
 
   if (diffSecs < 60) return "just now";
   if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ${diffMins % 60}m ago`;
+  if (diffHours < TIME_SINCE_DAYS_FROM_HOURS) return `${diffHours}h ${diffMins % 60}m ago`;
   return `${diffDays}d ago`;
 }
 

@@ -410,3 +410,33 @@ describe("/settings/dashboard after a preset press", () => {
     expect(focused.getAttribute("aria-pressed")).toBe("true");
   });
 });
+
+describe("/settings/dashboard after a preset press", () => {
+  it("posts the id, announces '<Label> applied' from the reloaded data and keeps focus on the toggle", async () => {
+    const root = mountPage();
+    const focused = root.querySelector<HTMLButtonElement>(
+      'button[name="preset"][value="focused"]',
+    )!;
+    focused.focus();
+    focused.click();
+    await settle();
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+    expect(h.pending[0].formData.get("preset")).toBe("focused");
+
+    h.invalidateAll.mockImplementationOnce(async () => {
+      props.data = dataWith(null, { dashboardShowLater: false, dashboardDoneTime: "since" });
+      flushSync();
+    });
+    await h.pending[0].finish({
+      type: "success",
+      status: 200,
+      data: { success: true, key: "applyPreset" },
+    });
+    flushSync();
+
+    expect(status(root)).toBe("Focused applied");
+    expect(focused.isConnected).toBe(true);
+    expect(document.activeElement).toBe(focused);
+    expect(focused.getAttribute("aria-pressed")).toBe("true");
+  });
+});

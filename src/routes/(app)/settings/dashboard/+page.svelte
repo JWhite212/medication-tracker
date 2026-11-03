@@ -219,7 +219,7 @@
 
           {#if id === "quickLog" && !shown.quickLog}
             <p class="text-text-muted mt-1 text-sm">1–9 shortcuts are off while hidden</p>
-          {:else if id === "refills"}
+          {:else if id === "refills" && !shown.refills}
             <p class="text-text-muted mt-1 text-sm">Urgent refills still appear</p>
           {/if}
         </li>

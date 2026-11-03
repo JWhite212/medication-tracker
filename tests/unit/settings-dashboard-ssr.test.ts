@@ -188,7 +188,12 @@ describe("/settings/dashboard SSR", () => {
     expect(textOf(on.querySelector('li[data-section="quickLog"]')!)).not.toContain(
       "1–9 shortcuts are off while hidden",
     );
-    expect(textOf(on.querySelector('li[data-section="refills"]')!)).toContain(
+    // The Refills hint shows only while Refills is hidden, like the Quick log hint.
+    expect(textOf(on.querySelector('li[data-section="refills"]')!)).not.toContain(
+      "Urgent refills still appear",
+    );
+    const refillsOff = renderPage({ dashboardShowRefills: false });
+    expect(textOf(refillsOff.querySelector('li[data-section="refills"]')!)).toContain(
       "Urgent refills still appear",
     );
   });

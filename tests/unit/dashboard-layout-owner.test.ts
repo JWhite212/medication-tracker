@@ -47,6 +47,13 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe("dashboardSectionOrder has exactly its owners", () => {
+  it("walks the source tree, so a scan that finds nothing cannot pass", () => {
+    const files = walk("src");
+    expect(files.length).toBeGreaterThan(50);
+    expect(files).toContain("src/lib/dashboard/layout.ts");
+    expect(files).toContain("src/routes/(app)/settings/dashboard/+page.svelte");
+  });
+
   it("no module outside the owners names it", () => {
     const outsiders = walk("src")
       .filter((file) => !OWNERS.includes(file))

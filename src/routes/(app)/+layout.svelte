@@ -5,7 +5,7 @@
   import MobileHeader from "$components/MobileHeader.svelte";
   import Toast, { clearToasts } from "$components/ui/Toast.svelte";
   import { resetUndoRegistry } from "$components/dose-writes/undo-registry.svelte";
-  import { readableForeground } from "$lib/utils/contrast";
+  import { readableForeground, readableHover } from "$lib/utils/contrast";
   import { buildThemeStyle } from "$lib/appearance/theme-css";
   import { collectFocusable, trapTab } from "$lib/utils/focus-trap";
   import {
@@ -128,13 +128,15 @@
   // to true), so registering a second script at the same scope from this
   // layout made the two evict each other on every load.
 
-  // accent and accent-fg stay INLINE: both are scheme-independent (the fill
-  // is the user's stored hex, and the foreground is derived from the fill
-  // alone). accent-ink does NOT — it has to be re-derived per scheme, and an
-  // inline style on this wrapper would outrank the theme block for the whole
-  // subtree, which is the exact trap spec decision 4 was written to avoid.
+  // accent, accent-fg and accent-hover stay INLINE: all three are
+  // scheme-independent (the fill is the user's stored hex, and the foreground
+  // and the opaque hover fill are derived from the fill alone). accent-ink
+  // does NOT — it has to be re-derived per scheme, and an inline style on this
+  // wrapper would outrank the theme block for the whole subtree, which is the
+  // exact trap spec decision 4 was written to avoid.
   const accentColor = $derived(data.preferences.accentColor);
   const accentFgColor = $derived(readableForeground(accentColor).color);
+  const accentHoverColor = $derived(readableHover(accentColor));
   const themeStyle = $derived(buildThemeStyle(data.preferences.theme, accentColor));
 </script>
 
@@ -149,6 +151,7 @@
 <div
   style:--color-accent={accentColor}
   style:--color-accent-fg={accentFgColor}
+  style:--color-accent-hover={accentHoverColor}
   data-density={data.preferences.uiDensity}
   data-reduced-motion={data.preferences.reducedMotion ? "true" : "false"}
 >

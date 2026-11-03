@@ -24,11 +24,15 @@
  *
  * The tables below carry exactly the tokens the app.css light arm
  * overrides, and both carry the same key set. Note that is NOT the same as
- * "the tokens whose values differ": --color-accent-hover is identical in
- * both schemes and still belongs here, because the light arm declares it and
- * a dark-choosing user on a light OS needs it re-asserted. `theme: "dark"` still emits them, because a
- * dark-preferring user on a light OS would otherwise be left on the layered
- * light arm. tests/unit/theme-css.test.ts pins every value against app.css.
+ * "the tokens whose values differ": a token identical in both schemes would
+ * still belong here, because the light arm declares it and a dark-choosing
+ * user on a light OS needs it re-asserted. `theme: "dark"` still emits them,
+ * because a dark-preferring user on a light OS would otherwise be left on the
+ * layered light arm. The accent tokens are the exception: the layout sets
+ * --color-accent, --color-accent-fg and --color-accent-hover inline from the
+ * stored hex, and arm() derives --color-accent-ink below, so a table entry
+ * for any of them would be dead. tests/unit/theme-css.test.ts pins every
+ * value against app.css.
  */
 import {
   readableInk,
@@ -53,7 +57,6 @@ export const DARK_TOKENS: Record<string, string> = {
   "--color-text-primary": "#f0f0f5",
   "--color-text-secondary": "#c3c3d4",
   "--color-text-muted": "#9a9aac",
-  "--color-accent-hover": "#4338ca",
   "--color-success": "#10b981",
   "--color-success-fg": "#111111",
   "--color-warning": "#f59e0b",
@@ -79,7 +82,6 @@ export const LIGHT_TOKENS: Record<string, string> = {
   "--color-text-primary": "#14141c",
   "--color-text-secondary": "#4c4c63",
   "--color-text-muted": "#5c5c72",
-  "--color-accent-hover": "#4338ca",
   "--color-success": "#036b4e",
   "--color-success-fg": "#ffffff",
   "--color-warning": "#7f5300",

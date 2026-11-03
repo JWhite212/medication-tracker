@@ -1,0 +1,2 @@
+ALTER TABLE "user_preferences" ADD COLUMN "dashboard_later_mode" text DEFAULT 'next' NOT NULL;--> statement-breakpoint
+ALTER TABLE "user_preferences" ADD COLUMN "dashboard_done_time" text DEFAULT 'both' NOT NULL;

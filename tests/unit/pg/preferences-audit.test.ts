@@ -108,6 +108,15 @@ describe("updatePreferences — the dashboard layout columns", () => {
     expect(prefs.timeSinceDaysFromHours).toBe(48);
   });
 
+  it("a freshly seeded user reads the Phase 2 defaults", async () => {
+    // Through the real migrations, so this proves 0024 and not just schema.ts.
+    await pgDb.reset();
+    await pgDb.seedUser();
+    const prefs = await getOrCreatePreferences("u1");
+    expect(prefs.dashboardLaterMode).toBe("next");
+    expect(prefs.dashboardDoneTime).toBe("both");
+  });
+
   it("pins the column default to the named constant", () => {
     expect(getTableColumns(userPreferences).timeSinceDaysFromHours.default).toBe(
       TIME_SINCE_DAYS_FROM_HOURS,

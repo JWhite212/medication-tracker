@@ -26,5 +26,7 @@ export const preferencesFixture = {
   dashboardShowQuickLog: true,
   dashboardShowRefills: true,
   timeSinceDaysFromHours: 48,
+  dashboardLaterMode: "next",
+  dashboardDoneTime: "both",
   updatedAt: new Date("2026-04-01T00:00:00Z"),
 } satisfies UserPreferences;

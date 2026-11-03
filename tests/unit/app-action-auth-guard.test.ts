@@ -233,6 +233,8 @@ const CASES: Case[] = [
   { route: "settings/dashboard", action: "dashboardShowLater", actions: dashboardSettings.actions, fields: { dashboardShowLater: "off" } }, // prettier-ignore
   { route: "settings/dashboard", action: "dashboardShowQuickLog", actions: dashboardSettings.actions, fields: { dashboardShowQuickLog: "on" } }, // prettier-ignore
   { route: "settings/dashboard", action: "dashboardShowRefills", actions: dashboardSettings.actions, fields: { dashboardShowRefills: "off" } }, // prettier-ignore
+  { route: "settings/dashboard", action: "dashboardLaterMode", actions: dashboardSettings.actions, fields: { dashboardLaterMode: "all" } }, // prettier-ignore
+  { route: "settings/dashboard", action: "dashboardDoneTime", actions: dashboardSettings.actions, fields: { dashboardDoneTime: "since" } }, // prettier-ignore
   {
     route: "settings/dashboard",
     action: "resetDashboardLayout",

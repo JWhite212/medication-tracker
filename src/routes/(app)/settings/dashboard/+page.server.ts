@@ -82,6 +82,8 @@ export const actions = {
   dashboardShowLater: fieldAction("dashboardShowLater"),
   dashboardShowQuickLog: fieldAction("dashboardShowQuickLog"),
   dashboardShowRefills: fieldAction("dashboardShowRefills"),
+  dashboardLaterMode: fieldAction("dashboardLaterMode"),
+  dashboardDoneTime: fieldAction("dashboardDoneTime"),
   resetDashboardLayout: async ({ locals }) => {
     const { userId, refused } = await admit("resetDashboardLayout", locals);
     if (refused) return refused;

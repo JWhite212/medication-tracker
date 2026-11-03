@@ -169,6 +169,13 @@
       "when": 1793695479214,
       "tag": "0023_small_firebrand",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793713504871,
+      "tag": "0024_confused_shocker",
+      "breakpoints": true
     }
   ]
 }

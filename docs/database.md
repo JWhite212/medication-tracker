@@ -161,15 +161,18 @@ account-wide reminder defaults; `medications` carries the
 per-medication overrides described above.
 
 Dashboard layout and the time-since threshold (migration 0023, five
+`ADD COLUMN`s, no backfill; migration 0024 adds the last two rows, two
 `ADD COLUMN`s, no backfill):
 
-| Column                       | Type      | Default | Meaning                                                                                                                           |
-| ---------------------------- | --------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `dashboard_section_order`    | `jsonb`   | NULL    | Subset array of `done \| later \| quickLog \| refills`. NULL is the product default for the account's variant; Reset writes NULL. |
-| `dashboard_show_later`       | `boolean` | `true`  | Whether the Later section is shown.                                                                                               |
-| `dashboard_show_quick_log`   | `boolean` | `true`  | Whether the Quick log section is shown.                                                                                           |
-| `dashboard_show_refills`     | `boolean` | `true`  | Whether the Refills section is shown (urgent refills still surface).                                                              |
-| `time_since_days_from_hours` | `integer` | `48`    | Hours before "time since" switches from hours to days. Domain 24 to 168.                                                          |
+| Column                       | Type      | Default  | Meaning                                                                                                                           |
+| ---------------------------- | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `dashboard_section_order`    | `jsonb`   | NULL     | Subset array of `done \| later \| quickLog \| refills`. NULL is the product default for the account's variant; Reset writes NULL. |
+| `dashboard_show_later`       | `boolean` | `true`   | Whether the Later section is shown.                                                                                               |
+| `dashboard_show_quick_log`   | `boolean` | `true`   | Whether the Quick log section is shown.                                                                                           |
+| `dashboard_show_refills`     | `boolean` | `true`   | Whether the Refills section is shown (urgent refills still surface).                                                              |
+| `time_since_days_from_hours` | `integer` | `48`     | Hours before "time since" switches from hours to days. Domain 24 to 168.                                                          |
+| `dashboard_later_mode`       | `text`    | `'next'` | How much of Later is drawn on first render: `next` or `all`. There is no `off`; `dashboard_show_later` owns that.                 |
+| `dashboard_done_time`        | `text`    | `'both'` | Which time fields a taken Done row shows: `both`, `since` or `clock`.                                                             |
 
 Writes go through `updatePreferences`, which reads its audit
 before-image inside the write (`WITH previous AS (SELECT … FOR

@@ -271,7 +271,9 @@ describe("KeyboardShortcuts with Quick log hidden", () => {
     const help = overlay();
     expect(help).not.toBeNull();
     expect(help!.textContent).toContain("Number shortcuts need Quick log on your dashboard");
-    const link = help!.querySelector<HTMLAnchorElement>('a[href="/settings/dashboard"]');
+    const link = help!.querySelector<HTMLAnchorElement>(
+      'a[href="/settings/dashboard?from=dashboard"]',
+    );
     expect(link).not.toBeNull();
     expect(link!.textContent).toContain("Number shortcuts need Quick log on your dashboard");
     expect(help!.textContent).not.toContain("Log a medication now");
@@ -282,7 +284,7 @@ describe("KeyboardShortcuts with Quick log hidden", () => {
     press("?");
     const help = overlay();
     expect(help!.textContent).toContain("Log a medication now, by its position in the chip list");
-    expect(help!.querySelector('a[href="/settings/dashboard"]')).toBeNull();
+    expect(help!.querySelector('a[href="/settings/dashboard?from=dashboard"]')).toBeNull();
     press("?");
     press("1");
     expect(requestSubmit).toHaveBeenCalledOnce();

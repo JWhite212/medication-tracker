@@ -80,6 +80,17 @@ describe("/settings (profile)", () => {
     expect(save.classList.contains("py-2.5")).toBe(false);
   });
 
+  it("links to the Dashboard settings page, reading Dashboard: section order and what's shown", () => {
+    const card = page(Profile, data).querySelector<HTMLAnchorElement>(
+      'a[href="/settings/dashboard"]',
+    );
+    expect(card).not.toBeNull();
+    const [title, description] = [...card!.querySelectorAll("p")].map(textOf);
+    expect(`${title}: ${description.toLowerCase()}`).toBe(
+      "Dashboard: section order and what's shown",
+    );
+  });
+
   it("passes axe after a save", async () => {
     await expectAxeClean(page(Profile, data, { success: true }), [
       "button-name",

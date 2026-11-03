@@ -1,0 +1,284 @@
+// @vitest-environment node
+//
+// The no-JS half of /settings/dashboard: every control is a real submit that
+// carries the complete resulting value, computed at render from the
+// server-confirmed preferences, so the page works before (and without)
+// hydration. The pressed-then-reloaded half is in
+// settings-dashboard-mount.svelte.test.ts.
+//
+// `@vitest-environment node` is load-bearing: under jsdom vite resolves
+// `svelte` to its client entry and `render()` throws. Svelte's server
+// `render()` is also lazy, so every case below reads `.body`.
+import { describe, it, expect, vi } from "vitest";
+import { render } from "svelte/server";
+import { JSDOM } from "jsdom";
+import {
+  HIDEABLE_SECTIONS,
+  SECTION_LABELS,
+  moveSection,
+  normaliseSectionOrder,
+  orderValue,
+  type DashboardSectionId,
+  type DashboardVariant,
+} from "../../src/lib/dashboard/layout";
+import type { UserPreferences } from "../../src/lib/types";
+import { preferencesFixture } from "./helpers/preferences-fixture";
+import { accessibleName, textOf } from "./helpers/dom-names";
+
+// Mocked once and repointed between renders: re-mocking reloads svelte's
+// server internals, whose SSR context is module-level state.
+const pageState = { url: new URL("https://medtracker.test/settings/dashboard") };
+vi.mock("$app/state", () => ({ page: pageState }));
+vi.mock("$app/forms", () => ({ enhance: () => ({ destroy() {} }), applyAction: async () => {} }));
+vi.mock("$app/navigation", () => ({ invalidateAll: async () => {} }));
+vi.mock("$lib/components/ui/Toast.svelte", () => ({ showToast: () => {} }));
+
+const { default: Page } = await import("../../src/routes/(app)/settings/dashboard/+page.svelte");
+
+const user = {
+  id: "u1",
+  email: "person@example.com",
+  name: "Test Person",
+  avatarUrl: null,
+  timezone: "UTC",
+  twoFactorEnabled: false,
+  emailVerified: true,
+};
+
+type Overrides = Partial<UserPreferences>;
+
+function renderPage(
+  overrides: Overrides = {},
+  variant: DashboardVariant = "scheduled",
+  url = "https://medtracker.test/settings/dashboard",
+): Document {
+  pageState.url = new URL(url);
+  const preferences: UserPreferences = { ...preferencesFixture, ...overrides };
+  const { body } = render(Page, {
+    props: { data: { user, preferences, variant } },
+  });
+  return new JSDOM(`<!doctype html><body>${body}</body>`).window.document;
+}
+
+const FLAG_KEY = {
+  later: "dashboardShowLater",
+  quickLog: "dashboardShowQuickLog",
+  refills: "dashboardShowRefills",
+} as const;
+
+function rows(doc: Document) {
+  return [...doc.querySelectorAll<HTMLLIElement>("ol[data-sections] > li[data-section]")];
+}
+
+function moveButton(doc: Document, id: DashboardSectionId, dir: "up" | "down") {
+  return doc.getElementById(`move-section-${id}-${dir}`) as HTMLButtonElement | null;
+}
+
+describe("/settings/dashboard SSR", () => {
+  it("is headed by a focusable h1 reading Dashboard", () => {
+    const h1s = renderPage().querySelectorAll("h1");
+    expect(h1s).toHaveLength(1);
+    expect(textOf(h1s[0])).toBe("Dashboard");
+    expect(h1s[0].getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("has exactly one role=status, before the first form", () => {
+    const doc = renderPage();
+    const statuses = doc.querySelectorAll('[role="status"]');
+    expect(statuses).toHaveLength(1);
+    const form = doc.querySelector("form")!;
+    expect(statuses[0].compareDocumentPosition(form) & 4).toBeTruthy();
+  });
+
+  it("pins Due first on a scheduled account", () => {
+    const pinned = renderPage().querySelector("ol[data-sections] > li[data-pinned]");
+    expect(textOf(pinned!)).toBe(
+      "Due now: always first whenever something is due, so nothing overdue sits below the fold.",
+    );
+    expect(pinned!.querySelector("button, a, input")).toBeNull();
+    // It is the first row.
+    expect(pinned!.parentElement!.firstElementChild).toBe(pinned);
+  });
+
+  it("lists the four sections in the confirmed order", () => {
+    const order: DashboardSectionId[] = ["refills", "done", "later", "quickLog"];
+    const doc = renderPage({ dashboardSectionOrder: order });
+    expect(rows(doc).map((r) => r.dataset.section)).toEqual(order);
+    expect(rows(doc).map((r) => textOf(r.querySelector("[data-position]")!))).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+    ]);
+  });
+
+  for (const confirmed of [
+    null,
+    ["refills", "quickLog", "later", "done"],
+    ["later", "done"],
+  ] as Array<DashboardSectionId[] | null>) {
+    it(`every live ↑/↓ posts moveSection of the confirmed order (${JSON.stringify(confirmed)})`, () => {
+      const doc = renderPage({ dashboardSectionOrder: confirmed });
+      const resolved = normaliseSectionOrder(confirmed, "scheduled");
+      let live = 0;
+      resolved.forEach((id, index) => {
+        for (const dir of ["up", "down"] as const) {
+          const button = moveButton(doc, id, dir)!;
+          expect(button, `${id} ${dir}`).not.toBeNull();
+          expect(button.getAttribute("aria-label")).toBe(`Move ${SECTION_LABELS[id]} ${dir}`);
+          const atEnd = dir === "up" ? index === 0 : index === resolved.length - 1;
+          if (atEnd) {
+            expect(button.getAttribute("type")).toBe("button");
+            expect(button.getAttribute("aria-disabled")).toBe("true");
+            expect(button.hasAttribute("value")).toBe(false);
+            expect(button.hasAttribute("name")).toBe(false);
+          } else {
+            live++;
+            expect(button.getAttribute("type")).toBe("submit");
+            expect(button.getAttribute("aria-disabled")).toBeNull();
+            expect(button.getAttribute("name")).toBe("dashboardSectionOrder");
+            expect(button.getAttribute("value")).toBe(orderValue(moveSection(resolved, id, dir)));
+            expect(button.closest("form")!.getAttribute("action")).toBe("?/dashboardSectionOrder");
+            expect(button.closest("form")!.getAttribute("method")).toBe("POST");
+          }
+        }
+      });
+      expect(live).toBe((resolved.length - 1) * 2);
+    });
+  }
+
+  it("Later's ↑ from the default posts later,done,quickLog,refills", () => {
+    expect(moveButton(renderPage(), "later", "up")!.getAttribute("value")).toBe(
+      "later,done,quickLog,refills",
+    );
+  });
+
+  for (const shown of [true, false]) {
+    it(`each hideable Toggle posts the opposite of its confirmed flag (shown: ${shown})`, () => {
+      const doc = renderPage({
+        dashboardShowLater: shown,
+        dashboardShowQuickLog: shown,
+        dashboardShowRefills: shown,
+      });
+      for (const id of HIDEABLE_SECTIONS) {
+        const row = doc.querySelector(`li[data-section="${id}"]`)!;
+        const toggle = row.querySelector<HTMLButtonElement>("button[aria-pressed]")!;
+        expect(accessibleName(toggle)).toBe(`Show ${SECTION_LABELS[id]}`);
+        expect(toggle.getAttribute("type")).toBe("submit");
+        expect(toggle.getAttribute("aria-pressed")).toBe(String(shown));
+        expect(toggle.getAttribute("name")).toBe(FLAG_KEY[id]);
+        expect(toggle.getAttribute("value")).toBe(shown ? "off" : "on");
+        expect(toggle.closest("form")!.getAttribute("action")).toBe(`?/${FLAG_KEY[id]}`);
+      }
+    });
+  }
+
+  it("Done has no visibility control and reads Always shown", () => {
+    const row = renderPage().querySelector('li[data-section="done"]')!;
+    expect(row.querySelector("button[aria-pressed]")).toBeNull();
+    expect(textOf(row)).toContain("Always shown");
+  });
+
+  it("explains what hiding Quick log and Refills does", () => {
+    const off = renderPage({ dashboardShowQuickLog: false });
+    expect(textOf(off.querySelector('li[data-section="quickLog"]')!)).toContain(
+      "1–9 shortcuts are off while hidden",
+    );
+    const on = renderPage();
+    expect(textOf(on.querySelector('li[data-section="quickLog"]')!)).not.toContain(
+      "1–9 shortcuts are off while hidden",
+    );
+    expect(textOf(on.querySelector('li[data-section="refills"]')!)).toContain(
+      "Urgent refills still appear",
+    );
+  });
+
+  describe("as-needed-only", () => {
+    const stored: DashboardSectionId[] = ["refills", "later", "quickLog", "done"];
+
+    it("pins Log a dose and lists only Done and Refills, normalised for the variant", () => {
+      const doc = renderPage({ dashboardSectionOrder: stored }, "as-needed-only");
+      expect(textOf(doc.querySelector("li[data-pinned]")!)).toBe("Log a dose: always first");
+      const expected = normaliseSectionOrder(stored, "as-needed-only");
+      expect(expected).toEqual(["refills", "done"]);
+      expect(rows(doc).map((r) => r.dataset.section)).toEqual(expected);
+      expect(moveButton(doc, "done", "up")!.getAttribute("value")).toBe(
+        orderValue(moveSection(expected, "done", "up")),
+      );
+      expect(moveButton(doc, "refills", "down")!.getAttribute("value")).toBe(
+        orderValue(moveSection(expected, "refills", "down")),
+      );
+      expect(moveButton(doc, "refills", "up")!.getAttribute("aria-disabled")).toBe("true");
+      expect(moveButton(doc, "done", "down")!.getAttribute("aria-disabled")).toBe("true");
+    });
+  });
+
+  it("links to Appearance for when time since switches to days", () => {
+    const doc = renderPage();
+    const link = doc.querySelector<HTMLAnchorElement>('a[href="/settings/appearance"]');
+    expect(link).not.toBeNull();
+    expect(textOf(link!.closest("p")!)).toContain("Show days instead of hours after");
+    // Below the Sections card, not inside it.
+    const sections = doc.querySelector("ol[data-sections]")!;
+    expect(sections.contains(link)).toBe(false);
+    expect(sections.compareDocumentPosition(link!) & 4).toBeTruthy();
+  });
+
+  describe("Reset", () => {
+    const resetIn = (doc: Document) =>
+      [...doc.querySelectorAll("button")].find(
+        (b) => textOf(b) === "Default: Done, Later, Quick log, Refills",
+      );
+
+    it("is absent at the defaults", () => {
+      expect(resetIn(renderPage())).toBeUndefined();
+    });
+
+    for (const [name, overrides] of [
+      ["an empty stored order (Review Focus 1)", { dashboardSectionOrder: [] }],
+      [
+        "the default order stored explicitly",
+        {
+          dashboardSectionOrder: ["done", "later", "quickLog", "refills"],
+        },
+      ],
+      ["a stored order", { dashboardSectionOrder: ["refills"] }],
+      ["Later hidden", { dashboardShowLater: false }],
+      ["Quick log hidden", { dashboardShowQuickLog: false }],
+      ["Refills hidden", { dashboardShowRefills: false }],
+    ] as Array<[string, Overrides]>) {
+      it(`is present for ${name}`, () => {
+        const reset = resetIn(renderPage(overrides));
+        expect(reset).toBeDefined();
+        expect(reset!.getAttribute("type")).toBe("submit");
+        expect(reset!.closest("form")!.getAttribute("action")).toBe("?/resetDashboardLayout");
+      });
+    }
+
+    it("renders the default page for an empty stored order", () => {
+      expect(rows(renderPage({ dashboardSectionOrder: [] })).map((r) => r.dataset.section)).toEqual(
+        ["done", "later", "quickLog", "refills"],
+      );
+    });
+  });
+
+  describe("back link", () => {
+    it("reads ← Back to dashboard when arriving from the dashboard", () => {
+      const doc = renderPage(
+        {},
+        "scheduled",
+        "https://medtracker.test/settings/dashboard?from=dashboard",
+      );
+      const back = doc.querySelector<HTMLAnchorElement>('a[href="/dashboard"]');
+      expect(back).not.toBeNull();
+      expect(textOf(back!)).toBe("← Back to dashboard");
+    });
+
+    it("is the ordinary Settings link otherwise", () => {
+      const doc = renderPage();
+      expect(doc.querySelector('a[href="/dashboard"]')).toBeNull();
+      expect(doc.body.textContent).not.toContain("Back to dashboard");
+      expect(textOf(doc.querySelector('a[href="/settings"]')!)).toBe("← Settings");
+    });
+  });
+});

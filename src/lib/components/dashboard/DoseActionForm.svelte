@@ -78,7 +78,7 @@
   // .p-5, .p-6 and .py-2.5 (app.css), so none of these can shrink a target.
   const VARIANTS: Record<Variant, string> = {
     primary:
-      "h-12 min-w-26 rounded-lg bg-accent px-4 text-base font-semibold text-accent-fg hover:brightness-110",
+      "h-12 min-w-26 rounded-lg bg-accent px-4 text-base font-semibold text-accent-fg hover:bg-accent-hover",
     secondary:
       "h-11 rounded-lg border border-border-strong px-3 text-sm font-medium text-text-primary hover:bg-surface-overlay",
     quiet:

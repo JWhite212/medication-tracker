@@ -121,6 +121,25 @@ beforeEach(() => {
   fakeDb.seed(medications, medRows);
 });
 
+describe("generateReport — medication list", () => {
+  it("spaces a word unit in the medication list line", async () => {
+    fakeDb.seed(medications, [
+      ...medRows,
+      {
+        name: "Multivitamin",
+        dosageAmount: "1",
+        dosageUnit: "Serving",
+        scheduleType: "scheduled",
+        isArchived: false,
+      },
+    ]);
+    await generateReport("user_1", "Europe/London", new Date("2026-06-01"), new Date("2026-06-30"));
+    expect(textCalls.some((line) => line.includes("Multivitamin — 1 Serving,"))).toBe(true);
+    expect(textCalls.some((line) => line.includes("1Serving"))).toBe(false);
+    expect(textCalls.some((line) => line.includes("Sertraline — 50mg,"))).toBe(true);
+  });
+});
+
 describe("generateReport — dose log rendering", () => {
   it("marks the missed dose in the rendered document", async () => {
     await generateReport("user_1", "Europe/London", new Date("2026-06-01"), new Date("2026-06-30"));

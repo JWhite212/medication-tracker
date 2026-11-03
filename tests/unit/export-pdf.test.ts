@@ -37,6 +37,18 @@ describe("formatDoseLogLine — status must be visible", () => {
     expect(formatDoseLogLine(dose({ status: "skipped" }), TZ, "24h")).toContain("[SKIPPED]");
   });
 
+  // A clinician-facing line: a 1-serving multivitamin must not read "1Serving".
+  it("spaces a word unit from its amount, and keeps an abbreviation attached", () => {
+    const serving = formatDoseLogLine(
+      dose({ dosageAmount: "1", dosageUnit: "Serving" }),
+      TZ,
+      "24h",
+    );
+    expect(serving).toContain("Sertraline 1 Serving");
+    expect(serving).not.toContain("1Serving");
+    expect(formatDoseLogLine(dose(), TZ, "24h")).toContain("Sertraline 50mg");
+  });
+
   it("leaves a taken dose unlabelled", () => {
     const line = formatDoseLogLine(dose({ status: "taken" }), TZ, "24h");
     expect(line).not.toContain("[");

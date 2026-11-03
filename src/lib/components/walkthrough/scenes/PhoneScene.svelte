@@ -18,7 +18,12 @@
   // phone draws no chips or Refills: on a real phone they would be below the
   // fold.
   import appIcon from "$lib/assets/medtracker-icon-vector.svg";
-  import { formatUserTime, lastLoggedPhrase, type TimeFormat } from "$lib/utils/time";
+  import {
+    formatUserTime,
+    lastLoggedPhrase,
+    TIME_SINCE_DAYS_FROM_HOURS,
+    type TimeFormat,
+  } from "$lib/utils/time";
   import { LOGGED_DOSE, PHONE_NOW, WALKTHROUGH_TZ } from "../demo-data";
   import { PHONE_AFTER, PHONE_BEFORE } from "../demo-dashboard";
   import { PHONE_ROOT, useMark } from "../marks";
@@ -56,7 +61,11 @@
   // medication, and the body is lastLoggedPhrase over its last event. It was
   // sent before the tap, so that event is the one before PHONE_NOW.
   const bannerTitle = `${tappedDose.name} overdue`;
-  const bannerBody = lastLoggedPhrase(lastEventBefore(tapped, PHONE_NOW), PHONE_NOW);
+  const bannerBody = lastLoggedPhrase(
+    lastEventBefore(tapped, PHONE_NOW),
+    PHONE_NOW,
+    TIME_SINCE_DAYS_FROM_HOURS,
+  );
   // The tap's Undo offer, as Log now's reload would word it.
   const offerMessage = $derived(stageLogToast(after, LOGGED_DOSE.phone, timeFormat));
 </script>

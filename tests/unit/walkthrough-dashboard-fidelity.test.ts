@@ -21,6 +21,7 @@ import {
 } from "$lib/utils/dashboard-copy";
 import {
   formatTimeSince,
+  TIME_SINCE_DAYS_FROM_HOURS,
   formatUserTime,
   lastLoggedPhrase,
   type TimeFormat,
@@ -612,7 +613,9 @@ function expectedSections(
     return [
       ...(row.dayLabel === "yesterday" ? ["Yesterday"] : []),
       formatUserTime(new Date(row.dose.takenAt), tz, timeFormat),
-      ...(row.dose.status === "taken" ? [formatTimeSince(new Date(row.dose.takenAt), now)] : []),
+      ...(row.dose.status === "taken"
+        ? [formatTimeSince(new Date(row.dose.takenAt), now, TIME_SINCE_DAYS_FROM_HOURS)]
+        : []),
       med.name,
       doneDoseText({
         dosageAmount: med.dosageAmount,
@@ -874,7 +877,9 @@ describe("the phone scene against the app: rendered text", () => {
     expect(computeFrame(T, {}).phone.bannerY).toBeCloseTo(0, 9);
     const bodies = phoneSurface(T, "24h").querySelectorAll("[data-stage-banner]");
     expect(bodies).toHaveLength(1);
-    expect(visibleText(bodies[0])).toBe(lastLoggedPhrase(lastEventAt, PHONE_NOW));
+    expect(visibleText(bodies[0])).toBe(
+      lastLoggedPhrase(lastEventAt, PHONE_NOW, TIME_SINCE_DAYS_FROM_HOURS),
+    );
   });
 
   it("reads Logging… while the tap is pending, the spinner turned by Frame, not by CSS", () => {

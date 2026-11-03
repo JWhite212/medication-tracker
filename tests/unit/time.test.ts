@@ -23,36 +23,36 @@ describe("formatTimeSince", () => {
 
   it("formats seconds ago", () => {
     const thirtySecsAgo = new Date("2026-04-15T14:29:30Z");
-    expect(formatTimeSince(thirtySecsAgo)).toBe("just now");
+    expect(formatTimeSince(thirtySecsAgo, new Date(), 48)).toBe("just now");
   });
 
   it("formats minutes ago", () => {
     const fiveMinsAgo = new Date("2026-04-15T14:25:00Z");
-    expect(formatTimeSince(fiveMinsAgo)).toBe("5m ago");
+    expect(formatTimeSince(fiveMinsAgo, new Date(), 48)).toBe("5m ago");
   });
 
   it("formats hours and minutes ago", () => {
     const twoHoursAgo = new Date("2026-04-15T12:00:00Z");
-    expect(formatTimeSince(twoHoursAgo)).toBe("2h 30m ago");
+    expect(formatTimeSince(twoHoursAgo, new Date(), 48)).toBe("2h 30m ago");
   });
 
   it("formats days ago", () => {
     const twoDaysAgo = new Date("2026-04-13T14:30:00Z");
-    expect(formatTimeSince(twoDaysAgo)).toBe("2d ago");
+    expect(formatTimeSince(twoDaysAgo, new Date(), 48)).toBe("2d ago");
   });
 
   // Hours, not days, until two full days have passed: "1d ago" said the
   // same thing about a dose taken 24 hours ago and one taken 47 hours ago.
   it("keeps counting hours between 24 and 48 hours", () => {
-    expect(formatTimeSince(new Date("2026-04-14T14:30:00Z"))).toBe("24h 0m ago");
-    expect(formatTimeSince(new Date("2026-04-14T12:15:00Z"))).toBe("26h 15m ago");
-    expect(formatTimeSince(new Date("2026-04-13T14:31:00Z"))).toBe("47h 59m ago");
-    expect(formatTimeSince(new Date("2026-04-13T14:30:00Z"))).toBe("2d ago");
+    expect(formatTimeSince(new Date("2026-04-14T14:30:00Z"), new Date(), 48)).toBe("24h 0m ago");
+    expect(formatTimeSince(new Date("2026-04-14T12:15:00Z"), new Date(), 48)).toBe("26h 15m ago");
+    expect(formatTimeSince(new Date("2026-04-13T14:31:00Z"), new Date(), 48)).toBe("47h 59m ago");
+    expect(formatTimeSince(new Date("2026-04-13T14:30:00Z"), new Date(), 48)).toBe("2d ago");
   });
 
   it("formats exact hours", () => {
     const oneHourAgo = new Date("2026-04-15T13:30:00Z");
-    expect(formatTimeSince(oneHourAgo)).toBe("1h 0m ago");
+    expect(formatTimeSince(oneHourAgo, new Date(), 48)).toBe("1h 0m ago");
   });
 
   it("measures from the now it is given, not from the clock", () => {
@@ -61,7 +61,44 @@ describe("formatTimeSince", () => {
     // parameter has to win.
     const fiveMinutesBeforeTheClock = new Date("2026-04-15T14:25:00Z");
     const tenMinutesAfterIt = new Date("2026-04-15T14:35:00Z");
-    expect(formatTimeSince(fiveMinutesBeforeTheClock, tenMinutesAfterIt)).toBe("10m ago");
+    expect(formatTimeSince(fiveMinutesBeforeTheClock, tenMinutesAfterIt, 48)).toBe("10m ago");
+  });
+});
+
+describe("formatTimeSince threshold", () => {
+  const NOW = new Date("2026-09-24T10:12:00.000Z");
+  const MINUTE = 60_000;
+  const HOUR = 60 * MINUTE;
+  const before = (ms: number) => new Date(NOW.getTime() - ms);
+
+  it.each([24, 48, 72, 168])("switches from hours to days at %i hours", (h) => {
+    const justUnder = formatTimeSince(before(h * HOUR - MINUTE), NOW, h);
+    expect(justUnder.startsWith(`${h - 1}h`)).toBe(true);
+    expect(justUnder.endsWith("m ago")).toBe(true);
+    expect(formatTimeSince(before(h * HOUR), NOW, h)).toBe(`${Math.floor(h / 24)}d ago`);
+  });
+
+  it.each([undefined, NaN, 0, 12, 47.5, 1000])("never reads 0d ago at 30h for %s", (bad) => {
+    expect(formatTimeSince(before(30 * HOUR), NOW, bad as unknown as number)).not.toBe("0d ago");
+  });
+
+  it("falls back to 48 when the threshold is not an integer", () => {
+    expect(formatTimeSince(before(30 * HOUR), NOW, undefined as unknown as number)).toBe(
+      "30h 0m ago",
+    );
+    expect(formatTimeSince(before(30 * HOUR), NOW, NaN)).toBe("30h 0m ago");
+    expect(formatTimeSince(before(30 * HOUR), NOW, 47.5)).toBe("30h 0m ago");
+  });
+
+  it("clamps to 24..168 where the clamp is visible", () => {
+    expect(formatTimeSince(before(30 * HOUR), NOW, 12)).toBe("1d ago");
+    expect(formatTimeSince(before(13 * HOUR), NOW, 12)).toBe("13h 0m ago");
+    expect(formatTimeSince(before(30 * HOUR), NOW, 1000)).toBe("30h 0m ago");
+    expect(formatTimeSince(before(200 * HOUR), NOW, 1000)).toBe("8d ago");
+  });
+
+  it("is forwarded by lastLoggedPhrase", () => {
+    expect(lastLoggedPhrase(before(30 * HOUR), NOW, 24)).toBe("Last logged 1d ago");
   });
 });
 
@@ -86,11 +123,11 @@ describe("lastLoggedPhrase", () => {
     { gap: "47h59m", ms: 47 * HOUR + 59 * MINUTE, expected: "Last logged 47h 59m ago" },
     { gap: "48h", ms: 48 * HOUR, expected: "Last logged 2d ago" },
   ])("$gap before now reads $expected", ({ ms, expected }) => {
-    expect(lastLoggedPhrase(before(ms), NOW)).toBe(expected);
+    expect(lastLoggedPhrase(before(ms), NOW, 48)).toBe(expected);
   });
 
   it('reads "Not yet logged" when nothing has ever been logged', () => {
-    expect(lastLoggedPhrase(null, NOW)).toBe("Not yet logged");
+    expect(lastLoggedPhrase(null, NOW, 48)).toBe("Not yet logged");
   });
 });
 

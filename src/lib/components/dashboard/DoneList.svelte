@@ -22,7 +22,12 @@
 
 <script lang="ts">
   import type { DoneRow, DoseLogWithMedication } from "$lib/types";
-  import { formatTimeSince, formatUserTime, type TimeFormat } from "$lib/utils/time";
+  import {
+    formatTimeSince,
+    formatUserTime,
+    TIME_SINCE_DAYS_FROM_HOURS,
+    type TimeFormat,
+  } from "$lib/utils/time";
   import { doneCoversLine, doneDoseText, formatDoseLabel } from "$lib/utils/dashboard-copy";
   import { toneClass, toneOf } from "$lib/utils/status-tone";
   import DoseActionForm from "./DoseActionForm.svelte";
@@ -73,7 +78,10 @@
       when,
       // Taken rows only: the question it answers is "when did I last take
       // this?". A skip or missed row's instant is a slot, not an intake.
-      since: dose.status === "taken" ? formatTimeSince(takenAt, serverNow) : null,
+      since:
+        dose.status === "taken"
+          ? formatTimeSince(takenAt, serverNow, TIME_SINCE_DAYS_FROM_HOURS)
+          : null,
       takenAtIso: takenAt.toISOString(),
       dose: doneDoseText({
         dosageAmount: med.dosageAmount,

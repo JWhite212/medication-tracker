@@ -11,7 +11,12 @@
   // DoneList's `divide-y` is written out as `border-t` on every row after the
   // first, so a growing row's divider sits inside its collapse and is hidden
   // with it.
-  import { formatTimeSince, formatUserTime, type TimeFormat } from "$lib/utils/time";
+  import {
+    formatTimeSince,
+    formatUserTime,
+    TIME_SINCE_DAYS_FROM_HOURS,
+    type TimeFormat,
+  } from "$lib/utils/time";
   import { doneCoversLine, doneDoseText } from "$lib/utils/dashboard-copy";
   import MedicationGlyph from "$components/dashboard/MedicationGlyph.svelte";
   import StatusMarker from "$components/dashboard/StatusMarker.svelte";
@@ -46,7 +51,10 @@
   function view(row: StageDone) {
     return {
       time: formatUserTime(row.dose.takenAt, tz, timeFormat),
-      since: row.dose.status === "taken" ? formatTimeSince(row.dose.takenAt, now) : null,
+      since:
+        row.dose.status === "taken"
+          ? formatTimeSince(row.dose.takenAt, now, TIME_SINCE_DAYS_FROM_HOURS)
+          : null,
       dose: doneDoseText(row.dose),
       covers: doneCoversLine(row.covers, todayStart, tz, timeFormat),
     };

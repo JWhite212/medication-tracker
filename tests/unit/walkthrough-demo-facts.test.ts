@@ -36,6 +36,7 @@ import { toneClass, toneOf } from "$lib/utils/status-tone";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import {
   formatTimeSince,
+  TIME_SINCE_DAYS_FROM_HOURS,
   formatUserDate,
   formatUserTime,
   isoDayKey,
@@ -225,7 +226,7 @@ describe("the History scene", () => {
       doses: doses.map((d) => ({
         id: d.medicationId,
         time: formatUserTime(d.takenAt, WALKTHROUGH_TZ, "24h"),
-        since: formatTimeSince(d.takenAt, DESKTOP_NOW),
+        since: formatTimeSince(d.takenAt, DESKTOP_NOW, TIME_SINCE_DAYS_FROM_HOURS),
       })),
     }));
 
@@ -268,8 +269,12 @@ describe("the Medications scene", () => {
       );
       expect(taken.length, m.id).toBeGreaterThan(0);
       const latest = new Date(Math.max(...taken.map((d) => d.takenAt.getTime())));
-      expect(m.lastTaken, m.id).toBe(formatTimeSince(latest, DESKTOP_NOW));
-      expect(m.lastTakenNext, m.id).toBe(formatTimeSince(latest, aMinuteOn));
+      expect(m.lastTaken, m.id).toBe(
+        formatTimeSince(latest, DESKTOP_NOW, TIME_SINCE_DAYS_FROM_HOURS),
+      );
+      expect(m.lastTakenNext, m.id).toBe(
+        formatTimeSince(latest, aMinuteOn, TIME_SINCE_DAYS_FROM_HOURS),
+      );
     }
   });
 });

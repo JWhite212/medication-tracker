@@ -365,6 +365,19 @@ describe("dashboard page wiring (SSR)", () => {
     void renderPage(SCHEDULED).body;
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("hands Done the user's time-since threshold, not the product default", () => {
+    // 30 hours before NOW: "1d ago" under a 24h threshold, "30h 0m ago" under
+    // the default 48. A page passing TIME_SINCE_DAYS_FROM_HOURS fails here.
+    const html = renderPage(
+      { ...SCHEDULED, done: [doneRow("d30", ibuprofen, "2026-04-15T02:30:00.000Z")] },
+      doseWriteContext(),
+      { timeSinceDaysFromHours: 24 },
+    ).body;
+    const done = sectionAfter(html, "Done today");
+    expect(done).toContain("1d ago");
+    expect(done).not.toContain("30h 0m ago");
+  });
 });
 
 // ── Layout preferences ──────────────────────────────────────────────────────

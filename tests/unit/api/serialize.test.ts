@@ -10,6 +10,7 @@ import {
   toSessionUser,
 } from "../../../src/lib/server/api/serialize";
 import { BASE_MEDICATION_ROW } from "../fixtures/medication-row";
+import { preferencesFixture } from "../helpers/preferences-fixture";
 
 describe("serializers", () => {
   it("converts dates to ISO and keeps numeric strings (medication)", () => {
@@ -239,20 +240,8 @@ describe("serializers", () => {
 
   it("serializes preferences updatedAt", () => {
     const p = serializePreferences({
-      userId: "u1",
+      ...preferencesFixture,
       accentColor: "#6366f1",
-      theme: "dark",
-      dateFormat: "DD/MM/YYYY",
-      timeFormat: "12h",
-      uiDensity: "comfortable",
-      reducedMotion: false,
-      overdueEmailReminders: true,
-      overduePushReminders: true,
-      lowInventoryEmailAlerts: true,
-      lowInventoryPushAlerts: false,
-      doseLogPageSize: 20,
-      heatmapPeriod: 90,
-      exportFormat: "pdf",
       updatedAt: new Date("2026-01-05T00:00:00Z"),
     });
     expect(p.updatedAt).toBe("2026-01-05T00:00:00.000Z");

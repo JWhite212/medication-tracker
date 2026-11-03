@@ -11,26 +11,12 @@ import { auditLogs, userPreferences } from "../../../src/lib/server/db/schema";
 vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock);
 
 import { pgDb } from "../helpers/pg-db";
+import { preferencesFixture } from "../helpers/preferences-fixture";
 
 const { updatePreferences } = await import("../../../src/lib/server/preferences");
 
 // A complete stored row, matching the schema defaults.
-const BASE_ROW = {
-  userId: "u1",
-  accentColor: "#4f46e5",
-  dateFormat: "DD/MM/YYYY",
-  timeFormat: "12h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
-  updatedAt: new Date("2026-08-01T00:00:00Z"),
-};
+const BASE_ROW = { ...preferencesFixture, updatedAt: new Date("2026-08-01T00:00:00Z") };
 
 async function auditRows() {
   return pgDb.db.select().from(auditLogs).where(eq(auditLogs.entityType, "user_preferences"));

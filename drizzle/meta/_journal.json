@@ -162,6 +162,13 @@
       "when": 1792627220609,
       "tag": "0022_complex_shard",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793695479214,
+      "tag": "0023_small_firebrand",
+      "breakpoints": true
     }
   ]
 }

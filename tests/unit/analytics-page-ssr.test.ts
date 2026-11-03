@@ -11,6 +11,7 @@ import Page from "../../src/routes/(app)/analytics/+page.svelte";
 import { ssrDocument, runAxe, evaluatedRules } from "./helpers/axe-ssr";
 import { textOf } from "./helpers/dom-names";
 import { STATUS_TOKEN } from "./helpers/status-token";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 /**
  * Analytics reports numbers; it does not judge them. A 42% average printed
@@ -22,20 +23,8 @@ import { STATUS_TOKEN } from "./helpers/status-token";
  */
 
 const preferences = {
-  userId: "u1",
-  accentColor: "#4f46e5",
-  theme: "dark",
-  dateFormat: "DD/MM/YYYY",
+  ...preferencesFixture,
   timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 };
 

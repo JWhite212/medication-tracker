@@ -50,6 +50,7 @@ import { formatUserTime } from "$lib/utils/time";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
 import { doseWriteContext } from "./helpers/dashboard-context";
 import { finishSubmit, startSubmit } from "./helpers/dose-action-form-harness";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 type ListedMedication = MedicationWithStats & {
   sparkline: number[];
@@ -83,19 +84,10 @@ const user = {
   emailVerified: true,
 };
 const preferences = {
-  userId: "u1",
+  ...preferencesFixture,
   accentColor: "#6366f1",
   theme: "system",
-  dateFormat: "DD/MM/YYYY",
-  timeFormat: "12h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
   lowInventoryPushAlerts: true,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
   exportFormat: "csv",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 };

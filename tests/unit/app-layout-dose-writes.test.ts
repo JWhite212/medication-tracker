@@ -35,6 +35,7 @@ import {
   getDoseWriteLock,
   type DoseWriteLock,
 } from "$lib/components/dose-writes/dose-write-lock.svelte";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 const user = {
   id: "u1",
@@ -47,20 +48,9 @@ const user = {
 };
 
 const preferences = {
-  userId: "u1",
-  accentColor: "#4f46e5",
+  ...preferencesFixture,
   theme: "system",
-  dateFormat: "DD/MM/YYYY",
   timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 } as const;
 

@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount, unmount, flushSync, createRawSnippet } from "svelte";
 import { readable } from "svelte/store";
 import { collectFocusable } from "$lib/utils/focus-trap";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 const nav = vi.hoisted(() => ({ afterNavigate: [] as Array<() => void> }));
 
@@ -53,20 +54,9 @@ const user = {
 };
 
 const preferences = {
-  userId: "u1",
-  accentColor: "#4f46e5",
+  ...preferencesFixture,
   theme: "system",
-  dateFormat: "DD/MM/YYYY",
   timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 } as const;
 

@@ -3,7 +3,12 @@ import { z } from "zod";
 import { getTableColumns } from "drizzle-orm";
 import { updatePreferencesPayload, backupEnvelopeSchema, dataSchema } from "$lib/utils/validation";
 import { APPEARANCE_KEYS } from "$lib/appearance/registry";
-import { EXPORT_FORMATS, NON_APPEARANCE_PREFERENCE_KEYS } from "$lib/preferences/schema";
+import {
+  EXPORT_FORMATS,
+  NON_APPEARANCE_PREFERENCE_KEYS,
+  TIME_SINCE_DAYS_FROM_HOURS_BOUNDS,
+  TIME_SINCE_PRESETS,
+} from "$lib/preferences/schema";
 import { userPreferences } from "$lib/server/db/schema";
 
 const importPreferences = backupEnvelopeSchema.shape.preferences;
@@ -64,7 +69,7 @@ describe("preference door conformance", () => {
     // ever returned an empty (or truncated) list -- a drizzle refactor, a
     // mis-merge, or an accidental re-export would all still leave this
     // test green with zero real assertions run.
-    expect(columns).toHaveLength(13);
+    expect(columns).toHaveLength(18);
     for (const column of columns) {
       expect(apiKeys, `/api/v1 door is missing ${column}`).toContain(column);
       expect(importKeys, `import door is missing ${column}`).toContain(column);
@@ -155,6 +160,26 @@ function probesFor(schema: z.ZodType): unknown[] {
     ];
   }
   if (inner instanceof z.ZodEnum) return [...universal, ...inner.options];
+  if (inner instanceof z.ZodArray) {
+    // Probes come from the element enum's own options, so they move with the
+    // domain. Without this branch the key falls to the three universal probes
+    // and trips the `> 3` guard below, which is the intended forcing function.
+    const element = innerType(inner.element as z.ZodType);
+    if (!(element instanceof z.ZodEnum)) return universal;
+    const options = element.options as string[];
+    return [
+      ...universal,
+      [],
+      [...options],
+      [...options].reverse(),
+      [options[0]],
+      [options[0], options[0]],
+      ["header"],
+      ["due"],
+      [...options, "extra"],
+      options[0], // a bare string is not an array
+    ];
+  }
   if (inner instanceof z.ZodBoolean) return [...universal, true, false, "on", 1];
   // Strings carry a regex we cannot introspect (accentColor). Probe a
   // plausible value and a plainly bad one; the assertion is that the doors
@@ -183,7 +208,7 @@ describe("preference door conformance — value domains", () => {
   it("checks every key both doors carry", () => {
     // Guards the generated cases below against silently covering nothing.
     // Key-set equality itself is asserted above; this is the count.
-    expect(sharedKeys).toHaveLength(13);
+    expect(sharedKeys).toHaveLength(18);
   });
 
   for (const key of sharedKeys) {
@@ -233,6 +258,49 @@ describe("preference door conformance — the domains that shipped", () => {
     }
   });
 
+  it("holds timeSinceDaysFromHours to 24..168 integers at both doors", () => {
+    for (const shape of [updatePreferencesPayload.shape, shapeObject(importPreferences).shape]) {
+      const schema = at(shape, "timeSinceDaysFromHours");
+      for (const ok of [24, 168]) {
+        expect(schema.safeParse({ timeSinceDaysFromHours: ok }).success, String(ok)).toBe(true);
+      }
+      for (const bad of [23, 169, 47.5, "48", 0]) {
+        expect(schema.safeParse({ timeSinceDaysFromHours: bad }).success, String(bad)).toBe(false);
+      }
+    }
+  });
+
+  it("states the time-since domain once and offers presets inside it", () => {
+    expect(TIME_SINCE_DAYS_FROM_HOURS_BOUNDS).toEqual({ min: 24, max: 168 });
+    for (const preset of TIME_SINCE_PRESETS) {
+      expect(preset).toBeGreaterThanOrEqual(TIME_SINCE_DAYS_FROM_HOURS_BOUNDS.min);
+      expect(preset).toBeLessThanOrEqual(TIME_SINCE_DAYS_FROM_HOURS_BOUNDS.max);
+    }
+  });
+
+  it("holds dashboardSectionOrder to a duplicate-free subset of the sections, or null", () => {
+    for (const shape of [updatePreferencesPayload.shape, shapeObject(importPreferences).shape]) {
+      const schema = at(shape, "dashboardSectionOrder");
+      const accepted: unknown[] = [
+        null,
+        [],
+        ["done", "later", "quickLog", "refills"],
+        ["refills", "done"],
+      ];
+      const rejected: unknown[] = [["due"], ["done", "done"], "done,later", ["header"]];
+      for (const ok of accepted) {
+        expect(schema.safeParse({ dashboardSectionOrder: ok }).success, JSON.stringify(ok)).toBe(
+          true,
+        );
+      }
+      for (const bad of rejected) {
+        expect(schema.safeParse({ dashboardSectionOrder: bad }).success, JSON.stringify(bad)).toBe(
+          false,
+        );
+      }
+    }
+  });
+
   it("holds exportFormat to pdf and csv at both doors", () => {
     for (const shape of [updatePreferencesPayload.shape, shapeObject(importPreferences).shape]) {
       const schema = at(shape, "exportFormat");
@@ -260,7 +328,7 @@ describe("preference door conformance — the domains that shipped", () => {
     // NON_APPEARANCE_PREFERENCE_KEYS is Object.keys of the substrate's field
     // types, so this fails if a key is dropped from the substrate even
     // though both doors would still agree with each other about its absence.
-    expect(NON_APPEARANCE_PREFERENCE_KEYS).toHaveLength(7);
+    expect(NON_APPEARANCE_PREFERENCE_KEYS).toHaveLength(12);
     for (const key of NON_APPEARANCE_PREFERENCE_KEYS) {
       expect(apiKeys, `/api/v1 door is missing ${key}`).toContain(key);
       expect(importKeys, `import door is missing ${key}`).toContain(key);

@@ -26,22 +26,16 @@ import Page from "../../src/routes/(app)/settings/appearance/+page.svelte";
 import { toneClass } from "../../src/lib/utils/status-tone";
 import { alertTitled, expectClasses } from "./helpers/alert-dom";
 import { expectAxeClean, ssrDocument } from "./helpers/axe-ssr";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 const preferences = {
-  userId: "u1",
+  ...preferencesFixture,
   accentColor: "#f59e0b",
   theme: "light",
   dateFormat: "YYYY-MM-DD",
   timeFormat: "24h",
   uiDensity: "compact",
   reducedMotion: true,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
-  lowInventoryPushAlerts: false,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 };
 

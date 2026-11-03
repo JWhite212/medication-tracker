@@ -22,6 +22,7 @@ import ResetConfirm from "../../src/routes/auth/reset-password/confirm/+page.sve
 import TwoFactor from "../../src/routes/auth/2fa/+page.svelte";
 import Settings from "../../src/routes/(app)/settings/+page.svelte";
 import Security from "../../src/routes/(app)/settings/security/+page.svelte";
+import { preferencesFixture } from "./helpers/preferences-fixture";
 
 /**
  * WCAG 3.3.1 and 1.3.1: an error message has to be tied to the field it is
@@ -253,20 +254,11 @@ const user = {
 };
 
 const preferences = {
-  userId: "u1",
+  ...preferencesFixture,
   accentColor: "#6366f1",
   theme: "system",
-  dateFormat: "DD/MM/YYYY",
   timeFormat: "24h",
-  uiDensity: "comfortable",
-  reducedMotion: false,
-  overdueEmailReminders: true,
-  overduePushReminders: true,
-  lowInventoryEmailAlerts: true,
   lowInventoryPushAlerts: true,
-  doseLogPageSize: 20,
-  heatmapPeriod: 90,
-  exportFormat: "pdf",
   updatedAt: new Date("2026-08-01T00:00:00Z"),
 };
 

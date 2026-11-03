@@ -11,6 +11,7 @@ import {
   primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { DashboardSectionId } from "$lib/dashboard/layout";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -346,6 +347,20 @@ export const userPreferences = pgTable("user_preferences", {
   doseLogPageSize: integer("dose_log_page_size").notNull().default(20),
   heatmapPeriod: integer("heatmap_period").notNull().default(90),
   exportFormat: text("export_format").notNull().default("pdf"),
+  // Dashboard layout (Phase 1). NULL means "the product default for this
+  // account's variant", so accounts that never customise stay on whatever the
+  // default becomes, and Reset is a write of NULL. A subset is valid: the
+  // resolver inserts missing ids at their default position. Hidden state is
+  // NOT encoded here (see the show flags), so re-showing a section restores its place.
+  dashboardSectionOrder: jsonb("dashboard_section_order").$type<DashboardSectionId[]>(),
+  // Named positively so DEFAULT true = today. Done has no flag: it cannot be hidden.
+  // Phase 2 rule, recorded here: Later mode must not gain an "off" value;
+  // dashboardShowLater is the only owner of "is Later shown".
+  dashboardShowLater: boolean("dashboard_show_later").notNull().default(true),
+  dashboardShowQuickLog: boolean("dashboard_show_quick_log").notNull().default(true),
+  dashboardShowRefills: boolean("dashboard_show_refills").notNull().default(true),
+  // formatTimeSince's hours-before-days switch, in hours. 48 = Phase 0 behaviour.
+  timeSinceDaysFromHours: integer("time_since_days_from_hours").notNull().default(48),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

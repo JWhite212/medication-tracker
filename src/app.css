@@ -203,6 +203,15 @@
   }
 }
 
+/* Edit mode's toolbar is sticky at the bottom of <main>, the (app) layout's
+   scroll container. While it exists, the container reserves its height, so a
+   control that Tab scrolls into view lands above the toolbar rather than
+   under it (WCAG 2.2 2.4.11). 7.5rem is the bar's fixed min-h-30 in
+   EditToolbar.svelte; the safe area is its own bottom padding. */
+main:has([data-edit-toolbar]) {
+  scroll-padding-bottom: calc(7.5rem + env(safe-area-inset-bottom));
+}
+
 /* padding-inline/bottom only. The `padding` shorthand here also reset
    padding-top, and because this rule is unlayered it beat Tailwind's
    `pt-18` on <main> — so compact mode on mobile pushed the top of every

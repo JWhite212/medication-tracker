@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
-  import { invalidateAll } from "$app/navigation";
+  import { goto, invalidateAll } from "$app/navigation";
   import OnboardingWelcome from "$components/OnboardingWelcome.svelte";
   import Modal from "$components/ui/Modal.svelte";
   import DoseEditForm from "$components/DoseEditForm.svelte";
@@ -194,6 +194,18 @@
     } finally {
       if (!editing && draft === leaving) draft = null;
     }
+  }
+
+  /**
+   * The toolbar's More options. Like Done, it waits for the draft's writes
+   * (leave()'s settle step) before going: the settings page loads the stored
+   * values, and one loaded before a write commits shows the old value.
+   */
+  async function openMoreOptions(href: string) {
+    await draft?.settled();
+    if (destroyed) return;
+    // eslint-disable-next-line svelte/no-navigation-without-resolve -- a fixed in-app path with a query string
+    await goto(href);
   }
 
   function onRegionKeydown(event: KeyboardEvent) {
@@ -504,7 +516,12 @@
           </div>
         {/each}
 
-        <EditToolbar active={activeId} onpreset={applyPreset} ondone={leave} />
+        <EditToolbar
+          active={activeId}
+          onpreset={applyPreset}
+          ondone={leave}
+          onmore={openMoreOptions}
+        />
       {:else}
         <!-- The pinned block sits outside the account's order, so "Due
              first" holds by construction rather than by a sort. -->

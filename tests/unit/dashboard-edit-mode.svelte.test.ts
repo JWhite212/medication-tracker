@@ -17,6 +17,7 @@ import type { RefillForecastEntry, UserPreferences } from "$lib/types";
 const h = vi.hoisted(() => ({
   posted: [] as HTMLFormElement[],
   invalidateAll: vi.fn(async () => {}),
+  goto: vi.fn(async (_href: string) => {}),
   showToast: vi.fn(),
 }));
 
@@ -32,7 +33,10 @@ vi.mock("$app/forms", () => ({
   deserialize: (text: string) => JSON.parse(text),
   applyAction: vi.fn(async () => {}),
 }));
-vi.mock("$app/navigation", () => ({ invalidateAll: () => h.invalidateAll(), goto: vi.fn() }));
+vi.mock("$app/navigation", () => ({
+  invalidateAll: () => h.invalidateAll(),
+  goto: (href: string) => h.goto(href),
+}));
 vi.mock("$app/state", () => ({
   page: { data: {}, url: new URL("http://localhost/dashboard") },
   navigating: { to: null, willUnload: null, complete: null },
@@ -50,7 +54,11 @@ import {
   createDoseWriteLock,
   type DoseWriteLock,
 } from "$lib/components/dose-writes/dose-write-lock.svelte";
-import { resetUndoRegistry } from "$lib/components/dose-writes/undo-registry.svelte";
+import {
+  offerUndo,
+  resetUndoRegistry,
+  runUndo,
+} from "$lib/components/dose-writes/undo-registry.svelte";
 import { CUSTOMISE_HEADING_ID, DASHBOARD_EDITOR_ID } from "$lib/components/dashboard/dom-ids";
 import { findQuickLogForm } from "$lib/utils/quick-log";
 import { BASE_MEDICATION_ROW } from "./fixtures/medication-row";
@@ -147,6 +155,12 @@ const later: LaterRow = {
   expectedTime: "2026-05-01T19:00:00.000Z",
 };
 
+const laterEvening: LaterRow = {
+  ...later,
+  key: "later:m2:2026-05-01T22:00:00.000Z",
+  expectedTime: "2026-05-01T22:00:00.000Z",
+};
+
 /** Critical: the Refills card draws it as needing you, so a hidden Refills keeps it. */
 const urgentRefill: RefillForecastEntry = {
   medicationId: "m1",
@@ -236,6 +250,8 @@ beforeEach(() => {
   h.posted.length = 0;
   h.invalidateAll.mockReset();
   h.invalidateAll.mockResolvedValue(undefined);
+  h.goto.mockReset();
+  h.goto.mockResolvedValue(undefined);
   h.showToast.mockReset();
   posts = [];
   stubFetch();
@@ -586,8 +602,103 @@ describe("while editing", () => {
     const pressed = target.querySelectorAll('[data-edit-toolbar] button[aria-pressed="true"]');
     expect(pressed).toHaveLength(0);
     const more = target.querySelector<HTMLAnchorElement>("[data-edit-toolbar] a");
-    expect(more!.getAttribute("href")).toBe("/settings/dashboard");
+    expect(more!.getAttribute("href")).toBe("/settings/dashboard?from=dashboard");
     expect(more!.textContent).toContain("More options");
+  });
+
+  it("Later's preview follows a preset that changes its mode: Full day unfolds, Standard folds", async () => {
+    mountPage({ ...SCHEDULED, later: [later, laterEvening] });
+    const laterItems = () => document.getElementById("later-list")!.querySelectorAll("li").length;
+    expect(laterItems()).toBe(1);
+    await enter();
+    expect(laterItems()).toBe(1);
+    toolbarButton("Full day").click();
+    await settle();
+    expect(toolbarButton("Full day").getAttribute("aria-pressed")).toBe("true");
+    expect(laterItems(), "Full day lists every group").toBe(2);
+    toolbarButton("Standard").click();
+    await settle();
+    expect(laterItems(), "Standard folds to the next group").toBe(1);
+  });
+
+  it("dims a hidden section's content and leaves a shown one at full strength", async () => {
+    mountPage(SCHEDULED, { dashboardShowLater: false });
+    await enter();
+    const content = (id: string) =>
+      target.querySelector<HTMLElement>(`[data-edit-section="${id}"] > [inert]`)!;
+    expect(content("later").classList.contains("opacity-50")).toBe(true);
+    expect(content("done").classList.contains("opacity-50")).toBe(false);
+    expect(content("refills").classList.contains("opacity-50")).toBe(false);
+  });
+
+  it("keeps focus on the pressed arrow when its own section's block moves", async () => {
+    // ↓ on Later in [done, later, quickLog, refills]: Later's own block is
+    // the one the keyed reconcile moves, which drops the focus it held, so
+    // only the explicit refocus brings it back.
+    mountPage();
+    await enter();
+    moveButton("later", "down").focus();
+    moveButton("later", "down").click();
+    await settle();
+    expect(editOrder()).toEqual(["done", "quickLog", "later", "refills"]);
+    expect(document.activeElement?.id).toBe("editor-move-later-down");
+  });
+
+  it("an Undo restore settling while customising parks focus on the h1, not <body>", async () => {
+    mountPage();
+    await enter();
+    // The restored row's Edit is the offer's target, and it is under [inert].
+    const rowEdit = target.querySelector<HTMLButtonElement>(
+      '[data-edit-section="done"] [inert] button',
+    );
+    expect(rowEdit, "the Done row's control renders, inert").not.toBeNull();
+    offerUndo({
+      message: "Dose removed",
+      doseId: "d1",
+      kind: "restore",
+      deletedAt: "2026-05-01T13:59:00.000Z",
+      expiresInMs: 600_000,
+      focusTarget: () => rowEdit,
+    });
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    const outcome = runUndo(lock);
+    await settle();
+    posts.at(-1)!.resolve();
+    expect(await outcome).toMatchObject({ kind: "settled", type: "success" });
+    expect(document.activeElement).toBe(target.querySelector("h1"));
+  });
+
+  it("More options waits for an in-flight layout write before navigating", async () => {
+    mountPage();
+    await enter();
+    shownToggle("later").click();
+    await settle();
+    const more = target.querySelector<HTMLAnchorElement>("[data-edit-toolbar] a")!;
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    more.dispatchEvent(click);
+    await settle();
+    expect(click.defaultPrevented, "the browser does not follow the link itself").toBe(true);
+    expect(h.goto, "no navigation while the hide is uncommitted").not.toHaveBeenCalled();
+
+    posts.at(-1)!.resolve();
+    await settle();
+    expect(h.goto).toHaveBeenCalledExactlyOnceWith("/settings/dashboard?from=dashboard");
+  });
+
+  it("More options navigates at once with nothing in flight, and leaves a new-tab click to the browser", async () => {
+    mountPage();
+    await enter();
+    const more = target.querySelector<HTMLAnchorElement>("[data-edit-toolbar] a")!;
+    const newTab = new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true });
+    more.addEventListener("click", (event) => event.preventDefault(), { once: true });
+    more.dispatchEvent(newTab);
+    await settle();
+    expect(h.goto).not.toHaveBeenCalled();
+
+    more.click();
+    await settle();
+    expect(h.goto).toHaveBeenCalledExactlyOnceWith("/settings/dashboard?from=dashboard");
   });
 
   it("keeps a just-moved section through a refresh that predates the write", async () => {

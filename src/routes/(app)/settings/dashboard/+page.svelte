@@ -45,8 +45,11 @@
   // a reorder of the two sections it can see. On a scheduled account the two
   // orders are the same and the posted value is exactly `moveSection(order)`.
   const fullOrder = $derived(normaliseSectionOrder(preferences.dashboardSectionOrder, "scheduled"));
+  // Reset applies Standard, which restores Later's and Done's options as
+  // well as the order and visibility, so the label names the layout and only
+  // then lists the sections this variant's Standard page shows.
   const resetLabel = $derived(
-    `Default: ${DEFAULT_ORDER[data.variant].map((id) => SHORT_SECTION_LABELS[id]).join(", ")}`,
+    `Reset to ${PRESETS.standard.label}: ${DEFAULT_ORDER[data.variant].map((id) => SHORT_SECTION_LABELS[id]).join(", ")}`,
   );
   const shown = $derived({
     later: preferences.dashboardShowLater,
@@ -160,7 +163,7 @@
     // reload has made the applied preset the active one.
     if (intent.kind === "preset")
       return activeId ? `${PRESETS[activeId].label} applied` : "Preset applied";
-    return "Dashboard layout reset to default";
+    return `Dashboard reset to ${PRESETS.standard.label}`;
   }
 
   const MOVE_PREFIX = "settings-move";

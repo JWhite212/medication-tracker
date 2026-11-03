@@ -416,21 +416,21 @@ describe("/settings/dashboard SSR", () => {
   describe("Reset", () => {
     const resetIn = (doc: Document) =>
       [...doc.querySelectorAll("button")].find(
-        (b) => textOf(b) === "Default: Done, Later, Quick log, Refills",
+        (b) => textOf(b) === "Reset to Standard: Done, Later, Quick log, Refills",
       );
     const resetButton = (doc: Document) =>
       doc.querySelector<HTMLButtonElement>('form[action="?/resetDashboardLayout"] button');
 
     it("names a scheduled account's default sections", () => {
       const reset = resetButton(renderPage({ dashboardShowLater: false }));
-      expect(textOf(reset!)).toBe("Default: Done, Later, Quick log, Refills");
+      expect(textOf(reset!)).toBe("Reset to Standard: Done, Later, Quick log, Refills");
     });
 
     it("names only Done and Refills on an as-needed-only account (Review Important 3)", () => {
       const reset = resetButton(
         renderPage({ dashboardSectionOrder: ["refills", "done"] }, "as-needed-only"),
       );
-      expect(textOf(reset!)).toBe("Default: Done, Refills");
+      expect(textOf(reset!)).toBe("Reset to Standard: Done, Refills");
     });
 
     it("is absent at the defaults", () => {

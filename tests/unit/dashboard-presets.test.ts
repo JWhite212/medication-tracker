@@ -106,10 +106,22 @@ describe("every preset", () => {
     });
   }
 
+  // Asserted directly, under activePreset's own comparison (the order read
+  // through normaliseSectionOrder for the scheduled variant, every other key
+  // by ===), rather than through activePreset: find() returns the first
+  // match, so a later duplicate of an earlier preset would still read as the
+  // earlier one and an activePreset-based check could not fail.
   it("no two patches match each other", () => {
+    const same = (a: PresetId, b: PresetId, key: (typeof PRESET_KEYS)[number]) =>
+      key === "dashboardSectionOrder"
+        ? normaliseSectionOrder(patchOf(a)[key], "scheduled").join(",") ===
+          normaliseSectionOrder(patchOf(b)[key], "scheduled").join(",")
+        : patchOf(a)[key] === patchOf(b)[key];
     for (const a of PRESET_IDS) {
       for (const b of PRESET_IDS) {
-        if (a !== b) expect(activePreset(patchOf(a))).not.toBe(b);
+        if (a === b) continue;
+        const differing = PRESET_KEYS.filter((key) => !same(a, b, key));
+        expect(differing, `${a} and ${b} are indistinguishable`).not.toEqual([]);
       }
     }
   });

@@ -377,7 +377,7 @@ describe("/settings/dashboard after Reset", () => {
     expect(reset.isConnected).toBe(false);
     expect(document.activeElement).not.toBe(document.body);
     expect(document.activeElement).toBe(root.querySelector("h1"));
-    expect(status(root)).toBe("Dashboard layout reset to default");
+    expect(status(root)).toBe("Dashboard reset to Standard");
   });
 });
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   composeDashboardPageData,
   computeNextRefreshAt,
+  dashboardVariantFor,
   type DashboardCompositionInputs,
 } from "$lib/server/dashboard/page-data";
 import { dashboardWindow, type MatchedSlot } from "$lib/utils/schedule";
@@ -791,5 +792,62 @@ describe("composeDashboardPageData — payload", () => {
     ]);
     expect(data.medications).toEqual([METFORMIN]);
     expect(data).not.toHaveProperty("refillForecast");
+  });
+});
+
+describe("dashboardVariantFor", () => {
+  function interval(med: Medication): MedicationSchedule {
+    return {
+      ...fixed(med, "00:00"),
+      id: `${med.id}-interval`,
+      scheduleKind: "interval",
+      timeOfDay: null,
+      intervalHours: "8",
+    };
+  }
+
+  it('is "as-needed-only" with no medications, or only as-needed ones', () => {
+    expect(dashboardVariantFor([], new Map())).toBe("as-needed-only");
+    expect(dashboardVariantFor([METFORMIN, IBUPROFEN], schedulesOf(prn(METFORMIN)))).toBe(
+      "as-needed-only",
+    );
+  });
+
+  it('is "scheduled" once one medication has a fixed-time or an interval row', () => {
+    const meds = [METFORMIN, IBUPROFEN];
+    expect(dashboardVariantFor(meds, schedulesOf(prn(METFORMIN), fixed(IBUPROFEN, "08:00")))).toBe(
+      "scheduled",
+    );
+    expect(dashboardVariantFor(meds, schedulesOf(prn(METFORMIN), interval(IBUPROFEN)))).toBe(
+      "scheduled",
+    );
+  });
+
+  it("reads only the medications it is given, so an archived one's schedule never counts", () => {
+    // getSchedulesForUser returns every row the user has, archived included.
+    expect(dashboardVariantFor([METFORMIN], schedulesOf(fixed(LISINOPRIL, "08:00")))).toBe(
+      "as-needed-only",
+    );
+  });
+
+  it("agrees with the composer's header for both variants", () => {
+    const now = new Date(wed("12:00"));
+    for (const schedulesByMedId of [
+      schedulesOf(prn(METFORMIN)),
+      schedulesOf(fixed(METFORMIN, "08:00")),
+    ]) {
+      const medications = [METFORMIN];
+      const page = composeDashboardPageData({
+        medications,
+        schedulesByMedId,
+        doses: [],
+        lastDoses: [],
+        now,
+        timezone: "UTC",
+      });
+      expect(page.status.kind === "as-needed-only").toBe(
+        dashboardVariantFor(medications, schedulesByMedId) === "as-needed-only",
+      );
+    }
   });
 });

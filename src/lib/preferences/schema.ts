@@ -37,11 +37,15 @@
  * appears, so a deliberate difference is documented and an accidental one
  * cannot be typed by mistake.
  *
- * ARITY 1 — the form doors — is deliberately absent. `notificationSchema`
- * takes `checkboxField` (an optional `"on"` string transformed to a boolean)
- * and `dataSchema` takes a required enum, which are different INPUT types,
- * not different bounds; the compiler already fails loudly on those, exactly
- * as it does for `appearanceFieldSchemas`. `doseLogPageSize` and
+ * ARITY 1 — the form doors — is deliberately absent from THIS module, because
+ * a form posts strings: `notificationSchema` takes `checkboxField` (an
+ * optional `"on"` string transformed to a boolean) and `dataSchema` takes a
+ * required enum, which are different INPUT types, not different bounds.
+ * They live in `$lib/utils/validation.ts`. The dashboard layout and
+ * time-since doors there, `dashboardSettingsFieldSchemas`, pipe their parsed
+ * strings into `preferenceFieldTypes` below rather than restating a bound or
+ * an id list, so the form door cannot widen on its own; the conformance test
+ * pins their shipped values beside the API doors'. `doseLogPageSize` and
  * `heatmapPeriod` have no form door at all.
  */
 import { z } from "zod";

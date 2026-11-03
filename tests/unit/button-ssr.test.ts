@@ -289,6 +289,41 @@ describe("Toggle", () => {
     expect(el.getAttribute("type")).toBe("button");
   });
 
+  it("with no submit it is a plain button carrying no name or value", () => {
+    const el = ssr(Toggle, { pressed: false, children: label("Later today") });
+    expect(el.getAttribute("type")).toBe("button");
+    expect(el.hasAttribute("name")).toBe(false);
+    expect(el.hasAttribute("value")).toBe(false);
+  });
+
+  it("opts into submitting with `submit`: type=submit with its name and value", () => {
+    const el = ssr(Toggle, {
+      pressed: true,
+      submit: { name: "timeSinceDaysFromHours", value: "72" },
+      children: label("3 days"),
+    });
+    expect(el.getAttribute("type")).toBe("submit");
+    expect(el.getAttribute("name")).toBe("timeSinceDaysFromHours");
+    expect(el.getAttribute("value")).toBe("72");
+    expect(el.getAttribute("aria-pressed")).toBe("true");
+    // Submitting changes the button's behaviour, never its look.
+    expect(classes(el)).toEqual(new Set([...TOGGLE_BASE, "h-9", "rounded-lg", ...ON]));
+  });
+
+  it("a name or value in the spread cannot override the submit's own", () => {
+    const stray = { type: "button", name: "other", value: "1" } as Record<string, unknown>;
+    const props = {
+      pressed: false,
+      submit: { name: "dashboardShowLater", value: "on" },
+      children: label("Show"),
+      ...stray,
+    };
+    const el = ssr(Toggle, props as ComponentProps<typeof Toggle>);
+    expect(el.getAttribute("type")).toBe("submit");
+    expect(el.getAttribute("name")).toBe("dashboardShowLater");
+    expect(el.getAttribute("value")).toBe("on");
+  });
+
   it("draws md at h-11 and pill as rounded-full", () => {
     const el = ssr(Toggle, {
       pressed: false,

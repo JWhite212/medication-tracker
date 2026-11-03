@@ -9,6 +9,7 @@ import type {
   Medication,
 } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
+import type { DashboardVariant } from "$lib/dashboard/layout";
 import {
   CARRY_OVER_MS,
   LOG_NOW_COOLDOWN_MS,
@@ -121,6 +122,21 @@ function isResolved(slot: MatchedSlot): boolean {
 /** A row that projects slots. PRN rows never do. */
 function isTimed(schedule: MedicationSchedule): boolean {
   return schedule.scheduleKind === "interval" || schedule.scheduleKind === "fixed_time";
+}
+
+/**
+ * Which of the dashboard's two pages an account sees: "scheduled" iff any of
+ * `medications` has a row that projects slots. Only `medications`' rows are
+ * read, so an archived medication's schedule never makes an account
+ * "scheduled". The composer's header and the settings page both ask this,
+ * so it is answered once, here.
+ */
+export function dashboardVariantFor(
+  medications: Pick<Medication, "id">[],
+  schedulesByMedId: Map<string, MedicationSchedule[]>,
+): DashboardVariant {
+  const anyTimed = medications.some((med) => (schedulesByMedId.get(med.id) ?? []).some(isTimed));
+  return anyTimed ? "scheduled" : "as-needed-only";
 }
 
 /**
@@ -287,14 +303,13 @@ export function composeDashboardPageData(
   const earlierCards: Placed<DueCard>[] = [];
   const todayCards: Placed<DueCard>[] = [];
   const laterRows: Placed<LaterRow>[] = [];
-  let anyTimed = false;
+  const anyTimed = dashboardVariantFor(medications, schedulesByMedId) === "scheduled";
   let totalToday = 0;
   let doneToday = 0;
 
   for (const [index, med] of medications.entries()) {
     const schedules = schedulesByMedId.get(med.id) ?? [];
     if (!schedules.some(isTimed)) continue;
-    anyTimed = true;
 
     // The only projection step that touches Intl: computed once here and
     // handed to every simulation slotActions runs.

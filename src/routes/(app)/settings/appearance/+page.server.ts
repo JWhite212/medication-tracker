@@ -1,8 +1,11 @@
 import { error, fail } from "@sveltejs/kit";
 import { getOrCreatePreferences, updatePreferences } from "$lib/server/preferences";
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
+import type { z } from "zod";
 import { appearanceFieldSchemas, APPEARANCE_ACTION_KEYS } from "$lib/appearance/schema";
+import { dashboardSettingsFieldSchemas } from "$lib/utils/validation";
 import type { AppearanceKey } from "$lib/appearance/registry";
+import type { UserPreferences } from "$lib/types";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
 
 // Instant save turns this page into an unthrottled authenticated write
@@ -33,7 +36,10 @@ export const load: PageServerLoad = async ({ locals }) => {
  * <form action="?/key"> so the no-JS path saves exactly the field the
  * button sits next to.
  */
-function fieldAction(key: AppearanceKey) {
+function fieldAction(
+  key: AppearanceKey | "timeSinceDaysFromHours",
+  schema: z.ZodType<Partial<UserPreferences>>,
+) {
   return async ({ request, locals }: RequestEvent) => {
     // Form actions run BEFORE layout load functions, so the (app) group's
     // auth guard has not executed at this point. Without this an
@@ -54,7 +60,7 @@ function fieldAction(key: AppearanceKey) {
       });
     }
     const formData = Object.fromEntries(await request.formData());
-    const parsed = appearanceFieldSchemas[key].safeParse(formData);
+    const parsed = schema.safeParse(formData);
     if (!parsed.success) {
       return fail(400, { key, errors: parsed.error.flatten().fieldErrors });
     }
@@ -65,6 +71,20 @@ function fieldAction(key: AppearanceKey) {
   };
 }
 
-export const actions: Actions = Object.fromEntries(
-  APPEARANCE_ACTION_KEYS.map((key) => [key, fieldAction(key)]),
+const registryActions = Object.fromEntries(
+  APPEARANCE_ACTION_KEYS.map((key) => [key, fieldAction(key, appearanceFieldSchemas[key])]),
 ) as Actions;
+
+/**
+ * Hand-added beside the registry's six: the time-since threshold is not an
+ * appearance registry key (its domain lives in `$lib/preferences/schema.ts`),
+ * but it is set on this page and shares this page's budget and failure
+ * shape. Its form door is `dashboardSettingsFieldSchemas`, which pipes into
+ * that one domain.
+ */
+const timeSinceDaysFromHours = fieldAction(
+  "timeSinceDaysFromHours",
+  dashboardSettingsFieldSchemas.timeSinceDaysFromHours,
+);
+
+export const actions: Actions = { ...registryActions, timeSinceDaysFromHours };

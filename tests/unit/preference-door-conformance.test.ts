@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { getTableColumns } from "drizzle-orm";
-import { updatePreferencesPayload, backupEnvelopeSchema, dataSchema } from "$lib/utils/validation";
+import {
+  updatePreferencesPayload,
+  backupEnvelopeSchema,
+  dataSchema,
+  dashboardSettingsFieldSchemas,
+} from "$lib/utils/validation";
 import { APPEARANCE_KEYS } from "$lib/appearance/registry";
 import {
   EXPORT_FORMATS,
@@ -322,6 +327,48 @@ describe("preference door conformance — the domains that shipped", () => {
     expect(dataSchema.safeParse({ exportFormat: NOT_A_VALID_VALUE }).success).toBe(false);
     // Required, unlike both API doors.
     expect(dataSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("holds the dashboard layout's form door to the same domain as the API doors", () => {
+    const order = dashboardSettingsFieldSchemas.dashboardSectionOrder;
+    // One required key: an empty post is a 400, never a write.
+    expect(order.safeParse({}).success).toBe(false);
+    expect(order.safeParse({ dashboardSectionOrder: "default" })).toEqual({
+      success: true,
+      data: { dashboardSectionOrder: null },
+    });
+    expect(order.safeParse({ dashboardSectionOrder: "refills,done" })).toEqual({
+      success: true,
+      data: { dashboardSectionOrder: ["refills", "done"] },
+    });
+    for (const bad of ["done,done", "due", "header", "done,banana", ""]) {
+      expect(order.safeParse({ dashboardSectionOrder: bad }).success, bad).toBe(false);
+    }
+    for (const key of [
+      "dashboardShowLater",
+      "dashboardShowQuickLog",
+      "dashboardShowRefills",
+    ] as const) {
+      const flag = dashboardSettingsFieldSchemas[key];
+      expect(flag.safeParse({}).success, key).toBe(false);
+      expect(flag.safeParse({ [key]: "on" })).toEqual({ success: true, data: { [key]: true } });
+      expect(flag.safeParse({ [key]: "off" })).toEqual({ success: true, data: { [key]: false } });
+      expect(flag.safeParse({ [key]: "true" }).success, key).toBe(false);
+    }
+  });
+
+  it("holds timeSinceDaysFromHours to 24..168 integers at the form door too", () => {
+    const schema = dashboardSettingsFieldSchemas.timeSinceDaysFromHours;
+    expect(schema.safeParse({}).success).toBe(false);
+    for (const ok of ["24", "60", "168"]) {
+      expect(schema.safeParse({ timeSinceDaysFromHours: ok })).toEqual({
+        success: true,
+        data: { timeSinceDaysFromHours: Number(ok) },
+      });
+    }
+    for (const bad of ["23", "169", "4.5", "47.5", "0", "", "-48"]) {
+      expect(schema.safeParse({ timeSinceDaysFromHours: bad }).success, bad).toBe(false);
+    }
   });
 
   it("carries every substrate key at both doors", () => {

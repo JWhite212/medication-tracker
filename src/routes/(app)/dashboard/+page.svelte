@@ -20,10 +20,12 @@
   import { formatUserTime, type DateFormat, type TimeFormat } from "$lib/utils/time";
   import type { DoseLogWithMedication, RefillForecastEntry } from "$lib/types";
   import {
+    normaliseOption,
     resolveDashboardLayout,
     SECTION_LABELS,
     type DashboardSectionId,
   } from "$lib/dashboard/layout";
+  import { DASHBOARD_LATER_MODES, DONE_TIME_DISPLAYS } from "$lib/preferences/domains";
 
   let { data } = $props();
 
@@ -44,13 +46,25 @@
    */
   const needsYou = (entry: RefillForecastEntry) => refillChip(entry)?.tone === "needs-you";
 
+  // The stored layout values, gathered once. The resolver reads the order and
+  // the three flags; the section snippet reads the two options. The options
+  // are read tolerantly, so a value a newer build wrote cannot break the page.
+  const stored = $derived({
+    order: data.preferences.dashboardSectionOrder,
+    showLater: data.preferences.dashboardShowLater,
+    showQuickLog: data.preferences.dashboardShowQuickLog,
+    showRefills: data.preferences.dashboardShowRefills,
+    laterMode: normaliseOption(data.preferences.dashboardLaterMode, DASHBOARD_LATER_MODES, "next"),
+    doneTime: normaliseOption(data.preferences.dashboardDoneTime, DONE_TIME_DISPLAYS, "both"),
+  });
+
   // Order and visibility only. What each section holds is the composer's.
   const layout = $derived(
     resolveDashboardLayout({
-      order: data.preferences.dashboardSectionOrder,
-      showLater: data.preferences.dashboardShowLater,
-      showQuickLog: data.preferences.dashboardShowQuickLog,
-      showRefills: data.preferences.dashboardShowRefills,
+      order: stored.order,
+      showLater: stored.showLater,
+      showQuickLog: stored.showQuickLog,
+      showRefills: stored.showRefills,
       variant: asNeededOnly ? "as-needed-only" : "scheduled",
       hasUrgentRefill: data.refillForecast.some(needsYou),
     }),
@@ -181,11 +195,13 @@
       timezone={data.timezone}
       {timeFormat}
       {timeSinceDaysFromHours}
+      timeDisplay={stored.doneTime}
       onedit={(dose) => (editingDose = dose)}
     />
   {:else if id === "later"}
     <LaterList
       rows={data.later}
+      mode={stored.laterMode}
       serverNow={renderNow}
       {todayStart}
       timezone={data.timezone}

@@ -380,6 +380,46 @@ describe("dashboard page wiring (SSR)", () => {
     expect(done).toContain("1d ago");
     expect(done).not.toContain("30h 0m ago");
   });
+
+  it("hands Later the stored mode: every group renders under 'all', one under the default", () => {
+    const later = [
+      laterRow(ibuprofen, "2026-04-16T19:00:00.000Z"),
+      laterRow(metformin, "2026-04-16T21:00:00.000Z"),
+    ];
+    const folded = sectionAfter(renderPage({ ...SCHEDULED, later }).body, "Later today");
+    expect(folded).toContain("Show 1 more");
+    expect(folded).not.toContain("Metformin");
+
+    const all = sectionAfter(
+      renderPage({ ...SCHEDULED, later }, doseWriteContext(), { dashboardLaterMode: "all" }).body,
+      "Later today",
+    );
+    expect(all).toContain("Show fewer");
+    expect(all).toContain("Metformin");
+    expect(all).toContain("Ibuprofen");
+  });
+
+  it("hands Done the stored time display: no time-since element under 'clock'", () => {
+    const withDone = { ...SCHEDULED, done: [doneRow("d1", ibuprofen, "2026-04-16T06:00:00.000Z")] };
+    const both = sectionAfter(renderPage(withDone).body, "Done today");
+    expect(both).toContain("data-time-since");
+
+    const clock = sectionAfter(
+      renderPage(withDone, doseWriteContext(), { dashboardDoneTime: "clock" }).body,
+      "Done today",
+    );
+    expect(clock).not.toContain("data-time-since");
+    expect(clock).toContain(">7:00<");
+  });
+
+  it("reads a value it does not know as the default rather than throwing", () => {
+    const html = renderPage(
+      { ...SCHEDULED, done: [doneRow("d1", ibuprofen, "2026-04-16T06:00:00.000Z")] },
+      doseWriteContext(),
+      { dashboardLaterMode: "off", dashboardDoneTime: 42 } as unknown as Partial<UserPreferences>,
+    ).body;
+    expect(sectionAfter(html, "Done today")).toContain("data-time-since");
+  });
 });
 
 // ── Layout preferences ──────────────────────────────────────────────────────

@@ -10,10 +10,18 @@
     SHORT_SECTION_LABELS,
     mergeVisibleOrder,
     moveSection,
+    normaliseOption,
     normaliseSectionOrder,
     orderValue,
     type DashboardSectionId,
   } from "$lib/dashboard/layout";
+  import {
+    DASHBOARD_LATER_MODES,
+    DONE_TIME_DISPLAYS,
+    type DashboardLaterMode,
+    type DoneTimeDisplay,
+  } from "$lib/preferences/domains";
+  import { formatTimeSince, formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { focusIfLost, pageHeading } from "$lib/components/dose-writes/focus-after";
   import { actionErrorMessage } from "$lib/utils/form-errors";
   import { showToast } from "$lib/components/ui/Toast.svelte";
@@ -48,6 +56,35 @@
   const customised = $derived(
     preferences.dashboardSectionOrder !== null || !shown.later || !shown.quickLog || !shown.refills,
   );
+  // The two single-choice options. Read tolerantly, like the dashboard does.
+  const laterMode = $derived(
+    normaliseOption(preferences.dashboardLaterMode, DASHBOARD_LATER_MODES, "next"),
+  );
+  const doneTime = $derived(
+    normaliseOption(preferences.dashboardDoneTime, DONE_TIME_DISPLAYS, "both"),
+  );
+  const LATER_OPTIONS: { value: DashboardLaterMode; label: string }[] = [
+    { value: "next", label: "Next few" },
+    { value: "all", label: "Whole day" },
+  ];
+  const DONE_OPTIONS: { value: DoneTimeDisplay; label: string }[] = [
+    { value: "both", label: "Time and how long ago" },
+    { value: "since", label: "How long ago" },
+    { value: "clock", label: "Time only" },
+  ];
+  // A fixed dose taken 2h 15m before a fixed "now", run through the same
+  // formatters the dashboard uses, so the sample cannot drift from the page.
+  const SAMPLE_NOW = new Date("2026-04-15T12:00:00.000Z");
+  const SAMPLE_TAKEN = new Date(SAMPLE_NOW.getTime() - (2 * 60 + 15) * 60_000);
+  const doneSample = $derived.by(() => {
+    const clock = formatUserTime(
+      SAMPLE_TAKEN,
+      data.user.timezone,
+      preferences.timeFormat as TimeFormat,
+    );
+    const since = formatTimeSince(SAMPLE_TAKEN, SAMPLE_NOW, preferences.timeSinceDaysFromHours);
+    return { both: `${clock}, ${since}`, since, clock } satisfies Record<DoneTimeDisplay, string>;
+  });
   const fromDashboard = $derived(page.url.searchParams.get("from") === "dashboard");
 
   const FLAG_KEY = {
@@ -61,6 +98,7 @@
   type Intent =
     | { kind: "move"; id: DashboardSectionId; direction: "up" | "down" }
     | { kind: "visibility"; id: HideableId }
+    | { kind: "option"; key: "laterMode" | "doneTime" }
     | { kind: "reset" };
 
   // One page-level flag. While a save is in flight every control is
@@ -89,6 +127,11 @@
     }
     if (intent.kind === "visibility") {
       return `${SECTION_LABELS[intent.id]} ${shown[intent.id] ? "shown" : "hidden"}`;
+    }
+    if (intent.kind === "option") {
+      return intent.key === "laterMode"
+        ? `${SECTION_LABELS.later}: ${LATER_OPTIONS.find((o) => o.value === laterMode)!.label.toLowerCase()}`
+        : `${SECTION_LABELS.done}: ${DONE_OPTIONS.find((o) => o.value === doneTime)!.label.toLowerCase()}`;
     }
     return "Dashboard layout reset to default";
   }
@@ -260,6 +303,57 @@
         <Button variant="secondary" type="submit" ariaDisabled={saving}>{resetLabel}</Button>
       </form>
     {/if}
+  </GlassCard>
+
+  <GlassCard>
+    <h2 class="mb-1 text-lg font-semibold">Options</h2>
+    <p class="text-text-muted mb-4 text-sm">How much each section shows.</p>
+
+    <div class="space-y-5">
+      <fieldset data-option-group="dashboardLaterMode" class="min-w-0">
+        <legend class="mb-2 font-medium">{SECTION_LABELS.later}</legend>
+        <form
+          method="POST"
+          action="?/dashboardLaterMode"
+          use:enhance={save({ kind: "option", key: "laterMode" })}
+          class="flex flex-wrap gap-2"
+        >
+          {#each LATER_OPTIONS as option (option.value)}
+            <Toggle
+              size="md"
+              pressed={laterMode === option.value}
+              submit={{ name: "dashboardLaterMode", value: option.value }}
+              aria-disabled={saving ? "true" : undefined}>{option.label}</Toggle
+            >
+          {/each}
+        </form>
+        {#if !shown.later}
+          <p class="text-text-muted mt-1 text-sm">Later today is hidden</p>
+        {/if}
+      </fieldset>
+
+      <fieldset data-option-group="dashboardDoneTime" class="min-w-0">
+        <legend class="mb-2 font-medium">{SECTION_LABELS.done}</legend>
+        <form
+          method="POST"
+          action="?/dashboardDoneTime"
+          use:enhance={save({ kind: "option", key: "doneTime" })}
+          class="flex flex-wrap gap-2"
+        >
+          {#each DONE_OPTIONS as option (option.value)}
+            <Toggle
+              size="md"
+              pressed={doneTime === option.value}
+              submit={{ name: "dashboardDoneTime", value: option.value }}
+              aria-disabled={saving ? "true" : undefined}>{option.label}</Toggle
+            >
+          {/each}
+        </form>
+        <p data-done-sample class="text-text-muted mt-1 text-sm">
+          Looks like: <span class="text-text-secondary tabular-nums">{doneSample[doneTime]}</span>
+        </p>
+      </fieldset>
+    </div>
   </GlassCard>
 
   <p class="text-text-muted text-sm">

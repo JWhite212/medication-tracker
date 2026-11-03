@@ -26,7 +26,7 @@ import { join } from "node:path";
  * licence. A comment naming the field counts too.
  */
 
-const OWNERS = [
+const SHARED_OWNERS = [
   "src/lib/server/db/schema.ts",
   "src/lib/preferences/schema.ts",
   "src/lib/utils/validation.ts",
@@ -35,7 +35,20 @@ const OWNERS = [
   "src/routes/(app)/dashboard/+page.svelte",
 ];
 
-const NAMES_THE_ORDER = /\bdashboardSectionOrder\b/;
+/**
+ * The same ownership holds for the two Phase 2 options, which the dashboard
+ * page reads in the same `stored` gather as the order. `dashboardDoneTime` has
+ * one further name-check: the walkthrough's `StageDoneList` explains in a
+ * comment why it draws only the default, and a comment counts.
+ */
+const KEYS: Record<string, string[]> = {
+  dashboardSectionOrder: SHARED_OWNERS,
+  dashboardLaterMode: SHARED_OWNERS,
+  dashboardDoneTime: [
+    ...SHARED_OWNERS,
+    "src/lib/components/walkthrough/parts/dashboard/StageDoneList.svelte",
+  ],
+};
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -46,30 +59,39 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("dashboardSectionOrder has exactly its owners", () => {
-  it("walks the source tree, so a scan that finds nothing cannot pass", () => {
-    const files = walk("src");
-    expect(files.length).toBeGreaterThan(50);
-    expect(files).toContain("src/lib/dashboard/layout.ts");
-    expect(files).toContain("src/routes/(app)/settings/dashboard/+page.svelte");
-  });
-
-  it("no module outside the owners names it", () => {
-    const outsiders = walk("src")
-      .filter((file) => !OWNERS.includes(file))
-      .filter((file) => NAMES_THE_ORDER.test(readFileSync(file, "utf8")));
-
-    expect(outsiders).toEqual([]);
-  });
-
-  it("every owner still names it, so the list cannot rot", () => {
-    const stillOwning = OWNERS.filter((file) => NAMES_THE_ORDER.test(readFileSync(file, "utf8")));
-
-    expect(stillOwning.sort()).toEqual([...OWNERS].sort());
-  });
-
-  it("the dashboard page reads it exactly once", () => {
-    const source = readFileSync("src/routes/(app)/dashboard/+page.svelte", "utf8");
-    expect(source.match(/\bdashboardSectionOrder\b/g)).toHaveLength(1);
-  });
+it("walks the source tree, so a scan that finds nothing cannot pass", () => {
+  const files = walk("src");
+  expect(files.length).toBeGreaterThan(50);
+  expect(files).toContain("src/lib/dashboard/layout.ts");
+  expect(files).toContain("src/routes/(app)/settings/dashboard/+page.svelte");
 });
+
+for (const [key, owners] of Object.entries(KEYS)) {
+  const names = new RegExp(`\\b${key}\\b`);
+  const count = (source: string) => source.match(new RegExp(`\\b${key}\\b`, "g"))?.length ?? 0;
+
+  describe(`${key} has exactly its owners`, () => {
+    it("no module outside the owners names it", () => {
+      const outsiders = walk("src")
+        .filter((file) => !owners.includes(file))
+        .filter((file) => names.test(readFileSync(file, "utf8")));
+
+      expect(outsiders).toEqual([]);
+    });
+
+    it("every owner still names it, so the list cannot rot", () => {
+      const stillOwning = owners.filter((file) => names.test(readFileSync(file, "utf8")));
+
+      expect(stillOwning.sort()).toEqual([...owners].sort());
+    });
+
+    it("the dashboard page reads it exactly once", () => {
+      const source = readFileSync("src/routes/(app)/dashboard/+page.svelte", "utf8");
+      expect(count(source)).toBe(1);
+    });
+
+    it("the resolver module never names it", () => {
+      expect(count(readFileSync("src/lib/dashboard/layout.ts", "utf8"))).toBe(0);
+    });
+  });
+}

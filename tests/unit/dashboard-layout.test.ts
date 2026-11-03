@@ -8,6 +8,7 @@ import {
   mergeVisibleOrder,
   moveSection,
   normaliseAgainst,
+  normaliseOption,
   normaliseSectionOrder,
   orderValue,
   resolveDashboardLayout,
@@ -281,5 +282,19 @@ describe("mergeVisibleOrder", () => {
     mergeVisibleOrder(visible, full);
     expect([...visible]).toEqual(["refills", "done"]);
     expect([...full]).toEqual(["done", "later", "quickLog", "refills"]);
+  });
+});
+
+describe("normaliseOption", () => {
+  const values = ["next", "all"] as const;
+
+  it("returns each valid value unchanged", () => {
+    for (const v of values) expect(normaliseOption(v, values, "next")).toBe(v);
+  });
+
+  it("returns the fallback for anything outside the domain, never throwing", () => {
+    for (const raw of [undefined, null, "off", 42, {}, ["all"], ""]) {
+      expect(normaliseOption(raw, values, "next")).toBe("next");
+    }
   });
 });

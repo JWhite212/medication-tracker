@@ -64,6 +64,19 @@ export function normaliseAgainst(raw: unknown, defaults: readonly string[]): str
   return result;
 }
 
+/**
+ * Reads a stored single-choice option tolerantly: anything outside `values`
+ * (a value a newer build wrote, null, a number) reads as `fallback`. Never
+ * throws, like `normaliseSectionOrder`.
+ */
+export function normaliseOption<T extends string>(
+  raw: unknown,
+  values: readonly T[],
+  fallback: T,
+): T {
+  return values.find((value) => value === raw) ?? fallback;
+}
+
 export function normaliseSectionOrder(
   raw: unknown,
   variant: DashboardVariant,

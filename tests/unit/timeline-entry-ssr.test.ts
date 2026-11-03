@@ -10,7 +10,7 @@
 // the hover-revealed controls are allowed to hide, how big they are, and what
 // × is before the page is live. The one-tap delete, its Undo and focus are
 // interactive and live in tests/unit/timeline-entry-delete.test.ts.
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render } from "svelte/server";
 import { JSDOM } from "jsdom";
 import type { DoseLogWithMedication } from "$lib/types";
@@ -69,12 +69,17 @@ function makeDose(
   };
 }
 
-function renderRowHtml(status: Status, overrides: Partial<DoseLogWithMedication> = {}): string {
+function renderRowHtml(
+  status: Status,
+  overrides: Partial<DoseLogWithMedication> = {},
+  timeSinceDaysFromHours = 48,
+): string {
   return render(TimelineEntry, {
     props: {
       dose: makeDose(status, overrides),
       timezone: "UTC",
       timeFormat: "24h" as const,
+      timeSinceDaysFromHours,
       day: null,
       onedit: () => {},
     },
@@ -99,6 +104,27 @@ function restingOpacity(el: Element): number | null {
   }
   return null;
 }
+
+describe("the row's time-since honours the account's threshold", () => {
+  const NOW = new Date("2026-05-02T19:31:00.000Z");
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    { threshold: 24, since: "1d ago" },
+    { threshold: 48, since: "30h 0m ago" },
+  ])("words a 30-hour-old dose as $since at $threshold hours", ({ threshold, since }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    const doc = new JSDOM(
+      `<!doctype html><html><body>${renderRowHtml(
+        "taken",
+        { takenAt: new Date("2026-05-01T13:31:00.000Z") },
+        threshold,
+      )}</body></html>`,
+    ).window.document;
+    expect(textOf(doc.querySelector("time[datetime]")!)).toBe(since);
+  });
+});
 
 describe("a skipped or missed dose row stays legible (WCAG 1.4.3)", () => {
   // opacity-60 on the whole row composited the badges, dosage and time down to

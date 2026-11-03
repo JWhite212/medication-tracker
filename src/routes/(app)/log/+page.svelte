@@ -313,6 +313,7 @@
               {dose}
               timezone={data.timezone}
               timeFormat={data.preferences.timeFormat as "12h" | "24h"}
+              timeSinceDaysFromHours={data.preferences.timeSinceDaysFromHours}
               day={group.isToday ? null : { label: group.label, isYesterday: group.isYesterday }}
               onedit={(d) => (editingDose = d)}
             />

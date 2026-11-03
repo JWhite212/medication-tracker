@@ -132,6 +132,7 @@ function mountList(rows: DoneRow[] = [TAKEN, SKIPPED, MISSED]) {
       todayStart: TODAY_START,
       timezone: "UTC",
       timeFormat: "24h",
+      timeSinceDaysFromHours: 48,
       onedit: () => {},
     },
     context: dashboardContext({ now: NOW }),

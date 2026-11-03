@@ -22,12 +22,7 @@
 
 <script lang="ts">
   import type { DoneRow, DoseLogWithMedication } from "$lib/types";
-  import {
-    formatTimeSince,
-    formatUserTime,
-    TIME_SINCE_DAYS_FROM_HOURS,
-    type TimeFormat,
-  } from "$lib/utils/time";
+  import { formatTimeSince, formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { doneCoversLine, doneDoseText, formatDoseLabel } from "$lib/utils/dashboard-copy";
   import { toneClass, toneOf } from "$lib/utils/status-tone";
   import DoseActionForm from "./DoseActionForm.svelte";
@@ -41,6 +36,7 @@
     todayStart,
     timezone,
     timeFormat,
+    timeSinceDaysFromHours,
     onedit,
   }: {
     rows: DoneRow[];
@@ -56,6 +52,8 @@
     todayStart: Date;
     timezone: string;
     timeFormat: TimeFormat;
+    /** The account's hours-before-days switch for a taken row's "ago". */
+    timeSinceDaysFromHours: number;
     onedit: (dose: DoseLogWithMedication) => void;
   } = $props();
 
@@ -80,7 +78,7 @@
       // this?". A skip or missed row's instant is a slot, not an intake.
       since:
         dose.status === "taken"
-          ? formatTimeSince(takenAt, serverNow, TIME_SINCE_DAYS_FROM_HOURS)
+          ? formatTimeSince(takenAt, serverNow, timeSinceDaysFromHours)
           : null,
       takenAtIso: takenAt.toISOString(),
       dose: doneDoseText({

@@ -17,11 +17,14 @@
     medication,
     timezone,
     timeFormat,
+    timeSinceDaysFromHours,
   }: {
     medication: MedicationWithStats;
     /** The user's profile zone and clock: the toast says when the dose was logged. */
     timezone: string;
     timeFormat: TimeFormat;
+    /** The account's hours-before-days switch for "Last taken". */
+    timeSinceDaysFromHours: number;
   } = $props();
 
   const isScheduled = $derived(medication.scheduleType === "scheduled");
@@ -173,7 +176,12 @@
     <!-- Stats row -->
     <div class="text-text-secondary mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
       {#if medication.lastTakenAt}
-        <span>Last taken: <TimeSince date={medication.lastTakenAt} /></span>
+        <span
+          >Last taken: <TimeSince
+            date={medication.lastTakenAt}
+            daysFromHours={timeSinceDaysFromHours}
+          /></span
+        >
       {:else}
         <span>Never taken</span>
       {/if}

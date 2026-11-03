@@ -1,16 +1,20 @@
 <script lang="ts">
-  import { formatTimeSince, TIME_SINCE_DAYS_FROM_HOURS } from "$lib/utils/time";
-  let { date }: { date: Date } = $props();
-  let display = $state(formatTimeSince(date, new Date(), TIME_SINCE_DAYS_FROM_HOURS));
+  import { formatTimeSince } from "$lib/utils/time";
+  let { date, daysFromHours }: { date: Date; daysFromHours: number } = $props();
+
+  // One spelling of "how long ago, now", so the three refresh paths below
+  // cannot drift apart. `new Date()` is explicit: the device clock is the
+  // point of a live counter.
+  const render = () => formatTimeSince(date, new Date(), daysFromHours);
+  let display = $state(render());
 
   $effect(() => {
-    display = formatTimeSince(date, new Date(), TIME_SINCE_DAYS_FROM_HOURS);
+    display = render();
     const interval = setInterval(() => {
-      display = formatTimeSince(date, new Date(), TIME_SINCE_DAYS_FROM_HOURS);
+      display = render();
     }, 60_000);
     const onVisibility = () => {
-      if (document.visibilityState === "visible")
-        display = formatTimeSince(date, new Date(), TIME_SINCE_DAYS_FROM_HOURS);
+      if (document.visibilityState === "visible") display = render();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {

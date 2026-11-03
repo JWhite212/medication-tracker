@@ -6,7 +6,7 @@
   import { showToast } from "$lib/components/ui/Toast.svelte";
   import { urlBase64ToUint8Array, TEST_PUSH_SHOWN_MESSAGE } from "$lib/utils/push";
   import { toneClass, toneOf } from "$lib/utils/status-tone";
-  import { formatTimeSince, TIME_SINCE_DAYS_FROM_HOURS } from "$lib/utils/time";
+  import { formatTimeSince } from "$lib/utils/time";
 
   let { data, form } = $props();
 
@@ -355,7 +355,7 @@
                 (oldest {formatTimeSince(
                   new Date(data.pushHealth.oldestRegisteredAt),
                   new Date(),
-                  TIME_SINCE_DAYS_FROM_HOURS,
+                  data.preferences.timeSinceDaysFromHours,
                 )})
               </span>
             {/if}
@@ -368,7 +368,7 @@
               {formatTimeSince(
                 new Date(data.pushHealth.lastReminderAt),
                 new Date(),
-                TIME_SINCE_DAYS_FROM_HOURS,
+                data.preferences.timeSinceDaysFromHours,
               )}
             {:else}
               <span class="text-text-muted">None yet</span>

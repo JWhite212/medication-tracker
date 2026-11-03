@@ -76,7 +76,12 @@ function guaranteedPx(classes: string[], axis: "h" | "w"): number {
 describe("the medication card's quick-log button", () => {
   // The lock is the (app) layout's; every dose control reads it from context.
   const html = render(MedicationCard, {
-    props: { medication: medication(), timezone: "UTC", timeFormat: "24h" },
+    props: {
+      medication: medication(),
+      timezone: "UTC",
+      timeFormat: "24h",
+      timeSinceDaysFromHours: 48,
+    },
     context: doseWriteContext(),
   }).body;
   const LABEL = 'aria-label="Log a dose of Paracetamol"';

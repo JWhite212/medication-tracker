@@ -9,7 +9,7 @@ import {
 } from "$lib/server/db/schema";
 import { sendReminderEmail, sendLowInventoryEmail, isEmailConfigured } from "./email";
 import { sendPushNotification, hasPushSubscriptions } from "./push";
-import { lastLoggedPhrase, TIME_SINCE_DAYS_FROM_HOURS } from "$lib/utils/time";
+import { lastLoggedPhrase } from "$lib/utils/time";
 import { lowInventoryTag, overdueTag } from "$lib/utils/push-payload";
 import {
   computeOverdueSlot,
@@ -51,6 +51,7 @@ export async function checkOverdueMedications() {
       userOverduePushReminders: userPreferences.overduePushReminders,
       userLowInventoryEmailAlerts: userPreferences.lowInventoryEmailAlerts,
       userLowInventoryPushAlerts: userPreferences.lowInventoryPushAlerts,
+      userTimeSinceDaysFromHours: userPreferences.timeSinceDaysFromHours,
       medNotificationsEnabled: medications.notificationsEnabled,
       medNotifyOverdueEmail: medications.notifyOverdueEmail,
       medNotifyOverduePush: medications.notifyOverduePush,
@@ -187,7 +188,13 @@ export async function checkOverdueMedications() {
         // (e.g. the subscription lookup hitting a DB blip) doesn't
         // poison an already-successful email send.
         if (emailConfigured) {
-          out.email = await sendReminderEmail(row.userEmail, row.medicationName, lastEventAt, now);
+          out.email = await sendReminderEmail(
+            row.userEmail,
+            row.medicationName,
+            lastEventAt,
+            now,
+            row.userTimeSinceDaysFromHours,
+          );
         }
         // Push is configured when the user has opted in AND has an
         // active subscription on at least one device.
@@ -198,7 +205,7 @@ export async function checkOverdueMedications() {
         if (pushConfigured) {
           out.push = await sendPushNotification(row.userId, {
             title: `${row.medicationName} overdue`,
-            body: lastLoggedPhrase(lastEventAt, now, TIME_SINCE_DAYS_FROM_HOURS),
+            body: lastLoggedPhrase(lastEventAt, now, row.userTimeSinceDaysFromHours),
             url: "/dashboard",
             tag: overdueTag(row.medicationId),
             // Same tag as the previous nag, so the tray holds one entry
@@ -263,6 +270,7 @@ export async function checkLowInventoryMedications() {
       userOverduePushReminders: userPreferences.overduePushReminders,
       userLowInventoryEmailAlerts: userPreferences.lowInventoryEmailAlerts,
       userLowInventoryPushAlerts: userPreferences.lowInventoryPushAlerts,
+      userTimeSinceDaysFromHours: userPreferences.timeSinceDaysFromHours,
       medNotificationsEnabled: medications.notificationsEnabled,
       medNotifyOverdueEmail: medications.notifyOverdueEmail,
       medNotifyOverduePush: medications.notifyOverduePush,

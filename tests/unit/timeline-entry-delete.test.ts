@@ -207,7 +207,7 @@ function renderLog(groups: Group[], lock: DoseWriteLock = createDoseWriteLock())
     const component = mount(TimelineEntry, {
       target: list,
       anchor: list.children[index] ?? undefined,
-      props: { dose, timezone: "UTC", timeFormat: "24h", day, onedit },
+      props: { dose, timezone: "UTC", timeFormat: "24h", timeSinceDaysFromHours: 48, day, onedit },
       context,
     });
     live.set(dose.id, { component, list, index, dose, day });

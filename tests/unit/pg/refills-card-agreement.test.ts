@@ -111,7 +111,7 @@ function onMedications(id: string): Drawn | null {
   const medication = medications.find((m) => m.id === id)!;
   const doc = ssrDocument(
     render(MedicationCard, {
-      props: { medication, timezone: "UTC", timeFormat: "24h" },
+      props: { medication, timezone: "UTC", timeFormat: "24h", timeSinceDaysFromHours: 48 },
       context: doseWriteContext(),
     }).body,
   );

@@ -16,12 +16,15 @@
     dose,
     timezone,
     timeFormat = "12h",
+    timeSinceDaysFromHours,
     day,
     onedit,
   }: {
     dose: DoseLogWithMedication;
     timezone: string;
     timeFormat?: TimeFormat;
+    /** The account's hours-before-days switch for the "ago" label. */
+    timeSinceDaysFromHours: number;
     /**
      * This row's day group, or null for Today. Only the Undo offer reads it,
      * to say which day's dose went. `isYesterday` is the page's answer from
@@ -195,7 +198,7 @@
         >{formatUserTime(new Date(dose.takenAt), timezone, timeFormat)}</span
       >
       <span class="text-text-secondary font-medium">
-        <TimeSince date={new Date(dose.takenAt)} />
+        <TimeSince date={new Date(dose.takenAt)} daysFromHours={timeSinceDaysFromHours} />
       </span>
     </div>
 

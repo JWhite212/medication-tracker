@@ -26,6 +26,14 @@ export const SECTION_LABELS: Record<DashboardSectionId, string> = {
   refills: "Refills",
 };
 
+/** The shorter names the settings page's Reset label lists ("Default: Done, Later, …"). */
+export const SHORT_SECTION_LABELS: Record<DashboardSectionId, string> = {
+  done: "Done",
+  later: "Later",
+  quickLog: "Quick log",
+  refills: "Refills",
+};
+
 /**
  * Reads a stored order tolerantly: it never throws. Non-strings, ids that are
  * not in `defaults` and repeats are dropped; each missing id is inserted after
@@ -115,4 +123,25 @@ export function moveSection(
 
 export function orderValue(order: readonly DashboardSectionId[]): string {
   return order.join(",");
+}
+
+/**
+ * Writes a reordering of the ids a page can see back into the full order
+ * without moving the ids it cannot. The slots `full` gives to ids in `visible`
+ * are refilled with `visible` in its new order, and every other id keeps its
+ * index. An as-needed-only account sees only Done and Refills, but its stored
+ * order still places Later and Quick log, and posting just the visible ids
+ * would discard those places. When every id is visible the result is
+ * `visible` itself, so a scheduled account posts exactly what it would
+ * without this.
+ *
+ * `visible` must be a repeat-free subset of `full`.
+ */
+export function mergeVisibleOrder(
+  visible: readonly DashboardSectionId[],
+  full: readonly DashboardSectionId[],
+): DashboardSectionId[] {
+  const shown = new Set(visible);
+  let next = 0;
+  return full.map((id) => (shown.has(id) ? visible[next++] : id));
 }

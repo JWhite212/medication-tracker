@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import type { LaterRow } from "$lib/types";
   import { formatDosage } from "$lib/utils/dosage";
   import type { TimeFormat } from "$lib/utils/time";
@@ -9,6 +10,7 @@
     laterUntil,
   } from "$lib/utils/dashboard-copy";
   import Button from "$components/ui/Button.svelte";
+  import { focusIfLost, pageHeading } from "$components/dose-writes/focus-after";
   import MedicationGlyph from "./MedicationGlyph.svelte";
   import StatusMarker from "./StatusMarker.svelte";
 
@@ -35,6 +37,23 @@
   const groups = $derived(groupLaterRows(rows));
   const shown = $derived(expanded ? groups : groups.slice(0, 1));
   const hiddenCount = $derived(rows.length - (groups[0]?.rows.length ?? 0));
+  const hasToggle = $derived(groups.length > 1);
+  let toggle = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
+
+  // The dashboard reloads itself at slot boundaries, and a reload can leave
+  // Later with one group, which removes the toggle. If the toggle held focus
+  // it would fall to <body> with no user action, so it parks on the page's
+  // h1 instead (without scrolling), the dashboard's usual last resort.
+  // `pre`: the toggle is still in the DOM here, so we can ask whether it
+  // held focus. Collapsing again means a later second group starts folded,
+  // as the list first renders.
+  $effect.pre(() => {
+    if (hasToggle) return;
+    expanded = false;
+    if (toggle !== null && document.activeElement === toggle) {
+      void tick().then(() => focusIfLost(pageHeading));
+    }
+  });
 </script>
 
 <!-- Renders nothing when empty (the RefillsCard convention), so the page does not wrap it in {#if}. -->
@@ -85,8 +104,9 @@
         {/each}
       </ul>
     </div>
-    {#if groups.length > 1}
+    {#if hasToggle}
       <Button
+        bind:ref={toggle}
         variant="ghost"
         size="sm"
         class="mt-2"

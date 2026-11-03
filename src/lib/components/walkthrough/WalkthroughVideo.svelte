@@ -11,7 +11,7 @@
   // motion, and always offers a pause button (WCAG 2.2.2).
   import { onMount, tick, untrack } from "svelte";
   import { DARK_TOKENS, accentInkFor } from "$lib/appearance/theme-css";
-  import { readableForeground } from "$lib/utils/contrast";
+  import { readableForeground, readableHover } from "$lib/utils/contrast";
   import type { TimeFormat } from "$lib/utils/time";
   import { LOWER_THIRDS, STAGE_H, STAGE_W, TOTAL_DURATION, computeFrame } from "./timeline";
   import type { Measurements } from "./timeline";
@@ -53,6 +53,7 @@
       ...Object.entries(DARK_TOKENS).map(([name, value]) => `${name}: ${value}`),
       `--color-accent: ${accent}`,
       `--color-accent-fg: ${readableForeground(accent).color}`,
+      `--color-accent-hover: ${readableHover(accent)}`,
       `--color-accent-ink: ${accentInkFor("dark", accent)}`,
       "color-scheme: dark",
     ].join("; "),

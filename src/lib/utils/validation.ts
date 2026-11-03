@@ -502,11 +502,14 @@ export const IMPORT_MAX_BYTES = 4 * 1024 * 1024;
 
 export const MIN_IMPORT_TIME = Date.UTC(1900, 0, 1);
 /**
- * How far ahead a timestamp may sit. Generous on purpose: the app itself
- * lets a dose be logged with a future `takenAt` (doseLogSchema puts no
- * upper bound on it), so a tighter window here would make the app's own
- * backup unimportable. Still bounded, so a dose dated 2099 can't stretch
- * every future analytics range.
+ * How far ahead a timestamp may sit. Generous on purpose, and imports are now
+ * the only lenient door: the dashboard refuses a future Took it at, and the
+ * edit dialog and `/api/v1`'s `log_dose` and `edit_dose` refuse a `takenAt`
+ * more than `FUTURE_TAKEN_AT_GRACE_MS` ahead (utils/future-taken-at.ts). But
+ * the edit dialog and the API both accepted any time until recently, so an
+ * existing backup can already hold future rows, and refusing them here would
+ * make the app's own export unimportable. Still bounded, so a dose dated 2099
+ * can't stretch every future analytics range.
  */
 export const IMPORT_FUTURE_SKEW_MS = 365 * 24 * 60 * 60 * 1000;
 

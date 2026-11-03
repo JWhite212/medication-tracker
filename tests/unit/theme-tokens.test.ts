@@ -1,11 +1,13 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   contrastRatio,
   compositeOver,
   readableForeground,
+  readableHover,
   readableInk,
   INK_BACKDROP,
   INK_BACKDROP_LIGHT,
@@ -347,77 +349,139 @@ function brighten(hex: string, k: number): string {
 const HOVER_BACKDROPS = ["page", "card", "dialog"] as const;
 type HoverBackdrop = (typeof HOVER_BACKDROPS)[number];
 
-const ACCENT_DERIVATION_WHY =
-  "accent derivation follow-up: 90% opacity on the preset's own fill, as on every accent button";
+const SRC = fileURLToPath(new URL("../../src", import.meta.url));
+
+function walk(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) walk(full, out);
+    else if (/\.(ts|svelte)$/.test(entry)) out.push(full);
+  }
+  return out;
+}
 
 /**
- * Hovered `primary` Buttons below 4.5:1 today, as accent preset x scheme x
- * the backdrops it fails over. `hover:opacity-90` is the rule every accent
- * button in the app already uses (spec, Button > Hover), so it is kept, and
- * these are the presets it already fails for. Each entry is a decision, not a
- * shrug, and it is two-way: a listed row must still fail, so a stale entry
- * fails as loudly as a new offender. Every row that is not listed must pass.
+ * Every one-line quoted class string in src/ that paints the accent as a
+ * solid fill, at rest or on hover, and declares a hover: Button's primary,
+ * DoseEditForm's Save, DoseActionForm's primary, the medications card's Log
+ * (accent only while hovered) and the landing page's CTA. Read from the
+ * source rather than listed, so an accent control added with a fade of its
+ * own is measured below without anyone remembering to add a row.
  */
-const HOVERED_PRIMARY_BELOW_THRESHOLD: {
-  preset: string;
-  scheme: "dark" | "light";
-  over: readonly HoverBackdrop[];
-  why: string;
-}[] = [
-  { preset: "#ef4444", scheme: "dark", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
-  { preset: "#ef4444", scheme: "light", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
-  { preset: "#3b82f6", scheme: "dark", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
-  { preset: "#64748b", scheme: "dark", over: ["card", "dialog"], why: ACCENT_DERIVATION_WHY },
-  { preset: "#64748b", scheme: "light", over: HOVER_BACKDROPS, why: ACCENT_DERIVATION_WHY },
-];
+const ACCENT_HOVER_SITES = walk(SRC).flatMap((path) => {
+  const source = readFileSync(path, "utf8");
+  const file = relative(SRC, path).split(/[\\/]/).join("/");
+  return [...source.matchAll(/"([^"\n]*)"|'([^'\n]*)'/g)]
+    .map((m) => ({ classes: m[1] ?? m[2], index: m.index }))
+    .filter(
+      ({ classes }) =>
+        /(?:^|\s)(?:hover:)?bg-accent(?=\s|$)/.test(classes) && /(?:^|\s)hover:/.test(classes),
+    )
+    .map(({ classes, index }) => ({
+      site: `${file}:${source.slice(0, index).split("\n").length}`,
+      classes,
+    }));
+});
 
 /**
- * Button's hover states (src/lib/components/ui/Button.svelte). `primary`
- * hovers with `hover:opacity-90`, which composites the fill AND the label 90%
- * over whatever is behind the button. Inside (app) the fill is the user's
- * preset, set inline with the foreground `readableForeground` derives, so
- * every preset is measured, not just the @theme default; logged-out pages do
- * run the @theme pair, which is measured too. Each is checked over the three
- * backdrops a Button sits on. `danger` hovers with `hover:brightness-110`,
- * because 90% opacity took #111111 on #ef4444 to 4.24:1 in dark. Only those
- * two variants have a fill.
+ * The label and the fill `classes` paint while hovered over `base`: the
+ * hover's own fill and label if it names them, then its filter, then its
+ * opacity, which is the order CSS applies them in. A hover utility this does
+ * not model throws, so a new kind of hover is a decision made here rather
+ * than a silent pass. Shadows paint outside the box and are skipped.
  */
-describe.each(SCHEMES)("$name — Button hover states keep a legible label", ({ name, T }) => {
+function hoveredPair(
+  classes: string,
+  tokens: Record<string, string>,
+  base: string,
+): { label: string; fill: string } {
+  const list = classes.split(/\s+/).filter(Boolean);
+  const colour = (prefix: string) =>
+    list
+      .map((u) => u.match(new RegExp(`^${prefix}([a-z-]+)$`))?.[1])
+      .find((name) => name !== undefined && `--color-${name}` in tokens);
+  const fillName = colour("hover:bg-") ?? colour("bg-");
+  const labelName = colour("hover:text-") ?? colour("text-");
+  if (!fillName || !labelName) throw new Error(`No fill or label colour in "${classes}"`);
+  let fill = tokens[`--color-${fillName}`];
+  let label = tokens[`--color-${labelName}`];
+  let brightness = 1;
+  let opacity = 1;
+  for (const u of list.filter((u) => u.startsWith("hover:"))) {
+    const filter = u.match(/^hover:brightness-(\d+)$/);
+    const fade = u.match(/^hover:opacity-(\d+)$/);
+    if (filter) brightness = Number(filter[1]) / 100;
+    else if (fade) opacity = Number(fade[1]) / 100;
+    else if (u === `hover:bg-${fillName}` || u === `hover:text-${labelName}`) continue;
+    else if (!u.startsWith("hover:shadow-")) throw new Error(`Unmodelled hover "${u}"`);
+  }
+  [fill, label] = [brighten(fill, brightness), brighten(label, brightness)];
+  return { label: compositeOver(opacity, base, label), fill: compositeOver(opacity, base, fill) };
+}
+
+/** Inside (app): the stored hex, and the three tokens the layout derives from it. */
+function signedIn(scheme: "dark" | "light", T: Record<string, string>, preset: string) {
+  return {
+    ...T,
+    "--color-accent": preset,
+    "--color-accent-fg": readableForeground(preset).color,
+    "--color-accent-hover": readableHover(preset),
+    "--color-accent-ink": accentInkFor(scheme, preset),
+  };
+}
+
+/**
+ * A hovered accent control's label, over each backdrop a Button sits on.
+ * Every solid accent fill hovers with `hover:bg-accent-hover`, an OPAQUE fill,
+ * so the backdrop cannot reach the pixels. It replaced `hover:opacity-90`,
+ * which let the backdrop through and took #ef4444, #3b82f6 and #64748b below
+ * 4.5:1, and DoseActionForm's `hover:brightness-110`, which took #64748b to
+ * 4.03:1. Inside (app) the fill is the user's preset with the accent-fg and
+ * accent-hover the layout derives from it, so every preset is measured, not
+ * just the @theme default; logged-out pages run the @theme pair, measured
+ * too. The backdrops are still walked because `hoveredPair` composites
+ * whatever opacity the classes leave, so a fade put back fails here.
+ */
+describe.each(SCHEMES)("$name — a hovered accent fill keeps a legible label", ({ name, T }) => {
   const glass = alphaOf(T["--color-glass"]);
   const BACKDROPS: Record<HoverBackdrop, string> = {
     page: T["--color-surface"],
     card: compositeOver(glass.alpha, T["--color-surface"], glass.overlay),
     dialog: T["--color-surface-raised"],
   };
-  /** Label and fill both at 90% over the backdrop, as `hover:opacity-90` paints them. */
-  const hovered = (fill: string, fg: string, base: string) =>
-    contrastRatio(compositeOver(0.9, base, fg), compositeOver(0.9, base, fill));
+  const CONTEXTS: [string, Record<string, string>][] = [
+    ["the @theme pair", T],
+    ...readAccentPresets().map(
+      (preset) => [`preset ${preset}`, signedIn(name, T, preset)] as [string, typeof T],
+    ),
+  ];
 
-  for (const where of HOVER_BACKDROPS) {
-    it(`primary, the @theme default, at 90% opacity over ${where}`, () => {
-      const ratio = hovered(T["--color-accent"], T["--color-accent-fg"], BACKDROPS[where]);
-      expect(ratio, `hovered primary is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
-    });
-  }
-
-  for (const preset of readAccentPresets()) {
-    const fg = readableForeground(preset).color;
-    const entry = HOVERED_PRIMARY_BELOW_THRESHOLD.find(
-      (e) => e.preset === preset && e.scheme === name,
-    );
-    for (const where of HOVER_BACKDROPS) {
-      const known = entry?.over.includes(where) ?? false;
-      it(`primary ${preset} at 90% opacity over ${where}${known ? " (allowlisted)" : ""}`, () => {
-        const ratio = hovered(preset, fg, BACKDROPS[where]);
-        const text = `hovered primary ${fg} on ${preset} is ${ratio.toFixed(2)}:1`;
-        if (known) {
-          expect(ratio, `${text}: it passes now, so remove its allowlist entry`).toBeLessThan(4.5);
-        } else {
-          expect(ratio, text).toBeGreaterThanOrEqual(4.5);
+  for (const { site, classes } of ACCENT_HOVER_SITES) {
+    for (const [context, tokens] of CONTEXTS) {
+      it(`${site} with ${context}, over every backdrop`, () => {
+        for (const where of HOVER_BACKDROPS) {
+          const { label, fill } = hoveredPair(classes, tokens, BACKDROPS[where]);
+          const ratio = contrastRatio(label, fill);
+          expect(
+            ratio,
+            `hovered "${classes}" paints ${label} on ${fill} over ${where}: ${ratio.toFixed(2)}:1`,
+          ).toBeGreaterThanOrEqual(4.5);
         }
       });
     }
   }
+
+  // A hover must still look like one: as far from the fill as the logged-out
+  // #4f46e5 to #4338ca step, near enough (1.26:1), and not the fill itself.
+  it("moves every preset's hover visibly off its fill", () => {
+    for (const preset of readAccentPresets()) {
+      const ratio = contrastRatio(readableHover(preset), preset);
+      expect(ratio, `${preset} hovers to ${readableHover(preset)}`).toBeGreaterThanOrEqual(1.1);
+    }
+    expect(contrastRatio(T["--color-accent-hover"], T["--color-accent"])).toBeGreaterThanOrEqual(
+      1.1,
+    );
+  });
 
   it("danger brightened to 110%", () => {
     const ratio = contrastRatio(
@@ -428,17 +492,39 @@ describe.each(SCHEMES)("$name — Button hover states keep a legible label", ({ 
   });
 });
 
-it("allowlists only presets, schemes and backdrops that exist, once each", () => {
-  const presets = new Set(readAccentPresets());
-  const schemes = new Set(SCHEMES.map((s) => s.name));
-  const seen = new Set<string>();
-  for (const { preset, scheme, over } of HOVERED_PRIMARY_BELOW_THRESHOLD) {
-    expect(presets.has(preset), `${preset} is not an accent preset`).toBe(true);
-    expect(schemes.has(scheme), `${scheme} is not a scheme`).toBe(true);
-    expect(seen.has(`${scheme} ${preset}`), `${scheme} ${preset} is listed twice`).toBe(false);
-    seen.add(`${scheme} ${preset}`);
-    for (const where of over) expect(HOVER_BACKDROPS).toContain(where);
+it("finds the accent buttons it measures, and every one parses", () => {
+  const files = new Set(ACCENT_HOVER_SITES.map(({ site }) => site.replace(/:\d+$/, "")));
+  for (const file of [
+    "lib/components/ui/Button.svelte",
+    "lib/components/DoseEditForm.svelte",
+    "lib/components/dashboard/DoseActionForm.svelte",
+  ]) {
+    expect(files, `${file} has no accent hover`).toContain(file);
   }
+  for (const { classes } of ACCENT_HOVER_SITES) {
+    expect(() => hoveredPair(classes, DARK, DARK["--color-surface"])).not.toThrow();
+  }
+});
+
+// Guard the guard: the two hovers the accent fills used to have, measured by
+// the same painter, fail for #64748b. Without these the sweep above could be
+// passing because hoveredPair stopped modelling a fade or a filter.
+it("would have failed #64748b's hover:opacity-90 over a light page", () => {
+  const { label, fill } = hoveredPair(
+    "bg-accent text-accent-fg hover:opacity-90",
+    signedIn("light", LIGHT, "#64748b"),
+    LIGHT["--color-surface"],
+  );
+  expect(contrastRatio(label, fill)).toBeLessThan(4.5);
+});
+
+it("would have failed #64748b's hover:brightness-110 on the dashboard's Log now", () => {
+  const { label, fill } = hoveredPair(
+    "bg-accent text-accent-fg hover:brightness-110",
+    signedIn("dark", DARK, "#64748b"),
+    DARK["--color-surface"],
+  );
+  expect(contrastRatio(label, fill)).toBeLessThan(4.5);
 });
 
 // Guard the guard: 90% opacity, the hover danger first had, fails in a dark dialog.

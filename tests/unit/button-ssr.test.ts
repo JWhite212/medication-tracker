@@ -51,7 +51,7 @@ const BASE = [
 const SIZE = { md: ["h-11", "px-4"], sm: ["h-9", "px-3"] } as const;
 const RECT = "rounded-lg";
 const VARIANT = {
-  primary: ["bg-accent", "text-accent-fg", "hover:opacity-90"],
+  primary: ["bg-accent", "text-accent-fg", "hover:bg-accent-hover"],
   secondary: ["border", "border-border-strong", "text-text-primary", "hover:bg-surface-overlay"],
   ghost: ["text-text-secondary", "hover:bg-surface-overlay", "hover:text-text-primary"],
   danger: ["bg-danger", "text-danger-fg", "hover:brightness-110"],

@@ -250,7 +250,7 @@
     <button
       type="submit"
       aria-disabled={loading || lock.busy ? "true" : undefined}
-      class="bg-accent text-accent-fg min-h-11 flex-1 rounded-lg py-2.5 text-sm font-medium transition-opacity hover:opacity-90 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+      class="bg-accent text-accent-fg hover:bg-accent-hover min-h-11 flex-1 rounded-lg py-2.5 text-sm font-medium transition aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
     >
       {loading ? "Saving..." : "Save Changes"}
     </button>

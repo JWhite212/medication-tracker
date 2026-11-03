@@ -245,7 +245,7 @@ describe("DoseEditForm's Cancel", () => {
     expect([...cancel.classList]).not.toContain("border");
     // The fence (spec, "The fence: dose controls"): Save's markup is not this migration's.
     expect(save.className).toBe(
-      "bg-accent text-accent-fg min-h-11 flex-1 rounded-lg py-2.5 text-sm font-medium transition-opacity hover:opacity-90 aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
+      "bg-accent text-accent-fg hover:bg-accent-hover min-h-11 flex-1 rounded-lg py-2.5 text-sm font-medium transition aria-disabled:cursor-not-allowed aria-disabled:opacity-50",
     );
     cancel.click();
     expect(onclose).toHaveBeenCalledOnce();

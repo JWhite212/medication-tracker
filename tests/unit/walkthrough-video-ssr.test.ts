@@ -19,6 +19,8 @@ import { userPreferences } from "$lib/server/db/schema";
 import WalkthroughVideo from "$lib/components/walkthrough/WalkthroughVideo.svelte";
 import { WALKTHROUGH_DATE_FORMAT } from "$lib/components/walkthrough/stage-dashboard";
 import { ssrDocument } from "./helpers/axe-ssr";
+import { readableForeground, readableHover } from "$lib/utils/contrast";
+import { accentInkFor } from "$lib/appearance/theme-css";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -50,6 +52,17 @@ describe("the walkthrough's accent", () => {
     );
     expect(themed).toHaveLength(1);
     expect(declarations(themed[0].getAttribute("style")!).get("--color-accent")).toBe(accent);
+  });
+
+  it("carries the tokens the (app) layout derives from it, derived the same way", () => {
+    const accent = String(userPreferences.accentColor.default);
+    const doc = ssrDocument(render(WalkthroughVideo).body);
+    const style = [...doc.querySelectorAll("[style]")]
+      .map((el) => declarations(el.getAttribute("style")!))
+      .find((d) => d.has("--color-accent"))!;
+    expect(style.get("--color-accent-fg")).toBe(readableForeground(accent).color);
+    expect(style.get("--color-accent-hover")).toBe(readableHover(accent));
+    expect(style.get("--color-accent-ink")).toBe(accentInkFor("dark", accent));
   });
 
   it("is rendered by the landing page with no accent prop, so the default is what ships", () => {

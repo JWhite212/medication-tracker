@@ -1,26 +1,27 @@
 <script lang="ts" module>
   import type { RefillForecastEntry, RefillSeverity } from "$lib/types";
   import { REORDER_SOON } from "$lib/utils/dashboard-copy";
+  import { atOrBelowAlertThreshold } from "$lib/utils/low-stock";
   import { refillStatus, toneClass, toneOf, type Tone } from "$lib/utils/status-tone";
 
   // Exported so a surface that cannot mount this card still tints and words
   // its rows by the same rules: the landing-page walkthrough draws Refills
   // with no link, heading or landmark, and this card renders all three. The
   // medications card's chip reads `refillChip` too, so "running low" is
-  // written once. Not every surface applies all of it: the medications card
-  // passes the user's alert threshold, but the dashboard's rows pass none,
-  // because the forecast carries tiers only. A medication at its threshold
-  // with an ok forecast is amber on /medications and absent here.
+  // written once.
 
-  /** The row box. A neutral row stays glass, like the dashboard's other cards. */
-  export function refillSeverityClass(severity: RefillSeverity): string {
-    const tone = toneOf(refillStatus(severity));
+  /**
+   * The row box, in the row's chip tone rather than its tier's: stock at the
+   * alert level is amber on an ok or watch forecast. A neutral row stays
+   * glass, like the dashboard's other cards.
+   */
+  export function refillRowClass(tone: Tone): string {
     return tone === "neutral" ? "border-glass-border bg-glass" : toneClass(tone, "alert");
   }
 
-  /** The label's text colour. */
-  export function refillSeverityLabel(severity: RefillSeverity): string {
-    return toneClass(toneOf(refillStatus(severity)), "text");
+  /** The label's text colour, in the row's chip tone. */
+  export function refillLabelClass(tone: Tone): string {
+    return toneClass(tone, "text");
   }
 
   export function refillDaysLabel(days: number | null): string {
@@ -50,17 +51,11 @@
    * rows, the medications card's chip and the walkthrough. Amber when the
    * forecast tier needs you OR the count is at or below the user's own alert
    * threshold; neutral "N days left" for the watch tier; nothing otherwise.
-   * Days when there is a forecast, doses when there is not. The threshold half
-   * applies only where a caller passes one: the dashboard's rows pass null, so
-   * there the forecast tier alone decides.
+   * Days when there is a forecast, doses when there is not.
    */
   export function refillChip(input: RefillChipInput): RefillChip | null {
     const { severity, daysUntilRefill, inventoryCount, inventoryAlertThreshold } = input;
-    const low =
-      inventoryCount !== null &&
-      inventoryAlertThreshold !== null &&
-      inventoryCount <= inventoryAlertThreshold;
-    const tone: Tone | null = low
+    const tone: Tone | null = atOrBelowAlertThreshold(inventoryCount, inventoryAlertThreshold)
       ? toneOf("stock-low")
       : severity === "ok"
         ? null
@@ -90,22 +85,18 @@
     </h2>
     <div class="space-y-2">
       {#each entries as entry (entry.medicationId)}
-        <!-- The forecast lists only the non-ok tiers and carries no alert
-             threshold, so the tier alone decides. The `??` below is
-             unreachable from getRefillForecast and keeps a row from ever
-             rendering empty. -->
-        {@const label = refillChip({
-          severity: entry.severity,
-          daysUntilRefill: entry.daysUntilRefill,
-          inventoryCount: entry.inventoryCount,
-          inventoryAlertThreshold: null,
-        })}
+        <!-- The entry is the whole input, alert threshold included, as the
+             medications card's is. getRefillForecast lists a medication only
+             when this draws a chip for it, so the `??`s below are
+             unreachable from it and keep a row from ever rendering empty. -->
+        {@const label = refillChip(entry)}
+        {@const tone = label?.tone ?? "neutral"}
         <!-- Hover swaps the background for glass-hover rather than fading the
              row: at 90% opacity the amber label fell below 4.5:1 in light. -->
         <a
           href="/medications/{entry.medicationId}"
-          class="hover:bg-glass-hover flex items-center gap-3 rounded-lg border p-3 transition-colors {refillSeverityClass(
-            entry.severity,
+          class="hover:bg-glass-hover flex items-center gap-3 rounded-lg border p-3 transition-colors {refillRowClass(
+            tone,
           )}"
         >
           <span
@@ -114,7 +105,7 @@
             aria-hidden="true"
           ></span>
           <span class="min-w-0 flex-1 truncate font-medium">{entry.medicationName}</span>
-          <span class="shrink-0 text-xs {refillSeverityLabel(entry.severity)}">
+          <span class="shrink-0 text-xs {refillLabelClass(tone)}">
             <!-- The space is an expression because Svelte drops a literal one at an {#if} edge. -->
             <!-- eslint-disable-next-line svelte/no-useless-mustaches -->
             {#if label?.glyph}<span aria-hidden="true">{label.glyph}</span>{" "}{/if}{label?.text ??

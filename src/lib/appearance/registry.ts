@@ -42,8 +42,8 @@ export type AppearanceGroup = "colour" | "formatting" | "layout" | "motion";
  * `:root` does not matter.
  *
  * `css-var` records only the property the *stored* value drives.
- * `derived` names the two tokens `readableForeground` / `readableInk`
- * compute from it (`$lib/utils/contrast.ts`) — the derivation stays code,
+ * `derived` names the three tokens `readableForeground` / `readableHover` /
+ * `readableInk` compute from it (`$lib/utils/contrast.ts`) — the derivation stays code,
  * the registry only names its outputs so a reader can find them.
  */
 export type DomBinding =
@@ -112,7 +112,7 @@ export const APPEARANCE_ENTRIES = [
     dom: {
       kind: "css-var",
       property: "--color-accent",
-      derived: ["--color-accent-fg", "--color-accent-ink"],
+      derived: ["--color-accent-fg", "--color-accent-hover", "--color-accent-ink"],
     },
   },
   {

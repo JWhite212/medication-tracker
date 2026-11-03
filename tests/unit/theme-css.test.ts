@@ -51,20 +51,26 @@ describe("the TS tables cannot drift from app.css", () => {
   // Tokens the app.css light arm declares that the static tables deliberately
   // do NOT carry. Two different reasons, kept apart on purpose:
   //
-  //   --color-accent, --color-accent-fg — the (app) layout sets these inline on
-  //     the wrapper from the user's stored hex and they are scheme-independent,
-  //     so a table entry would be dead code.
+  //   --color-accent, --color-accent-fg, --color-accent-hover — the (app)
+  //     layout sets these inline on the wrapper from the user's stored hex
+  //     (the hover via readableHover) and they are scheme-independent, so a
+  //     table entry would be dead code.
   //   --color-accent-ink — emitted per scheme by arm() via readableInk, as a
   //     function of the user's accent. No static table CAN hold it. Its emitted
   //     values are pinned by the buildThemeStyle tests below instead.
   //
-  // app.css declares all three, but only as logged-out-route fallbacks.
-  const TOKENS_NOT_IN_TABLES = ["--color-accent", "--color-accent-fg", "--color-accent-ink"];
+  // app.css declares all four, but only as logged-out-route fallbacks.
+  const TOKENS_NOT_IN_TABLES = [
+    "--color-accent",
+    "--color-accent-fg",
+    "--color-accent-hover",
+    "--color-accent-ink",
+  ];
 
   it("carries exactly the tokens the app.css light arm overrides", () => {
     // Not "the keys whose values differ" — that was the original wording and
-    // it is wrong. --color-accent-hover holds the same value in both schemes
-    // yet MUST be in the tables, because the light arm declares it and a
+    // it is wrong. A token holding the same value in both schemes would still
+    // have to be in the tables, because the light arm declares it and a
     // dark-choosing user on a light OS needs it re-asserted.
     const expected = Object.keys(cssLight)
       .filter((k) => k.startsWith("--") && !TOKENS_NOT_IN_TABLES.includes(k))
@@ -83,10 +89,10 @@ describe("the TS tables cannot drift from app.css", () => {
   });
 
   it("emits dark values that match the @theme block", () => {
-    // Scoped to @theme, not the whole file: --color-accent-hover appears in
-    // BOTH @theme and the light arm with the same value, so an unscoped
-    // search would match the light copy and report the dark table as in sync
-    // even after @theme drifted.
+    // Scoped to @theme, not the whole file: a token declared in BOTH @theme
+    // and the light arm with the same value would let an unscoped search
+    // match the light copy and report the dark table as in sync even after
+    // @theme drifted.
     for (const [token, value] of Object.entries(DARK_TOKENS)) {
       expect(cssTheme[token], `${token} missing from @theme`).toBe(value);
     }

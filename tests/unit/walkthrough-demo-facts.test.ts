@@ -421,7 +421,9 @@ describe("the Analytics scene's date range", () => {
 // The demo picks its Refills rows by a hand-set flag and states their tier as
 // a literal, so a moved supplyDays or threshold would draw the wrong tint, or
 // drop a row the app shows, with every other test green. The flag also
-// decides the Medications scene's refill badge.
+// decides the Medications scene's refill badge. The app also lists stock at
+// the user's own alert threshold whatever its tier, but the demo draws no
+// threshold, so here the tier alone decides which rows there are.
 describe("the Refills card and the refill badge", () => {
   it("flags exactly the medications classifyRefillSeverity would list", () => {
     expect(MEDICATIONS.some((m) => m.refillWatch)).toBe(true);
@@ -475,25 +477,31 @@ describe("the Refills card and the refill badge", () => {
     expect(statusTokens(doc.body)).toEqual([]);
   });
 
-  it("draws each row as RefillsCard draws it, for every tier", () => {
+  it("draws each row as RefillsCard draws it, for every tier and at the alert threshold", () => {
     const row = (
       medicationId: string,
       severity: RefillSeverity,
       daysUntilRefill: number,
+      inventoryAlertThreshold: number | null = null,
     ): RefillForecastEntry => ({
       medicationId,
       medicationName: `Medication ${medicationId}`,
       colour: "#3b82f6",
       inventoryCount: daysUntilRefill * 2,
+      inventoryAlertThreshold,
       dailyRate: 2,
       daysUntilRefill,
       severity,
     });
+    // e and f are amber by the user's own threshold, not their tier; the demo
+    // draws none, but the stage must still copy the card if it ever does.
     const entries = [
       row("a", "critical", 2),
       row("b", "warning", 6),
       row("c", "watch", 8),
       row("d", "ok", 30),
+      row("e", "watch", 8, 20),
+      row("f", "ok", 30, 60),
     ];
     const card = ssrDocument(render(RefillsCard, { props: { entries } }).body);
     const stage = ssrDocument(render(StageRefills, { props: { entries } }).body);
@@ -503,10 +511,10 @@ describe("the Refills card and the refill badge", () => {
     expect(stageRows).toHaveLength(entries.length);
     cardRows.forEach((real, i) => {
       const drawn = stageRows[i];
-      expect(textOf(drawn), entries[i].severity).toBe(textOf(real));
+      expect(textOf(drawn), entries[i].medicationId).toBe(textOf(real));
       // The stage's documented difference is exactly the hover and transition
       // classes, which `resting` drops.
-      expect([drawn, ...drawn.querySelectorAll("*")].map(resting), entries[i].severity).toEqual(
+      expect([drawn, ...drawn.querySelectorAll("*")].map(resting), entries[i].medicationId).toEqual(
         [real, ...real.querySelectorAll("*")].map(resting),
       );
     });

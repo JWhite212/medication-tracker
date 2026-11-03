@@ -70,6 +70,8 @@ export type RefillForecastEntry = {
   medicationName: string;
   colour: string;
   inventoryCount: number;
+  /** The user's low-stock alert level, so RefillsCard passes `refillChip` what MedicationCard does. */
+  inventoryAlertThreshold: number | null;
   dailyRate: number;
   daysUntilRefill: number | null;
   severity: RefillSeverity;

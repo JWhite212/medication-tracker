@@ -145,7 +145,7 @@ afterEach(() => {
 describe("/settings/dashboard after a move", () => {
   it("↑ on the second row posts once, then focuses that section's ↓ (Review Focus 2)", async () => {
     const root = mountPage();
-    press(root, "move-section-later-up");
+    press(root, "settings-move-later-up");
     await settle();
     expect(h.fetch).toHaveBeenCalledTimes(1);
     expect(h.pending[0].formData.get("dashboardSectionOrder")).toBe("later,done,quickLog,refills");
@@ -160,26 +160,26 @@ describe("/settings/dashboard after a move", () => {
 
     expect(h.invalidateAll).toHaveBeenCalledTimes(1);
     expect(sectionOrder(root)).toEqual(["later", "done", "quickLog", "refills"]);
-    expect(root.querySelector("#move-section-later-up")!.getAttribute("aria-disabled")).toBe(
+    expect(root.querySelector("#settings-move-later-up")!.getAttribute("aria-disabled")).toBe(
       "true",
     );
-    expect(document.activeElement?.id).toBe("move-section-later-down");
-    expect(document.activeElement?.id).not.toBe("move-section-later-up");
+    expect(document.activeElement?.id).toBe("settings-move-later-down");
+    expect(document.activeElement?.id).not.toBe("settings-move-later-up");
   });
 
   it("keeps focus on the pressed direction while it is still live", async () => {
     const root = mountPage();
-    press(root, "move-section-quickLog-up");
+    press(root, "settings-move-quickLog-up");
     await settle();
     reloadTo(["done", "quickLog", "later", "refills"]);
     await h.pending[0].finish({ type: "success", status: 200, data: { success: true } });
     flushSync();
-    expect(document.activeElement?.id).toBe("move-section-quickLog-up");
+    expect(document.activeElement?.id).toBe("settings-move-quickLog-up");
   });
 
   it("announces the new position", async () => {
     const root = mountPage();
-    press(root, "move-section-later-up");
+    press(root, "settings-move-later-up");
     await settle();
     reloadTo(["later", "done", "quickLog", "refills"]);
     await h.pending[0].finish({ type: "success", status: 200, data: { success: true } });
@@ -190,14 +190,14 @@ describe("/settings/dashboard after a move", () => {
   it("alternates a trailing zero-width space so a repeated announcement still fires", async () => {
     const root = mountPage();
     const raw = () => root.querySelector('[role="status"]')!.textContent ?? "";
-    press(root, "move-section-later-down");
+    press(root, "settings-move-later-down");
     await settle();
     reloadTo(["done", "quickLog", "later", "refills"]);
     await h.pending[0].finish({ type: "success", status: 200, data: { success: true } });
     flushSync();
     const first = raw();
 
-    press(root, "move-section-later-up");
+    press(root, "settings-move-later-up");
     await settle();
     reloadTo(["done", "later", "quickLog", "refills"]);
     await h.pending[1].finish({ type: "success", status: 200, data: { success: true } });
@@ -211,15 +211,15 @@ describe("/settings/dashboard after a move", () => {
 
   it("cancels a second press while the first is in flight: one fetch (Review Focus 4)", async () => {
     const root = mountPage();
-    press(root, "move-section-later-up");
+    press(root, "settings-move-later-up");
     await settle();
     // Every control is inert while the save is in flight.
     for (const b of root.querySelectorAll<HTMLButtonElement>("form button")) {
       expect(b.getAttribute("aria-disabled"), b.id || b.textContent!).toBe("true");
       expect(b.disabled).toBe(false);
     }
-    press(root, "move-section-quickLog-up");
-    press(root, "move-section-later-up");
+    press(root, "settings-move-quickLog-up");
+    press(root, "settings-move-later-up");
     await settle();
     expect(h.fetch).toHaveBeenCalledTimes(1);
     expect(h.pending).toHaveLength(1);
@@ -228,14 +228,14 @@ describe("/settings/dashboard after a move", () => {
     await h.pending[0].finish({ type: "success", status: 200, data: { success: true } });
     flushSync();
     // Released once the save settles: the next press sends.
-    press(root, "move-section-quickLog-up");
+    press(root, "settings-move-quickLog-up");
     await settle();
     expect(h.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("on a 400 toasts actionErrorMessage(result) and leaves the order as confirmed", async () => {
     const root = mountPage();
-    press(root, "move-section-later-up");
+    press(root, "settings-move-later-up");
     await settle();
     const result: ActionResult = {
       type: "failure",
@@ -252,14 +252,14 @@ describe("/settings/dashboard after a move", () => {
     expect(h.invalidateAll).not.toHaveBeenCalled();
     expect(sectionOrder(root)).toEqual(["done", "later", "quickLog", "refills"]);
     // And the page is usable again.
-    for (const b of root.querySelectorAll<HTMLButtonElement>("#move-section-later-up")) {
+    for (const b of root.querySelectorAll<HTMLButtonElement>("#settings-move-later-up")) {
       expect(b.getAttribute("aria-disabled")).toBeNull();
     }
   });
 
   it("on a 429 toasts the server's saveError sentence, not the generic fallback", async () => {
     const root = mountPage();
-    press(root, "move-section-later-up");
+    press(root, "settings-move-later-up");
     await settle();
     await h.pending[0].finish({
       type: "failure",

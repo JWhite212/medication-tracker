@@ -15,6 +15,7 @@
     orderValue,
     type DashboardSectionId,
   } from "$lib/dashboard/layout";
+  import { moveFocusTarget } from "$lib/dashboard/move-focus";
   import { PRESET_IDS, PRESETS, activePreset } from "$lib/dashboard/presets";
   import {
     DASHBOARD_LATER_MODES,
@@ -162,6 +163,8 @@
     return "Dashboard layout reset to default";
   }
 
+  const MOVE_PREFIX = "settings-move";
+
   /**
    * Focus after a move: the button just pressed, unless the move took the
    * section to an end and made it inert, then its opposite. Unconditional, as
@@ -169,12 +172,9 @@
    * survives the reorder and keeps focus while it becomes aria-disabled.
    */
   function focusMoved(id: DashboardSectionId, direction: "up" | "down") {
-    const opposite = direction === "up" ? "down" : "up";
-    const same = document.getElementById(`move-section-${id}-${direction}`);
-    const target =
-      same && same.getAttribute("aria-disabled") !== "true"
-        ? same
-        : document.getElementById(`move-section-${id}-${opposite}`);
+    const same = document.getElementById(`${MOVE_PREFIX}-${id}-${direction}`);
+    const isEnd = !same || same.getAttribute("aria-disabled") === "true";
+    const target = document.getElementById(moveFocusTarget(MOVE_PREFIX, id, direction, isEnd));
     target?.focus();
   }
 
@@ -308,7 +308,7 @@
                      move that makes it an end. At an end it is inert: a plain
                      button with nothing to post. -->
                 <IconButton
-                  id="move-section-{id}-{direction}"
+                  id="{MOVE_PREFIX}-{id}-{direction}"
                   type={atEnd ? "button" : "submit"}
                   label="Move {label} {direction}"
                   name={atEnd ? undefined : "dashboardSectionOrder"}

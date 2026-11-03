@@ -74,7 +74,7 @@ function rows(doc: Document) {
 }
 
 function moveButton(doc: Document, id: DashboardSectionId, dir: "up" | "down") {
-  return doc.getElementById(`move-section-${id}-${dir}`) as HTMLButtonElement | null;
+  return doc.getElementById(`settings-move-${id}-${dir}`) as HTMLButtonElement | null;
 }
 
 describe("/settings/dashboard SSR", () => {

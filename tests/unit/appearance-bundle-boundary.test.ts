@@ -175,6 +175,7 @@ describe("the client bundle boundary", () => {
     for (const rel of [
       "src/lib/dashboard/layout.ts",
       "src/lib/dashboard/presets.ts",
+      "src/lib/dashboard/move-focus.ts",
       "src/lib/preferences/domains.ts",
     ]) {
       const r = reachablePackages(path.join(ROOT, rel));

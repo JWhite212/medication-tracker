@@ -163,3 +163,37 @@ export function readableForeground(background: string): { color: string; ratio: 
     ? { color: READABLE_DARK, ratio: dark }
     : { color: READABLE_LIGHT, ratio: light };
 }
+
+/** How far a hover moves from its fill, in percent of the way to the far pole. */
+const HOVER_STEP = 15;
+
+/**
+ * The hovered fill for a solid `background` that carries
+ * `readableForeground(background)` as its label.
+ *
+ * Exists for `--color-accent-hover`. It replaced `hover:opacity-90`, which
+ * faded the label and the fill together toward whatever sat behind the
+ * button, and took three presets below 4.5:1 (#64748b to 3.90:1 in light).
+ * Choosing the label against that composite instead cannot work: #ef4444 in
+ * dark measured 4.20:1 with the dark label and 3.63:1 with the white one.
+ *
+ * The fill moves AWAY from its label, toward the other readable colour:
+ * darker under a white label, lighter under a dark one. So the label can only
+ * gain contrast, and the result is opaque, so no backdrop shows through. The
+ * first 15% is a visible step (1.12-1.24:1 against the fill across the
+ * presets, beside 1.26:1 for the logged-out #4f46e5 to #4338ca); it goes
+ * further only when the label still sits below `target`. A fill already at
+ * that pole has nowhere left to go and barely changes.
+ */
+export function readableHover(background: string, { target = 4.5 } = {}): string {
+  const label = readableForeground(background).color;
+  const away = label === READABLE_LIGHT ? READABLE_DARK : READABLE_LIGHT;
+  // readableForeground has already warned about a bad hex; the far pole is
+  // legible under the label it picked, and compositeOver would throw.
+  if (!HEX_RE.test(background)) return away;
+  for (let step = HOVER_STEP; step <= 100; step++) {
+    const candidate = compositeOver(step / 100, background, away);
+    if (contrastRatio(label, candidate) >= target) return candidate;
+  }
+  return away;
+}

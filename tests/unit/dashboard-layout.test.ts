@@ -44,7 +44,7 @@ describe("resolveDashboardLayout defaults", () => {
     expect(SECTION_LABELS).toEqual({
       done: "Done today",
       later: "Later today",
-      quickLog: "Log something else",
+      quickLog: "Quick log",
       refills: "Refills",
     });
     expect([...HIDEABLE_SECTIONS]).toEqual(["later", "quickLog", "refills"]);

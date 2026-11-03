@@ -127,7 +127,7 @@ Audit idempotence: `updatePreferences` diffs the CTE before-image against the RE
 **New `src/lib/dashboard/layout.ts`.** The settings page and the dashboard page import it, so it must not reach zod; the bundle-boundary test is extended to cover it. It exports:
 
 - `DASHBOARD_SECTIONS = ["done", "later", "quickLog", "refills"] as const` and `type DashboardSectionId`.
-- `SECTION_LABELS`, which repeat the page's own titles: "Done today", "Later today", "Log something else", "Refills". These are restated by hand per the walkthrough-title rule.
+- `SECTION_LABELS`, the names the settings page and the dashboard footer use: "Done today", "Later today", "Quick log", "Refills". They are not the dashboard's section headings: the Quick log section keeps its own title ("Log something else" or "Log a dose"), so quickLog is "Quick log" here. Restated by hand per the walkthrough-title rule.
 - `DEFAULT_ORDER`:
   - `scheduled = ["done", "later", "quickLog", "refills"]`;
   - `asNeededOnly = ["done", "refills"]`, because Quick log is pinned there and Later never renders.

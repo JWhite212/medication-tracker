@@ -17,7 +17,12 @@ import {
   rowStatusLine,
   tookItAtLabel,
 } from "$lib/utils/dashboard-copy";
-import { formatUserTime, lastLoggedPhrase, type TimeFormat } from "$lib/utils/time";
+import {
+  formatTimeSince,
+  formatUserTime,
+  lastLoggedPhrase,
+  type TimeFormat,
+} from "$lib/utils/time";
 import { logToastFromReload } from "$lib/components/dashboard/dose-toasts";
 import type { DoseLogWithMedication, Medication } from "$lib/types";
 import type { MedicationSchedule } from "$lib/server/schedules";
@@ -613,6 +618,7 @@ function expectedSections(
     return [
       ...(row.dayLabel === "yesterday" ? ["Yesterday"] : []),
       formatUserTime(new Date(row.dose.takenAt), tz, timeFormat),
+      ...(row.dose.status === "taken" ? [formatTimeSince(new Date(row.dose.takenAt), now)] : []),
       med.name,
       doneDoseText({
         dosageAmount: med.dosageAmount,

@@ -2,7 +2,8 @@
   // DoneList.svelte as a picture: "Done today" over one glass card of
   // divided rows. Each row has the time, the status marker, a small glyph,
   // the name and dose, the covers line ("for 08:00") underneath, and Edit
-  // drawn as a span. The rows are `after`'s. A row `before` lacks is the dose
+  // drawn as a span. A taken row's time since sits under its time, measured
+  // from the story's `now`, never from the visitor's clock. The rows are `after`'s. A row `before` lacks is the dose
   // the beat logs: it grows in with `logged`, and is drawn at zero height,
   // but mounted, before the log. A row only `before` has is not drawn at all,
   // and the fidelity test's before-render fails if one ever appears.
@@ -10,7 +11,7 @@
   // DoneList's `divide-y` is written out as `border-t` on every row after the
   // first, so a growing row's divider sits inside its collapse and is hidden
   // with it.
-  import { formatUserTime, type TimeFormat } from "$lib/utils/time";
+  import { formatTimeSince, formatUserTime, type TimeFormat } from "$lib/utils/time";
   import { doneCoversLine, doneDoseText } from "$lib/utils/dashboard-copy";
   import MedicationGlyph from "$components/dashboard/MedicationGlyph.svelte";
   import StatusMarker from "$components/dashboard/StatusMarker.svelte";
@@ -22,6 +23,7 @@
     before,
     after,
     logged,
+    now,
     todayStart,
     tz,
     timeFormat,
@@ -30,6 +32,7 @@
     before: StageDone[];
     after: StageDone[];
     logged: number;
+    now: Date;
     todayStart: Date;
     tz: string;
     timeFormat: TimeFormat;
@@ -43,6 +46,7 @@
   function view(row: StageDone) {
     return {
       time: formatUserTime(row.dose.takenAt, tz, timeFormat),
+      since: row.dose.status === "taken" ? formatTimeSince(row.dose.takenAt, now) : null,
       dose: doneDoseText(row.dose),
       covers: doneCoversLine(row.covers, todayStart, tz, timeFormat),
     };
@@ -61,11 +65,14 @@
             ? 'border-glass-border border-t'
             : ''}"
         >
-          <span class="text-text-secondary min-w-14 shrink-0 text-sm tabular-nums">
+          <span class="text-text-secondary min-w-20 shrink-0 text-sm tabular-nums">
             {#if row.dayLabel === "yesterday"}
               <span class="block text-xs">Yesterday</span>
             {/if}
-            <span>{v.time}</span>
+            <span class="block">{v.time}</span>
+            {#if v.since}
+              <span class="block text-xs">{v.since}</span>
+            {/if}
           </span>
           <StatusMarker state={row.dose.status} />
           <MedicationGlyph

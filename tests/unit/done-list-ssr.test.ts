@@ -93,6 +93,7 @@ function renderList(rows: DoneRow[], title = "Done today"): Document {
     props: {
       rows,
       title,
+      serverNow: NOW,
       todayStart: TODAY_START,
       timezone: TZ,
       timeFormat: "24h",
@@ -115,6 +116,48 @@ describe("DoneList", () => {
     expect(h2?.getAttribute("tabindex")).toBe("-1");
     expect(textOf(h2!)).toBe("Done today");
     expect(textOf(section!)).toContain("Nothing logged yet today");
+  });
+
+  it("says an empty day in one line, with no card or list", () => {
+    const section = renderList([]).querySelector("section")!;
+    expect(section.querySelector(".bg-glass")).toBeNull();
+    expect(section.querySelector("ul")).toBeNull();
+    expect(section.querySelectorAll("p")).toHaveLength(1);
+  });
+
+  // The number this page lost when it was rebuilt, and the one History
+  // shows: how long ago each dose was taken, from the page's server tick.
+  it("shows how long ago a taken dose was, stacked under its clock time", () => {
+    const li = items(renderList(ROWS))[3];
+    const since = li.querySelector("time[data-time-since]");
+    expect(since).not.toBeNull();
+    expect(textOf(since!)).toBe("29m ago");
+    expect(since!.getAttribute("datetime")).toBe("2026-05-01T13:31:00.000Z");
+    // Same column as the clock time, after it.
+    expect(since!.parentElement!.textContent!.replace(/\s+/g, " ").trim()).toBe("13:31 29m ago");
+  });
+
+  it("measures time since from serverNow, not the device clock", () => {
+    const { body } = render(DoneList, {
+      props: {
+        rows: [ROWS[3]],
+        title: "Done today",
+        serverNow: new Date("2026-05-02T16:01:00.000Z"),
+        todayStart: TODAY_START,
+        timezone: TZ,
+        timeFormat: "24h",
+        onedit: () => {},
+      },
+      context: dashboardContext({ now: NOW }),
+    });
+    expect(textOf(ssrDocument(body).querySelector("time[data-time-since]")!)).toBe("26h 30m ago");
+  });
+
+  it("gives skipped, missed and yesterday's rows the right time-since treatment", () => {
+    const lis = items(renderList(ROWS));
+    expect(lis[1].querySelector("[data-time-since]")).toBeNull();
+    expect(lis[2].querySelector("[data-time-since]")).toBeNull();
+    expect(textOf(lis[0].querySelector("[data-time-since]")!)).toBe("16h 0m ago");
   });
 
   it("uses the title it is given", () => {

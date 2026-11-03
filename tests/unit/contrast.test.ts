@@ -4,6 +4,7 @@ import {
   contrastRatio,
   compositeOver,
   readableForeground,
+  readableHover,
   readableInk,
   INK_BACKDROP,
   INK_BACKDROP_LIGHT,
@@ -121,6 +122,59 @@ describe("readableForeground", () => {
     const { ratio } = readableForeground("#6366f1");
     expect(ratio).toBeGreaterThan(4);
     expect(ratio).toBeLessThan(4.5);
+  });
+});
+
+/**
+ * Behaviour of the derivation only; every preset, scheme and backdrop is
+ * measured in theme-tokens.test.ts.
+ */
+describe("readableHover", () => {
+  it("darkens a fill under a white label, 15% of the way to the dark pole", () => {
+    expect(readableForeground("#4f46e5").color).toBe(READABLE_LIGHT);
+    expect(readableHover("#4f46e5")).toBe(compositeOver(0.15, "#4f46e5", READABLE_DARK));
+  });
+
+  it("lightens a fill under a dark label, 15% of the way to white", () => {
+    expect(readableForeground("#f59e0b").color).toBe(READABLE_DARK);
+    expect(readableHover("#f59e0b")).toBe(compositeOver(0.15, "#f59e0b", READABLE_LIGHT));
+  });
+
+  it("moves away from the label, so the label gains contrast", () => {
+    for (const fill of ["#4f46e5", "#f59e0b", "#64748b", "#ef4444"]) {
+      const label = readableForeground(fill).color;
+      expect(contrastRatio(label, readableHover(fill))).toBeGreaterThan(contrastRatio(label, fill));
+    }
+  });
+
+  it("goes past the first step only as far as the target needs", () => {
+    // #64748b reaches 5.91:1 at the first step, short of a 7:1 target.
+    const hover = readableHover("#64748b", { target: 7 });
+    const steps = [...Array(101).keys()].map((s) =>
+      compositeOver(s / 100, "#64748b", READABLE_DARK),
+    );
+    const index = steps.indexOf(hover);
+    expect(index).toBeGreaterThan(15);
+    expect(contrastRatio(READABLE_LIGHT, hover)).toBeGreaterThanOrEqual(7);
+    expect(contrastRatio(READABLE_LIGHT, steps[index - 1])).toBeLessThan(7);
+  });
+
+  it("keeps the label at 4.5:1 on any fill, including those no label clears at rest", () => {
+    // Every 17th value per channel, plus the greys where the two labels tie
+    // (about 4.34:1 each): the fills readableForeground cannot make legible.
+    const fills = [0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255]
+      .flatMap((r, _, all) => all.flatMap((g) => all.map((b) => [r, g, b])))
+      .concat([...Array(40).keys()].map((i) => [100 + i, 100 + i, 100 + i]))
+      .map((rgb) => "#" + rgb.map((c) => c.toString(16).padStart(2, "0")).join(""));
+    expect(fills.some((f) => readableForeground(f).ratio < 4.5)).toBe(true);
+    for (const fill of fills) {
+      const ratio = contrastRatio(readableForeground(fill).color, readableHover(fill));
+      expect(ratio, `${fill} hovers at ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("returns the far pole for an invalid hex instead of throwing", () => {
+    expect(readableHover("not-a-colour")).toBe(READABLE_DARK);
   });
 });
 

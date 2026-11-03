@@ -76,26 +76,33 @@
     doneTime: normaliseOption(data.preferences.dashboardDoneTime, DONE_TIME_DISPLAYS, "both"),
   });
 
-  // Edit mode (spec §5b, §5d). The draft exists only while editing: created
-  // from `stored` on entering, discarded on leaving, so a remount or a
-  // navigation always starts out of edit mode. Everything a change makes is
-  // saved as it is made, by the draft.
+  // Edit mode (spec §5b, §5d). The draft is created from `stored` on
+  // entering and discarded once leaving has reloaded: it outlives `editing`
+  // only while its last writes settle, so the page keeps rendering the
+  // user's last change rather than a payload that predates it. Component
+  // state, so a remount or a navigation always starts out of edit mode.
+  // Everything a change makes is saved as it is made, by the draft.
   let editing = $state(false);
   let draft = $state<LayoutDraft | null>(null);
   // The footer is a link until mounted (the no-JS path, and a press before
   // hydration navigates rather than landing on a dead button).
   let hydrated = $state(false);
+  let destroyed = false;
   onMount(() => {
     hydrated = true;
+    return () => {
+      destroyed = true;
+    };
   });
   let footerControl = $state<HTMLButtonElement | HTMLAnchorElement | null>();
   // Read only, never acquired: entering mid-write would let that write's
   // reload re-render rows under the editor mid-gesture.
   const lock = getDoseWriteLock();
 
-  // What the page renders: the draft while editing, the stored values
-  // otherwise. One resolver call either way, so the preview is the page.
-  const view = $derived(editing && draft ? draft.values : stored);
+  // What the page renders: the draft while it exists (editing, or leaving
+  // with writes still settling), the stored values otherwise. One resolver
+  // call either way, so the preview is the page.
+  const view = $derived(draft ? draft.values : stored);
   const variant = $derived(asNeededOnly ? "as-needed-only" : "scheduled");
 
   // Order and visibility only. What each section holds is the composer's.
@@ -149,24 +156,44 @@
       showToast(STILL_SAVING_TOAST, "error", { coalesce: true });
       return;
     }
-    draft = createLayoutDraft(stored);
-    syncedData = data;
+    // A draft still settling from the last Done is the newest picture of
+    // the layout, and its writes are in flight: keep it rather than start a
+    // second one from a payload that predates them.
+    if (!draft) {
+      draft = createLayoutDraft(stored);
+      syncedData = data;
+    }
     editing = true;
     announce("Customising. Changes save as you make them.");
     await tick();
     document.getElementById(CUSTOMISE_HEADING_ID)?.focus({ preventScroll: true });
   }
 
-  /** Done and Escape. Nothing to save: every change already was. */
+  /**
+   * Done and Escape. Nothing to save: every change already was. Edit mode
+   * ends and focus moves at once; the reload waits for the draft's writes,
+   * because a reload served before one commits carries the old value and
+   * the draft's stale-payload guard is the only thing that ignores it.
+   */
+  let leaveTicket = 0;
   async function leave() {
     if (!editing) return;
     editing = false;
-    draft = null;
+    const leaving = draft;
+    const ticket = ++leaveTicket;
     await tick();
     if (footerControl?.isConnected) footerControl.focus();
     else pageHeading()?.focus({ preventScroll: true });
-    // Render the server's truth rather than the draft's last picture of it.
-    await invalidateAll();
+    await leaving?.settled();
+    // Re-entered while the writes settled: the draft is in use again, and
+    // that edit session's own Done reloads (once, by the latest ticket).
+    if (editing || destroyed || ticket !== leaveTicket) return;
+    try {
+      // Render the server's truth rather than the draft's last picture of it.
+      await invalidateAll();
+    } finally {
+      if (!editing && draft === leaving) draft = null;
+    }
   }
 
   function onRegionKeydown(event: KeyboardEvent) {

@@ -99,6 +99,14 @@ export type LayoutDraft = {
   applyPreset(id: PresetId): void;
   sync(stored: StoredLayout): void;
   pending(): boolean;
+  /**
+   * Resolves once nothing is in flight or queued: at once when idle, else
+   * when the last outstanding write settles, successfully or not. Leaving
+   * edit mode waits on it before reloading, because the draft's stale-payload
+   * guard dies with the draft and a reload served before a write commits
+   * would render the old layout.
+   */
+  settled(): Promise<void>;
 };
 
 const LAYOUT_KEYS = Object.keys(PREFERENCE_KEY_OF) as LayoutKey[];
@@ -195,6 +203,19 @@ export function createLayoutDraft(initial: StoredLayout, deps: LayoutDraftDeps =
    * ignored. Not reactive: only `sync` reads it.
    */
   const confirmed = new Map<LayoutKey, string>();
+  /** `settled()` callers waiting for the draft to go idle. */
+  let waiters: Array<() => void> = [];
+
+  function isPending(): boolean {
+    return inFlight.size > 0 || queued.size > 0 || queuedPreset !== null;
+  }
+
+  function releaseIfIdle() {
+    if (isPending() || waiters.length === 0) return;
+    const ready = waiters;
+    waiters = [];
+    for (const resolve of ready) resolve();
+  }
 
   function setValue<K extends LayoutKey>(key: K, value: LayoutValues[K]) {
     values[key] = (Array.isArray(value) ? [...value] : value) as LayoutValues[K];
@@ -219,6 +240,7 @@ export function createLayoutDraft(initial: StoredLayout, deps: LayoutDraftDeps =
       showToast(typeof result === "string" ? result : actionErrorMessage(result), "error");
     }
     pump();
+    releaseIfIdle();
   }
 
   function setServer<K extends LayoutKey>(key: K, value: LayoutValues[K]) {
@@ -337,7 +359,12 @@ export function createLayoutDraft(initial: StoredLayout, deps: LayoutDraftDeps =
     },
 
     pending() {
-      return inFlight.size > 0 || queued.size > 0 || queuedPreset !== null;
+      return isPending();
+    },
+
+    settled() {
+      if (!isPending()) return Promise.resolve();
+      return new Promise<void>((resolve) => waiters.push(resolve));
     },
   };
 }

@@ -332,6 +332,46 @@ describe("entering and leaving", () => {
     expect(h.invalidateAll).toHaveBeenCalledOnce();
   });
 
+  it("Done waits for a held write before reloading, and keeps the change on screen meanwhile", async () => {
+    mountPage();
+    await enter();
+    shownToggle("later").click();
+    await settle();
+    expect(posts.at(-1)!.fields).toEqual({ dashboardShowLater: "off" });
+    toolbarButton("Done").click();
+    await settle();
+    // Out of edit mode and focus returned at once ...
+    expect(heading()).toBeNull();
+    expect(document.activeElement).toBe(footer());
+    // ... but no reload while the hide is uncommitted: one served now would
+    // carry the old value, and Later would reappear.
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+    expect(document.getElementById("later-heading")).toBeNull();
+
+    posts.at(-1)!.resolve();
+    await settle();
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
+  });
+
+  it("re-entering while a write settles keeps the draft, and only the last Done reloads", async () => {
+    mountPage();
+    await enter();
+    shownToggle("later").click();
+    await settle();
+    toolbarButton("Done").click();
+    await settle();
+    await enter();
+    expect(bar("later")!.textContent).toContain("Hidden");
+    expect(shownToggle("later").getAttribute("aria-pressed")).toBe("false");
+    toolbarButton("Done").click();
+    await settle();
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+
+    posts.at(-1)!.resolve();
+    await settle();
+    expect(h.invalidateAll).toHaveBeenCalledOnce();
+  });
+
   it("is refused while a dose write is active, with the coalesced still-saving toast", async () => {
     mountPage();
     lock.acquire();

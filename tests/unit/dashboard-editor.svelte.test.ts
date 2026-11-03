@@ -609,3 +609,42 @@ describe("createLayoutDraft: the default post", () => {
     expect(draft.pending()).toBe(false);
   });
 });
+
+describe("createLayoutDraft: settled()", () => {
+  /** Whether the promise has resolved by the time pending continuations have run. */
+  async function isResolved(promise: Promise<void>): Promise<boolean> {
+    let done = false;
+    void promise.then(() => (done = true));
+    await settle();
+    return done;
+  }
+
+  it("resolves at once when nothing is in flight", async () => {
+    const { post } = stubPost();
+    const draft = createLayoutDraft(DEFAULTS, { post, online: () => true });
+    expect(await isResolved(draft.settled())).toBe(true);
+  });
+
+  it("waits for the queued write behind an in-flight one, not just the first", async () => {
+    const { calls, post } = stubPost();
+    const draft = createLayoutDraft(DEFAULTS, { post, online: () => true });
+    draft.move("refills", "up", "scheduled");
+    draft.move("refills", "up", "scheduled"); // queued behind the first
+    const settled = draft.settled();
+
+    calls[0].resolve(SUCCESS);
+    expect(await isResolved(settled), "the queued move is now in flight").toBe(false);
+
+    calls[1].resolve(SUCCESS);
+    expect(await isResolved(settled)).toBe(true);
+  });
+
+  it("resolves after a failure too", async () => {
+    const { calls, post } = stubPost();
+    const draft = createLayoutDraft(DEFAULTS, { post, online: () => true });
+    draft.setShown("later", false);
+    const settled = draft.settled();
+    calls[0].resolve({ type: "failure", status: 400, data: { error: "No." } });
+    expect(await isResolved(settled)).toBe(true);
+  });
+});

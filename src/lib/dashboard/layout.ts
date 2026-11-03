@@ -26,7 +26,7 @@ export const SECTION_LABELS: Record<DashboardSectionId, string> = {
   refills: "Refills",
 };
 
-/** The shorter names the settings page's Reset label lists ("Default: Done, Later, …"). */
+/** The shorter names the settings page's Reset label lists ("Reset to Standard: Done, Later, …"). */
 export const SHORT_SECTION_LABELS: Record<DashboardSectionId, string> = {
   done: "Done",
   later: "Later",

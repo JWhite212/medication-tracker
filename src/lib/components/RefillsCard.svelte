@@ -4,6 +4,14 @@
   import { atOrBelowAlertThreshold } from "$lib/utils/low-stock";
   import { refillStatus, toneClass, toneOf, type Tone } from "$lib/utils/status-tone";
 
+  /**
+   * The note the dashboard shows when Refills is hidden but an urgent refill
+   * forces it in. Here so the card, the page and edit mode's section bar say
+   * the same words.
+   */
+  export const URGENT_REFILLS_NOTE =
+    "Showing urgent refills only. Refills is hidden on your dashboard.";
+
   // Exported so a surface that cannot mount this card still tints and words
   // its rows by the same rules: the landing-page walkthrough draws Refills
   // with no link, heading or landmark, and this card renders all three. The

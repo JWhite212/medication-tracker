@@ -8,6 +8,7 @@
   let {
     medications = [],
     quickLog = true,
+    editing = false,
   }: {
     medications?: Array<{ id: string; name: string }>;
     /**
@@ -16,6 +17,12 @@
      * get them back rather than describing keys that cannot work.
      */
     quickLog?: boolean;
+    /**
+     * Whether the dashboard is being customised. Its sections are inert then,
+     * but `requestSubmit()` ignores `inert` and no `aria-modal` is open, so
+     * this is the one thing that stops 1–9 logging a dose behind the editor.
+     */
+    editing?: boolean;
   } = $props();
 
   let showHelp = $state(false);
@@ -105,7 +112,7 @@
     }
 
     const num = parseInt(e.key);
-    if (quickLog && num >= 1 && num <= 9 && medications.length > 0) {
+    if (!editing && quickLog && num >= 1 && num <= 9 && medications.length > 0) {
       const idx = num - 1;
       if (idx < medications.length) {
         e.preventDefault();
@@ -136,8 +143,12 @@
     description: "Number shortcuts need Quick log on your dashboard",
     href: "/settings/dashboard?from=dashboard",
   };
+  const NUMBERS_PAUSED = {
+    keys: ["1-9"],
+    description: "Shortcuts are paused while you customise",
+  };
   const shortcuts: Array<{ keys: string[]; description: string; href?: string }> = $derived([
-    quickLog ? LOG_SHORTCUT : NUMBERS_OFF,
+    editing ? NUMBERS_PAUSED : quickLog ? LOG_SHORTCUT : NUMBERS_OFF,
     { keys: ["n"], description: "Add new medication" },
     { keys: ["/"], description: "Focus first filter input" },
     { keys: ["?"], description: "Toggle this help overlay" },

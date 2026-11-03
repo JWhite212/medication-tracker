@@ -15,6 +15,7 @@
     orderValue,
     type DashboardSectionId,
   } from "$lib/dashboard/layout";
+  import { moveFocusTarget } from "$lib/dashboard/move-focus";
   import { PRESET_IDS, PRESETS, activePreset } from "$lib/dashboard/presets";
   import {
     DASHBOARD_LATER_MODES,
@@ -44,8 +45,11 @@
   // a reorder of the two sections it can see. On a scheduled account the two
   // orders are the same and the posted value is exactly `moveSection(order)`.
   const fullOrder = $derived(normaliseSectionOrder(preferences.dashboardSectionOrder, "scheduled"));
+  // Reset applies Standard, which restores Later's and Done's options as
+  // well as the order and visibility, so the label names the layout and only
+  // then lists the sections this variant's Standard page shows.
   const resetLabel = $derived(
-    `Default: ${DEFAULT_ORDER[data.variant].map((id) => SHORT_SECTION_LABELS[id]).join(", ")}`,
+    `Reset to ${PRESETS.standard.label}: ${DEFAULT_ORDER[data.variant].map((id) => SHORT_SECTION_LABELS[id]).join(", ")}`,
   );
   const shown = $derived({
     later: preferences.dashboardShowLater,
@@ -159,8 +163,10 @@
     // reload has made the applied preset the active one.
     if (intent.kind === "preset")
       return activeId ? `${PRESETS[activeId].label} applied` : "Preset applied";
-    return "Dashboard layout reset to default";
+    return `Dashboard reset to ${PRESETS.standard.label}`;
   }
+
+  const MOVE_PREFIX = "settings-move";
 
   /**
    * Focus after a move: the button just pressed, unless the move took the
@@ -169,12 +175,9 @@
    * survives the reorder and keeps focus while it becomes aria-disabled.
    */
   function focusMoved(id: DashboardSectionId, direction: "up" | "down") {
-    const opposite = direction === "up" ? "down" : "up";
-    const same = document.getElementById(`move-section-${id}-${direction}`);
-    const target =
-      same && same.getAttribute("aria-disabled") !== "true"
-        ? same
-        : document.getElementById(`move-section-${id}-${opposite}`);
+    const same = document.getElementById(`${MOVE_PREFIX}-${id}-${direction}`);
+    const isEnd = !same || same.getAttribute("aria-disabled") === "true";
+    const target = document.getElementById(moveFocusTarget(MOVE_PREFIX, id, direction, isEnd));
     target?.focus();
   }
 
@@ -308,7 +311,7 @@
                      move that makes it an end. At an end it is inert: a plain
                      button with nothing to post. -->
                 <IconButton
-                  id="move-section-{id}-{direction}"
+                  id="{MOVE_PREFIX}-{id}-{direction}"
                   type={atEnd ? "button" : "submit"}
                   label="Move {label} {direction}"
                   name={atEnd ? undefined : "dashboardSectionOrder"}

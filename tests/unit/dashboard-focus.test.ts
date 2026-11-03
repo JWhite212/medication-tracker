@@ -147,6 +147,27 @@ describe("focusIfLost", () => {
     );
     expect(document.activeElement?.id).toBe("target");
   });
+
+  it("skips a connected candidate under [inert], so the next candidate applies", () => {
+    // Edit mode makes every section's content inert. An Undo restore pressed
+    // while customising names the restored row's Edit as its focus target:
+    // connected, but focus() on it does nothing, and stopping there left
+    // focus on <body>.
+    document.body.innerHTML = `<div inert><button id="row-edit">Edit</button></div><h1 tabindex="-1">Today</h1>`;
+    focusIfLost(() => document.getElementById("row-edit"), pageHeading);
+    expect(document.activeElement).toBe(pageHeading());
+  });
+
+  it("falls through when a candidate does not take focus", () => {
+    document.body.innerHTML = `<button id="refuses">Refuses</button><button id="target">Target</button>`;
+    const refuses = document.getElementById("refuses")!;
+    vi.spyOn(refuses, "focus").mockImplementation(() => {});
+    focusIfLost(
+      () => refuses,
+      () => document.getElementById("target"),
+    );
+    expect(document.activeElement?.id).toBe("target");
+  });
 });
 
 /**

@@ -83,7 +83,7 @@ export function pageHeading(): HTMLElement | null {
 
 /**
  * If focus is lost, focus the first candidate that returns an element still
- * in the document.
+ * in the document, outside any [inert] subtree, that actually takes focus.
  *
  * The page heading is focused WITHOUT scrolling, and every other element with
  * a plain focus(). The heading is a parking spot, not a place the user was:
@@ -100,10 +100,13 @@ export function focusIfLost(...candidates: Array<() => HTMLElement | null | unde
   if (!isFocusLost()) return;
   for (const candidate of candidates) {
     const el = candidate();
-    if (el?.isConnected) {
-      if (el === pageHeading()) el.focus({ preventScroll: true });
-      else el.focus();
-      return;
-    }
+    // Connected is not enough: under [inert] (the dashboard's edit mode)
+    // focus() does nothing, and stopping there left focus on <body>. So an
+    // inert candidate is skipped, and one that did not take focus for any
+    // other reason falls through to the next.
+    if (!el?.isConnected || el.closest("[inert]")) continue;
+    if (el === pageHeading()) el.focus({ preventScroll: true });
+    else el.focus();
+    if (document.activeElement === el) return;
   }
 }

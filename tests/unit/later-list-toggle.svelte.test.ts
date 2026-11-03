@@ -193,3 +193,60 @@ describe("LaterList mode all", () => {
     expect(target.querySelectorAll("li")).toHaveLength(2);
   });
 });
+
+describe("LaterList when the mode changes after mount", () => {
+  // Edit mode renders the draft, so applying Full day (or leaving it) changes
+  // `mode` on a list that is already mounted. The preview is the page: the
+  // fold must follow the new mode. Nothing else may reset it — not the 60s
+  // tick, not a reload, and not a rerender with the same mode after the
+  // user folded it themselves.
+  function mountLive(mode: "next" | "all") {
+    const props = $state({
+      rows: [row("a", "08:55"), row("b", "11:00"), row("c", "13:05")],
+      serverNow: new Date("2026-05-01T07:00:00.000Z"),
+      todayStart: new Date("2026-05-01T00:00:00.000Z"),
+      timezone: "UTC",
+      timeFormat: "24h" as const,
+      mode: mode as "next" | "all",
+    });
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(LaterList, { target, props });
+    teardown.push(() => {
+      unmount(component);
+      target.remove();
+    });
+    const toggle = () => target.querySelector("button")!;
+    return { props, target, toggle };
+  }
+
+  it("expands when the mode changes next → all, and folds again on all → next", () => {
+    const { props, target, toggle } = mountLive("next");
+    expect(target.querySelectorAll("li")).toHaveLength(1);
+
+    props.mode = "all";
+    flushSync();
+    expect(target.querySelectorAll("li")).toHaveLength(3);
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+
+    props.mode = "next";
+    flushSync();
+    expect(target.querySelectorAll("li")).toHaveLength(1);
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps the user's own fold through a tick, a reload and a same-mode rerender", () => {
+    const { props, target, toggle } = mountLive("all");
+    toggle().click();
+    flushSync();
+    expect(target.querySelectorAll("li")).toHaveLength(1);
+
+    props.serverNow = new Date("2026-05-01T07:01:00.000Z");
+    flushSync();
+    props.rows = [...props.rows];
+    flushSync();
+    props.mode = "all";
+    flushSync();
+    expect(target.querySelectorAll("li")).toHaveLength(1);
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+  });
+});

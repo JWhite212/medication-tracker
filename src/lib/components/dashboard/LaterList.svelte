@@ -46,6 +46,20 @@
   const hasToggle = $derived(groups.length > 1);
   let toggle = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
 
+  // Edit mode renders the draft, so a preset (Full day, or leaving it)
+  // changes `mode` on a list that is already mounted, and the preview is the
+  // page (spec §5a). Only a CHANGE of mode re-seeds the fold: the previous
+  // mode is a plain variable, so the 60s tick, a reload and the user's own
+  // Show more/fewer never reach this, and a rerender with the same mode keeps
+  // whatever fold the user chose.
+  let previousMode = untrack(() => mode);
+  $effect.pre(() => {
+    const next = mode;
+    if (next === previousMode) return;
+    previousMode = next;
+    expanded = next === "all";
+  });
+
   // The dashboard reloads itself at slot boundaries, and a reload can leave
   // Later with one group, which removes the toggle. If the toggle held focus
   // it would fall to <body> with no user action, so it parks on the page's

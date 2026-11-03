@@ -642,3 +642,18 @@ describe("dashboard layout preferences (SSR)", () => {
     }
   });
 });
+
+describe("the edit-mode entry point before hydration (SSR)", () => {
+  it("is a plain link to the settings page, with no editor rendered", () => {
+    const html = renderPage(SCHEDULED).body;
+    const doc = ssrDocument(html);
+    const link = doc.querySelector('a[href="/settings/dashboard?from=dashboard"]');
+    expect(link).not.toBeNull();
+    expect(link!.hasAttribute("aria-expanded")).toBe(false);
+    expect(doc.querySelector('button[aria-controls="dashboard-editor"]')).toBeNull();
+    expect(doc.querySelector("#customise-heading")).toBeNull();
+    expect(doc.querySelector("[inert]")).toBeNull();
+    expect(doc.querySelector("[data-section-bar]")).toBeNull();
+    expect(doc.querySelector("[data-edit-toolbar]")).toBeNull();
+  });
+});

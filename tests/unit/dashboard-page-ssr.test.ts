@@ -467,7 +467,10 @@ describe("dashboard layout preferences (SSR)", () => {
       const due = headingAt(html, 2, "Due");
       expect(h1, order.join()).toBeGreaterThan(-1);
       expect(due, order.join()).toBeGreaterThan(h1);
-      expect(h2s(html), order.join()).toEqual(["Due", ...order.map((id) => SECTION_LABELS[id])]);
+      // SECTION_LABELS are the settings/footer names; the Quick log section keeps its own heading.
+      const heading = (id: DashboardSectionId) =>
+        id === "quickLog" ? "Log something else" : SECTION_LABELS[id];
+      expect(h2s(html), order.join()).toEqual(["Due", ...order.map(heading)]);
     }
   });
 
@@ -488,15 +491,16 @@ describe("dashboard layout preferences (SSR)", () => {
 
   it("names one hidden section with 'is' and three with commas and 'and'", () => {
     const one = renderPage(SCHEDULED, undefined, { dashboardShowQuickLog: false }).body;
-    expect(footer(one)?.text).toBe("Log something else is hidden · Customise");
+    expect(footer(one)?.text).toBe("Quick log is hidden · Customise");
+    const shownHtml = renderPage(SCHEDULED).body;
+    expect(headingAt(shownHtml, 2, "Log something else")).toBeGreaterThan(-1);
+    expect(footer(shownHtml)?.text).toBe("Customise this page");
     const three = renderPage({ ...SCHEDULED, refillForecast: [watchRow] }, undefined, {
       dashboardShowLater: false,
       dashboardShowQuickLog: false,
       dashboardShowRefills: false,
     }).body;
-    expect(footer(three)?.text).toBe(
-      "Later today, Log something else and Refills are hidden · Customise",
-    );
+    expect(footer(three)?.text).toBe("Later today, Quick log and Refills are hidden · Customise");
   });
 
   it("hidden Quick log removes form[data-quick-log]", () => {

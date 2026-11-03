@@ -22,7 +22,7 @@ export const HIDEABLE_SECTIONS = ["later", "quickLog", "refills"] as const;
 export const SECTION_LABELS: Record<DashboardSectionId, string> = {
   done: "Done today",
   later: "Later today",
-  quickLog: "Log something else",
+  quickLog: "Quick log",
   refills: "Refills",
 };
 

@@ -47,6 +47,7 @@
 import { z } from "zod";
 import type { AppearanceKey, PreferenceKey } from "$lib/appearance/registry";
 import type { UserPreferences } from "$lib/types";
+import type { NumericBound } from "./domains";
 
 /**
  * The seven mutable `user_preferences` columns the appearance registry does
@@ -57,8 +58,8 @@ import type { UserPreferences } from "$lib/types";
  */
 export type NonAppearancePreferenceKey = Exclude<PreferenceKey, AppearanceKey>;
 
-/** An inclusive integer range. */
-export type NumericBound = { readonly min: number; readonly max: number };
+/** An inclusive integer range. Defined in `domains.ts` so client code can use it without zod. */
+export type { NumericBound };
 
 /**
  * The numeric domains, as data rather than as method calls, so the doors and

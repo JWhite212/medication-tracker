@@ -5,7 +5,7 @@ import { env } from "$env/dynamic/private";
 // own URL).
 import { env as publicEnv } from "$env/dynamic/public";
 import { dev } from "$app/environment";
-import { lastLoggedPhrase } from "$lib/utils/time";
+import { lastLoggedPhrase, TIME_SINCE_DAYS_FROM_HOURS } from "$lib/utils/time";
 
 export type EmailErrorReason =
   | "not_configured"
@@ -169,7 +169,7 @@ export async function sendReminderEmail(
   // The push body's sentence, mid-sentence here: "is due — last logged 5m
   // ago." `lastLoggedPhrase` owns the wording, including its "ago", so the
   // template adds nothing after it.
-  const phrase = lastLoggedPhrase(lastEventAt, now);
+  const phrase = lastLoggedPhrase(lastEventAt, now, TIME_SINCE_DAYS_FROM_HOURS);
   const since = phrase.charAt(0).toLowerCase() + phrase.slice(1);
   return safeSend({
     from: env.EMAIL_FROM ?? FROM_FALLBACK,

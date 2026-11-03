@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { formatTimeSince } from "$lib/utils/time";
+  import { formatTimeSince, TIME_SINCE_DAYS_FROM_HOURS } from "$lib/utils/time";
   let { date }: { date: Date } = $props();
-  let display = $state(formatTimeSince(date));
+  let display = $state(formatTimeSince(date, new Date(), TIME_SINCE_DAYS_FROM_HOURS));
 
   $effect(() => {
-    display = formatTimeSince(date);
+    display = formatTimeSince(date, new Date(), TIME_SINCE_DAYS_FROM_HOURS);
     const interval = setInterval(() => {
-      display = formatTimeSince(date);
+      display = formatTimeSince(date, new Date(), TIME_SINCE_DAYS_FROM_HOURS);
     }, 60_000);
     const onVisibility = () => {
-      if (document.visibilityState === "visible") display = formatTimeSince(date);
+      if (document.visibilityState === "visible")
+        display = formatTimeSince(date, new Date(), TIME_SINCE_DAYS_FROM_HOURS);
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {

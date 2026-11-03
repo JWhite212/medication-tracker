@@ -9,7 +9,7 @@ import {
 } from "$lib/server/db/schema";
 import { sendReminderEmail, sendLowInventoryEmail, isEmailConfigured } from "./email";
 import { sendPushNotification, hasPushSubscriptions } from "./push";
-import { lastLoggedPhrase } from "$lib/utils/time";
+import { lastLoggedPhrase, TIME_SINCE_DAYS_FROM_HOURS } from "$lib/utils/time";
 import { lowInventoryTag, overdueTag } from "$lib/utils/push-payload";
 import {
   computeOverdueSlot,
@@ -198,7 +198,7 @@ export async function checkOverdueMedications() {
         if (pushConfigured) {
           out.push = await sendPushNotification(row.userId, {
             title: `${row.medicationName} overdue`,
-            body: lastLoggedPhrase(lastEventAt, now),
+            body: lastLoggedPhrase(lastEventAt, now, TIME_SINCE_DAYS_FROM_HOURS),
             url: "/dashboard",
             tag: overdueTag(row.medicationId),
             // Same tag as the previous nag, so the tray holds one entry

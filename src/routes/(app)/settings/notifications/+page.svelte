@@ -6,7 +6,7 @@
   import { showToast } from "$lib/components/ui/Toast.svelte";
   import { urlBase64ToUint8Array, TEST_PUSH_SHOWN_MESSAGE } from "$lib/utils/push";
   import { toneClass, toneOf } from "$lib/utils/status-tone";
-  import { formatTimeSince } from "$lib/utils/time";
+  import { formatTimeSince, TIME_SINCE_DAYS_FROM_HOURS } from "$lib/utils/time";
 
   let { data, form } = $props();
 
@@ -352,7 +352,11 @@
             {data.pushHealth.deviceCount}
             {#if data.pushHealth.oldestRegisteredAt}
               <span class="text-text-muted">
-                (oldest {formatTimeSince(new Date(data.pushHealth.oldestRegisteredAt))})
+                (oldest {formatTimeSince(
+                  new Date(data.pushHealth.oldestRegisteredAt),
+                  new Date(),
+                  TIME_SINCE_DAYS_FROM_HOURS,
+                )})
               </span>
             {/if}
           </dd>
@@ -361,7 +365,11 @@
           <dt class="text-text-muted">Reminders last processed</dt>
           <dd>
             {#if data.pushHealth.lastReminderAt}
-              {formatTimeSince(new Date(data.pushHealth.lastReminderAt))}
+              {formatTimeSince(
+                new Date(data.pushHealth.lastReminderAt),
+                new Date(),
+                TIME_SINCE_DAYS_FROM_HOURS,
+              )}
             {:else}
               <span class="text-text-muted">None yet</span>
             {/if}

@@ -1,4 +1,8 @@
+import { TIME_SINCE_DAYS_FROM_HOURS_BOUNDS } from "$lib/preferences/domains";
+
 /**
+ * The default, and the fallback for a threshold that is not an integer
+ * Callers that have the user's stored value pass that instead.
  * Below this many hours, `formatTimeSince` counts hours and minutes; from it,
  * whole days. 48 rather than 24 because a dose taken yesterday morning is
  * still read in hours ("26h 10m ago") when deciding about the next one, and
@@ -11,12 +15,18 @@ export const TIME_SINCE_DAYS_FROM_HOURS = 48;
  * instant `date` was. Every result already reads as a complete phrase, so a
  * caller must never append its own "ago".
  *
- * `now` defaults to the wall clock, which is what the live counters want
- * (`TimeSince.svelte` re-renders every minute). A caller that already owns a
- * clock passes it: the reminder sweep decides "overdue" and writes the copy
- * from one tick instant.
+ * `now` and `daysFromHours` are required. A caller that owns a clock passes
+ * it (the reminder sweep decides "overdue" and writes the copy from one tick
+ * instant; the live counter passes `new Date()`). `daysFromHours` is the hour
+ * count from which whole days are shown; a non-integer falls back to
+ * `TIME_SINCE_DAYS_FROM_HOURS` and an integer is clamped to the preference's
+ * bounds, so no value can print "0d ago".
  */
-export function formatTimeSince(date: Date, now: Date = new Date()): string {
+export function formatTimeSince(date: Date, now: Date, daysFromHours: number): string {
+  const { min, max } = TIME_SINCE_DAYS_FROM_HOURS_BOUNDS;
+  const threshold = Number.isInteger(daysFromHours)
+    ? Math.min(max, Math.max(min, daysFromHours))
+    : TIME_SINCE_DAYS_FROM_HOURS;
   const diffMs = now.getTime() - date.getTime();
   const diffSecs = Math.floor(diffMs / 1000);
   const diffMins = Math.floor(diffSecs / 60);
@@ -25,7 +35,7 @@ export function formatTimeSince(date: Date, now: Date = new Date()): string {
 
   if (diffSecs < 60) return "just now";
   if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < TIME_SINCE_DAYS_FROM_HOURS) return `${diffHours}h ${diffMins % 60}m ago`;
+  if (diffHours < threshold) return `${diffHours}h ${diffMins % 60}m ago`;
   return `${diffDays}d ago`;
 }
 
@@ -46,9 +56,13 @@ export function formatTimeSince(date: Date, now: Date = new Date()): string {
  * `now` is required, never defaulted, so the sweep's one tick instant decides
  * both that the slot is overdue and how long ago the last event was.
  */
-export function lastLoggedPhrase(lastEventAt: Date | null, now: Date): string {
+export function lastLoggedPhrase(
+  lastEventAt: Date | null,
+  now: Date,
+  daysFromHours: number,
+): string {
   if (lastEventAt === null) return "Not yet logged";
-  return `Last logged ${formatTimeSince(lastEventAt, now)}`;
+  return `Last logged ${formatTimeSince(lastEventAt, now, daysFromHours)}`;
 }
 
 export type TimeFormat = "12h" | "24h";

@@ -9,8 +9,8 @@ import RefillsCard, {
   refillChip,
   refillDaysLabel,
   refillDosesLabel,
-  refillSeverityClass,
-  refillSeverityLabel,
+  refillLabelClass,
+  refillRowClass,
   type RefillChip,
   type RefillChipInput,
 } from "$lib/components/RefillsCard.svelte";
@@ -20,7 +20,6 @@ import { evaluatedRules, runAxe, ssrDocument } from "./helpers/axe-ssr";
 import { compiledRule } from "./helpers/compiled-rule";
 import { accessibleName, textOf } from "./helpers/dom-names";
 
-const SEVERITIES: RefillSeverity[] = ["critical", "warning", "watch", "ok"];
 const STATUS_LITERAL = /\b(?:text|bg|border)-(?:info|danger|danger-ink)(?:\/\d+)?\b/;
 
 const input = (over: Partial<RefillChipInput>): RefillChipInput => ({
@@ -117,23 +116,19 @@ describe("refillChip: the one rule for a refill or stock chip", () => {
 });
 
 describe("the row tint and label colour", () => {
-  it("are amber for both critical and warning: nothing has gone wrong yet, you need to reorder", () => {
-    for (const s of ["critical", "warning"] as const) {
-      expect(refillSeverityClass(s)).toBe(toneClass("needs-you", "alert"));
-      expect(refillSeverityLabel(s)).toBe(toneClass("needs-you", "text"));
-    }
+  it("are amber for a row that needs you: nothing has gone wrong yet, you need to reorder", () => {
+    expect(refillRowClass("needs-you")).toBe(toneClass("needs-you", "alert"));
+    expect(refillLabelClass("needs-you")).toBe(toneClass("needs-you", "text"));
   });
 
-  it("are neutral for watch and ok, a glass row like the dashboard's other cards", () => {
-    for (const s of ["watch", "ok"] as const) {
-      expect(refillSeverityClass(s)).toBe("border-glass-border bg-glass");
-      expect(refillSeverityLabel(s)).toBe(toneClass("neutral", "text"));
-    }
+  it("are neutral otherwise, a glass row like the dashboard's other cards", () => {
+    expect(refillRowClass("neutral")).toBe("border-glass-border bg-glass");
+    expect(refillLabelClass("neutral")).toBe(toneClass("neutral", "text"));
   });
 
-  it("never return the info or danger colours", () => {
-    for (const s of SEVERITIES) {
-      expect(`${refillSeverityClass(s)} ${refillSeverityLabel(s)}`).not.toMatch(STATUS_LITERAL);
+  it("never return the info or danger colours for either tone a row takes", () => {
+    for (const t of ["needs-you", "neutral"] as const) {
+      expect(`${refillRowClass(t)} ${refillLabelClass(t)}`).not.toMatch(STATUS_LITERAL);
     }
   });
 });
@@ -144,11 +139,13 @@ describe("RefillsCard", () => {
     severity: RefillSeverity,
     days: number,
     count: number,
+    threshold: number | null = null,
   ): RefillForecastEntry => ({
     medicationId: id,
     medicationName: id,
     colour: "#e46b6b",
     inventoryCount: count,
+    inventoryAlertThreshold: threshold,
     dailyRate: 1,
     daysUntilRefill: days,
     severity,
@@ -160,6 +157,8 @@ describe("RefillsCard", () => {
           entry("Ibuprofen", "critical", 2, 2),
           entry("Lisinopril", "warning", 6, 6),
           entry("Vitamin D", "watch", 10, 10),
+          // At the user's own alert level on an ok forecast, as on /medications.
+          entry("Metformin", "ok", 30, 30, 30),
         ],
       },
     }).body,
@@ -188,6 +187,12 @@ describe("RefillsCard", () => {
     has(label(rows[2]), toneClass("neutral", "text"));
     expect(accessibleName(label(rows[2]))).toBe("10 days left");
     expect(label(rows[2]).querySelector('[aria-hidden="true"]')).toBeNull();
+  });
+
+  it("draws a row at the user's alert threshold amber with Reorder soon, whatever its tier", () => {
+    has(rows[3], toneClass("needs-you", "alert"));
+    has(label(rows[3]), toneClass("needs-you", "text"));
+    expect(textOf(label(rows[3]))).toBe("▲ Reorder soon · 30 days left");
   });
 
   // A row used to fade on hover (hover:opacity-90), which took the amber

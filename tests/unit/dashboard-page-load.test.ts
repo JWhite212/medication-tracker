@@ -34,6 +34,7 @@ const FORECAST: RefillForecastEntry[] = [
     medicationName: "Metformin",
     colour: "#6366f1",
     inventoryCount: 2,
+    inventoryAlertThreshold: null,
     dailyRate: 1,
     daysUntilRefill: 2,
     severity: "critical",

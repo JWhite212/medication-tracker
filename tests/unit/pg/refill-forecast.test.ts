@@ -61,11 +61,65 @@ describe("getRefillForecast — what it includes", () => {
 
     expect(entries.map((e) => e.medicationId)).toEqual(["m-critical", "m-warn", "m-watch"]);
   });
+
+  // The medications card's amber chip and the low-stock alert both fire at
+  // the user's own threshold, so the dashboard must list it too, however many
+  // days the forecast gives.
+  it("reports a medication at its alert threshold whatever its tier, with the threshold", async () => {
+    await onePerDayMed("m-at-threshold", 30, { inventoryAlertThreshold: 30 });
+
+    const [entry, ...rest] = await getRefillForecast("u1");
+
+    expect(rest).toHaveLength(0);
+    expect(entry).toMatchObject({
+      medicationId: "m-at-threshold",
+      inventoryCount: 30,
+      inventoryAlertThreshold: 30,
+      daysUntilRefill: 30,
+      severity: "ok",
+    });
+  });
+
+  it("reports a medication below its alert threshold that has no forecast at all", async () => {
+    // PRN with no history: no rate, so no days and an ok tier.
+    await pgDb.seedMedication({
+      id: "m-prn",
+      name: "PRN",
+      inventoryCount: 4,
+      inventoryAlertThreshold: 5,
+      scheduleType: "prn",
+    });
+
+    expect(await getRefillForecast("u1")).toMatchObject([
+      { medicationId: "m-prn", daysUntilRefill: null, severity: "ok" },
+    ]);
+  });
+
+  it("sorts a medication at its alert threshold after critical and warning, before watch", async () => {
+    await onePerDayMed("m-watch", 10);
+    await onePerDayMed("m-at-threshold", 30, { inventoryAlertThreshold: 30 });
+    await onePerDayMed("m-warn", 5);
+    await onePerDayMed("m-critical", 2);
+
+    const entries = await getRefillForecast("u1");
+
+    expect(entries.map((e) => e.medicationId)).toEqual([
+      "m-critical",
+      "m-warn",
+      "m-at-threshold",
+      "m-watch",
+    ]);
+  });
 });
 
 describe("getRefillForecast — what it leaves out", () => {
   it("omits a medication with plenty of stock", async () => {
     await onePerDayMed("m-fine", 100);
+    expect(await getRefillForecast("u1")).toHaveLength(0);
+  });
+
+  it("omits a medication with plenty of stock one dose above its alert threshold", async () => {
+    await onePerDayMed("m-fine", 31, { inventoryAlertThreshold: 30 });
     expect(await getRefillForecast("u1")).toHaveLength(0);
   });
 

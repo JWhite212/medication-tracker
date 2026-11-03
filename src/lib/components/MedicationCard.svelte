@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { enhance } from "$app/forms";
   import type { MedicationWithStats } from "$lib/types";
+  import { formatDosage } from "$lib/utils/dosage";
   import { getMedicationBackground } from "$lib/utils/medication-style";
   import { expectedWeeklyDoses, adherencePercent } from "$lib/utils/adherence";
   import { formatDoseLabel } from "$lib/utils/dashboard-copy";
@@ -137,7 +138,7 @@
         <div class="min-w-0 flex-1 wrap-anywhere">
           <p class="font-medium">{medication.name}</p>
           <p class="text-text-secondary text-sm">
-            {medication.dosageAmount}{medication.dosageUnit} &middot; {medication.form}
+            {formatDosage(medication.dosageAmount, medication.dosageUnit)} &middot; {medication.form}
             <span class="bg-glass ml-2 rounded-full px-2 py-0.5 text-xs">{medication.category}</span
             >
           </p>

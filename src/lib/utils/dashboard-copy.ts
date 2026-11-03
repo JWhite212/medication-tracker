@@ -1,3 +1,4 @@
+import { formatDosage } from "./dosage";
 import type { DashboardStatus, DueRow } from "$lib/types";
 import {
   formatDuration,
@@ -48,7 +49,7 @@ function relativeTo(at: Date, serverNow: Date): string {
 
 /** "Metformin 500mg" — the concatenation every dose surface already uses. */
 export function formatDoseLabel(name: string, dosageAmount: string, dosageUnit: string): string {
-  return `${name} ${dosageAmount}${dosageUnit}`;
+  return `${name} ${formatDosage(dosageAmount, dosageUnit)}`;
 }
 
 /**
@@ -148,7 +149,7 @@ export function doneDoseText(dose: {
   status: string;
 }): string {
   const multiplier = dose.status === "taken" && dose.quantity > 1 ? ` ×${dose.quantity}` : "";
-  return `${dose.dosageAmount}${dose.dosageUnit}${multiplier}`;
+  return `${formatDosage(dose.dosageAmount, dose.dosageUnit)}${multiplier}`;
 }
 
 /**

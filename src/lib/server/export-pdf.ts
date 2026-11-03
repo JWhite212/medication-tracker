@@ -2,6 +2,7 @@ import { eq, and, gte, lt, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications, type DoseLogStatus } from "$lib/server/db/schema";
 import { formatUserDate, formatUserTime, type DateFormat, type TimeFormat } from "$lib/utils/time";
+import { formatDosage } from "$lib/utils/dosage";
 import { getDoseStatusBreakdown } from "$lib/server/analytics";
 
 const MEDICAL_DISCLAIMER =
@@ -80,7 +81,7 @@ export function formatDoseLogLine(
   // were; TimelineEntry.svelte suppresses it for the same reason.
   const quantity = dose.status === "taken" ? ` x${dose.quantity}` : "";
 
-  return `${date} ${time}${statusLabelFor(dose.status)}  ${dose.medName} ${dose.dosageAmount}${dose.dosageUnit}${quantity}`;
+  return `${date} ${time}${statusLabelFor(dose.status)}  ${dose.medName} ${formatDosage(dose.dosageAmount, dose.dosageUnit)}${quantity}`;
 }
 
 export async function generateReport(
@@ -194,7 +195,9 @@ export async function generateReport(
         const archived = m.isArchived ? " (archived)" : "";
         doc
           .fontSize(10)
-          .text(`• ${m.name} — ${m.dosageAmount}${m.dosageUnit}, ${m.scheduleType}${archived}`);
+          .text(
+            `• ${m.name} — ${formatDosage(m.dosageAmount, m.dosageUnit)}, ${m.scheduleType}${archived}`,
+          );
       }
     }
     doc.moveDown(1);

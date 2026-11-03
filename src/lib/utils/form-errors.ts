@@ -11,6 +11,7 @@ import type { ActionResult } from "@sveltejs/kit";
  *   fail(400, { editErrors: { ... } })           either of those, under the
  *                                                dose-edit action's own key
  *   fail(404, { error: "Dose not found" })       a bare string
+ *   fail(429, { saveError: "Too many ..." })     a rate-limited settings save
  *   fail(400)                                    no body at all
  *
  * plus `result.type === "error"`, which is an unexpected throw and carries
@@ -43,10 +44,12 @@ export function actionErrorMessage(
 
   if (result.type !== "failure") return fallback;
 
-  const data = result.data as { error?: unknown } | undefined;
+  const data = result.data as { error?: unknown; saveError?: unknown } | undefined;
   if (!data) return fallback;
 
   if (typeof data.error === "string" && data.error.length > 0) return data.error;
+  // A rate-limited settings save: the sentence already says when to retry.
+  if (typeof data.saveError === "string" && data.saveError.length > 0) return data.saveError;
 
   // Prefer the form-level message; fall back to whichever field spoke first,
   // so a validation failure says something specific rather than "went wrong".

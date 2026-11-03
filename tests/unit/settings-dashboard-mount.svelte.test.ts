@@ -257,6 +257,24 @@ describe("/settings/dashboard after a move", () => {
     }
   });
 
+  it("on a 429 toasts the server's saveError sentence, not the generic fallback", async () => {
+    const root = mountPage();
+    press(root, "move-section-later-up");
+    await settle();
+    await h.pending[0].finish({
+      type: "failure",
+      status: 429,
+      data: {
+        key: "dashboardSectionOrder",
+        saveError: "Too many changes. Try again in 12 seconds.",
+        retryAfterMs: 12_000,
+      },
+    });
+    flushSync();
+    expect(h.showToast).toHaveBeenCalledWith("Too many changes. Try again in 12 seconds.", "error");
+    expect(h.invalidateAll).not.toHaveBeenCalled();
+  });
+
   it("announces a visibility change", async () => {
     const root = mountPage();
     const toggle = root.querySelector<HTMLButtonElement>(

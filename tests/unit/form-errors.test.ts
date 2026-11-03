@@ -22,6 +22,26 @@ describe("actionErrorMessage — the shapes the actions actually return", () => 
     expect(actionErrorMessage(failure(404, { error: "Dose not found" }))).toBe("Dose not found");
   });
 
+  it("reads a rate limit's saveError — fail(429, { saveError: '...' })", () => {
+    // The appearance and notification actions answer a 429 with this string
+    // under its own key; without a reader here the toast fell back to
+    // "Something went wrong" and lost the retry time.
+    expect(
+      actionErrorMessage(
+        failure(429, {
+          key: "timeSinceDaysFromHours",
+          saveError: "Too many changes. Try again in 30 seconds.",
+          retryAfterMs: 30_000,
+        }),
+      ),
+    ).toBe("Too many changes. Try again in 30 seconds.");
+  });
+
+  it("ignores an empty or non-string saveError", () => {
+    expect(actionErrorMessage(failure(429, { saveError: "" }))).toBe(FALLBACK);
+    expect(actionErrorMessage(failure(429, { saveError: 30 }))).toBe(FALLBACK);
+  });
+
   it("reads a form-level message — fail(404, { errors: { form: [...] } })", () => {
     expect(actionErrorMessage(failure(404, { errors: { form: ["Medication not found"] } }))).toBe(
       "Medication not found",

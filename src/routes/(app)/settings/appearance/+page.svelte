@@ -1,16 +1,19 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { beforeNavigate } from "$app/navigation";
+  import { beforeNavigate, invalidateAll } from "$app/navigation";
   import { onDestroy } from "svelte";
   import Alert from "$lib/components/ui/Alert.svelte";
   import Button from "$lib/components/ui/Button.svelte";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
+  import Toggle from "$lib/components/ui/Toggle.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
   import { showToast } from "$lib/components/ui/Toast.svelte";
   import { APPEARANCE_ENTRIES, actionFor, entryFor } from "$lib/appearance/registry";
   import type { AppearanceKey } from "$lib/appearance/registry";
   import { shouldSubmitField } from "$lib/appearance/save-guard";
-  import { formatUserDate, type DateFormat } from "$lib/utils/time";
+  import { TIME_SINCE_PRESETS } from "$lib/preferences/domains";
+  import { actionErrorMessage } from "$lib/utils/form-errors";
+  import { formatTimeSince, formatUserDate, type DateFormat } from "$lib/utils/time";
   import type { SubmitFunction } from "@sveltejs/kit";
 
   let { data, form } = $props();
@@ -50,6 +53,70 @@
     const sample = key === "dateFormat" ? SAMPLE_BY_VALUE.get(option.value) : undefined;
     return sample ? `${option.label} — ${sample}` : option.label;
   }
+
+  // --- Show days instead of hours after -----------------------------------
+  //
+  // Deliberately outside the registry machinery above: that is keyed by
+  // `AppearanceKey`, debounced for controls that fire a change per keystroke,
+  // and re-seeded from `data`. This control is four buttons, each a settled
+  // intent, so it posts on press with one local flag and changes only when the
+  // reload after the save lands: there is no optimistic state to revert.
+  const SAMPLE_NOW = new Date(Date.UTC(2026, 3, 15, 12));
+  const SAMPLE_AGE_HOURS = 30;
+  const TIME_SINCE_LABELS: Record<number, string> = {
+    24: "1 day",
+    48: "2 days (default)",
+    72: "3 days",
+    168: "1 week",
+  };
+  const confirmedTimeSince = $derived(data.preferences.timeSinceDaysFromHours);
+  // A stored value outside the presets can only have come from the API; it is
+  // shown (pressed) rather than silently mapped onto a preset.
+  const timeSinceOptions = $derived(
+    [...new Set<number>([...TIME_SINCE_PRESETS, confirmedTimeSince])]
+      .sort((a, b) => a - b)
+      .map((hours) => ({ hours, label: TIME_SINCE_LABELS[hours] ?? `${hours} hours` })),
+  );
+  const timeSinceSample = $derived(
+    formatTimeSince(
+      new Date(SAMPLE_NOW.getTime() - SAMPLE_AGE_HOURS * 3_600_000),
+      SAMPLE_NOW,
+      confirmedTimeSince,
+    ),
+  );
+  let timeSinceSaving = $state(false);
+
+  const saveTimeSince: SubmitFunction = ({ cancel }) => {
+    if (timeSinceSaving) {
+      cancel();
+      return;
+    }
+    timeSinceSaving = true;
+    return async ({ result }) => {
+      try {
+        if (result.type === "success") {
+          await invalidateAll();
+        } else {
+          showToast(
+            actionErrorMessage(result, "Could not save when time since switches to days."),
+            "error",
+          );
+        }
+      } finally {
+        timeSinceSaving = false;
+      }
+    };
+  };
+
+  /** No-JS feedback for this control only, gated on the key the result carries. */
+  const timeSinceFeedback = $derived.by((): { text: string; ok: boolean } | undefined => {
+    if (!form || form.key !== "timeSinceDaysFromHours") return undefined;
+    if (form.success) return { text: "Show days instead of hours after saved.", ok: true };
+    if (typeof form.saveError === "string") return { text: form.saveError, ok: false };
+    const messages = (form.errors as Record<string, string[] | undefined> | undefined)
+      ?.timeSinceDaysFromHours;
+    return { text: messages?.[0] ?? "Could not save when time since switches to days.", ok: false };
+  });
 
   /**
    * One settled control produces one POST. Long enough to swallow the
@@ -360,6 +427,34 @@
   <title>Appearance — MedTracker</title>
 </svelte:head>
 
+{#snippet timeSinceControl()}
+  <form method="POST" action="?/timeSinceDaysFromHours" use:enhance={saveTimeSince}>
+    <p id="time-since-label" class="mb-1 text-sm font-medium">Show days instead of hours after</p>
+    <div role="group" aria-labelledby="time-since-label" class="flex flex-wrap gap-2">
+      {#each timeSinceOptions as option (option.hours)}
+        <Toggle
+          pressed={option.hours === confirmedTimeSince}
+          submit={{ name: "timeSinceDaysFromHours", value: String(option.hours) }}
+          aria-disabled={timeSinceSaving ? "true" : undefined}>{option.label}</Toggle
+        >
+      {/each}
+    </div>
+    <p class="text-text-muted mt-1 text-xs">
+      Also used in History, Medications and reminder emails and notifications.
+    </p>
+    <p class="text-text-muted mt-1 text-xs">
+      A dose 30 hours ago reads '{timeSinceSample}'
+    </p>
+    {#if !hydrated && timeSinceFeedback}
+      <Alert
+        tone={timeSinceFeedback.ok ? "happened" : "wrong"}
+        title={timeSinceFeedback.text}
+        class="mt-2"
+      />
+    {/if}
+  </form>
+{/snippet}
+
 <div class="mx-auto w-full max-w-2xl space-y-6">
   <div class="flex items-center gap-3">
     <a href="/settings" class="text-text-muted hover:text-text-primary text-sm">← Settings</a>
@@ -459,6 +554,9 @@
             {statusText(entry.key)}
           </p>
         </form>
+        {#if entry.key === "timeFormat"}
+          {@render timeSinceControl()}
+        {/if}
       {/each}
 
       <form

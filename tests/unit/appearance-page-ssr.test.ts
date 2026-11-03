@@ -27,6 +27,7 @@ import { toneClass } from "../../src/lib/utils/status-tone";
 import { alertTitled, expectClasses } from "./helpers/alert-dom";
 import { expectAxeClean, ssrDocument } from "./helpers/axe-ssr";
 import { preferencesFixture } from "./helpers/preferences-fixture";
+import { formatTimeSince } from "../../src/lib/utils/time";
 
 const preferences = {
   ...preferencesFixture,
@@ -95,7 +96,9 @@ describe("appearance page SSR (no-JS path)", () => {
     ]) {
       expect(body, `missing form for ${key}`).toContain(`action="?/${key}"`);
     }
-    expect(body.match(/<form/g) ?? []).toHaveLength(6);
+    // The six registry controls plus the time-since threshold's own form.
+    expect(body.match(/<form/g) ?? []).toHaveLength(7);
+    expect(body).toContain('action="?/timeSinceDaysFromHours"');
     expect(body).not.toContain('action="?/default"');
   });
 
@@ -134,10 +137,13 @@ describe("appearance page SSR (no-JS path)", () => {
   it("ships the no-JS save buttons in the SSR'd HTML", () => {
     // $effect does not run during SSR, so `hydrated` is false and the
     // buttons must be present for a browser with no JS.
-    expect(body.match(/type="submit"/g) ?? []).toHaveLength(6);
-    // Each is a 36px primary Button, not an accent box sized by padding.
+    // Six Save buttons, plus the four time-since presets that submit directly.
+    expect(body.match(/type="submit"/g) ?? []).toHaveLength(10);
+    // Each Save is a 36px primary Button, not an accent box sized by padding.
     const submits = [
-      ...ssrDocument(body).querySelectorAll<HTMLButtonElement>('button[type="submit"]'),
+      ...ssrDocument(body).querySelectorAll<HTMLButtonElement>(
+        'button[type="submit"]:not([name="timeSinceDaysFromHours"])',
+      ),
     ];
     expect(submits).toHaveLength(6);
     for (const submit of submits) expectClasses(submit, "h-9 bg-accent text-accent-fg");
@@ -245,5 +251,83 @@ describe("appearance page SSR (date format samples)", () => {
     // leak into what the form posts.
     expect(body).toMatch(/<option[^>]*value="YYYY-MM-DD"/);
     expect(body).not.toMatch(/<option[^>]*value="[^"]*—/);
+  });
+});
+
+describe("appearance page SSR (show days instead of hours after)", () => {
+  const HOUR = 3_600_000;
+  const SAMPLE_NOW = new Date(Date.UTC(2026, 3, 15, 12));
+  const sampleFor = (stored: number) =>
+    formatTimeSince(new Date(SAMPLE_NOW.getTime() - 30 * HOUR), SAMPLE_NOW, stored);
+
+  const renderWith = (timeSinceDaysFromHours: number) =>
+    ssrDocument(
+      render(Page, {
+        props: {
+          data: { user, preferences: { ...preferences, timeSinceDaysFromHours } },
+          form: null,
+        },
+      }).body,
+    );
+
+  const group = (doc: Document) =>
+    [...doc.querySelectorAll<HTMLElement>('[role="group"]')].find((g) =>
+      g.getAttribute("aria-labelledby")
+        ? doc.getElementById(g.getAttribute("aria-labelledby")!)?.textContent?.trim() ===
+          "Show days instead of hours after"
+        : false,
+    )!;
+
+  it("offers four presets as submit buttons carrying their hours, pressed only for the stored one", () => {
+    const g = group(renderWith(48));
+    expect(g).toBeTruthy();
+    const buttons = [...g.querySelectorAll<HTMLButtonElement>("button")];
+    expect(buttons.map((b) => b.textContent!.trim())).toEqual([
+      "1 day",
+      "2 days (default)",
+      "3 days",
+      "1 week",
+    ]);
+    expect(buttons.map((b) => b.getAttribute("value"))).toEqual(["24", "48", "72", "168"]);
+    for (const b of buttons) {
+      expect(b.getAttribute("type")).toBe("submit");
+      expect(b.getAttribute("name")).toBe("timeSinceDaysFromHours");
+    }
+    expect(buttons.map((b) => b.getAttribute("aria-pressed"))).toEqual([
+      "false",
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(g.closest("form")?.getAttribute("action")).toBe("?/timeSinceDaysFromHours");
+  });
+
+  it("sits directly under Time format", () => {
+    const doc = renderWith(48);
+    const forms = [...doc.querySelectorAll("form")].map((f) => f.getAttribute("action"));
+    expect(forms.indexOf("?/timeSinceDaysFromHours")).toBe(forms.indexOf("?/timeFormat") + 1);
+  });
+
+  it("adds a pressed extra option for a stored value outside the presets", () => {
+    const g = group(renderWith(60));
+    const buttons = [...g.querySelectorAll<HTMLButtonElement>("button")];
+    expect(buttons).toHaveLength(5);
+    const pressed = buttons.filter((b) => b.getAttribute("aria-pressed") === "true");
+    expect(pressed.map((b) => b.textContent!.trim())).toEqual(["60 hours"]);
+    expect(pressed[0].getAttribute("value")).toBe("60");
+  });
+
+  it("renders the sample through formatTimeSince under the stored value", () => {
+    const at48 = renderWith(48).body.textContent!;
+    const at24 = renderWith(24).body.textContent!;
+    expect(sampleFor(48)).not.toBe(sampleFor(24));
+    expect(at48).toContain(`A dose 30 hours ago reads '${sampleFor(48)}'`);
+    expect(at24).toContain(`A dose 30 hours ago reads '${sampleFor(24)}'`);
+  });
+
+  it("says where else the setting applies, in the exact words", () => {
+    expect(renderWith(48).body.textContent!).toContain(
+      "Also used in History, Medications and reminder emails and notifications.",
+    );
   });
 });

@@ -15,6 +15,11 @@ import { wipeDoseHistory, wipeArchivedMedications } from "$lib/server/api/wipe";
 import { requireRecentReauth, type ReauthPurpose } from "$lib/server/auth/reauth";
 import { reauthTokenPayload } from "$lib/utils/validation";
 import {
+  FUTURE_TAKEN_AT_CODE,
+  FUTURE_TAKEN_AT_MESSAGE,
+  isFutureTakenAt,
+} from "$lib/utils/future-taken-at";
+import {
   logDosePayload,
   skipDosePayload,
   editDosePayload,
@@ -41,7 +46,47 @@ export class ReauthRequiredError extends Error {
   }
 }
 
+/**
+ * A command the server refuses on purpose, before writing anything.
+ *
+ * `runCommands` reports it as `{ ok: false, error: code, message }`: `code`
+ * is a stable snake_case string a client branches on, as it already does on
+ * `"in_progress"`, and `message` is copy it can show. Every other throw keeps
+ * reporting `error: e.message` and no `message`.
+ */
+export class CommandRefusedError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "CommandRefusedError";
+    this.code = code;
+  }
+}
+
+/**
+ * Parse a payload's `takenAt`, refusing a time in the future. The same rule
+ * and words as the edit dialog (`editDoseAction`): this door used to accept
+ * any time, so a dose a day ahead was stored and shown as "just now".
+ */
+function pastTakenAt(takenAt: string | undefined): Date | undefined {
+  if (!takenAt) return undefined;
+  const instant = new Date(takenAt);
+  if (isFutureTakenAt(instant, Date.now())) {
+    throw new CommandRefusedError(FUTURE_TAKEN_AT_CODE, FUTURE_TAKEN_AT_MESSAGE);
+  }
+  return instant;
+}
+
 export type Command = { id: string; type: string; payload: unknown };
+
+export type CommandResult = {
+  id: string;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+  message?: string;
+};
 
 type Handler = (userId: string, payload: unknown) => Promise<unknown>;
 
@@ -64,7 +109,7 @@ const handlers: Record<string, Handler> = {
       userId,
       p.medicationId,
       p.quantity,
-      p.takenAt ? new Date(p.takenAt) : undefined,
+      pastTakenAt(p.takenAt),
       p.notes,
       p.sideEffects,
     );
@@ -77,7 +122,9 @@ const handlers: Record<string, Handler> = {
   edit_dose: async (userId, payload) => {
     const p = editDosePayload.parse(payload);
     const row = await updateDose(userId, p.doseId, {
-      takenAt: p.takenAt ? new Date(p.takenAt) : undefined,
+      // Judged only when sent: an edit without `takenAt` leaves the time as
+      // it is, so there is nothing new to refuse.
+      takenAt: pastTakenAt(p.takenAt),
       quantity: p.quantity,
       notes: p.notes,
       // Pass through null (explicit "clear side effects") vs undefined ("don't touch") — updateDose distinguishes them.
@@ -201,11 +248,8 @@ export async function dispatchCommand(
 //      already happened, so a retry must NOT re-execute it. A future replay of
 //      this id finds result === null and reports "in_progress" (fail closed);
 //      the client reconciles the true state via sync rather than double-applying.
-export async function runCommands(
-  userId: string,
-  commands: Command[],
-): Promise<Array<{ id: string; ok: boolean; result?: unknown; error?: string }>> {
-  const results: Array<{ id: string; ok: boolean; result?: unknown; error?: string }> = [];
+export async function runCommands(userId: string, commands: Command[]): Promise<CommandResult[]> {
+  const results: CommandResult[] = [];
   for (const cmd of commands) {
     const reserved = await db
       .insert(apiCommands)
@@ -240,11 +284,11 @@ export async function runCommands(
       await db
         .delete(apiCommands)
         .where(and(eq(apiCommands.userId, userId), eq(apiCommands.idempotencyKey, cmd.id)));
-      results.push({
-        id: cmd.id,
-        ok: false,
-        error: e instanceof Error ? e.message : "command failed",
-      });
+      results.push(
+        e instanceof CommandRefusedError
+          ? { id: cmd.id, ok: false, error: e.code, message: e.message }
+          : { id: cmd.id, ok: false, error: e instanceof Error ? e.message : "command failed" },
+      );
       continue;
     }
 

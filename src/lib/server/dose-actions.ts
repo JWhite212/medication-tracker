@@ -2,6 +2,7 @@ import { error, fail, type ActionFailure } from "@sveltejs/kit";
 import { deleteDose, restoreDose, updateDose } from "$lib/server/doses";
 import { doseDeleteSchema, doseEditSchema, doseRestoreSchema } from "$lib/utils/validation";
 import { DOSE_UNDO_WINDOW_MS, RESTORE_GONE_MESSAGE } from "$lib/utils/dose-undo";
+import { FUTURE_TAKEN_AT_MESSAGE, isFutureTakenAt } from "$lib/utils/future-taken-at";
 import { resolveEditedInstant } from "$lib/utils/time";
 
 /**
@@ -15,17 +16,12 @@ import { resolveEditedInstant } from "$lib/utils/time";
  * handle it consumes.
  */
 
-/** Refusal shown beside the edit dialog's Time Taken field. */
-export const FUTURE_TAKEN_AT_MESSAGE =
-  "That time is in the future. Check the date as well as the time.";
-
 /**
- * How far past the server's clock an edited time may sit. The field has
- * minute precision and is typed from the device's clock, so "now" on a phone
- * a little fast lands just ahead; five minutes covers that without letting a
- * wrong date through.
+ * Refusal shown beside the edit dialog's Time Taken field. Defined in
+ * utils/future-taken-at.ts with the grace it enforces, because `/api/v1`'s
+ * `log_dose` and `edit_dose` refuse the same times with the same words.
  */
-export const EDITED_TAKEN_AT_GRACE_MS = 5 * 60_000;
+export { FUTURE_TAKEN_AT_MESSAGE };
 
 /**
  * `?/editDose`, for the dashboard and /log.
@@ -39,7 +35,8 @@ export const EDITED_TAKEN_AT_GRACE_MS = 5 * 60_000;
  *   stored ahead is refused too, so the dialog says what to fix.
  * - **Gone** is a 404, never a success the toast would misreport.
  *
- * `/api/v1`'s `update_dose` is a separate door and is not covered here.
+ * `/api/v1`'s `edit_dose` is a separate door; it applies the same
+ * `isFutureTakenAt` rule in `api/commands.ts`.
  */
 export async function editDoseAction(event: {
   locals: App.Locals;
@@ -56,7 +53,7 @@ export async function editDoseAction(event: {
 
   const { doseId, takenAt, originalTakenAt, quantity, notes, sideEffects } = parsed.data;
   const instant = resolveEditedInstant(takenAt, originalTakenAt, user.timezone);
-  if (instant.getTime() > Date.now() + EDITED_TAKEN_AT_GRACE_MS) {
+  if (isFutureTakenAt(instant, Date.now())) {
     return fail(400, { editErrors: { takenAt: [FUTURE_TAKEN_AT_MESSAGE] } });
   }
 

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fakeDb } from "../helpers/fake-db";
 import { apiCommands } from "$lib/server/db/schema";
 import { upsertMedicationPayload } from "$lib/utils/validation";
+import { FUTURE_TAKEN_AT_MESSAGE } from "$lib/utils/future-taken-at";
 
 // Controllable mock state for each db operation used by the reserve-first
 // algorithm in runCommands.
@@ -182,8 +183,13 @@ vi.mock("$lib/server/auth/reauth", async (importOriginal) => ({
     requireRecentReauth(userId, purpose, token),
 }));
 
-const { runCommands, dispatchCommand, UnknownCommandError, ReauthRequiredError } =
-  await import("../../../src/lib/server/api/commands");
+const {
+  runCommands,
+  dispatchCommand,
+  UnknownCommandError,
+  ReauthRequiredError,
+  CommandRefusedError,
+} = await import("../../../src/lib/server/api/commands");
 
 beforeEach(() => {
   fakeDb.reset();
@@ -310,6 +316,131 @@ describe("runCommands", () => {
     expect(results).toEqual([
       { id: "cmd-1", ok: false, error: "Unknown command: not_a_real_command" },
     ]);
+  });
+});
+
+// The edit dialog refused a future time first (editDoseAction); this door
+// accepted any time, so a dose a day ahead was stored and shown as "just
+// now". Both dose commands that take a `takenAt` now apply the same rule,
+// against the server's clock. The instants are literals, not built from the
+// grace constant, so changing the grace fails here as well.
+describe("log_dose and edit_dose refuse a takenAt in the future", () => {
+  const NOW = new Date("2026-11-03T12:00:00.000Z");
+  const AT_GRACE = "2026-11-03T12:05:00.000Z";
+  const PAST_GRACE = "2026-11-03T12:05:00.001Z";
+  const TOMORROW = "2026-11-04T11:00:00.000Z";
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const refusal = { name: "CommandRefusedError", code: "future_taken_at" };
+
+  it("log_dose refuses a time past the grace and logs nothing", async () => {
+    const attempt = dispatchCommand("u1", "log_dose", {
+      medicationId: "med-1",
+      takenAt: PAST_GRACE,
+    });
+
+    await expect(attempt).rejects.toBeInstanceOf(CommandRefusedError);
+    await expect(attempt).rejects.toMatchObject({ ...refusal, message: FUTURE_TAKEN_AT_MESSAGE });
+    expect(logDose).not.toHaveBeenCalled();
+  });
+
+  it("log_dose refuses the reported case, a dose on tomorrow's date", async () => {
+    await expect(
+      dispatchCommand("u1", "log_dose", { medicationId: "med-1", takenAt: TOMORROW }),
+    ).rejects.toMatchObject(refusal);
+    expect(logDose).not.toHaveBeenCalled();
+  });
+
+  it("log_dose accepts a time at the edge of the grace, for a device clock a little fast", async () => {
+    const result = await dispatchCommand("u1", "log_dose", {
+      medicationId: "med-1",
+      takenAt: AT_GRACE,
+    });
+
+    expect(logDose).toHaveBeenCalledWith(
+      "u1",
+      "med-1",
+      1,
+      new Date(AT_GRACE),
+      undefined,
+      undefined,
+    );
+    expect(result).toEqual({ id: "dose-1" });
+  });
+
+  it("log_dose without a takenAt is logged now, as before", async () => {
+    await dispatchCommand("u1", "log_dose", { medicationId: "med-1" });
+
+    expect(logDose).toHaveBeenCalledWith("u1", "med-1", 1, undefined, undefined, undefined);
+  });
+
+  it("edit_dose refuses a time past the grace and edits nothing", async () => {
+    const attempt = dispatchCommand("u1", "edit_dose", {
+      doseId: "dose-1",
+      takenAt: PAST_GRACE,
+      quantity: 2,
+    });
+
+    await expect(attempt).rejects.toBeInstanceOf(CommandRefusedError);
+    await expect(attempt).rejects.toMatchObject({ ...refusal, message: FUTURE_TAKEN_AT_MESSAGE });
+    expect(updateDose).not.toHaveBeenCalled();
+  });
+
+  it("edit_dose refuses the reported case, a dose moved onto tomorrow's date", async () => {
+    await expect(
+      dispatchCommand("u1", "edit_dose", { doseId: "dose-1", takenAt: TOMORROW }),
+    ).rejects.toMatchObject(refusal);
+    expect(updateDose).not.toHaveBeenCalled();
+  });
+
+  it("edit_dose accepts a time at the edge of the grace", async () => {
+    const result = await dispatchCommand("u1", "edit_dose", {
+      doseId: "dose-1",
+      takenAt: AT_GRACE,
+    });
+
+    expect(updateDose).toHaveBeenCalledWith(
+      "u1",
+      "dose-1",
+      expect.objectContaining({ takenAt: new Date(AT_GRACE) }),
+    );
+    expect(result).toEqual({ updated: true });
+  });
+
+  it("runCommands reports the refusal as a typed failure and releases the reservation", async () => {
+    fakeDb.seed(apiCommands, [{ idempotencyKey: "cmd-1" }]);
+    const commands = [
+      { id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1", takenAt: TOMORROW } },
+    ];
+
+    const results = await runCommands("u1", commands);
+
+    expect(logDose).not.toHaveBeenCalled();
+    // Nothing was written, so the id is released like any other throw.
+    expect(deletes()).toEqual([1]);
+    expect(updates()).toEqual([]);
+    // The code in `error`, as with "in_progress", and copy the client can show.
+    expect(results).toEqual([
+      { id: "cmd-1", ok: false, error: "future_taken_at", message: FUTURE_TAKEN_AT_MESSAGE },
+    ]);
+  });
+
+  it("runCommands keeps reporting every other failure as error: e.message, with no message", async () => {
+    fakeDb.seed(apiCommands, [{ idempotencyKey: "cmd-1" }]);
+    logDose.mockRejectedValueOnce(new Error("db write failed"));
+
+    const results = await runCommands("u1", [
+      { id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1", takenAt: AT_GRACE } },
+    ]);
+
+    expect(results).toEqual([{ id: "cmd-1", ok: false, error: "db write failed" }]);
   });
 });
 

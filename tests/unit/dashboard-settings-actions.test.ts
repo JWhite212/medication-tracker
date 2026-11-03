@@ -1,5 +1,6 @@
 import { rateLimitSurface } from "./helpers/rate-limit";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { dashboardSettingsFieldSchemas } from "../../src/lib/utils/validation";
 
 const updatePreferences = vi.fn(async () => ({}) as never);
 const getOrCreatePreferences = vi.fn(async () => ({ userId: "u1" }) as never);
@@ -76,12 +77,47 @@ describe("the dashboard settings page's actions", () => {
     });
   }
 
-  it("400s an order longer than the door's string bound", async () => {
-    const result = await call(actions.dashboardSectionOrder, {
-      dashboardSectionOrder: "done,".repeat(40),
+  // The 128-character bound guards `split()` against a huge post. Every
+  // over-long order also fails the id domain, so the action's status cannot
+  // see the bound: it is asserted on the door's schema, as the STRING's
+  // too_big issue (the array's own max(4) reports too_big with origin "array").
+  describe("the door's 128-character string bound", () => {
+    const door = dashboardSettingsFieldSchemas.dashboardSectionOrder;
+    const stringTooBig = (value: string) => {
+      const parsed = door.safeParse({ dashboardSectionOrder: value });
+      expect(parsed.success).toBe(false);
+      return (parsed.error?.issues ?? []).filter(
+        (issue) =>
+          issue.code === "too_big" &&
+          (issue as { origin?: string }).origin === "string" &&
+          issue.path.join(".") === "dashboardSectionOrder",
+      );
+    };
+    // Valid ids, comma-separated, padded to an exact length with one more id.
+    const ofLength = (n: number) => {
+      const body = "done,later,quickLog,refills,".repeat(5);
+      return (body + "x".repeat(n)).slice(0, n);
+    };
+
+    it("rejects 129 characters as too_big on the string", () => {
+      expect(ofLength(129)).toHaveLength(129);
+      const issues = stringTooBig(ofLength(129));
+      expect(issues).toHaveLength(1);
+      expect(issues[0]).toMatchObject({ maximum: 128 });
     });
-    expect(updatePreferences).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ status: 400 });
+
+    it("does not reject 128 characters for length", () => {
+      expect(ofLength(128)).toHaveLength(128);
+      expect(stringTooBig(ofLength(128))).toEqual([]);
+    });
+
+    it("still 400s an over-long post at the action without writing", async () => {
+      const result = await call(actions.dashboardSectionOrder, {
+        dashboardSectionOrder: ofLength(129),
+      });
+      expect(updatePreferences).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ status: 400 });
+    });
   });
 
   for (const key of ["dashboardShowLater", "dashboardShowQuickLog", "dashboardShowRefills"]) {

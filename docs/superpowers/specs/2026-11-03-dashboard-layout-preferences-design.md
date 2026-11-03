@@ -289,7 +289,7 @@ The value is threaded as a prop, following the `timeFormat` precedent. There is 
 Appearance, Formatting group, directly under Time format.
 
 - **Label:** "Show days instead of hours after".
-- **Control:** a `role="group"` of `Toggle` buttons, "1 day", "2 days (default)", "3 days", "1 week", with `aria-pressed` on the confirmed value.
+- **Control:** a `role="group"` of `Toggle` buttons, "1 day", "2 days (default)", "3 days", "1 week", with `aria-pressed` on the confirmed value. Each is a no-JS submit through `Toggle`'s new opt-in `submit={{ name, value }}` prop. `Toggle` stays `type="button"` unless that prop is given.
 - **How it saves:** each button is a submit in one `<form action="?/timeSinceDaysFromHours">` carrying its hour value, and saves on a discrete press with one local saving flag. It deliberately does not join the registry's debounce/queue/`acked` maps, which are typed by `AppearanceKey`, so that machinery is not widened. A press is a settled intent and needs no debounce.
 - **Off-preset values:** a stored value outside the presets, which only the API can produce, renders as an extra pressed "60 hours" option.
 - **Live sample:** a fixed 30-hour-old instant rendered by `formatTimeSince` itself under the confirmed value ("A dose 30 hours ago reads '30h 0m ago'"), following the dateFormat sample precedent.
@@ -305,7 +305,7 @@ Appearance, Formatting group, directly under Time format.
   - One row per movable section, in the resolved order, each with:
     - its position number and name;
     - "↑" and "↓" `IconButton`s labelled "Move Done today up" and "Move Done today down", 44px;
-    - for hideable sections, a `Toggle` "Show Later today" with `aria-pressed`. Done shows the static text "Always shown".
+    - for hideable sections, a `Toggle` "Show Later today" with `aria-pressed`, posting the opposite state through `submit={{ name, value }}`. Done shows the static text "Always shown".
   - Hints under the hideable rows: Quick log when off, "1–9 shortcuts are off while hidden"; Refills, "Urgent refills still appear".
 - **Reset to default:** a secondary `Button`, shown only when the order is non-null or a flag is false, with the text "Default: Done, Later, Quick log, Refills". No confirmation, because the change is reversible.
 - **No-JS first:**
@@ -318,7 +318,8 @@ Appearance, Formatting group, directly under Time format.
   - On failure: the UI is unchanged, because it renders only confirmed data, and a toast shows `actionErrorMessage(result)`. The callback never handles only success.
   - There is no optimistic state and no debounce.
   - This is not a dose write, so the `begin-dose-write.test.ts` caller list does not grow.
-- **Focus after a move** follows the `/medications` ↑/↓ precedent: only if focus was lost, find `move-section-${id}-${direction}` by id, else its opposite button. Repeated ↑ presses walk a section to the top.
+- **Focus after a move.** Once the move succeeds and the page has reloaded, focus goes to `move-section-${id}-${direction}`. If that button has `aria-disabled="true"` (the section reached an end), focus goes to the opposite button instead. This happens unconditionally, as on `/medications`, not through `focusIfLost`: the pressed button can survive the reorder and keep focus while it becomes inert. Repeated ↑ presses walk a section to the top.
+- **The settings page knows the account's variant.** Its load returns `{ preferences, variant }`. The variant comes from a shared server helper, `dashboardVariantFor`, which `composeDashboardPageData` also calls, so the "any timed schedule" rule is written once.
 
 ## API and the Mac app
 
@@ -434,6 +435,7 @@ Every new test is proven by breaking its production line and watching it fail.
 
 - **Winner and grafts.** Minimal is the base. From the others: a nullable order (NULL = product default); a subset array instead of a permutation enum; the resolver kept in the page; the walkthrough fidelity assertion; the fuzz test and the mutation list; the PGlite idempotence and default tests; the owner scan; and the API client-obligation wording.
 - **"Urgent" for the hidden-Refills floor means needs-you (amber), not just critical.** See decision 3.
+- **`Toggle` gains an opt-in `submit={{ name, value }}` prop** so that pressed-state controls work without JS. Its default stays `type="button"`, and its look is unchanged. The plan review found that `Toggle` could not submit at all. CLAUDE.md's primitives bullet is updated to match.
 - **Done can move but never hide.** dom-ids.ts documents it as always rendered, and four focus paths depend on it. It is also the dashboard's only "did I take it?" confirmation.
 - **Quick log can be hidden on scheduled accounts**, and the 1–9 shortcuts are then disabled and explained. Logging stays available on /medications.
 - **On as-needed-only accounts, Quick log is pinned first and always visible.** It is that page's primary action, the same reasoning as Due.

@@ -287,6 +287,23 @@ describe("Appearance: show days instead of hours after", () => {
     expect(timeSinceSends()).toHaveLength(2);
   });
 
+  it("announces the save in the page's one polite status region", async () => {
+    const target = mountAppearance();
+    const region = target.querySelector('p[role="status"].sr-only')!;
+    expect(region.textContent).toBe("");
+    preset(target, "3 days").click();
+    await timeSinceSends()[0].finish({
+      type: "success",
+      status: 200,
+      data: { success: true, key: "timeSinceDaysFromHours" },
+    });
+    flushSync();
+    expect(target.querySelectorAll('p[role="status"].sr-only')).toHaveLength(1);
+    expect(region.textContent?.replace("\u200b", "")).toBe(
+      "Show days instead of hours after saved.",
+    );
+  });
+
   it("is inert while a save is in flight: aria-disabled, and a second press is cancelled", () => {
     const target = mountAppearance();
     preset(target, "3 days").click();

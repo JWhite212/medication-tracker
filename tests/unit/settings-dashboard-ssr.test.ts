@@ -23,6 +23,7 @@ import {
   type DashboardVariant,
 } from "../../src/lib/dashboard/layout";
 import type { UserPreferences } from "../../src/lib/types";
+import { formatTimeSince, formatUserTime } from "../../src/lib/utils/time";
 import { preferencesFixture } from "./helpers/preferences-fixture";
 import { accessibleName, textOf } from "./helpers/dom-names";
 
@@ -250,6 +251,94 @@ describe("/settings/dashboard SSR", () => {
       expect(rows(doc).map((r) => r.dataset.section)).toEqual(["done", "refills"]);
       expect(moveButton(doc, "done", "down")!.getAttribute("value")).toBe(
         "refills,later,quickLog,done",
+      );
+    });
+  });
+
+  describe("option groups", () => {
+    const group = (doc: Document, key: string) =>
+      doc.querySelector<HTMLFieldSetElement>(`fieldset[data-option-group="${key}"]`)!;
+    const toggles = (fieldset: Element) => [
+      ...fieldset.querySelectorAll<HTMLButtonElement>("button[aria-pressed]"),
+    ];
+
+    it("Later today: Next few / Whole day post dashboardLaterMode and follow the stored value", () => {
+      for (const stored of ["next", "all"] as const) {
+        const fieldset = group(renderPage({ dashboardLaterMode: stored }), "dashboardLaterMode");
+        expect(textOf(fieldset.querySelector("legend")!)).toBe("Later today");
+        const buttons = toggles(fieldset);
+        expect(buttons.map((b) => accessibleName(b))).toEqual(["Next few", "Whole day"]);
+        expect(buttons.map((b) => b.getAttribute("value"))).toEqual(["next", "all"]);
+        for (const b of buttons) {
+          expect(b.getAttribute("type")).toBe("submit");
+          expect(b.getAttribute("name")).toBe("dashboardLaterMode");
+          expect(b.closest("form")!.getAttribute("action")).toBe("?/dashboardLaterMode");
+        }
+        expect(buttons.map((b) => b.getAttribute("aria-pressed"))).toEqual(
+          stored === "next" ? ["true", "false"] : ["false", "true"],
+        );
+      }
+    });
+
+    it("Done today: three options post dashboardDoneTime and follow the stored value", () => {
+      const values = ["both", "since", "clock"] as const;
+      for (const stored of values) {
+        const fieldset = group(renderPage({ dashboardDoneTime: stored }), "dashboardDoneTime");
+        expect(textOf(fieldset.querySelector("legend")!)).toBe("Done today");
+        const buttons = toggles(fieldset);
+        expect(buttons.map((b) => accessibleName(b))).toEqual([
+          "Time and how long ago",
+          "How long ago",
+          "Time only",
+        ]);
+        expect(buttons.map((b) => b.getAttribute("value"))).toEqual([...values]);
+        for (const b of buttons) {
+          expect(b.getAttribute("name")).toBe("dashboardDoneTime");
+          expect(b.closest("form")!.getAttribute("action")).toBe("?/dashboardDoneTime");
+        }
+        expect(buttons.map((b) => b.getAttribute("aria-pressed"))).toEqual(
+          values.map((v) => String(v === stored)),
+        );
+      }
+    });
+
+    it("reads an unknown stored value as the default", () => {
+      const doc = renderPage({
+        dashboardLaterMode: "off",
+        dashboardDoneTime: 7,
+      } as unknown as Overrides);
+      expect(
+        toggles(group(doc, "dashboardLaterMode")).map((b) => b.getAttribute("aria-pressed")),
+      ).toEqual(["true", "false"]);
+      expect(
+        toggles(group(doc, "dashboardDoneTime")).map((b) => b.getAttribute("aria-pressed")),
+      ).toEqual(["true", "false", "false"]);
+    });
+
+    it("draws the Done sample from formatTimeSince and formatUserTime for a 2h15m-old dose", () => {
+      const now = new Date("2026-04-15T12:00:00.000Z");
+      const taken = new Date(now.getTime() - (2 * 60 + 15) * 60_000);
+      const since = formatTimeSince(taken, now, preferencesFixture.timeSinceDaysFromHours);
+      const clock = formatUserTime(taken, user.timezone, preferencesFixture.timeFormat as "12h");
+      expect(since).toBe("2h 15m ago");
+      const sample = (stored: UserPreferences["dashboardDoneTime"]) =>
+        textOf(
+          group(renderPage({ dashboardDoneTime: stored }), "dashboardDoneTime").querySelector(
+            "[data-done-sample]",
+          )!,
+        );
+      expect(sample("since")).toBe(`Looks like: ${since}`);
+      expect(sample("clock")).toBe(`Looks like: ${clock}`);
+      expect(sample("both")).toBe(`Looks like: ${clock}, ${since}`);
+    });
+
+    it("keeps the Later group, with a hint, while Later is hidden", () => {
+      const hidden = renderPage({ dashboardShowLater: false });
+      const fieldset = group(hidden, "dashboardLaterMode");
+      expect(toggles(fieldset)).toHaveLength(2);
+      expect(textOf(fieldset)).toContain("Later today is hidden");
+      expect(textOf(group(renderPage(), "dashboardLaterMode"))).not.toContain(
+        "Later today is hidden",
       );
     });
   });

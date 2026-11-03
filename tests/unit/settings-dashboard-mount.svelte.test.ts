@@ -318,6 +318,38 @@ describe("/settings/dashboard after a move", () => {
   });
 });
 
+describe("/settings/dashboard after an option press", () => {
+  it("announces the reloaded Later choice, then the Done choice", async () => {
+    const root = mountPage();
+    const option = (group: string, name: string) =>
+      root.querySelector<HTMLButtonElement>(
+        `fieldset[data-option-group="${group}"] button[name="${name}"][value="all"], fieldset[data-option-group="${group}"] button[name="${name}"][value="clock"]`,
+      )!;
+
+    option("dashboardLaterMode", "dashboardLaterMode").click();
+    await settle();
+    expect(h.pending[0].formData.get("dashboardLaterMode")).toBe("all");
+    h.invalidateAll.mockImplementationOnce(async () => {
+      props.data = dataWith(null, { dashboardLaterMode: "all" });
+      flushSync();
+    });
+    await h.pending[0].finish({ type: "success", status: 200, data: { success: true } });
+    flushSync();
+    expect(status(root)).toBe("Later today: whole day");
+
+    option("dashboardDoneTime", "dashboardDoneTime").click();
+    await settle();
+    expect(h.pending[1].formData.get("dashboardDoneTime")).toBe("clock");
+    h.invalidateAll.mockImplementationOnce(async () => {
+      props.data = dataWith(null, { dashboardLaterMode: "all", dashboardDoneTime: "clock" });
+      flushSync();
+    });
+    await h.pending[1].finish({ type: "success", status: 200, data: { success: true } });
+    flushSync();
+    expect(status(root)).toBe("Done today: time only");
+  });
+});
+
 describe("/settings/dashboard after Reset", () => {
   it("parks focus on the h1 once the reload removes the Reset button (Review Important 1)", async () => {
     const root = mountPage(["refills", "done", "later", "quickLog"]);

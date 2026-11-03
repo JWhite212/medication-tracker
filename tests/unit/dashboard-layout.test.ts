@@ -4,6 +4,8 @@ import {
   DEFAULT_ORDER,
   HIDEABLE_SECTIONS,
   SECTION_LABELS,
+  SHORT_SECTION_LABELS,
+  mergeVisibleOrder,
   moveSection,
   normaliseAgainst,
   normaliseSectionOrder,
@@ -209,5 +211,75 @@ describe("moveSection and orderValue", () => {
   it("comma-joins", () => {
     expect(orderValue(["done", "refills"])).toBe("done,refills");
     expect(orderValue([])).toBe("");
+  });
+});
+
+describe("SHORT_SECTION_LABELS", () => {
+  it("names each section in one word or two, for the Reset label", () => {
+    expect(SHORT_SECTION_LABELS).toEqual({
+      done: "Done",
+      later: "Later",
+      quickLog: "Quick log",
+      refills: "Refills",
+    });
+  });
+});
+
+describe("mergeVisibleOrder", () => {
+  /** Every ordering of every subset of `ids`, the empty one included. */
+  function arrangements<T>(ids: readonly T[]): T[][] {
+    const out: T[][] = [[]];
+    for (const [i, id] of ids.entries()) {
+      const rest = [...ids.slice(0, i), ...ids.slice(i + 1)];
+      for (const tail of arrangements(rest)) out.push([id, ...tail]);
+    }
+    return out.filter((a, i, all) => all.findIndex((b) => b.join() === a.join()) === i);
+  }
+  const permutations = arrangements(DASHBOARD_SECTIONS).filter(
+    (a) => a.length === DASHBOARD_SECTIONS.length,
+  );
+
+  it("fills the visible ids' slots in their new order and leaves the rest in place", () => {
+    // An as-needed-only account stored later,refills,quickLog,done; Refills ↓
+    // makes the visible order done,refills, and later/quickLog keep slots 0 and 2.
+    expect(
+      mergeVisibleOrder(["done", "refills"], ["later", "refills", "quickLog", "done"]),
+    ).toEqual(["later", "done", "quickLog", "refills"]);
+    expect(
+      mergeVisibleOrder(["refills", "done"], ["refills", "later", "quickLog", "done"]),
+    ).toEqual(["refills", "later", "quickLog", "done"]);
+  });
+
+  it("is the visible order itself when every id is visible (a scheduled account)", () => {
+    for (const full of permutations) {
+      for (const moved of permutations) {
+        expect(mergeVisibleOrder(moved, full)).toEqual(moved);
+      }
+    }
+  });
+
+  it("always returns a permutation of full whose visible-id subsequence is visible", () => {
+    let cases = 0;
+    for (const full of permutations) {
+      for (const visible of arrangements(DASHBOARD_SECTIONS)) {
+        const merged = mergeVisibleOrder(visible, full);
+        expect([...merged].sort()).toEqual([...full].sort());
+        expect(merged.filter((id) => visible.includes(id))).toEqual(visible);
+        // Every id not visible keeps its index.
+        full.forEach((id, index) => {
+          if (!visible.includes(id)) expect(merged[index]).toBe(id);
+        });
+        cases++;
+      }
+    }
+    expect(cases).toBe(24 * 65);
+  });
+
+  it("does not mutate its inputs", () => {
+    const visible = ["refills", "done"] as const;
+    const full = ["done", "later", "quickLog", "refills"] as const;
+    mergeVisibleOrder(visible, full);
+    expect([...visible]).toEqual(["refills", "done"]);
+    expect([...full]).toEqual(["done", "later", "quickLog", "refills"]);
   });
 });

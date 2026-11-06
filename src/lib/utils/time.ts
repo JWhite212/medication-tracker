@@ -133,7 +133,7 @@ const DATE_FORMAT_LOCALES: Record<Exclude<DateFormat, "YYYY-MM-DD">, string> = {
  * render midnight as hour 24.
  *
  * The map gains one entry per distinct zone string. A stored timezone is
- * validated against `Intl.supportedValuesOf("timeZone")`, and a zone the
+ * validated by `isSupportedTimezone` (`utils/timezones.ts`), and a zone the
  * runtime rejects throws from the constructor before anything is cached.
  * The label formatters (`formatUserTime`, `formatUserDate`) take per-call
  * options and are deliberately not memoised here.

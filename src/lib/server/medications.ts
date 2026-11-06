@@ -289,23 +289,67 @@ export async function swapSortOrder(userId: string, medId1: string, medId2: stri
   });
 }
 
+/**
+ * Archive and unarchive are transitions, not assignments: each one matches
+ * only a row in the opposite state, and writes its audit row in the same
+ * transaction, only when a row actually moved.
+ *
+ * Both halves matter. `lifecycleEnd` closes the expected-doses window at
+ * `archivedAt`, so a second archive (a stale tab, a double submit, a replayed
+ * /api/v1 command) that re-stamped it would charge every day in between as
+ * expected and show it as Missed. And /api/v1's `runCommands` releases a
+ * command's reservation when its handler throws, so a handler must leave no
+ * write behind when it fails: an UPDATE that committed before a failed audit
+ * insert was retried, and the retry re-stamped `archivedAt`.
+ */
 export async function archiveMedication(userId: string, id: string) {
-  await db
-    .update(medications)
-    .set({ isArchived: true, archivedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(medications.id, id), eq(medications.userId, userId)));
-  await logAudit(userId, "medication", id, "update", {
-    isArchived: { from: false, to: true },
+  await dbTx.transaction(async (tx) => {
+    const now = new Date();
+    const moved = await tx
+      .update(medications)
+      .set({ isArchived: true, archivedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(medications.id, id),
+          eq(medications.userId, userId),
+          eq(medications.isArchived, false),
+        ),
+      )
+      .returning({ id: medications.id });
+    if (moved.length === 0) return;
+    await logAudit(
+      userId,
+      "medication",
+      id,
+      "update",
+      { isArchived: { from: false, to: true } },
+      tx,
+    );
   });
 }
 
 export async function unarchiveMedication(userId: string, id: string) {
-  await db
-    .update(medications)
-    .set({ isArchived: false, archivedAt: null, updatedAt: new Date() })
-    .where(and(eq(medications.id, id), eq(medications.userId, userId)));
-  await logAudit(userId, "medication", id, "update", {
-    isArchived: { from: true, to: false },
+  await dbTx.transaction(async (tx) => {
+    const moved = await tx
+      .update(medications)
+      .set({ isArchived: false, archivedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(medications.id, id),
+          eq(medications.userId, userId),
+          eq(medications.isArchived, true),
+        ),
+      )
+      .returning({ id: medications.id });
+    if (moved.length === 0) return;
+    await logAudit(
+      userId,
+      "medication",
+      id,
+      "update",
+      { isArchived: { from: true, to: false } },
+      tx,
+    );
   });
 }
 

@@ -155,6 +155,11 @@ async function takeFromStock(
     .update(medications)
     .set({
       inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} - ${i.amount})`,
+      // `/api/v1/sync` ships a medication only when `updatedAt > since`, so a
+      // count change that leaves it alone never reaches the Mac app. Every
+      // caller holds the medication lock by now, so this clock follows
+      // commit order (D7).
+      updatedAt: new Date(),
     })
     .where(
       and(
@@ -744,7 +749,9 @@ export async function deleteDose(
 
       await tx
         .update(medications)
-        .set({ inventoryCount: sql`${medications.inventoryCount} + ${applied}` })
+        // `now` was read under the lock; bumping `updatedAt` is what puts the
+        // new count in the next delta sync.
+        .set({ inventoryCount: sql`${medications.inventoryCount} + ${applied}`, updatedAt: now })
         .where(
           and(
             eq(medications.id, medicationId),
@@ -1040,6 +1047,9 @@ export async function updateDose(
             // GREATEST is belt-and-braces: `nextApplied <= previousCount +
             // applied` already makes the result non-negative.
             inventoryCount: sql`GREATEST(0, ${medications.inventoryCount} + ${delta})`,
+            // Read under the medication lock, and what puts the new count in
+            // the next delta sync.
+            updatedAt: new Date(),
           })
           .where(
             and(

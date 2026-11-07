@@ -212,6 +212,7 @@ export function parseBackup(rawText: string): ParseResult {
       preferences: data.preferences,
       medications,
       doses: doses.map((dose) => ({
+        sourceId: dose.id,
         sourceMedicationId: dose.medicationId,
         medicationName: null,
         quantity: dose.quantity,

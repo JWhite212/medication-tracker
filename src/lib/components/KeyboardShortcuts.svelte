@@ -73,6 +73,16 @@
         trapTab(helpEl, e);
         return;
       }
+      // "?" closes its own overlay, as the overlay's own help row says. It has
+      // to be answered here: opening the overlay focuses its Close button, so
+      // the isControlFocused() guard below always swallowed it.
+      // Not on an auto-repeat: holding "?" fires repeats right after the
+      // keydown that opened the overlay, and they would close it again.
+      if (e.key === "?" && !e.repeat) {
+        e.preventDefault();
+        showHelp = false;
+        return;
+      }
     }
 
     // A held key repeats its keydown. Without this, holding a digit logged the
@@ -82,9 +92,9 @@
     // Nothing fires behind an open dialog. isControlFocused() below exempts
     // [tabindex="-1"], and every modal panel here is exactly that (ui/Modal,
     // this overlay, the mobile menu), so with focus on a panel 1–9 logged a
-    // dose and n navigated away behind the edit dialog. `?` is let through
-    // only to close this component's own overlay.
-    if (document.querySelector('[aria-modal="true"]') && !(showHelp && e.key === "?")) return;
+    // dose and n navigated away behind the edit dialog. Closing this
+    // component's own overlay with `?` is answered above, before this.
+    if (document.querySelector('[aria-modal="true"]')) return;
 
     if (isControlFocused()) return;
 

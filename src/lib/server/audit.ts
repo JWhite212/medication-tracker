@@ -18,14 +18,45 @@ type AuditClient = {
   };
 };
 
+/**
+ * What a redacted field's `from`/`to` reads in an audit diff. The diff still
+ * says the field changed, and whether it was set before and after (unset is
+ * `null`, as in the row), but never what it said.
+ */
+export const REDACTED = "[redacted]";
+
+export type ComputeChangesOptions = {
+  /** Keys left out of the diff altogether: bookkeeping columns such as
+      `updatedAt`, which every write rewrites. Diffed, they make every save,
+      a no-op included, look like a change and write an audit row. */
+  ignore?: readonly string[];
+  /** Keys whose change is recorded with content-free values (`REDACTED`, or
+      `null` when unset): free text the user wrote, because audit rows are
+      synced and never purged. A change is still detected on the real values. */
+  redact?: readonly string[];
+};
+
+function redactedValue(value: unknown): unknown {
+  return value === null || value === undefined ? null : REDACTED;
+}
+
+/** The `{ key: { from, to } }` diff of `after` against `before`, over the keys
+    of `after`, or null when nothing differs. Both options are opt-in, so a
+    caller that passes none gets the plain diff. */
 export function computeChanges(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
+  options: ComputeChangesOptions = {},
 ): Record<string, { from: unknown; to: unknown }> | null {
+  const ignore = new Set(options.ignore ?? []);
+  const redact = new Set(options.redact ?? []);
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   for (const key of Object.keys(after)) {
+    if (ignore.has(key)) continue;
     if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
-      changes[key] = { from: before[key], to: after[key] };
+      changes[key] = redact.has(key)
+        ? { from: redactedValue(before[key]), to: redactedValue(after[key]) }
+        : { from: before[key], to: after[key] };
     }
   }
   return Object.keys(changes).length > 0 ? changes : null;

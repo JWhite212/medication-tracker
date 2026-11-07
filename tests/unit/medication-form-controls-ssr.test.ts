@@ -145,12 +145,16 @@ describe("MedicationScheduleSection's controls", () => {
     for (const b of days) expect(classes(b)).toContain("h-9");
   });
 
-  it("removes a time with a neutral secondary Button, disabled only while one row is left", () => {
-    const removes = (doc: Document) => [
-      ...doc.querySelectorAll('button[aria-label="Remove this time"]'),
-    ];
-    expect(removes(schedule()).map((b) => b.hasAttribute("disabled"))).toEqual([true]);
+  it("removes a time with a neutral secondary Button, aria-disabled only while one row is left", () => {
+    // aria-disabled, never disabled: a focused button that becomes disabled
+    // drops focus to <body>. Each is named by its time, so they differ.
+    const removes = (doc: Document) => [...doc.querySelectorAll('button[aria-label^="Remove "]')];
+    const one = removes(schedule());
+    expect(one.map((b) => b.getAttribute("aria-disabled"))).toEqual(["true"]);
+    expect(one.map((b) => b.hasAttribute("disabled"))).toEqual([false]);
     const two = removes(schedule({ fixedTimes: ["08:00", "20:00"] }));
+    expect(two.map((b) => b.getAttribute("aria-label"))).toEqual(["Remove 08:00", "Remove 20:00"]);
+    expect(two.map((b) => b.hasAttribute("aria-disabled"))).toEqual([false, false]);
     expect(two.map((b) => b.hasAttribute("disabled"))).toEqual([false, false]);
     for (const b of two) {
       expect(b.getAttribute("type")).toBe("button");

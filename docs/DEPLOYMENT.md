@@ -221,6 +221,16 @@ Same migration files, same idempotent
 `drizzle.__drizzle_migrations` tracking — just a different driver
 that doesn't need a WebSocket constructor wired up.
 
+**Check the journal first.** Production schema has been synced with
+`drizzle-kit push`, which never writes `drizzle.__drizzle_migrations`,
+so that journal can be empty even though every table exists. Both
+`drizzle-kit migrate` and `migrate-once.mjs` read it to decide what is
+pending: against an empty journal they replay from `0000` and fail on
+the first table that already exists. Run
+`SELECT count(*) FROM drizzle.__drizzle_migrations` and backfill the
+journal before using either against production. See
+[`docs/database.md`](database.md#migration-workflow).
+
 ## 10. Rotating secrets
 
 - **`CRON_SECRET`** — update in Vercel env vars, redeploy. Zero user

@@ -71,6 +71,94 @@ export function deriveInitialDaysOfWeek(schedules: MedicationSchedule[]): number
   return (fixed?.daysOfWeek ?? []) as number[];
 }
 
+/** One schedule row exactly as the form posts it in its `schedules` field. */
+export type PostedScheduleRow =
+  | { scheduleKind: "interval"; intervalHours: number }
+  | { scheduleKind: "fixed_time"; timeOfDay: string | null; daysOfWeek: number[] | null }
+  | { scheduleKind: "prn" };
+
+/**
+ * What the editor posts for its current state. The form models ONE schedule
+ * shape: a single interval row, a single as-needed row, or any number of
+ * fixed times that all share one set of days.
+ */
+export function serialiseFormSchedules(state: {
+  mode: ScheduleMode;
+  intervalHours: string;
+  fixedTimes: string[];
+  daysOfWeek: number[];
+}): PostedScheduleRow[] {
+  if (state.mode === "prn") return [{ scheduleKind: "prn" }];
+  if (state.mode === "interval") {
+    const hrs = Number(state.intervalHours);
+    return [{ scheduleKind: "interval", intervalHours: Number.isFinite(hrs) && hrs > 0 ? hrs : 0 }];
+  }
+  return state.fixedTimes
+    .filter((t) => /^\d{2}:\d{2}$/.test(t))
+    .map((t) => ({
+      scheduleKind: "fixed_time",
+      timeOfDay: t,
+      daysOfWeek: state.daysOfWeek.length > 0 ? state.daysOfWeek : null,
+    }));
+}
+
+/**
+ * A stored schedule row in the posted shape, unchanged. An empty day list is
+ * written as null, which `buildScheduleRows` stores for an empty list anyway,
+ * so both mean "every day".
+ */
+export function storedScheduleAsPosted(s: MedicationSchedule): PostedScheduleRow {
+  if (s.scheduleKind === "interval") {
+    return { scheduleKind: "interval", intervalHours: Number(s.intervalHours) };
+  }
+  if (s.scheduleKind === "fixed_time") {
+    const days = (s.daysOfWeek ?? null) as number[] | null;
+    return {
+      scheduleKind: "fixed_time",
+      timeOfDay: s.timeOfDay,
+      daysOfWeek: days && days.length > 0 ? days : null,
+    };
+  }
+  return { scheduleKind: "prn" };
+}
+
+/**
+ * Can the editor show these stored rows without changing them on save?
+ *
+ * Decided by round trip, not by a list of shapes: seed the editor's state the
+ * way MedicationForm does, serialise it the way MedicationForm does, and
+ * compare with the stored rows. So anything the form would rewrite (fixed
+ * times on different days, interval and fixed rows together, two interval
+ * rows) is unrepresentable by construction, and a future change to the form's
+ * model moves this answer with it. `/api/v1` and import can store all of
+ * those shapes; the edit page shows them read-only and posts them back as
+ * they are.
+ */
+export function isRepresentableByForm(schedules: MedicationSchedule[]): boolean {
+  if (schedules.length === 0) return true;
+  const seeded = serialiseFormSchedules({
+    mode: deriveInitialMode({ schedules }),
+    intervalHours: schedules.find((s) => s.scheduleKind === "interval")?.intervalHours ?? "",
+    fixedTimes: deriveInitialFixedTimes(schedules),
+    daysOfWeek: deriveInitialDaysOfWeek(schedules),
+  });
+  return JSON.stringify(seeded) === JSON.stringify(schedules.map(storedScheduleAsPosted));
+}
+
+/** A stored row as one read-only line, for a schedule the form cannot edit. */
+export function describeStoredSchedule(s: MedicationSchedule): string {
+  if (s.scheduleKind === "interval") return `Every ${Number(s.intervalHours)} hours`;
+  if (s.scheduleKind === "prn") return "As needed";
+  const days = (s.daysOfWeek ?? []) as number[];
+  const when =
+    days.length === 0
+      ? "every day"
+      : DAY_LABELS.filter((d) => days.includes(d.value))
+          .map((d) => d.short)
+          .join(", ");
+  return `${s.timeOfDay ?? "No time"}, ${when}`;
+}
+
 export type NotificationChoice = "inherit" | "on" | "off";
 
 const NOTIFICATION_CHOICES = new Set<NotificationChoice>(["inherit", "on", "off"]);

@@ -16,11 +16,35 @@ months later. The aim of this policy is:
    schedule, not when something breaks. The quarterly review is
    the forcing function.
 2. **Security posture** — known advisories are patched on a
-   defined SLA, and the security-critical runtime surface
-   (auth, transport, crypto) is pinned tighter than the rest.
+   defined SLA, and changes to the security-critical runtime
+   surface (auth, transport, crypto) are read before they land.
 3. **No surprise breakage** — major-version bumps go through CI
    and a manual E2E smoke run before merge. Nothing is absorbed
-   silently by `^` resolution.
+   silently: the lockfile, not the `^` range, decides what is
+   installed (see [How versions are pinned](#how-versions-are-pinned)).
+
+## How versions are pinned
+
+Every dependency in `package.json` uses a caret range
+(`^x.y.z`), security-critical ones included. The range is not
+what pins a version:
+
+- **`package-lock.json` is the pin.** It is committed, CI
+  installs with `npm ci`, and Vercel installs from it, so a
+  build resolves exactly the locked versions. A new upstream
+  release changes nothing until a commit changes the lockfile.
+- **Dependabot proposes the lockfile changes.**
+  `.github/dependabot.yml` checks `npm` and `github-actions`
+  weekly. Minor and patch updates arrive grouped in one PR;
+  each major arrives in its own.
+- **Review happens on that PR.** The category rules below say
+  how much reading each kind of bump needs before it is merged.
+
+A caret range therefore bounds what `npm update` or Dependabot
+may propose; it never lets a release reach production on its
+own. Tightening the security-critical ranges to `~` or exact
+would only change what Dependabot groups together, not what is
+installed.
 
 ## Categories
 
@@ -43,10 +67,13 @@ transport. A silent regression is a security regression.
 
 Rules:
 
-- Pin with tilde (`~x.y.z`) or exact, not caret.
-- Patch releases applied within 14 days of upstream publication.
+- Caret ranges (`^x.y.z`), like every other category; the
+  lockfile is the pin.
+- Patch releases applied within 14 days of upstream publication,
+  through the weekly Dependabot PR.
 - Minor releases require a manual review of the changelog before
-  the lockfile is bumped.
+  the lockfile is bumped. When one arrives in the grouped
+  minor-and-patch PR, read its changelog there before merging.
 - Major releases require a dedicated PR with risk notes.
 
 ### Core framework

@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";
-import { db } from "$lib/server/db";
+import { db, dbTx } from "$lib/server/db";
 import { logError } from "$lib/server/log";
 import { apiCommands } from "$lib/server/db/schema";
 import { logDose, logSkippedDose, updateDose, deleteDose } from "$lib/server/doses";
@@ -13,7 +13,11 @@ import {
   swapSortOrder,
 } from "$lib/server/medications";
 import { updatePreferences } from "$lib/server/preferences";
-import { wipeDoseHistory, wipeArchivedMedications } from "$lib/server/api/wipe";
+import {
+  wipeDoseHistory,
+  wipeArchivedMedications,
+  type WipeTransaction,
+} from "$lib/server/api/wipe";
 import { requireRecentReauth, type ReauthPurpose } from "$lib/server/auth/reauth";
 import { reauthTokenPayload } from "$lib/utils/validation";
 import {
@@ -247,33 +251,53 @@ const handlers: Record<string, Handler> = {
   // enough to destroy a user's entire dose history through the same code
   // path `settings/privacy` guards with a typed word and, where the account
   // has one, the password.
-  wipe_dose_history: async (userId, payload) => {
-    await consumeReauth(userId, payload, "wipe_dose_history");
-    return wipeDoseHistory(userId);
-  },
-  wipe_archived_medications: async (userId, payload) => {
-    await consumeReauth(userId, payload, "wipe_archived_medications");
-    return wipeArchivedMedications(userId);
-  },
+  wipe_dose_history: (userId, payload) =>
+    redeemAndWipe(userId, payload, "wipe_dose_history", wipeDoseHistory),
+  wipe_archived_medications: (userId, payload) =>
+    redeemAndWipe(userId, payload, "wipe_archived_medications", wipeArchivedMedications),
 };
 
 /**
- * Redeem the reauth token a destructive command must carry.
+ * Redeem the reauth token a destructive command must carry, and run the wipe
+ * it authorises, in ONE transaction.
  *
  * Throws rather than returning a result, because `runCommands` releases the
  * reservation and allows retry on a throw — which is what an unauthorised
  * command should get. A consumed or expired token is indistinguishable from
  * a wrong one on purpose.
+ *
+ * The redeem used to run on the autocommit `db` before the wipe opened its
+ * own transaction, so a wipe that then rolled back (a dropped connection, a
+ * lock timeout) had already spent the token: `runCommands` released the
+ * reservation for a retry, and the retry was refused for want of a fresh
+ * password. Now the `used_at` stamp commits or rolls back with the wipe.
+ * Single use is unchanged: it is still the one conditional UPDATE, and a
+ * second redeem of the same token waits on this row and then matches
+ * nothing. The payload is parsed first, so a malformed one costs no
+ * database work.
+ *
+ * The token row is the first lock this transaction takes, ahead of the
+ * medication rows `wipeDoseHistory` locks. No dose or stock writer touches
+ * `reauth_tokens`, so this adds no edge to the medication-first lock order.
+ * The one writer that reaches both, an account deletion cascading from
+ * `users`, already conflicts with every wipe through the `users` row (each
+ * wipe bumps `syncEpoch`); Postgres aborts one side of such a cycle, and a
+ * rolled-back wipe now keeps its token, so the retry still goes through.
  */
-async function consumeReauth(
+async function redeemAndWipe(
   userId: string,
   payload: unknown,
   purpose: ReauthPurpose,
-): Promise<void> {
+  wipe: (userId: string, tx: WipeTransaction) => Promise<{ deleted: number }>,
+): Promise<{ deleted: number }> {
   const parsed = reauthTokenPayload.safeParse(payload);
   if (!parsed.success) throw new ReauthRequiredError(purpose);
-  const ok = await requireRecentReauth(userId, purpose, parsed.data.reauthToken);
-  if (!ok) throw new ReauthRequiredError(purpose);
+  const { reauthToken } = parsed.data;
+  return dbTx.transaction(async (tx) => {
+    const ok = await requireRecentReauth(userId, purpose, reauthToken, tx);
+    if (!ok) throw new ReauthRequiredError(purpose);
+    return wipe(userId, tx);
+  });
 }
 
 export async function dispatchCommand(

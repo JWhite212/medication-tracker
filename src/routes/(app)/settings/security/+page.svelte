@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import Alert from "$lib/components/ui/Alert.svelte";
@@ -20,6 +21,28 @@
 
   type FormErrors = Record<string, string[] | undefined>;
   const passwordErrors = $derived((form?.passwordErrors ?? {}) as FormErrors);
+
+  // The enrolment QR and secret arrive in exactly one action result, setup's,
+  // and `form` is replaced by the next one. A mistyped or just-expired code is
+  // answered with `{ totpError }` alone, which used to drop this arm back to
+  // Step 1: re-running setup then stored a NEW secret, and the entry the user
+  // had already scanned could never verify. So the payload is remembered, and
+  // kept while the latest result is a 2FA failure on an account that still has
+  // 2FA off. The verify form is the only 2FA form this arm draws, so that
+  // failure is the verify's. Anything else (enabled, another action's result,
+  // a reload) lets it go. The secret is never echoed back by the server for
+  // this: it stays in the one response that already carried it.
+  type TotpSetup = { qrCode: string; secret: string };
+  let retainedSetup = $state<TotpSetup | null>(null);
+  const keepsSetup = $derived(Boolean(form?.totpError) && !data.twoFactorEnabled);
+  $effect.pre(() => {
+    const issued = form?.totpSetup as TotpSetup | undefined;
+    const keep = keepsSetup;
+    retainedSetup = issued ?? (keep ? untrack(() => retainedSetup) : null);
+  });
+  const totpSetup = $derived(
+    (form?.totpSetup as TotpSetup | undefined) ?? (keepsSetup ? retainedSetup : null),
+  );
 </script>
 
 <svelte:head>
@@ -99,7 +122,7 @@
       <Alert tone="wrong" id="totp-error" title={form.totpError} class="mb-4" />
     {/if}
 
-    {#if form?.totpSetup}
+    {#if totpSetup}
       <!-- Step 2: Scan QR and verify -->
       <div class="space-y-4">
         <p class="text-text-secondary text-sm">
@@ -107,7 +130,7 @@
         </p>
         <div class="flex justify-center">
           <img
-            src={form.totpSetup.qrCode}
+            src={totpSetup.qrCode}
             alt="TOTP QR Code"
             class="rounded-lg"
             width="200"
@@ -116,7 +139,7 @@
         </div>
         <p class="text-text-muted text-center text-xs">
           Manual entry: <code class="bg-surface-overlay rounded-xs px-2 py-0.5 text-xs"
-            >{form.totpSetup.secret}</code
+            >{totpSetup.secret}</code
           >
         </p>
         <form method="POST" action="?/verifyTwoFactor" use:enhance class="flex items-end gap-3">

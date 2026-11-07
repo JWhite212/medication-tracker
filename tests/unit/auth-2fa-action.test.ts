@@ -78,6 +78,8 @@ const call = (
     request: new Request("http://x", { method: "POST", body: new URLSearchParams({ code }) }),
     cookies,
     getClientAddress: () => "1.1.1.1",
+    // Every real RequestEvent carries locals; a visitor with no session.
+    locals: { session: null },
   } as never);
 
 const validToken = () => signPreAuthToken("pending-user");

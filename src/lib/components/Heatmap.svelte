@@ -5,11 +5,14 @@
   let {
     data,
     days = 90,
+    endKey,
     timezone,
     dateFormat = "DD/MM/YYYY",
   }: {
     data: { date: string; count: number }[];
     days?: number;
+    /** Last civil date drawn (`YYYY-MM-DD`, user's zone); today when absent. */
+    endKey?: string;
     timezone: string;
     dateFormat?: DateFormat;
   } = $props();
@@ -22,7 +25,7 @@
   const weeks = $derived.by(() => {
     const cols: { date: string; count: number; row: number }[][] = [];
     let currentCol: { date: string; count: number; row: number }[] = [];
-    buildHeatmapDays(DAYS, timezone).forEach(({ date, row }, i) => {
+    buildHeatmapDays(DAYS, timezone, new Date(), endKey).forEach(({ date, row }, i) => {
       if (i > 0 && row === 0) {
         cols.push(currentCol);
         currentCol = [];

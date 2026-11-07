@@ -215,14 +215,14 @@
   <!-- The picker is a group of toggles with no single control to carry
        aria-invalid, so its message is shown beside it and announced, and the
        group is described by it for anyone who tabs back into the chips.
-       tabindex="-1" lets a failed save put focus on the message itself. -->
-  <div
-    role="group"
-    aria-label="Side effects"
-    aria-describedby={fieldErrors.sideEffects ? "sideEffects-error" : undefined}
-  >
-    <SideEffectPicker value={sideEffects} onchange={(effects) => (sideEffects = effects)} />
-  </div>
+       tabindex="-1" lets a failed save put focus on the message itself. The
+       picker's own fieldset is that group and carries the description: a
+       second role="group" around it was announced as a second group. -->
+  <SideEffectPicker
+    value={sideEffects}
+    onchange={(effects) => (sideEffects = effects)}
+    describedby={fieldErrors.sideEffects ? "sideEffects-error" : undefined}
+  />
   {#if fieldErrors.sideEffects}
     <p id="sideEffects-error" class="text-danger-ink -mt-2 text-sm" role="alert" tabindex="-1">
       {fieldErrors.sideEffects}

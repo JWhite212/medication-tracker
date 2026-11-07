@@ -116,7 +116,7 @@ export const appearancePayloadShape = {
 
 /**
  * ARITY 3 — backup import: all optional, bounded. Identical to arity 2
- * for these five today, because no appearance option carries a numeric
+ * for these six today, because no appearance option carries a numeric
  * bound. It stays a separate object anyway: the doors are allowed to
  * diverge, and `heatmapPeriod` proved they already had.
  */

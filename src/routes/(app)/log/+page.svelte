@@ -120,6 +120,12 @@
   // view used to be page 2 of every dose, with the filter bar reset to match.
   const previousPageHref = $derived(hrefForPage(page.url, data.page - 1));
   const nextPageHref = $derived(hrefForPage(page.url, data.page + 1));
+  const firstPageHref = $derived(hrefForPage(page.url, 1));
+
+  // Archived medications are offered too, because their doses are still in
+  // this history; they sit in their own group so the active list reads first.
+  const activeMedications = $derived(data.medications.filter((med) => !med.isArchived));
+  const archivedMedications = $derived(data.medications.filter((med) => med.isArchived));
 
   // A grouping *key*, not a label: it is compared against todayKey and
   // yesterdayKey and used as a Map key, so it stays hardcoded en-CA
@@ -219,9 +225,16 @@
       onchange={submitOnChange}
     >
       <option value="">All medications</option>
-      {#each data.medications as med}
+      {#each activeMedications as med (med.id)}
         <option value={med.id} selected={med.id === data.filters.medication}>{med.name}</option>
       {/each}
+      {#if archivedMedications.length > 0}
+        <optgroup label="Archived">
+          {#each archivedMedications as med (med.id)}
+            <option value={med.id} selected={med.id === data.filters.medication}>{med.name}</option>
+          {/each}
+        </optgroup>
+      {/if}
     </select>
     <select
       name="status"
@@ -281,7 +294,18 @@
   </form>
 
   {#if data.doses.length === 0}
-    {#if hasActiveFilter}
+    {#if data.page > 1}
+      <!-- Past the last page: an old bookmark, a hand-typed ?page=, or the
+           reload after deleting the only dose on the last page. Neither of
+           the other two states is true here, because page 1 of this same
+           view may well have doses, so this one says so and links back to
+           page 1 with every filter kept. -->
+      <EmptyState
+        title="No more doses"
+        body="This page is past the end of the list."
+        action={{ href: firstPageHref, label: "Back to page 1" }}
+      />
+    {:else if hasActiveFilter}
       <EmptyState
         title="No doses match these filters"
         body="Try clearing one or more filters above to see more results."

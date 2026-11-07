@@ -3,6 +3,7 @@
 // scoped by userId.
 
 import { eq, and, asc } from "drizzle-orm";
+import { createScriptDb } from "../../../scripts/db";
 import {
   users,
   medications,
@@ -10,19 +11,23 @@ import {
   medicationSchedules,
 } from "../../../src/lib/server/db/schema";
 
-// ESM hoists `import` statements above any top-level statements, so
-// the env-var assignment must live inside a runtime initializer to
-// take effect before the Neon driver is instantiated. Cache the
-// module so we only pay the dynamic-import cost once.
-let dbPromise: Promise<typeof import("../../../src/lib/server/db").db> | null = null;
+// Playwright loads test files in plain Node, not through Vite, so the
+// app's db module ($lib/server/db) cannot be imported here: it reads
+// $env/dynamic/private, a SvelteKit virtual module, and Node fails with
+// ERR_MODULE_NOT_FOUND ("Cannot find package '$env'"). Build the same
+// standalone client the seed scripts use, from the variables
+// seed-e2e.ts reads. It is created on first use, so importing this file
+// never needs a database URL.
+let cachedDb: ReturnType<typeof createScriptDb> | null = null;
 async function getDb() {
-  if (!dbPromise) {
-    if (process.env.E2E_DATABASE_URL && !process.env.DATABASE_URL) {
-      process.env.DATABASE_URL = process.env.E2E_DATABASE_URL;
+  if (!cachedDb) {
+    const url = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL;
+    if (!url) {
+      throw new Error("Set E2E_DATABASE_URL (or DATABASE_URL) before running the E2E suite.");
     }
-    dbPromise = import("../../../src/lib/server/db").then((m) => m.db);
+    cachedDb = createScriptDb(url);
   }
-  return dbPromise;
+  return cachedDb;
 }
 
 export async function getUserIdByEmail(email: string): Promise<string | null> {

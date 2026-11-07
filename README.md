@@ -524,8 +524,10 @@ closed out:
   they work without JavaScript, and JS enhances them with
   auto-submit-on-change plus a debounced notes search.
 - **`sharp` dependency** (resolved) — now a first-class dev
-  dependency consumed by `scripts/optimize-images.mjs`, which
-  produces the WebP illustrations shipped in the client bundle.
+  dependency consumed by `scripts/generate-icons.mjs`,
+  `scripts/render-landing-hero.mjs` and two SSR tests. The WebP
+  illustrations in the client bundle are committed outputs; the
+  one-shot script that made them was removed with its source PNGs.
 - **Lighthouse CI** (done) — `.github/workflows/lighthouse.yml`
   audits the production landing and login pages weekly and on
   demand, median of 3 runs.
@@ -565,12 +567,16 @@ definitions) has time to catch up.
 
 Pinning strategy:
 
-- **Dev dependencies** — caret ranges (`^x.y.z`); minor and patch
-  updates roll forward automatically when `npm install` runs.
-- **Security-critical runtime** — tilde (`~x.y.z`) or exact pin
-  for `lucia`, `@node-rs/argon2`, `web-push`, `resend`, and
-  `@neondatabase/serverless`. Patch updates are reviewed
-  manually rather than absorbed by `^` resolution.
+- **Ranges** — every dependency, security-critical runtime
+  included, uses a caret range (`^x.y.z`).
+- **Pin** — the committed `package-lock.json` decides what is
+  installed (CI runs `npm ci`), so nothing new reaches a build
+  until a commit changes the lockfile.
+- **Updates** — Dependabot (`.github/dependabot.yml`) proposes
+  them weekly: minor and patch grouped, each major on its own.
+  Changes to `lucia`, `@node-rs/argon2`, `web-push`, `resend`,
+  and `@neondatabase/serverless` are read in that PR before
+  merge rather than absorbed unread.
 
 Cadence:
 

@@ -4,6 +4,7 @@ import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { logFilterSchema } from "$lib/utils/validation";
 import { deleteDoseAction, editDoseAction } from "$lib/server/dose-actions";
+import { getMedicationOptions } from "$lib/server/medications";
 import { parseDayRangeParam } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -15,6 +16,8 @@ function escapeLikePattern(input: string): string {
 
 // Bounds-check pagination so `?page=abc` or `?page=99999999` cannot produce
 // a NaN offset or trigger a multi-million-row scan. Falls back to page 1.
+type LogMedicationOption = { id: string; name: string; colour: string; isArchived?: boolean };
+
 const pageParamSchema = z.coerce.number().int().min(1).max(1000).catch(1);
 
 export const load: PageServerLoad = async ({ locals, url, parent }) => {
@@ -86,23 +89,25 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
       .orderBy(desc(doseLogs.takenAt))
       .limit(limit + 1)
       .offset(offset),
-    db
-      .select({
-        id: medications.id,
-        name: medications.name,
-        colour: medications.colour,
-      })
-      .from(medications)
-      .where(and(eq(medications.userId, userId), eq(medications.isArchived, false)))
-      .orderBy(medications.name),
+    // Every medication, archived included, from the same source as the
+    // Analytics filter. Dose history is a question about the past (see
+    // CLAUDE.md's archiving rule), and the list below already shows an
+    // archived medication's doses: filtering the options on `isArchived`
+    // left those doses impossible to isolate, and a `?medication=` naming
+    // one rendered the select as "All medications" over a filtered list.
+    getMedicationOptions(userId),
   ]);
 
   const hasMore = rows.length > limit;
   const doses = rows.slice(0, limit);
 
+  // Typed with `isArchived` optional so an option without the flag reads as
+  // active; the page groups archived medications on that flag alone.
+  const medicationOptions: LogMedicationOption[] = meds;
+
   return {
     doses,
-    medications: meds,
+    medications: medicationOptions,
     page,
     hasMore,
     filters: {

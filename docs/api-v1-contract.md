@@ -43,7 +43,10 @@ Body (`loginSchema`):
 } // email: must be a valid email; password: non-empty
 ```
 
-- Rate-limited per client IP first: **10 attempts / 15 minutes** (`checkRateLimit("api-login-ip:<ip>", 10, 15*60*1000)`), then per lower-cased email: **5 attempts / 15 minutes** (`checkRateLimit("api-login:<email>", 5, 15*60*1000)`). Exceeding either returns `429` (see §6); the IP budget is checked first and does not touch the email budget when exceeded.
+- Rate-limited by two policies from `LIMITS` (`src/lib/server/auth/rate-limit-policy.ts`), the **same two the browser login form spends**, so switching transport does not refresh either allowance:
+  - `LIMITS.loginIp` (namespace `login-ip`): **10 attempts / 15 minutes per client IP**, spent up front on every request.
+  - `LIMITS.loginAccount` (namespace `login-account`): **5 failures / 15 minutes per lower-cased email**. It is peeked before the credential check and spent only by a failed attempt (wrong password, unknown email, or password-less account). A correct password costs nothing, so knowing someone's email address is not enough to lock them out. An unknown email spends it too, so a `429` does not reveal whether an account exists.
+  - Exceeding either returns `429` (see §6B). The IP budget is checked first; a request refused there does not touch the account budget.
 - `400` if the body is not valid JSON — body `{ message: "Invalid JSON body" }` (`readJson`, `src/lib/server/api/read-json.ts`).
 - `400` if the body fails `loginSchema` validation — body `{ message: "Invalid credentials payload" }`.
 - Unknown emails and password-less (OAuth-only) accounts burn a dummy Argon2 verification so response timing cannot enumerate registered emails.
@@ -89,7 +92,7 @@ Body:
 } // code: must match /^\d{6}$/
 ```
 
-- Rate-limited per user id behind the token: **5 attempts / 15 minutes** (`checkRateLimit("2fa:<userId>", 5, 15*60*1000)`). Exceeding it returns `429` (see §6). Wrong codes count toward the budget; the TOTP step counter alone only advances on success, so this is what makes guessing non-free.
+- Rate-limited per user id behind the token: **5 attempts / 15 minutes** (`LIMITS.twoFactor`, namespace `2fa`). The namespace is **shared with the browser's `/auth/2fa` door** on purpose: both consume the same signed pre-auth claim, so a per-door budget would let an attacker spend the allowance twice by switching transport. Exceeding it returns `429` (see §6B). Wrong codes count toward the budget; the TOTP step counter alone only advances on success, so this is what makes guessing non-free. The token is checked first, so an invalid or expired `preAuthToken` gets its `401` without spending the budget.
 - `400` if the body is not valid JSON — `{ message: "Invalid JSON body" }`.
 - `400` if the body fails validation (e.g. code isn't 6 digits) — `{ message: "Invalid payload" }`.
 - `401` if the pre-auth token is invalid/expired/tampered — `{ message: "Challenge expired — sign in again" }`.
@@ -114,12 +117,21 @@ against Apple's JWKS via `verifyAppleIdentityToken`, checking issuer `https://ap
 and audience `APPLE_CLIENT_ID`). This is the **native token flow only** — there is no web
 redirect flow implemented in `/api/v1` (deferred).
 
+- Rate-limited per client IP: **10 requests / 15 minutes** (`LIMITS.appleSignIn`, namespace
+  `apple-signin`), checked before the body is read, so it bounds the JWKS fetch and the
+  account-creation branch below. Exceeding it returns `429` with the §6B body and
+  `Retry-After` header.
 - `400` if the body is not valid JSON — `{ message: "Invalid JSON body" }`.
 - `400` if the body fails validation — `{ message: "Invalid payload" }`.
 - `401` if the identity token fails verification — `{ message: "Invalid Apple token" }`.
 - Three outcomes after verification, checked in order:
   1. **Existing Apple link** (`oauth_accounts` row for `provider="apple"` +
-     `providerUserId=<apple sub>`) → signs in that user. **200**: `{ token, user }`.
+     `providerUserId=<apple sub>`) → signs in that user. A verified Apple identity is the
+     first factor only:
+     - If the user has `twoFactorEnabled`, **200** with the same TOTP challenge as
+       `/auth/login`: `{ challenge: "totp", preAuthToken }`. No session is minted; the client
+       answers at `/auth/2fa`, which burns the token and returns `{ token, user }`.
+     - Otherwise **200**: `{ token, user }`.
   2. **No link, but the Apple account's email matches an existing (non-Apple) user** → refuses
      to auto-link. **409**, body `{ message: "email_conflict" }` (see §6 — this is a
      `throw error(409, "email_conflict")`, so it uses the `{ message }` shape, with the message
@@ -184,7 +196,7 @@ Returned by all three auth endpoints (`src/lib/server/api/serialize.ts:toSession
 ## 3. `GET /sync`
 
 Delta pull for the native client. Auth required. Rate-limited per user id:
-**120 requests / 60 seconds** (`checkRateLimit("api-sync:<userId>", 120, 60*1000)`) — generous
+**120 requests / 60 seconds** (`LIMITS.apiSync`, namespace `api-sync`) — generous
 enough for launch/foreground/post-drain syncs; only a runaway loop hits it. `429` on limit
 (see §6).
 
@@ -286,8 +298,12 @@ stay `null`.
 
 ### Serialized shapes (field-for-field)
 
-**`SerializedMedication`** (`serializeMedication`) — spreads the raw `medications` row, then
-overrides date fields to ISO strings:
+**`SerializedMedication`** (`serializeMedication`) — projects the `medications` row field by
+field, with date fields as ISO strings. It is never a spread, for the same reason as
+`serializeDoseLog`: callers pass rows from a bare `db.select()`, so a spread would put every
+column ever added to `medications` on the wire (`lowInventoryEpisodeAt`, which only the
+reminder sweep uses, is the current example). A new column reaches this shape only when it is
+added here deliberately:
 
 ```ts
 {
@@ -437,7 +453,7 @@ overrides date fields to ISO strings:
 ## 4. `POST /commands`
 
 Batched, idempotent write endpoint. Auth required. Rate-limited per user id:
-**60 requests / 60 seconds** (`checkRateLimit("api-commands:<userId>", 60, 60*1000)`) — each
+**60 requests / 60 seconds** (`LIMITS.apiCommands`, namespace `api-commands`) — each
 request already carries up to 200 commands, so this bounds abuse without throttling normal
 outbox drains. `429` on limit (see §6).
 
@@ -486,7 +502,17 @@ For each command, `(userId, id)` is the primary key into the `api_commands` ledg
    - **Throw** (validation error, domain error, `UnknownCommandError`) → the reservation row
      is deleted (safe, because every handler's domain function is all-or-nothing — nothing
      durable happened). Response: `{ id, ok: false, error: <e.message> }`. **This is
-     retryable** — resubmit the same `id` to retry.
+     retryable** — resubmit the same `id` to retry. `e.message` is passed through only for
+     the errors written for the client: a validation (`ZodError`) failure,
+     `UnknownCommandError`, `ReauthRequiredError`, and the domain refusals
+     `MedicationNotFoundError`, `MedicationOwnershipError`, `InvalidRefillQuantityError`,
+     `InvalidAdjustmentError`, `SlotAlreadyTakenError`, `SlotTargetChangedError` (the list
+     is `CLIENT_READABLE_ERRORS` in
+     `src/lib/server/api/commands.ts`). Any other throw (a dropped database connection, a
+     constraint violation, a bug) reads `{ id, ok: false, error: "command_failed" }`, same
+     shape, and the server writes one `api.commands` log line carrying the user id, the
+     command `type` and its `id`, never the payload. Until 2026-11-07 such a throw echoed its
+     own text, which for a query failure was the SQL statement and its bound values.
    - **Typed refusal** (`CommandRefusedError`, thrown before anything is written) → the
      reservation row is deleted, as for any throw. Response:
      `{ id, ok: false, error: <code>, message: <copy> }`, where `code` is a stable snake_case
@@ -498,7 +524,10 @@ For each command, `(userId, id)` is the primary key into the `api_commands` ledg
    - If the existing row's `result` is still `null` → another attempt is mid-flight (or died
      without cleaning up). Response: `{ id, ok: false, error: "in_progress" }`. The client
      should **not** blindly retry this id in a tight loop; back off and/or reconcile actual
-     state via `/sync`.
+     state via `/sync`. The likeliest way to reach "died without cleaning up" is the
+     function being killed at its time limit mid-batch (`maxDuration` is 60s on this
+     route): the command in flight at that moment stays `in_progress` for good, while
+     the commands after it were never reserved and can be sent again.
 
 ### Command types
 
@@ -511,8 +540,8 @@ then delegates to an existing web-app domain function (no reimplemented business
 | `skip_dose`                        | `skipDosePayload`: `{ medicationId: string }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `logSkippedDose`                                                                                                                                                | `{ id: string }`                                                                                                                                                                                                                                                                                                            |
 | `edit_dose`                        | `editDosePayload`: `{ doseId: string; takenAt?: string; quantity?: number (1-10); notes?: string (≤500); sideEffects?: Array<...> \| null }` — `sideEffects: null` explicitly clears; `undefined` leaves it untouched. A `takenAt` more than 5 minutes past the server's clock is refused with `future_taken_at` (§6 C); omitted ⇒ the time is left as it is and not judged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `updateDose`                                                                                                                                                    | `{ updated: boolean }` (`false` if the dose wasn't found/owned)                                                                                                                                                                                                                                                             |
 | `delete_dose`                      | `deleteDosePayload`: `{ doseId: string }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `deleteDose`                                                                                                                                                    | `{ deleted: boolean }`                                                                                                                                                                                                                                                                                                      |
-| `refill`                           | `refillPayload`: `{ medicationId: string; quantity: number (positive int); note?: string (≤200) \| null }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `refillMedication`                                                                                                                                              | `{ previousCount: number \| null; newCount: number }`                                                                                                                                                                                                                                                                       |
-| `adjust_inventory`                 | `adjustInventoryPayload`: `{ medicationId: string; newCount: number (≥0, int); note?: string (≤200) \| null }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `adjustInventory`                                                                                                                                               | `{ previousCount: number \| null; newCount: number; quantityChange: number }`                                                                                                                                                                                                                                               |
+| `refill`                           | `refillPayload`: `{ medicationId: string; quantity: number (positive int, ≤ 2147483647 = `INVENTORY_COUNT_MAX`); note?: string (≤200) \| null }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `refillMedication`                                                                                                                                              | `{ previousCount: number \| null; newCount: number }`                                                                                                                                                                                                                                                                       |
+| `adjust_inventory`                 | `adjustInventoryPayload`: `{ medicationId: string; newCount: number (≥0, int, ≤ 2147483647 = `INVENTORY_COUNT_MAX`); note?: string (≤200) \| null }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `adjustInventory`                                                                                                                                               | `{ previousCount: number \| null; newCount: number; quantityChange: number }`                                                                                                                                                                                                                                               |
 | `upsert_medication_with_schedules` | `upsertMedicationPayload`: `{ id?: string; medication: MedicationInput; schedules: ScheduleInput[] (1-20 items) }` — `id` present ⇒ update, absent ⇒ create. See `MedicationInput`/`ScheduleInput` below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `updateMedicationWithSchedules` (id present) or `createMedicationWithSchedules` (id absent)                                                                     | `{ medication: <raw medication row \| null> }` — **note:** this is the raw DB row (dates serialize to ISO via `JSON.stringify`'s default `Date.toJSON`), NOT run through `serializeMedication`, and it does **not** include a `schedules` child array. `medication` is `null` only on update when the id isn't found/owned. |
 | `archive`                          | `archivePayload`: `{ medicationId: string }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `archiveMedication`                                                                                                                                             | `{ ok: true }`                                                                                                                                                                                                                                                                                                              |
 | `unarchive`                        | `archivePayload`: `{ medicationId: string }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `unarchiveMedication`                                                                                                                                           | `{ ok: true }`                                                                                                                                                                                                                                                                                                              |
@@ -521,7 +550,7 @@ then delegates to an existing web-app domain function (no reimplemented business
 | `wipe_dose_history`                | `reauthTokenPayload`: `{ reauthToken: string }` — **required.** Mint it with `POST /api/v1/auth/reauth` (`purpose: "wipe_dose_history"`); it is single-use and expires in 5 minutes. A missing, spent, expired or wrong-purpose token throws `ReauthRequiredError` and deletes nothing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `wipeDoseHistory`                                                                                                                                               | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
 | `wipe_archived_medications`        | `reauthTokenPayload`: `{ reauthToken: string }` — **required**, `purpose: "wipe_archived_medications"`. A token minted for one wipe does not authorise the other                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `wipeArchivedMedications`                                                                                                                                       | `{ deleted: number }`                                                                                                                                                                                                                                                                                                       |
 
-`MedicationInput` (`medicationSchema`): `{ name: string (1-200); dosageAmount: string (/^\d+(\.\d+)?$/); dosageUnit: string (1-20); form: "tablet"|"capsule"|"liquid"|"softgel"|"patch"|"injection"|"inhaler"|"drops"|"cream"|"other"; category: "prescription"|"otc"|"supplement"; colour: string (hex); colourSecondary?: string (hex); pattern?: "solid"|"split"|"gradient"|"stripes"|"h-stripes"|"dots"|"checkerboard"|"radial" (default "solid"); scheduleType?: "scheduled"|"as_needed" (default "scheduled"); notes?: string (≤1000); scheduleIntervalHours?: string; inventoryCount?: number (≥0, coerced); inventoryAlertThreshold?: number (≥0, coerced); notificationsEnabled?: "on"|"off"|boolean (absent/anything-but-"off"/false ⇒ enabled); notifyOverdueEmail?, notifyOverduePush?, notifyLowInventoryEmail?, notifyLowInventoryPush?: "inherit"|"on"|"off"|boolean|null (default "inherit"); notifyOffsetMinutes?: number|string (coerced, 0-720, default 0); notifyRepeatEveryMinutes?: number|string|null (coerced, 1-1440; omit/empty string/null ⇒ null/"do not repeat"); notifyMaxRepeats?: number|string (coerced, 0-10, default 3) }`.
+`MedicationInput` (`medicationSchema`): `{ name: string (1-200); dosageAmount: string (/^\d+(\.\d+)?$/); dosageUnit: string (1-20); form: "tablet"|"capsule"|"liquid"|"softgel"|"patch"|"injection"|"inhaler"|"drops"|"cream"|"other"; category: "prescription"|"otc"|"supplement"; colour: string (hex); colourSecondary?: string (hex); pattern?: "solid"|"split"|"gradient"|"stripes"|"h-stripes"|"dots"|"checkerboard"|"radial" (default "solid"); scheduleType?: "scheduled"|"as_needed" (default "scheduled"); notes?: string (≤1000); scheduleIntervalHours?: string; inventoryCount?: number (≥0, ≤ 2147483647 = `INVENTORY_COUNT_MAX`, the `integer` column's maximum, coerced); inventoryAlertThreshold?: number (same bound, coerced); notificationsEnabled?: "on"|"off"|boolean (absent/anything-but-"off"/false ⇒ enabled); notifyOverdueEmail?, notifyOverduePush?, notifyLowInventoryEmail?, notifyLowInventoryPush?: "inherit"|"on"|"off"|boolean|null (default "inherit"); notifyOffsetMinutes?: number|string (coerced, 0-720, default 0); notifyRepeatEveryMinutes?: number|string|null (coerced, 1-1440; omit/empty string/null ⇒ null/"do not repeat"); notifyMaxRepeats?: number|string (coerced, 0-10, default 3) }`.
 
 **`upsert_medication_with_schedules` accepts either representation of the five notification
 fields, and of `notifyRepeatEveryMinutes`**, and this is intentional, not incidental:
@@ -558,7 +587,10 @@ per-row tombstone. This door demanded nothing, so a stolen bearer token was
 sufficient to destroy a user's entire dose history through the same code path.
 Call `POST /api/v1/auth/reauth` with `{ password, purpose }` to obtain a
 `reauthToken`, then pass it in the command payload; `requireRecentReauth`
-redeems it single-use. An OAuth-only account has no password to confirm and so
+redeems it single-use, inside the same transaction as the wipe, so the token is
+spent exactly when the wipe commits: a wipe that fails (a dropped connection, a
+lock timeout) deletes nothing and leaves the token redeemable for a retry within
+its 5 minutes. An OAuth-only account has no password to confirm and so
 cannot mint one. The browser differs here on purpose (decided 2026-10-16): its
 `settings/privacy` wipes take a typed word from every account plus the password
 where there is one (`checkDestructiveGuard`), so an account with no password
@@ -581,7 +613,7 @@ Full-account JSON backup / data-portability endpoint. Auth required. Reuses
 always exactly what a client would get from a from-scratch `/sync` call, plus a version
 envelope. This is distinct from the web app's `/api/export` CSV/PDF dose export.
 
-- Rate-limited per user id: **10 requests / 15 minutes** (`checkRateLimit("api-export:<userId>", 10, 15*60*1000)`). `429` on limit (see §6).
+- Rate-limited per user id: **10 requests / 15 minutes** (`LIMITS.apiExportFull`, namespace `api-export`). `429` on limit (see §6).
 - **200** response headers:
   - `content-type: application/json`
   - `content-disposition: attachment; filename="medtracker-backup-<YYYY-MM-DD>.json"` (date = today, UTC)
@@ -648,8 +680,11 @@ Examples actually produced by this code:
 
 ### B. Rate-limit responses (constructed directly, not via `error()`)
 
-Used for `429` on `/auth/login`, `/auth/2fa`, `/sync`, `/commands`, and `/export/full`
-(constructed via the shared `rateLimitedResponse` helper, `src/lib/server/api/rate-limit-response.ts`). Body:
+Used for `429` on `/auth/login`, `/auth/2fa`, `/auth/apple`, `/auth/reauth`, `/sync`,
+`/commands`, and `/export/full`. Every door sends the same body and header. `/auth/login`,
+`/auth/reauth`, `/sync` and `/commands` build it with the shared `rateLimitedResponse`
+helper (`src/lib/server/api/rate-limit-response.ts`); `/auth/2fa`, `/auth/apple` and
+`/export/full` still construct the same shape by hand. Body:
 
 ```ts
 {

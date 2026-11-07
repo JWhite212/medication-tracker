@@ -421,21 +421,51 @@ export const logFilterSchema = z.object({
 
 export type LogFilter = z.infer<typeof logFilterSchema>;
 
-const ALLOWED_PUSH_ORIGINS = [
-  "https://fcm.googleapis.com",
-  "https://updates.push.services.mozilla.com",
-  "https://notify.windows.com",
-  "https://web.push.apple.com",
+/**
+ * Push services web-push can deliver to, matched on the PARSED hostname.
+ *
+ * A raw `startsWith` on the endpoint string used to stand here, and it was
+ * wrong in both directions. It accepted look-alikes — the host of
+ * `https://fcm.googleapis.com.evil.example/x` is `fcm.googleapis.com.evil.example`,
+ * and in `https://fcm.googleapis.com@127.0.0.1/x` the allowlisted name is only
+ * userinfo — so a signed-in user could make every reminder tick POST to a host
+ * of their choosing. And it rejected real Windows endpoints, which WNS hands
+ * out on per-region subdomains (`https://wns2-par02p.notify.windows.com/w/…`),
+ * so Edge on Windows could never subscribe.
+ *
+ * `subdomains: true` also matches any `*.<host>`, on a dot boundary, so
+ * `evilnotify.windows.com` does not match `notify.windows.com`.
+ */
+const ALLOWED_PUSH_HOSTS: readonly { host: string; subdomains: boolean }[] = [
+  { host: "fcm.googleapis.com", subdomains: false },
+  { host: "updates.push.services.mozilla.com", subdomains: false },
+  { host: "web.push.apple.com", subdomains: false },
+  { host: "notify.windows.com", subdomains: true },
 ];
 
+export function isAllowedPushEndpoint(endpoint: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  // A non-default port, or credentials, means the request is not going to the
+  // push service as published, whatever the hostname says. `URL` folds an
+  // explicit `:443` to "" for https, so only a non-standard port is refused.
+  if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== "") {
+    return false;
+  }
+  const hostname = url.hostname.toLowerCase();
+  return ALLOWED_PUSH_HOSTS.some(
+    ({ host, subdomains }) => hostname === host || (subdomains && hostname.endsWith(`.${host}`)),
+  );
+}
+
 export const pushSubscriptionSchema = z.object({
-  endpoint: z
-    .string()
-    .url()
-    .max(2048)
-    .refine((url) => ALLOWED_PUSH_ORIGINS.some((origin) => url.startsWith(origin)), {
-      message: "Endpoint must be a recognized push service",
-    }),
+  endpoint: z.string().url().max(2048).refine(isAllowedPushEndpoint, {
+    message: "Endpoint must be a recognized push service",
+  }),
   keys: z.object({
     p256dh: z.string().min(1).max(256),
     auth: z.string().min(1).max(64),

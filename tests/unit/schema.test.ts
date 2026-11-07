@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   users,
-  sessions,
-  oauthAccounts,
   medications,
   doseLogs,
   auditLogs,

@@ -1,5 +1,7 @@
 import { and, eq } from "drizzle-orm";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { db } from "$lib/server/db";
+import { logError } from "$lib/server/log";
 import { apiCommands } from "$lib/server/db/schema";
 import { logDose, logSkippedDose, updateDose, deleteDose } from "$lib/server/doses";
 import { refillMedication, adjustInventory } from "$lib/server/inventory-events";
@@ -51,8 +53,9 @@ export class ReauthRequiredError extends Error {
  *
  * `runCommands` reports it as `{ ok: false, error: code, message }`: `code`
  * is a stable snake_case string a client branches on, as it already does on
- * `"in_progress"`, and `message` is copy it can show. Every other throw keeps
- * reporting `error: e.message` and no `message`.
+ * `"in_progress"`, and `message` is copy it can show. Every other throw
+ * reports `error` with no `message`: `e.message` for the client-readable
+ * errors in `CLIENT_READABLE_ERRORS`, `COMMAND_FAILED_ERROR` for the rest.
  */
 export class CommandRefusedError extends Error {
   readonly code: string;
@@ -77,6 +80,63 @@ function acceptedTakenAt(takenAt: string | undefined): Date | undefined {
     throw new CommandRefusedError(FUTURE_TAKEN_AT_CODE, FUTURE_TAKEN_AT_MESSAGE);
   }
   return instant;
+}
+
+/**
+ * What `error` reads for a failure nobody threw on purpose: a dropped
+ * connection, a constraint violation, a bug in a domain function.
+ *
+ * It used to be `e.message`, and for a database failure that is drizzle's
+ * `DrizzleQueryError` text, "Failed query: <SQL>\nparams: <values>", so the
+ * client received the statement and its bound values while the server wrote
+ * nothing at all: the route answers 200, so `handleError` never runs. The
+ * detail now goes to one log line carrying the command's id, and the wire
+ * gets this fixed code.
+ */
+export const COMMAND_FAILED_ERROR = "command_failed";
+
+/**
+ * The throws a client is meant to read. Their `message` is written for it and
+ * still reaches it verbatim (docs/api-v1-contract.md §4): payload validation,
+ * an unknown type, a missing reauth proof, and the domain functions' own
+ * not-found and invalid-input refusals. None of them is logged: each is an
+ * answer, not a failure.
+ *
+ * Matched by `name`, not `instanceof`: `MedicationNotFoundError` is declared
+ * twice (`doses.ts` and `inventory-events.ts`), and every one of these sets
+ * `this.name` in its constructor.
+ */
+const CLIENT_READABLE_ERRORS: ReadonlySet<string> = new Set([
+  "ZodError",
+  "UnknownCommandError",
+  "ReauthRequiredError",
+  "MedicationNotFoundError",
+  "MedicationOwnershipError",
+  "InvalidRefillQuantityError",
+  "InvalidAdjustmentError",
+  "SlotAlreadyTakenError",
+  "SlotTargetChangedError",
+]);
+
+function failureResult(userId: string, cmd: Command, e: unknown): CommandResult {
+  if (e instanceof CommandRefusedError) {
+    return { id: cmd.id, ok: false, error: e.code, message: e.message };
+  }
+  if (e instanceof Error && CLIENT_READABLE_ERRORS.has(e.name)) {
+    return { id: cmd.id, ok: false, error: e.message };
+  }
+  // A query failure's own message carries its bound parameters (dose notes,
+  // medication names), which must never reach a log line; its `cause` is the
+  // driver's error without them.
+  const loggable = e instanceof DrizzleQueryError ? (e.cause ?? "query failed") : e;
+  logError(
+    "api command failed",
+    // The payload stays out: it is the request body. The type and the id are
+    // enough to find the command, and the id is what the client can quote.
+    { scope: "api.commands", userId, commandType: cmd.type, commandId: cmd.id },
+    loggable,
+  );
+  return { id: cmd.id, ok: false, error: COMMAND_FAILED_ERROR };
 }
 
 export type Command = { id: string; type: string; payload: unknown };
@@ -285,11 +345,7 @@ export async function runCommands(userId: string, commands: Command[]): Promise<
       await db
         .delete(apiCommands)
         .where(and(eq(apiCommands.userId, userId), eq(apiCommands.idempotencyKey, cmd.id)));
-      results.push(
-        e instanceof CommandRefusedError
-          ? { id: cmd.id, ok: false, error: e.code, message: e.message }
-          : { id: cmd.id, ok: false, error: e instanceof Error ? e.message : "command failed" },
-      );
+      results.push(failureResult(userId, cmd, e));
       continue;
     }
 

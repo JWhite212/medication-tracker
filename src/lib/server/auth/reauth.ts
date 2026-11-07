@@ -1,6 +1,8 @@
 import { createId } from "@paralleldrive/cuid2";
 import { and, eq, gt, isNull } from "drizzle-orm";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { db } from "$lib/server/db";
+import type * as schema from "$lib/server/db/schema";
 import { reauthTokens, users } from "$lib/server/db/schema";
 import { verifyPassword } from "$lib/server/auth/password";
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
@@ -46,6 +48,14 @@ export const REAUTH_PURPOSES = [
 export type ReauthPurpose = (typeof REAUTH_PURPOSES)[number];
 
 const REAUTH_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * The global `db` (autocommit) or a transaction the redeem must commit with.
+ * Typed as drizzle's common Postgres base rather than `typeof db | tx`: the
+ * neon-http and websocket drivers' `.returning()` builders differ, so a union
+ * of the two cannot be called.
+ */
+export type ReauthExecutor = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 function hashToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
@@ -143,15 +153,26 @@ export function reauthMessage(reauth: { rateLimited?: boolean; retryAfterMs?: nu
  * Correctness here is decided by Postgres, so it is tested on PGlite: a
  * fixture that captures predicates without evaluating them cannot tell a
  * conditional UPDATE from an unconditional one.
+ *
+ * `executor` defaults to the autocommit `db`, which stamps `used_at` the
+ * moment this returns. A caller whose authorised action runs in a
+ * transaction passes that transaction instead, so the stamp commits or rolls
+ * back with the action: redeemed on the autocommit `db`, a wipe that then
+ * failed had still spent its token, and the retry the command ledger allows
+ * was refused for want of a fresh password. Inside the transaction the
+ * compare-and-set is unchanged — a concurrent redeem of the same token
+ * blocks on this row lock and, once this one commits, re-checks
+ * `used_at IS NULL` and matches nothing — so it is still exactly once.
  */
 export async function requireRecentReauth(
   userId: string,
   purpose: ReauthPurpose,
   rawToken: string,
+  executor: ReauthExecutor = db,
 ): Promise<boolean> {
   const now = new Date();
 
-  const consumed = await db
+  const consumed = await executor
     .update(reauthTokens)
     .set({ usedAt: now })
     .where(

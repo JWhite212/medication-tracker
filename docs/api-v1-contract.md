@@ -508,7 +508,10 @@ For each command, `(userId, id)` is the primary key into the `api_commands` ledg
    - If the existing row's `result` is still `null` → another attempt is mid-flight (or died
      without cleaning up). Response: `{ id, ok: false, error: "in_progress" }`. The client
      should **not** blindly retry this id in a tight loop; back off and/or reconcile actual
-     state via `/sync`.
+     state via `/sync`. The likeliest way to reach "died without cleaning up" is the
+     function being killed at its time limit mid-batch (`maxDuration` is 60s on this
+     route): the command in flight at that moment stays `in_progress` for good, while
+     the commands after it were never reserved and can be sent again.
 
 ### Command types
 
@@ -568,7 +571,10 @@ per-row tombstone. This door demanded nothing, so a stolen bearer token was
 sufficient to destroy a user's entire dose history through the same code path.
 Call `POST /api/v1/auth/reauth` with `{ password, purpose }` to obtain a
 `reauthToken`, then pass it in the command payload; `requireRecentReauth`
-redeems it single-use. An OAuth-only account has no password to confirm and so
+redeems it single-use, inside the same transaction as the wipe, so the token is
+spent exactly when the wipe commits: a wipe that fails (a dropped connection, a
+lock timeout) deletes nothing and leaves the token redeemable for a retry within
+its 5 minutes. An OAuth-only account has no password to confirm and so
 cannot mint one. The browser differs here on purpose (decided 2026-10-16): its
 `settings/privacy` wipes take a typed word from every account plus the password
 where there is one (`checkDestructiveGuard`), so an account with no password

@@ -151,4 +151,32 @@ describe("adjustInventory", () => {
     expect(result).toEqual({ previousCount: null, newCount: 30, quantityChange: 30 });
     expect(await stock()).toBe(30);
   });
+
+  it("starts tracking an untracked medication at 0 instead of calling it a no-op", async () => {
+    // NULL is "not tracked", not 0: the page shows "Current count: not
+    // tracked", so refusing 0 as "the same as the current count" was false.
+    await pgDb.seedMedication({ id: "m1", inventoryCount: null });
+
+    const result = await adjustInventory("u1", "m1", 0, "counted: empty");
+
+    expect(result).toEqual({ previousCount: null, newCount: 0, quantityChange: 0 });
+    expect(await stock()).toBe(0);
+    expect(await events()).toEqual([
+      {
+        eventType: "manual_adjustment",
+        quantityChange: 0,
+        previousCount: null,
+        newCount: 0,
+        note: "counted: empty",
+      },
+    ]);
+  });
+
+  it("still rejects 0 on a medication already tracked at 0, and writes nothing", async () => {
+    await pgDb.seedMedication({ id: "m1", inventoryCount: 0 });
+
+    await expect(adjustInventory("u1", "m1", 0)).rejects.toBeInstanceOf(InvalidAdjustmentError);
+    expect(await stock()).toBe(0);
+    expect(await events()).toEqual([]);
+  });
 });

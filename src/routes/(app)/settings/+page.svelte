@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SUPPORTED_TIMEZONES } from "$lib/utils/timezones";
   import { enhance } from "$app/forms";
   import Alert from "$lib/components/ui/Alert.svelte";
   import Button from "$lib/components/ui/Button.svelte";
@@ -7,7 +8,7 @@
 
   let { data, form } = $props();
 
-  const timezones = Intl.supportedValuesOf("timeZone");
+  const timezones = SUPPORTED_TIMEZONES;
 </script>
 
 <svelte:head>

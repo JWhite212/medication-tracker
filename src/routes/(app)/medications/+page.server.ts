@@ -1,4 +1,5 @@
 import { error, fail } from "@sveltejs/kit";
+import { isSupportedTimezone } from "$lib/utils/timezones";
 import {
   getActiveMedications,
   getMedicationsWithStats,
@@ -14,12 +15,11 @@ import { isoDayKey, shiftDayKey, wallClockToInstant } from "$lib/utils/time";
 import type { Actions, PageServerLoad } from "./$types";
 
 const SPARKLINE_DAYS = 14;
-const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
 
 export const load: PageServerLoad = async ({ locals }) => {
   const userId = locals.user!.id;
   const timezone = locals.user!.timezone;
-  const safeTz = validTimezones.has(timezone) ? timezone : "UTC";
+  const safeTz = isSupportedTimezone(timezone) ? timezone : "UTC";
 
   // Both the window and the keys are derived from ONE anchor: today's day
   // key, stepped back in whole calendar days. Subtracting

@@ -47,12 +47,10 @@ export function buildHeatmapDays(
   timezone: string,
   now: Date = new Date(),
 ): HeatmapDay[] {
-  const todayKey = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
+  // Today's key is BUILT from parts, like every cell below, never borrowed
+  // from en-CA's `format()`: a browser whose CLDR reorders that pattern would
+  // hand `split("-")` one field, and the NaN anchor would throw a RangeError.
+  const todayKey = isoDayKeyFormatter(timezone)(now);
 
   const [year, month, day] = todayKey.split("-").map(Number);
   const anchor = Date.UTC(year, month - 1, day, 12);

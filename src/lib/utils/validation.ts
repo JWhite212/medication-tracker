@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSupportedTimezone } from "$lib/utils/timezones";
 import { MAX_INTERVAL_HOURS } from "$lib/utils/schedule-rate";
 import { appearanceImportShape, appearancePayloadShape } from "$lib/appearance/schema";
 import {
@@ -317,11 +318,9 @@ export const doseEditSchema = z.object({
   sideEffects: sideEffectsField,
 });
 
-const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
-
 export const settingsSchema = z.object({
   name: z.string().min(1).max(100),
-  timezone: z.string().refine((tz) => validTimezones.has(tz), "Invalid timezone"),
+  timezone: z.string().refine(isSupportedTimezone, "Invalid timezone"),
 });
 
 export const passwordChangeSchema = z
@@ -728,7 +727,7 @@ export const importInventoryEventSchema = z.object({
  * rewrite the importer's identity. */
 const importProfileSchema = z.object({
   name: z.string().min(1).max(100),
-  timezone: z.string().refine((tz) => validTimezones.has(tz), "Invalid timezone"),
+  timezone: z.string().refine(isSupportedTimezone, "Invalid timezone"),
 });
 
 const importPreferencesSchema = z.object({

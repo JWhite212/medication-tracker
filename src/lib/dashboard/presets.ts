@@ -1,7 +1,8 @@
 /**
  * Dashboard presets: named, total patches over the six dashboard layout and
- * option preferences. Zod-free on purpose (the settings page imports it), with
- * only a type import from `$lib/types`.
+ * option preferences. Zod-free on purpose (the settings page imports it): its
+ * imports are a type import from `$lib/types` and `normaliseSectionOrder`
+ * from the zod-free `./layout`.
  *
  * A patch is total over `PRESET_KEYS`, so applying a preset gives the same
  * result from any starting state and matching is exact. The active preset is

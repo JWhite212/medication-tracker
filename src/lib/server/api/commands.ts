@@ -1,5 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import { db } from "$lib/server/db";
+import { DrizzleQueryError } from "drizzle-orm/errors";
+import { db, dbTx } from "$lib/server/db";
+import { logError } from "$lib/server/log";
 import { apiCommands } from "$lib/server/db/schema";
 import { logDose, logSkippedDose, updateDose, deleteDose } from "$lib/server/doses";
 import { refillMedication, adjustInventory } from "$lib/server/inventory-events";
@@ -11,7 +13,11 @@ import {
   swapSortOrder,
 } from "$lib/server/medications";
 import { updatePreferences } from "$lib/server/preferences";
-import { wipeDoseHistory, wipeArchivedMedications } from "$lib/server/api/wipe";
+import {
+  wipeDoseHistory,
+  wipeArchivedMedications,
+  type WipeTransaction,
+} from "$lib/server/api/wipe";
 import { requireRecentReauth, type ReauthPurpose } from "$lib/server/auth/reauth";
 import { reauthTokenPayload } from "$lib/utils/validation";
 import {
@@ -51,8 +57,9 @@ export class ReauthRequiredError extends Error {
  *
  * `runCommands` reports it as `{ ok: false, error: code, message }`: `code`
  * is a stable snake_case string a client branches on, as it already does on
- * `"in_progress"`, and `message` is copy it can show. Every other throw keeps
- * reporting `error: e.message` and no `message`.
+ * `"in_progress"`, and `message` is copy it can show. Every other throw
+ * reports `error` with no `message`: `e.message` for the client-readable
+ * errors in `CLIENT_READABLE_ERRORS`, `COMMAND_FAILED_ERROR` for the rest.
  */
 export class CommandRefusedError extends Error {
   readonly code: string;
@@ -77,6 +84,63 @@ function acceptedTakenAt(takenAt: string | undefined): Date | undefined {
     throw new CommandRefusedError(FUTURE_TAKEN_AT_CODE, FUTURE_TAKEN_AT_MESSAGE);
   }
   return instant;
+}
+
+/**
+ * What `error` reads for a failure nobody threw on purpose: a dropped
+ * connection, a constraint violation, a bug in a domain function.
+ *
+ * It used to be `e.message`, and for a database failure that is drizzle's
+ * `DrizzleQueryError` text, "Failed query: <SQL>\nparams: <values>", so the
+ * client received the statement and its bound values while the server wrote
+ * nothing at all: the route answers 200, so `handleError` never runs. The
+ * detail now goes to one log line carrying the command's id, and the wire
+ * gets this fixed code.
+ */
+export const COMMAND_FAILED_ERROR = "command_failed";
+
+/**
+ * The throws a client is meant to read. Their `message` is written for it and
+ * still reaches it verbatim (docs/api-v1-contract.md §4): payload validation,
+ * an unknown type, a missing reauth proof, and the domain functions' own
+ * not-found and invalid-input refusals. None of them is logged: each is an
+ * answer, not a failure.
+ *
+ * Matched by `name`, not `instanceof`: `MedicationNotFoundError` is declared
+ * twice (`doses.ts` and `inventory-events.ts`), and every one of these sets
+ * `this.name` in its constructor.
+ */
+export const CLIENT_READABLE_ERRORS: ReadonlySet<string> = new Set([
+  "ZodError",
+  "UnknownCommandError",
+  "ReauthRequiredError",
+  "MedicationNotFoundError",
+  "MedicationOwnershipError",
+  "InvalidRefillQuantityError",
+  "InvalidAdjustmentError",
+  "SlotAlreadyTakenError",
+  "SlotTargetChangedError",
+]);
+
+function failureResult(userId: string, cmd: Command, e: unknown): CommandResult {
+  if (e instanceof CommandRefusedError) {
+    return { id: cmd.id, ok: false, error: e.code, message: e.message };
+  }
+  if (e instanceof Error && CLIENT_READABLE_ERRORS.has(e.name)) {
+    return { id: cmd.id, ok: false, error: e.message };
+  }
+  // A query failure's own message carries its bound parameters (dose notes,
+  // medication names), which must never reach a log line; its `cause` is the
+  // driver's error without them.
+  const loggable = e instanceof DrizzleQueryError ? (e.cause ?? "query failed") : e;
+  logError(
+    "api command failed",
+    // The payload stays out: it is the request body. The type and the id are
+    // enough to find the command, and the id is what the client can quote.
+    { scope: "api.commands", userId, commandType: cmd.type, commandId: cmd.id },
+    loggable,
+  );
+  return { id: cmd.id, ok: false, error: COMMAND_FAILED_ERROR };
 }
 
 export type Command = { id: string; type: string; payload: unknown };
@@ -187,33 +251,53 @@ const handlers: Record<string, Handler> = {
   // enough to destroy a user's entire dose history through the same code
   // path `settings/privacy` guards with a typed word and, where the account
   // has one, the password.
-  wipe_dose_history: async (userId, payload) => {
-    await consumeReauth(userId, payload, "wipe_dose_history");
-    return wipeDoseHistory(userId);
-  },
-  wipe_archived_medications: async (userId, payload) => {
-    await consumeReauth(userId, payload, "wipe_archived_medications");
-    return wipeArchivedMedications(userId);
-  },
+  wipe_dose_history: (userId, payload) =>
+    redeemAndWipe(userId, payload, "wipe_dose_history", wipeDoseHistory),
+  wipe_archived_medications: (userId, payload) =>
+    redeemAndWipe(userId, payload, "wipe_archived_medications", wipeArchivedMedications),
 };
 
 /**
- * Redeem the reauth token a destructive command must carry.
+ * Redeem the reauth token a destructive command must carry, and run the wipe
+ * it authorises, in ONE transaction.
  *
  * Throws rather than returning a result, because `runCommands` releases the
  * reservation and allows retry on a throw — which is what an unauthorised
  * command should get. A consumed or expired token is indistinguishable from
  * a wrong one on purpose.
+ *
+ * The redeem used to run on the autocommit `db` before the wipe opened its
+ * own transaction, so a wipe that then rolled back (a dropped connection, a
+ * lock timeout) had already spent the token: `runCommands` released the
+ * reservation for a retry, and the retry was refused for want of a fresh
+ * password. Now the `used_at` stamp commits or rolls back with the wipe.
+ * Single use is unchanged: it is still the one conditional UPDATE, and a
+ * second redeem of the same token waits on this row and then matches
+ * nothing. The payload is parsed first, so a malformed one costs no
+ * database work.
+ *
+ * The token row is the first lock this transaction takes, ahead of the
+ * medication rows `wipeDoseHistory` locks. No dose or stock writer touches
+ * `reauth_tokens`, so this adds no edge to the medication-first lock order.
+ * The one writer that reaches both, an account deletion cascading from
+ * `users`, already conflicts with every wipe through the `users` row (each
+ * wipe bumps `syncEpoch`); Postgres aborts one side of such a cycle, and a
+ * rolled-back wipe now keeps its token, so the retry still goes through.
  */
-async function consumeReauth(
+async function redeemAndWipe(
   userId: string,
   payload: unknown,
   purpose: ReauthPurpose,
-): Promise<void> {
+  wipe: (userId: string, tx: WipeTransaction) => Promise<{ deleted: number }>,
+): Promise<{ deleted: number }> {
   const parsed = reauthTokenPayload.safeParse(payload);
   if (!parsed.success) throw new ReauthRequiredError(purpose);
-  const ok = await requireRecentReauth(userId, purpose, parsed.data.reauthToken);
-  if (!ok) throw new ReauthRequiredError(purpose);
+  const { reauthToken } = parsed.data;
+  return dbTx.transaction(async (tx) => {
+    const ok = await requireRecentReauth(userId, purpose, reauthToken, tx);
+    if (!ok) throw new ReauthRequiredError(purpose);
+    return wipe(userId, tx);
+  });
 }
 
 export async function dispatchCommand(
@@ -285,11 +369,7 @@ export async function runCommands(userId: string, commands: Command[]): Promise<
       await db
         .delete(apiCommands)
         .where(and(eq(apiCommands.userId, userId), eq(apiCommands.idempotencyKey, cmd.id)));
-      results.push(
-        e instanceof CommandRefusedError
-          ? { id: cmd.id, ok: false, error: e.code, message: e.message }
-          : { id: cmd.id, ok: false, error: e instanceof Error ? e.message : "command failed" },
-      );
+      results.push(failureResult(userId, cmd, e));
       continue;
     }
 

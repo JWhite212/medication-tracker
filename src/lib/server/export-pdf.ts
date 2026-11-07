@@ -65,7 +65,7 @@ export type DoseLogLine = {
  * One line of the PDF's dose log. Pure and exported so the formatting can
  * be unit-tested — the PDF itself is a binary blob, which is why this
  * logic went unverified long enough for the status bug to survive. Same
- * split as `escapeCsvCell` in export-csv.ts.
+ * split as `escapeCsvCell` in csv-cell.ts.
  */
 export function formatDoseLogLine(
   dose: DoseLogLine,

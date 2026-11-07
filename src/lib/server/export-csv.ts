@@ -2,24 +2,11 @@ import { eq, and, gte, lt, desc } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import { formatUserTime, isoDayKey, type TimeFormat } from "$lib/utils/time";
+import { escapeCsvCell } from "./csv-cell";
 
-/**
- * Escape a single CSV cell.
- *
- * - Cells starting with `= + - @ \t \r` get a leading apostrophe to
- *   neutralise spreadsheet formula injection (CWE-1236).
- * - Quotes are doubled per RFC 4180.
- * - Cells containing comma / quote / CR / LF are wrapped in quotes.
- */
-export function escapeCsvCell(value: unknown): string {
-  const raw = value === null || value === undefined ? "" : String(value);
-  const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
-  const escaped = safe.replace(/"/g, '""');
-  if (/[",\r\n]/.test(escaped)) {
-    return `"${escaped}"`;
-  }
-  return escaped;
-}
+// Re-exported at its old path: the import round-trip and export tests
+// import it from here.
+export { escapeCsvCell };
 
 export async function generateCsvReport(
   userId: string,

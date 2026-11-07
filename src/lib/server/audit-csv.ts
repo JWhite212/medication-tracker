@@ -1,15 +1,4 @@
-// Local copy of `escapeCsvCell` so this module stays pure (no DB
-// import). Kept identical to `export-csv.ts:escapeCsvCell` so the
-// formula-injection guard and quoting rules are consistent.
-function escapeCsvCell(value: unknown): string {
-  const raw = value === null || value === undefined ? "" : String(value);
-  const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
-  const escaped = safe.replace(/"/g, '""');
-  if (/[",\r\n]/.test(escaped)) {
-    return `"${escaped}"`;
-  }
-  return escaped;
-}
+import { escapeCsvCell } from "./csv-cell";
 
 export type AuditRowForExport = {
   createdAt: Date;

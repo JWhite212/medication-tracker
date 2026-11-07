@@ -35,7 +35,14 @@ export interface HeatmapDay {
 const ISO_DAY = isoDayKeyFormatter("UTC");
 
 /**
- * `days` consecutive civil dates in `timezone`, oldest first, ending today.
+ * `days` consecutive civil dates in `timezone`, oldest first, ending today --
+ * or ending on `endKey` when one is given.
+ *
+ * `endKey` is a `YYYY-MM-DD` civil date that is already in the user's zone
+ * (the last day of a custom analytics range), so it is used as the anchor
+ * date directly and `timezone` / `now` are not consulted. Without it a
+ * custom From/To range drew the last N days ending TODAY beside counts keyed
+ * on the range's own dates, and every cell read 0.
  *
  * The walk is anchored at **noon UTC** on today's civil date rather than at a
  * local midnight. UTC has no DST, so stepping by exactly 86_400_000 ms always
@@ -46,13 +53,14 @@ export function buildHeatmapDays(
   days: number,
   timezone: string,
   now: Date = new Date(),
+  endKey?: string,
 ): HeatmapDay[] {
   // Today's key is BUILT from parts, like every cell below, never borrowed
   // from en-CA's `format()`: a browser whose CLDR reorders that pattern would
   // hand `split("-")` one field, and the NaN anchor would throw a RangeError.
-  const todayKey = isoDayKeyFormatter(timezone)(now);
+  const lastKey = endKey ?? isoDayKeyFormatter(timezone)(now);
 
-  const [year, month, day] = todayKey.split("-").map(Number);
+  const [year, month, day] = lastKey.split("-").map(Number);
   const anchor = Date.UTC(year, month - 1, day, 12);
 
   const cells: HeatmapDay[] = [];

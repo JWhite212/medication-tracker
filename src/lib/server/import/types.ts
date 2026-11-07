@@ -96,6 +96,11 @@ export type ImportMedication = {
 };
 
 export type ImportDose = {
+  /** The dose's `id` as it appeared in a JSON backup; absent for a CSV,
+   * which carries none. Used ONLY to tell two distinct rows that share a
+   * medication, instant, status and quantity apart from one row that
+   * appears twice in the file — never written to the database. */
+  sourceId?: string | null;
   /** FK into `ImportMedication.sourceId` (JSON path). */
   sourceMedicationId: string | null;
   /** Name-based reference (CSV path), matched case-insensitively. */
@@ -119,7 +124,9 @@ export type ImportInventoryEvent = {
 };
 
 export type ImportProfile = {
-  name: string;
+  /** null when the file's name was empty once trimmed: the importer's own
+   * name is then left alone rather than overwritten with nothing. */
+  name: string | null;
   timezone: string;
 };
 

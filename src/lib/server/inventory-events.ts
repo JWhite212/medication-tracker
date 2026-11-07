@@ -154,7 +154,9 @@ export async function refillMedication(
  * whether the adjustment increased or decreased stock.
  *
  * Throws InvalidAdjustmentError when newCount is not a non-negative
- * integer or when it equals the existing count (no-op). Throws
+ * integer or when it equals the existing tracked count (no-op). An
+ * untracked medication (NULL count) set to 0 starts tracking and is
+ * recorded with a delta of 0. Throws
  * MedicationNotFoundError when the medication is not owned by the
  * user.
  */
@@ -183,7 +185,12 @@ export async function adjustInventory(
 
     const previousCount = med.inventoryCount;
     const quantityChange = newCount - (previousCount ?? 0);
-    if (quantityChange === 0) {
+    // The no-op is judged on the stored value, not on the delta. A NULL count
+    // means "not tracked", so setting it to 0 starts tracking: a real change
+    // whose delta happens to be 0 (null is read as 0 for the delta, as the
+    // null -> 30 case already does). Only a tracked count equal to the target
+    // is a no-op.
+    if (previousCount !== null && quantityChange === 0) {
       throw new InvalidAdjustmentError("New count is the same as the current count");
     }
 

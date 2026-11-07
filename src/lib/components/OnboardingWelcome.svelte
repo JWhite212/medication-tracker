@@ -1,8 +1,27 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import Button from "$lib/components/ui/Button.svelte";
+  import { focusIfLost, isFocusLost, pageHeading } from "$lib/components/dose-writes/focus-after";
 
   let step = $state(0);
   const totalSteps = 3;
+
+  // Each step's title is the page's h1 (tabindex="-1"): this component is the
+  // whole dashboard for an account with no medications, so without one the
+  // page had no h1 and pageHeading(), the last resort for focus, found
+  // nothing. Exactly one step renders, so there is exactly one h1.
+  //
+  // Learn more first, Next and Back live inside the step they replace, so
+  // pressing one removes the focused button and dropped focus to <body>.
+  // Focus moves only if it was lost, and only if there was a focused control
+  // to lose (Safari focuses no button it taps): the step dots persist and
+  // keep it, and so does a tap that took nothing away.
+  async function goTo(next: number) {
+    const hadFocus = !isFocusLost();
+    step = next;
+    await tick();
+    if (hadFocus) focusIfLost(pageHeading);
+  }
 </script>
 
 <div class="mx-auto flex max-w-lg flex-col items-center gap-6 py-8">
@@ -11,18 +30,18 @@
       class="border-glass-border bg-glass w-full rounded-xl border p-8 text-center backdrop-blur-xl"
     >
       <div class="mb-4 text-4xl" aria-hidden="true">&#x1F48A;</div>
-      <h2 class="mb-2 text-2xl font-bold">Welcome to MedTracker</h2>
+      <h1 tabindex="-1" class="mb-2 text-2xl font-bold">Welcome to MedTracker</h1>
       <p class="text-text-secondary mb-6">
         Track your medications, log doses, and stay on top of your health — all in one place.
       </p>
       <div class="flex flex-col items-center gap-3">
         <Button variant="primary" href="/medications/new">Add your first medication</Button>
-        <Button variant="ghost" onclick={() => (step = 1)}>Learn more first</Button>
+        <Button variant="ghost" onclick={() => goTo(1)}>Learn more first</Button>
       </div>
     </div>
   {:else if step === 1}
     <div class="border-glass-border bg-glass w-full rounded-xl border p-8 backdrop-blur-xl">
-      <h2 class="mb-4 text-xl font-bold">Two ways to track</h2>
+      <h1 tabindex="-1" class="mb-4 text-xl font-bold">Two ways to track</h1>
       <div class="space-y-4">
         <div class="border-glass-border bg-surface-raised rounded-lg border p-4">
           <p class="text-accent-ink mb-1 font-medium">Scheduled</p>
@@ -40,13 +59,13 @@
         </div>
       </div>
       <div class="mt-6 flex items-center justify-between">
-        <Button variant="ghost" onclick={() => (step = 0)}>Back</Button>
-        <Button variant="primary" onclick={() => (step = 2)}>Next</Button>
+        <Button variant="ghost" onclick={() => goTo(0)}>Back</Button>
+        <Button variant="primary" onclick={() => goTo(2)}>Next</Button>
       </div>
     </div>
   {:else if step === 2}
     <div class="border-glass-border bg-glass w-full rounded-xl border p-8 backdrop-blur-xl">
-      <h2 class="mb-4 text-xl font-bold">Your dashboard at a glance</h2>
+      <h1 tabindex="-1" class="mb-4 text-xl font-bold">Your dashboard at a glance</h1>
       <p class="text-text-secondary mb-4 text-sm">
         Once you add medications, your dashboard will show:
       </p>
@@ -80,7 +99,7 @@
         </div>
       </div>
       <div class="mt-6 flex items-center justify-between">
-        <Button variant="ghost" onclick={() => (step = 1)}>Back</Button>
+        <Button variant="ghost" onclick={() => goTo(1)}>Back</Button>
         <Button variant="primary" href="/medications/new">Get started</Button>
       </div>
     </div>
@@ -97,7 +116,7 @@
         class="flex h-6 min-w-6 items-center justify-center"
         aria-label="Go to step {i + 1}"
         aria-current={i === step ? "step" : undefined}
-        onclick={() => (step = i)}
+        onclick={() => goTo(i)}
       >
         <span
           class="h-2 rounded-full transition-all {i === step

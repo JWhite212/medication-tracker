@@ -248,17 +248,41 @@ describe("push card and test confirmation", () => {
   });
   const mountNotifications = () => mountPage(Notifications, notif());
 
+  // The page re-posts the browser's subscription to /api/push/subscribe on
+  // load, and only a 2xx there lets it say push is active on this device, so
+  // this fixture plays a server that accepts it. The subscription carries
+  // `toJSON`, as a real PushSubscription does, because that is the body the
+  // page posts.
+  const withJson = (sub: { endpoint: string } | null) =>
+    sub && {
+      ...sub,
+      toJSON: () => ({
+        endpoint: sub.endpoint,
+        keys: { p256dh: "test-p256dh", auth: "test-auth" },
+      }),
+    };
+
   beforeEach(() => {
     subscription = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200 })),
+    );
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
       value: {
-        ready: Promise.resolve({ pushManager: { getSubscription: async () => subscription } }),
+        ready: Promise.resolve({
+          pushManager: { getSubscription: async () => withJson(subscription) },
+        }),
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
       },
     });
     Object.defineProperty(window, "PushManager", { configurable: true, value: class {} });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("draws Disable as a secondary Button and the active state in neutral words", async () => {

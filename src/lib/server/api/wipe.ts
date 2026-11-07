@@ -2,6 +2,7 @@ import { dbTx } from "$lib/server/db";
 import { doseLogTrash, doseLogs, medications, users } from "$lib/server/db/schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { logAudit } from "$lib/server/audit";
+import { medicationIdsLockedInOrder } from "$lib/server/medication-lock";
 
 // Bulk wipes used by both the web "Settings > Privacy" data-wipe actions
 // and the /api/v1/commands `wipe_dose_history` / `wipe_archived_medications`
@@ -58,10 +59,15 @@ export async function wipeArchivedMedications(userId: string): Promise<{ deleted
   return dbTx.transaction(async (tx) => {
     // Cascading FKs on dose_logs, medication_schedules and the dose trash
     // (the Undo copies of deleted doses) drop the dependent rows when the
-    // medication row goes.
+    // medication row goes. The rows are locked in ascending id order, like
+    // wipeDoseHistory's, or the two can deadlock (D7).
     const rows = await tx
       .delete(medications)
-      .where(and(eq(medications.userId, userId), eq(medications.isArchived, true)))
+      .where(
+        medicationIdsLockedInOrder(
+          and(eq(medications.userId, userId), eq(medications.isArchived, true))!,
+        ),
+      )
       .returning({ id: medications.id });
     const deleted = rows.length;
 

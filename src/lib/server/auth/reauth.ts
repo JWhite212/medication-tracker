@@ -17,9 +17,11 @@ import { createHash, randomBytes } from "crypto";
 //   re-authenticated for this purpose".
 //
 // requireRecentReauth(userId, purpose, rawToken):
-//   marks the most recent unused, unexpired token for (user, purpose)
-//   as consumed and returns true; otherwise returns false. Useful for
-//   cross-form flows (e.g., separate reauth page → action page).
+//   consumes exactly the token whose hash matches rawToken, and only if
+//   it belongs to (user, purpose), is unexpired and is unused, in one
+//   compare-and-set UPDATE; returns true when that one row was marked
+//   used, otherwise false. Useful for cross-form flows (e.g., separate
+//   reauth page → action page).
 //
 // During the inline-password-confirmation flow used by the settings
 // pages today, callers can simply use confirmReauth() and treat the

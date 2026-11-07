@@ -437,8 +437,6 @@ export const logFilterSchema = z.object({
   q: z.string().trim().max(100).optional(),
 });
 
-export type LogFilter = z.infer<typeof logFilterSchema>;
-
 /**
  * Push services web-push can deliver to, matched on the PARSED hostname.
  *
@@ -573,7 +571,7 @@ export const medicationMoveSchema = z.object({
 export const updatePreferencesPayload = z.object({
   // Both halves are derived, so no preference is restated at this door and
   // none can be left behind: the six appearance options come from the
-  // registry-derived shape, the other seven from the preference substrate.
+  // registry-derived shape, the other fourteen from the preference substrate.
   // Between them the two `satisfies` clauses cover every mutable column.
   ...appearancePayloadShape,
   ...preferencePayloadShape,
@@ -841,8 +839,6 @@ export const backupEnvelopeSchema = z.object({
   // rows would fabricate a tamper-evident history; import writes one
   // `data_import` row of its own instead.
 });
-
-export type BackupEnvelope = z.infer<typeof backupEnvelopeSchema>;
 
 /** Form fields for the import page. Checkboxes follow the existing
  * "only submits when checked" convention. */

@@ -46,7 +46,7 @@ export type MedicationWithStats = Medication & {
   sparkline?: number[];
   // Refill severity tier from src/lib/server/inventory.ts. Optional;
   // populated only by the Medications-list loader.
-  refillSeverity?: "critical" | "warning" | "watch" | "ok";
+  refillSeverity?: RefillSeverity;
 };
 
 // Analytics insight returned from buildInsights (server-side) and

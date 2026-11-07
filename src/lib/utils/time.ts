@@ -86,15 +86,6 @@ export function formatUserTime(
   }).format(date);
 }
 
-/**
- * @deprecated Use formatUserTime() and pass the user's timeFormat
- * preference. Kept as a thin wrapper to avoid breaking call sites that
- * haven't been threaded with the preference yet.
- */
-export function formatTime(date: Date, timezone: string): string {
-  return formatUserTime(date, timezone, "12h");
-}
-
 export type DateFormat = "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD";
 
 /**
@@ -527,9 +518,10 @@ export interface UserDateOptions {
  * locale cannot be trusted to produce, so it is assembled by `isoDate`.
  *
  * NOT for date *keys*. Anything compared, grouped or round-tripped needs a
- * stable `YYYY-MM-DD` and must keep its own hardcoded `en-CA` formatter —
- * see the comment on `formatDateKey` in `(app)/log/+page.svelte` and on the
- * date cell in `server/export-csv.ts`.
+ * stable `YYYY-MM-DD` that ignores the preference, and takes it from
+ * `isoDayKey` (built from `formatToParts`, never borrowed from a locale's
+ * field order) — as `formatDateKey` in `(app)/log/+page.svelte` and the
+ * date cell in `server/export-csv.ts` both do.
  */
 export function formatUserDate(
   date: Date,

@@ -6,6 +6,7 @@ import {
   startOfDay,
   isoDayKey,
   isoDayKeyFormatter,
+  inclusiveDayCount,
   shiftDayKey,
   wallClockToInstant,
 } from "$lib/utils/time";
@@ -189,6 +190,30 @@ export async function getDailyDoseCounts(
     .orderBy(desc(sql`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`));
 }
 
+/**
+ * Taken-dose counts per (civil day, medication) — what the daily adherence
+ * series needs to cap each medication at its own expectation. Kept beside
+ * `getDailyDoseCounts` rather than replacing it: that pooled count also feeds
+ * total doses, the streak and the dose trend, which are factual counts.
+ */
+async function getDailyDoseCountsByMedication(
+  userId: string,
+  days: number,
+  timezone: string = "UTC",
+  filter?: AnalyticsFilter,
+) {
+  const day = sql<string>`date(${doseLogs.takenAt} AT TIME ZONE ${safeTz(timezone)})`;
+  return db
+    .select({
+      date: day,
+      medicationId: doseLogs.medicationId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(doseLogs)
+    .where(buildDateFilters(userId, days, timezone, filter))
+    .groupBy(day, doseLogs.medicationId);
+}
+
 export async function getPerMedicationStats(
   userId: string,
   days: number,
@@ -367,6 +392,15 @@ export type DailyAdherencePoint = {
 // IS respected per day, though: `isActiveOn` clamps against when it was
 // started and when it was stopped, so adding or archiving mid-period no
 // longer rewrites the days on either side.
+//
+// Each day's adherence aggregates PER MEDICATION, for the same reason
+// `foldDoseStatusBreakdown` does: a medication's taken doses are credited
+// only up to what that medication expected that day, and a medication
+// expecting nothing (PRN, or outside its lifecycle) contributes 0 to every
+// term. Pooling the day's doses first let an as-needed dose, or one
+// medication's second dose, pay for another medication's missed one — a
+// missed once-daily dose beside one paracetamol read 100%. `doseCount` stays
+// the factual pooled count, because the dose-volume sparkline reads it.
 export async function getDailyAdherenceSeries(
   userId: string,
   days: number,
@@ -374,7 +408,7 @@ export async function getDailyAdherenceSeries(
   filter?: AnalyticsFilter,
 ): Promise<DailyAdherencePoint[]> {
   const [dailyCounts, schedulesByMed, activeMeds] = await Promise.all([
-    getDailyDoseCounts(userId, days, timezone, filter),
+    getDailyDoseCountsByMedication(userId, days, timezone, filter),
     getSchedulesForUser(userId),
     db
       .select({
@@ -408,6 +442,7 @@ export async function getDailyAdherenceSeries(
   // Per-medication expected-per-day so we can include only meds that
   // were active on a given day.
   const expectedByMed = activeMeds.map((med) => ({
+    id: med.id,
     startedAt: med.startedAt,
     endsAt: lifecycleEnd(med),
     perDay: expectedPerDayFor(
@@ -421,17 +456,37 @@ export async function getDailyAdherenceSeries(
     filter?.from && filter?.to
       ? filter.from
       : startOfDay(new Date(Date.now() - days * 86400000), timezone);
-  const toDate = filter?.to ?? new Date();
-  const span = Math.max(1, Math.round((toDate.getTime() - fromDate.getTime()) / 86400000));
 
   const tz = isSupportedTimezone(timezone) ? timezone : "UTC";
   // Day KEYS for the series, matched against the SQL `AT TIME ZONE`
   // grouping — isoDayKey, never preferences.dateFormat.
   const formatter = isoDayKeyFormatter(tz);
+  const fromKey = formatter(fromDate);
 
+  // How many civil days the series names. An explicit range's bounds are
+  // both midnights, so their distance is a whole number of days (give or
+  // take one DST hour) and rounding it is exact. The preset ends at `now`,
+  // though, so the same division is `days` plus however much of today has
+  // elapsed: rounding it dropped today's bar before local noon and put it
+  // back after. The preset is counted in day KEYS instead, from the first
+  // day through today's key, so it always ends on today.
+  const span =
+    filter?.from && filter?.to
+      ? Math.max(1, Math.round((filter.to.getTime() - fromDate.getTime()) / 86400000))
+      : Math.max(1, inclusiveDayCount(fromKey, formatter(new Date())));
+
+  // Taken doses per day: the factual pooled count, and per medication for
+  // the capped adherence numerator.
   const countByDate = new Map<string, number>();
+  const countByDateAndMed = new Map<string, Map<string, number>>();
   for (const row of dailyCounts) {
-    countByDate.set(row.date, row.count);
+    countByDate.set(row.date, (countByDate.get(row.date) ?? 0) + row.count);
+    let byMed = countByDateAndMed.get(row.date);
+    if (!byMed) {
+      byMed = new Map();
+      countByDateAndMed.set(row.date, byMed);
+    }
+    byMed.set(row.medicationId, row.count);
   }
 
   // Walk day KEYS, not a fixed 86_400_000 step from a local midnight. A
@@ -442,19 +497,23 @@ export async function getDailyAdherenceSeries(
   // every autumn transition. `shiftDayKey` is pure calendar arithmetic and
   // cannot drift; `wallClockToInstant` then gives each key's own midnight for
   // the lifecycle comparison.
-  const fromKey = formatter(fromDate);
   const series: DailyAdherencePoint[] = [];
   for (let i = 0; i < span; i++) {
     const dateKey = shiftDayKey(fromKey, i);
     const day = wallClockToInstant(dateKey, "00:00", tz);
     const doseCount = countByDate.get(dateKey) ?? 0;
-    // Sum expected only across meds active on this specific day.
-    const expectedPerDay = expectedByMed.reduce(
-      (acc, m) => acc + (isActiveOn(day, m.startedAt, m.endsAt) ? m.perDay : 0),
-      0,
-    );
+    const takenByMed = countByDateAndMed.get(dateKey);
+    // Sum expected only across meds active on this specific day, and credit
+    // each one's taken doses only up to its own expectation.
+    let expectedPerDay = 0;
+    let creditedTaken = 0;
+    for (const m of expectedByMed) {
+      const expected = isActiveOn(day, m.startedAt, m.endsAt) ? m.perDay : 0;
+      expectedPerDay += expected;
+      creditedTaken += Math.min(takenByMed?.get(m.id) ?? 0, expected);
+    }
     const adherence =
-      expectedPerDay > 0 ? Math.min(100, Math.round((doseCount / expectedPerDay) * 100)) : 0;
+      expectedPerDay > 0 ? Math.min(100, Math.round((creditedTaken / expectedPerDay) * 100)) : 0;
     series.push({
       date: dateKey,
       doseCount,

@@ -9,7 +9,7 @@ import { oauthAccounts, sessions, users } from "../../../src/lib/server/db/schem
 // Lucia's real Drizzle adapter against the real migrations — the fake-db
 // suite mocks Lucia and would only see that a method was called.
 vi.mock("$app/environment", () => ({ dev: true }));
-vi.mock("$env/dynamic/private", () => ({ env: { ENCRYPTION_KEY: "test-encryption-key-123" } }));
+vi.mock("$env/dynamic/private", () => ({ env: { ENCRYPTION_KEY: "test-key-oauth" } }));
 vi.mock("$lib/server/db", async () => (await import("../helpers/pg-db")).dbMock);
 vi.mock("$lib/server/auth/oauth", () => ({
   getGoogle: () => null,

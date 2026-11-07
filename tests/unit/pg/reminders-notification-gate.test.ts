@@ -15,6 +15,12 @@ vi.mock("$lib/server/push", () => ({
 import { pgDb } from "../helpers/pg-db";
 import { reminderEvents } from "../../../src/lib/server/db/schema";
 
+// The overdue sweep clips slots to the medication's lifecycle, as the
+// dashboard does. `startedAt` defaults to now(), which under this file's
+// frozen clock is the moment of the test, so every slot earlier that day
+// would be clipped. Seed medications that already existed.
+const STARTED_BEFORE_THE_TEST = new Date("2026-01-01T00:00:00.000Z");
+
 const { checkOverdueMedications, checkLowInventoryMedications } =
   await import("../../../src/lib/server/reminders");
 
@@ -45,7 +51,7 @@ describe("overdue sweep — per-medication gate", () => {
   it("still reminds a medication with no overrides set", async () => {
     // The LEFT-JOIN trap in reverse: the gate must not drop the common
     // case, which is every medication that has never been configured.
-    await pgDb.seedMedication({ id: "m1" });
+    await pgDb.seedMedication({ startedAt: STARTED_BEFORE_THE_TEST, id: "m1" });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "00:01" });
 
     await checkOverdueMedications();
@@ -54,7 +60,11 @@ describe("overdue sweep — per-medication gate", () => {
   });
 
   it("skips a medication whose kill switch is off", async () => {
-    await pgDb.seedMedication({ id: "m1", notificationsEnabled: false });
+    await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
+      id: "m1",
+      notificationsEnabled: false,
+    });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "00:01" });
 
     await checkOverdueMedications();
@@ -64,6 +74,7 @@ describe("overdue sweep — per-medication gate", () => {
 
   it("skips a medication that has muted both overdue channels", async () => {
     await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
       id: "m1",
       notifyOverdueEmail: false,
       notifyOverduePush: false,
@@ -82,7 +93,11 @@ describe("overdue sweep — per-medication gate", () => {
       overdueEmailReminders: false,
       overduePushReminders: false,
     });
-    await pgDb.seedMedication({ id: "m1", notifyOverduePush: true });
+    await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
+      id: "m1",
+      notifyOverduePush: true,
+    });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "00:01" });
 
     await checkOverdueMedications();
@@ -91,9 +106,13 @@ describe("overdue sweep — per-medication gate", () => {
   });
 
   it("gates each medication independently", async () => {
-    await pgDb.seedMedication({ id: "m1", notificationsEnabled: false });
+    await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
+      id: "m1",
+      notificationsEnabled: false,
+    });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "00:01" });
-    await pgDb.seedMedication({ id: "m2", name: "Other" });
+    await pgDb.seedMedication({ startedAt: STARTED_BEFORE_THE_TEST, id: "m2", name: "Other" });
     await pgDb.seedSchedule({ id: "s2", medicationId: "m2", timeOfDay: "00:01" });
 
     await checkOverdueMedications();
@@ -108,7 +127,7 @@ describe("low-inventory sweep — per-medication gate", () => {
   const LOW = { inventoryCount: 2, inventoryAlertThreshold: 5 };
 
   it("still alerts a medication with no overrides set", async () => {
-    await pgDb.seedMedication({ id: "m1", ...LOW });
+    await pgDb.seedMedication({ startedAt: STARTED_BEFORE_THE_TEST, id: "m1", ...LOW });
     await checkLowInventoryMedications();
 
     // Un-vacuous: prove the claimed row is actually the low-inventory
@@ -119,7 +138,12 @@ describe("low-inventory sweep — per-medication gate", () => {
   });
 
   it("skips a medication whose kill switch is off", async () => {
-    await pgDb.seedMedication({ id: "m1", ...LOW, notificationsEnabled: false });
+    await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
+      id: "m1",
+      ...LOW,
+      notificationsEnabled: false,
+    });
     await checkLowInventoryMedications();
     expect(await claimedKeys()).toHaveLength(0);
   });
@@ -128,6 +152,7 @@ describe("low-inventory sweep — per-medication gate", () => {
     // The whole point of per-TYPE control: this medication should still
     // remind about missed doses.
     await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
       id: "m1",
       ...LOW,
       notifyLowInventoryEmail: false,

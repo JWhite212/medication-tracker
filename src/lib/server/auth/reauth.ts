@@ -51,17 +51,9 @@ function hashToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
 
-/**
- * How many password confirmations one account may attempt in a window.
- *
- * Generous, because a legitimate user genuinely does fumble a password
- * across several sensitive actions — but finite, which is the point. The
- * budget is per ACCOUNT rather than per (account, purpose): a per-purpose
- * bucket would hand an attacker eight times the guesses for the cost of
- * rotating a form field.
- */
-export const REAUTH_MAX_ATTEMPTS = 10;
-export const REAUTH_WINDOW_MS = 15 * 60 * 1000;
+// The reauth budget is declared once, in the policy table; re-exported here
+// for callers that read it beside the reauth functions.
+export { REAUTH_MAX_ATTEMPTS, REAUTH_WINDOW_MS } from "./rate-limit-policy";
 
 export type ReauthResult = {
   ok: boolean;

@@ -22,13 +22,6 @@ import { withReminderClaim } from "./reminders/dispatch";
 import { resolveChannels } from "./notifications/resolve";
 import { logWarn } from "$lib/server/log";
 
-export {
-  computeOverdueSlot,
-  isScheduleOverdue,
-  buildOverdueDedupeKey,
-  buildLowInventoryDedupeKey,
-} from "./reminders/domain";
-
 /**
  * One medication's failure must not cost every medication after it its
  * reminder. Each loop iteration is isolated and logged; the sweep still

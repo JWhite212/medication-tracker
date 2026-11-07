@@ -8,14 +8,6 @@ import type { AppearanceKey } from "$lib/appearance/registry";
 import type { UserPreferences } from "$lib/types";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
 
-// Instant save turns this page into an unthrottled authenticated write
-// path, and audit rows have no retention policy. The client debounce is
-// what keeps a normal session well inside this; the limit is here to
-// bound a stuck control or a scripted client. Sized between the closest
-// precedents: push-test is 5/15min, api-commands 60/60s.
-const APPEARANCE_MAX = 60;
-const APPEARANCE_WINDOW_MS = 60 * 1000;
-
 export const load: PageServerLoad = async ({ locals }) => {
   const prefs = await getOrCreatePreferences(locals.user!.id);
   return { preferences: prefs };

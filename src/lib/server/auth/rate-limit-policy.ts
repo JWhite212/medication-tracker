@@ -49,6 +49,15 @@ export interface LimitPolicy {
 const MINUTE = 60_000;
 export const QUARTER_HOUR = 15 * MINUTE;
 
+/**
+ * How many password confirmations one account may attempt in a window.
+ *
+ * Generous, because a legitimate user genuinely does fumble a password
+ * across several sensitive actions — but finite, which is the point. The
+ * budget is per ACCOUNT rather than per (account, purpose): a per-purpose
+ * bucket would hand an attacker eight times the guesses for the cost of
+ * rotating a form field.
+ */
 export const REAUTH_MAX_ATTEMPTS = 10;
 export const REAUTH_WINDOW_MS = QUARTER_HOUR;
 
@@ -124,6 +133,11 @@ export const LIMITS = {
   emailVerify: { namespace: "email-verify", max: 20, windowMs: QUARTER_HOUR, identity: "ip" },
 
   // --- Account surfaces -------------------------------------------------
+  // Instant save turns the appearance page into an authenticated write path
+  // whose every save is an audit row, and audit rows have no retention
+  // policy. The client debounce keeps a normal session well inside this;
+  // the limit bounds a stuck control or a scripted client. Sized between
+  // the closest precedents: push-test 5/15min, api-commands 60/60s.
   appearanceSave: { namespace: "appearance", max: 60, windowMs: MINUTE, identity: "account" },
   // Its own budget rather than appearance's: the two pages are separate
   // surfaces, and a burst of reorders must not lock the user out of theme.

@@ -9,9 +9,6 @@ import {
   MAX_EXPORT_RANGE_DAYS,
 } from "$lib/utils/time";
 
-const RATE_WINDOW_MS = 15 * 60 * 1000;
-const RATE_MAX_REQUESTS = 10;
-
 export const GET: RequestHandler = async ({ locals, url }) => {
   if (!locals.user) error(401, "Unauthorized");
 

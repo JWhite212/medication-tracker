@@ -1,4 +1,4 @@
-import { redirect, error } from "@sveltejs/kit";
+import { redirect, error, type Cookies } from "@sveltejs/kit";
 import { timingSafeEqual } from "crypto";
 import { dev } from "$app/environment";
 import { getGoogle, getGitHub } from "$lib/server/auth/oauth";
@@ -83,7 +83,32 @@ async function getGitHubUser(code: string): Promise<OAuthUserInfo> {
   };
 }
 
-export const GET: RequestHandler = async ({ params, url, cookies }) => {
+/**
+ * Mint the session this callback signs in with, ending the one the browser
+ * arrived with. A signed-in user reaches this route on purpose — "Sign in
+ * again to confirm" sends them here — and minting without ending the old
+ * session left it valid: a second row on /settings/security matching no
+ * device, and a copied cookie that kept working after the user had just
+ * re-authenticated. It ends for a different account too, because signing in
+ * as someone else in this browser is a sign-out of whoever was here. The old
+ * session is invalidated only once the new one exists, so a failed insert
+ * never leaves the user signed out.
+ */
+async function rotateSession(
+  cookies: Cookies,
+  previous: App.Locals["session"],
+  userId: string,
+): Promise<void> {
+  const session = await lucia.createSession(userId, { authenticatedAt: new Date() });
+  if (previous) await lucia.invalidateSession(previous.id);
+  const sessionCookie = lucia.createSessionCookie(session.id);
+  cookies.set(sessionCookie.name, sessionCookie.value, {
+    path: ".",
+    ...sessionCookie.attributes,
+  });
+}
+
+export const GET: RequestHandler = async ({ params, url, cookies, locals }) => {
   const provider = params.provider;
   const code = url.searchParams.get("code");
 
@@ -177,14 +202,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       redirect(302, "/auth/2fa");
     }
 
-    const session = await lucia.createSession(existingOAuth.userId, {
-      authenticatedAt: new Date(),
-    });
-    const sessionCookie = lucia.createSessionCookie(session.id);
-    cookies.set(sessionCookie.name, sessionCookie.value, {
-      path: ".",
-      ...sessionCookie.attributes,
-    });
+    await rotateSession(cookies, locals.session, existingOAuth.userId);
     redirect(302, takeReturnPath(cookies) ?? "/dashboard");
   }
 
@@ -218,11 +236,6 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
 
   await db.insert(oauthAccounts).values({ provider, providerUserId: oauthUser.id, userId });
 
-  const session = await lucia.createSession(userId, { authenticatedAt: new Date() });
-  const sessionCookie = lucia.createSessionCookie(session.id);
-  cookies.set(sessionCookie.name, sessionCookie.value, {
-    path: ".",
-    ...sessionCookie.attributes,
-  });
+  await rotateSession(cookies, locals.session, userId);
   redirect(302, takeReturnPath(cookies) ?? "/dashboard");
 };

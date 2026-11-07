@@ -74,6 +74,21 @@ const optionalMinutesField = z
   .pipe(z.union([z.null(), z.number().int().min(MIN_REPEAT_MINUTES).max(MAX_REPEAT_MINUTES)]));
 
 /**
+ * The one bound on a stock count, wherever it enters: the medication form
+ * and `/api/v1` (`inventoryCount`, `inventoryAlertThreshold`, `refill`,
+ * `adjust_inventory`) and the backup import (the same two medication
+ * fields, and an inventory event's counts and change). It is the `integer`
+ * column's own maximum, so the doors refuse only what the database could
+ * never store, and the import accepts everything the doors can write.
+ *
+ * The import used to cap these at 1,000,000 while the doors had no cap at
+ * all, so an account holding 2,000,000 could export a backup its own
+ * restore refused outright: medications are validated as a whole, so one
+ * out-of-range count failed the entire file.
+ */
+export const INVENTORY_COUNT_MAX = 2_147_483_647;
+
+/**
  * A non-negative integer count, where `null`, `undefined`, and an empty
  * string all mean "not tracked" rather than zero.
  *
@@ -99,7 +114,7 @@ const optionalCountField = z
     const s = typeof v === "number" ? String(v) : v.trim();
     return s === "" ? null : Number(s);
   })
-  .pipe(z.union([z.null(), z.number().int().min(0)]))
+  .pipe(z.union([z.null(), z.number().int().min(0).max(INVENTORY_COUNT_MAX)]))
   .optional();
 
 export const medicationSchema = z.object({
@@ -528,13 +543,13 @@ export const deleteDosePayload = z.object({ doseId: z.string() });
 
 export const refillPayload = z.object({
   medicationId: z.string(),
-  quantity: z.number().int().positive(),
+  quantity: z.number().int().positive().max(INVENTORY_COUNT_MAX),
   note: z.string().max(200).nullable().optional(),
 });
 
 export const adjustInventoryPayload = z.object({
   medicationId: z.string(),
-  newCount: z.number().int().min(0),
+  newCount: z.number().int().min(0).max(INVENTORY_COUNT_MAX),
   note: z.string().max(200).nullable().optional(),
 });
 
@@ -689,12 +704,19 @@ const importMedicationSchema = z.object({
   notes: z.string().max(1000).nullable().optional().default(null),
   scheduleType: z.enum(["scheduled", "as_needed"]).catch("scheduled"),
   scheduleIntervalHours: numericString.nullable().optional().default(null),
-  inventoryCount: z.number().int().min(0).max(1_000_000).nullable().optional().default(null),
+  inventoryCount: z
+    .number()
+    .int()
+    .min(0)
+    .max(INVENTORY_COUNT_MAX)
+    .nullable()
+    .optional()
+    .default(null),
   inventoryAlertThreshold: z
     .number()
     .int()
     .min(0)
-    .max(1_000_000)
+    .max(INVENTORY_COUNT_MAX)
     .nullable()
     .optional()
     .default(null),
@@ -728,6 +750,11 @@ const importMedicationSchema = z.object({
 });
 
 export const importDoseLogSchema = z.object({
+  // The dose's own id, kept only so two distinct rows that happen to share
+  // a medication, instant, status and quantity stay two rows (see
+  // `ImportDose.sourceId`). A missing or malformed id degrades to content
+  // dedupe rather than costing the row.
+  id: z.string().max(64).nullable().optional().default(null).catch(null),
   medicationId: z.string().max(64),
   quantity: z.number().int().min(1).max(1000).catch(1),
   takenAt: importDate,
@@ -748,18 +775,44 @@ export const importInventoryEventSchema = z.object({
     "refill",
     "correction",
   ]),
-  quantityChange: z.number().int().min(-1_000_000).max(1_000_000),
-  previousCount: z.number().int().min(0).max(1_000_000).nullable().optional().default(null),
-  newCount: z.number().int().min(0).max(1_000_000).nullable().optional().default(null),
+  quantityChange: z.number().int().min(-INVENTORY_COUNT_MAX).max(INVENTORY_COUNT_MAX),
+  previousCount: z
+    .number()
+    .int()
+    .min(0)
+    .max(INVENTORY_COUNT_MAX)
+    .nullable()
+    .optional()
+    .default(null),
+  newCount: z.number().int().min(0).max(INVENTORY_COUNT_MAX).nullable().optional().default(null),
   note: z.string().max(200).nullable().optional().default(null),
   createdAt: importDate,
 });
 
+const IMPORT_PROFILE_NAME_MAX = 100;
+
 /** Only `name` and `timezone` are read. Email, 2FA state and verification
  * flags are intentionally not modelled — importing them would let a file
- * rewrite the importer's identity. */
+ * rewrite the importer's identity.
+ *
+ * `name` takes whatever a sign-up door can store, not just what the
+ * settings form accepts: Apple sign-in keeps an empty `fullName` and OAuth
+ * keeps a provider display name of any length, and the export writes
+ * `users.name` back out unchanged. It is trimmed and clamped to the
+ * settings bound, and a name that ends up empty (or is not a string)
+ * becomes `null`, which leaves the importer's own name in place. A name
+ * outside the settings bound used to fail the envelope, which refused the
+ * whole file — every medication and dose — even with the profile section
+ * turned off. The timezone stays strict: an unknown zone would reach
+ * every `Intl` call the account makes. */
 const importProfileSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z
+    .string()
+    .transform((value) => value.trim().slice(0, IMPORT_PROFILE_NAME_MAX).trim() || null)
+    .nullable()
+    .optional()
+    .catch(null)
+    .transform((value) => value ?? null),
   timezone: z.string().refine(isSupportedTimezone, "Invalid timezone"),
 });
 

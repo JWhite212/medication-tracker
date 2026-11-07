@@ -43,7 +43,10 @@ Body (`loginSchema`):
 } // email: must be a valid email; password: non-empty
 ```
 
-- Rate-limited per client IP first: **10 attempts / 15 minutes** (`checkRateLimit("api-login-ip:<ip>", 10, 15*60*1000)`), then per lower-cased email: **5 attempts / 15 minutes** (`checkRateLimit("api-login:<email>", 5, 15*60*1000)`). Exceeding either returns `429` (see §6); the IP budget is checked first and does not touch the email budget when exceeded.
+- Rate-limited by two policies from `LIMITS` (`src/lib/server/auth/rate-limit-policy.ts`), the **same two the browser login form spends**, so switching transport does not refresh either allowance:
+  - `LIMITS.loginIp` (namespace `login-ip`): **10 attempts / 15 minutes per client IP**, spent up front on every request.
+  - `LIMITS.loginAccount` (namespace `login-account`): **5 failures / 15 minutes per lower-cased email**. It is peeked before the credential check and spent only by a failed attempt (wrong password, unknown email, or password-less account). A correct password costs nothing, so knowing someone's email address is not enough to lock them out. An unknown email spends it too, so a `429` does not reveal whether an account exists.
+  - Exceeding either returns `429` (see §6B). The IP budget is checked first; a request refused there does not touch the account budget.
 - `400` if the body is not valid JSON — body `{ message: "Invalid JSON body" }` (`readJson`, `src/lib/server/api/read-json.ts`).
 - `400` if the body fails `loginSchema` validation — body `{ message: "Invalid credentials payload" }`.
 - Unknown emails and password-less (OAuth-only) accounts burn a dummy Argon2 verification so response timing cannot enumerate registered emails.
@@ -89,7 +92,7 @@ Body:
 } // code: must match /^\d{6}$/
 ```
 
-- Rate-limited per user id behind the token: **5 attempts / 15 minutes** (`checkRateLimit("2fa:<userId>", 5, 15*60*1000)`). Exceeding it returns `429` (see §6). Wrong codes count toward the budget; the TOTP step counter alone only advances on success, so this is what makes guessing non-free.
+- Rate-limited per user id behind the token: **5 attempts / 15 minutes** (`LIMITS.twoFactor`, namespace `2fa`). The namespace is **shared with the browser's `/auth/2fa` door** on purpose: both consume the same signed pre-auth claim, so a per-door budget would let an attacker spend the allowance twice by switching transport. Exceeding it returns `429` (see §6B). Wrong codes count toward the budget; the TOTP step counter alone only advances on success, so this is what makes guessing non-free. The token is checked first, so an invalid or expired `preAuthToken` gets its `401` without spending the budget.
 - `400` if the body is not valid JSON — `{ message: "Invalid JSON body" }`.
 - `400` if the body fails validation (e.g. code isn't 6 digits) — `{ message: "Invalid payload" }`.
 - `401` if the pre-auth token is invalid/expired/tampered — `{ message: "Challenge expired — sign in again" }`.
@@ -114,12 +117,21 @@ against Apple's JWKS via `verifyAppleIdentityToken`, checking issuer `https://ap
 and audience `APPLE_CLIENT_ID`). This is the **native token flow only** — there is no web
 redirect flow implemented in `/api/v1` (deferred).
 
+- Rate-limited per client IP: **10 requests / 15 minutes** (`LIMITS.appleSignIn`, namespace
+  `apple-signin`), checked before the body is read, so it bounds the JWKS fetch and the
+  account-creation branch below. Exceeding it returns `429` with the §6B body and
+  `Retry-After` header.
 - `400` if the body is not valid JSON — `{ message: "Invalid JSON body" }`.
 - `400` if the body fails validation — `{ message: "Invalid payload" }`.
 - `401` if the identity token fails verification — `{ message: "Invalid Apple token" }`.
 - Three outcomes after verification, checked in order:
   1. **Existing Apple link** (`oauth_accounts` row for `provider="apple"` +
-     `providerUserId=<apple sub>`) → signs in that user. **200**: `{ token, user }`.
+     `providerUserId=<apple sub>`) → signs in that user. A verified Apple identity is the
+     first factor only:
+     - If the user has `twoFactorEnabled`, **200** with the same TOTP challenge as
+       `/auth/login`: `{ challenge: "totp", preAuthToken }`. No session is minted; the client
+       answers at `/auth/2fa`, which burns the token and returns `{ token, user }`.
+     - Otherwise **200**: `{ token, user }`.
   2. **No link, but the Apple account's email matches an existing (non-Apple) user** → refuses
      to auto-link. **409**, body `{ message: "email_conflict" }` (see §6 — this is a
      `throw error(409, "email_conflict")`, so it uses the `{ message }` shape, with the message
@@ -184,7 +196,7 @@ Returned by all three auth endpoints (`src/lib/server/api/serialize.ts:toSession
 ## 3. `GET /sync`
 
 Delta pull for the native client. Auth required. Rate-limited per user id:
-**120 requests / 60 seconds** (`checkRateLimit("api-sync:<userId>", 120, 60*1000)`) — generous
+**120 requests / 60 seconds** (`LIMITS.apiSync`, namespace `api-sync`) — generous
 enough for launch/foreground/post-drain syncs; only a runaway loop hits it. `429` on limit
 (see §6).
 
@@ -286,8 +298,12 @@ stay `null`.
 
 ### Serialized shapes (field-for-field)
 
-**`SerializedMedication`** (`serializeMedication`) — spreads the raw `medications` row, then
-overrides date fields to ISO strings:
+**`SerializedMedication`** (`serializeMedication`) — projects the `medications` row field by
+field, with date fields as ISO strings. It is never a spread, for the same reason as
+`serializeDoseLog`: callers pass rows from a bare `db.select()`, so a spread would put every
+column ever added to `medications` on the wire (`lowInventoryEpisodeAt`, which only the
+reminder sweep uses, is the current example). A new column reaches this shape only when it is
+added here deliberately:
 
 ```ts
 {
@@ -437,7 +453,7 @@ overrides date fields to ISO strings:
 ## 4. `POST /commands`
 
 Batched, idempotent write endpoint. Auth required. Rate-limited per user id:
-**60 requests / 60 seconds** (`checkRateLimit("api-commands:<userId>", 60, 60*1000)`) — each
+**60 requests / 60 seconds** (`LIMITS.apiCommands`, namespace `api-commands`) — each
 request already carries up to 200 commands, so this bounds abuse without throttling normal
 outbox drains. `429` on limit (see §6).
 
@@ -591,7 +607,7 @@ Full-account JSON backup / data-portability endpoint. Auth required. Reuses
 always exactly what a client would get from a from-scratch `/sync` call, plus a version
 envelope. This is distinct from the web app's `/api/export` CSV/PDF dose export.
 
-- Rate-limited per user id: **10 requests / 15 minutes** (`checkRateLimit("api-export:<userId>", 10, 15*60*1000)`). `429` on limit (see §6).
+- Rate-limited per user id: **10 requests / 15 minutes** (`LIMITS.apiExportFull`, namespace `api-export`). `429` on limit (see §6).
 - **200** response headers:
   - `content-type: application/json`
   - `content-disposition: attachment; filename="medtracker-backup-<YYYY-MM-DD>.json"` (date = today, UTC)
@@ -658,8 +674,11 @@ Examples actually produced by this code:
 
 ### B. Rate-limit responses (constructed directly, not via `error()`)
 
-Used for `429` on `/auth/login`, `/auth/2fa`, `/sync`, `/commands`, and `/export/full`
-(constructed via the shared `rateLimitedResponse` helper, `src/lib/server/api/rate-limit-response.ts`). Body:
+Used for `429` on `/auth/login`, `/auth/2fa`, `/auth/apple`, `/auth/reauth`, `/sync`,
+`/commands`, and `/export/full`. Every door sends the same body and header. `/auth/login`,
+`/auth/reauth`, `/sync` and `/commands` build it with the shared `rateLimitedResponse`
+helper (`src/lib/server/api/rate-limit-response.ts`); `/auth/2fa`, `/auth/apple` and
+`/export/full` still construct the same shape by hand. Body:
 
 ```ts
 {

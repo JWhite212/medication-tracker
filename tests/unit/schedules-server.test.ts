@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "./helpers/fake-db";
 import { medications, medicationSchedules } from "$lib/server/db/schema";
 
-type Insert = { table: string; values: unknown };
-type DeleteCall = { table: string };
 // Controls the ownership-check lookup; set to [] to simulate
 // "medication not owned by this user".
 

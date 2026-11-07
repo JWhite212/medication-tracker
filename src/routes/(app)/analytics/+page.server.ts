@@ -64,6 +64,7 @@ export const load: PageServerLoad = async ({ locals, parent, url }) => {
   return composeAnalyticsPageData({
     timezone,
     period,
+    customRange,
     fromParam,
     toParam,
     medicationIds,

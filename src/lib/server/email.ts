@@ -1,10 +1,5 @@
 import { env } from "$env/dynamic/private";
-// SvelteKit's $env/dynamic/private excludes any variable that starts
-// with the PUBLIC_ prefix, so PUBLIC_BASE_URL must come from the
-// public module. The value is genuinely public anyway (the site's
-// own URL).
-import { env as publicEnv } from "$env/dynamic/public";
-import { dev } from "$app/environment";
+import { publicBaseUrl } from "$lib/server/public-base-url";
 import { lastLoggedPhrase } from "$lib/utils/time";
 
 export type EmailErrorReason =
@@ -48,17 +43,11 @@ function escHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-// Always derive the public base URL from PUBLIC_BASE_URL, never from
-// the inbound request. Email links must NOT be influenced by Host or
-// Origin headers — both are attacker-controlled and would otherwise
-// enable token-leak account takeover.
-//
-// env.ts already enforces PUBLIC_BASE_URL in production. In dev we fall
-// back to localhost so the dev server works without extra config.
+// Email links come from PUBLIC_BASE_URL, never from the inbound request:
+// see `publicBaseUrl` for why.
 function getBaseUrl(): string {
-  const raw = (publicEnv.PUBLIC_BASE_URL ?? "") as string;
-  if (raw.length > 0) return raw.replace(/\/$/, "");
-  if (dev) return "http://localhost:5173";
+  const base = publicBaseUrl();
+  if (base) return base;
   throw new Error("PUBLIC_BASE_URL is not configured. Outbound emails cannot build a safe link.");
 }
 

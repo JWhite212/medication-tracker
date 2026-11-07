@@ -6,6 +6,8 @@ import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import {
   parseDayRangeParam,
   isoDayKey,
+  shiftDayKey,
+  wallClockToInstant,
   inclusiveDayCount,
   MAX_EXPORT_RANGE_DAYS,
   type DateFormat,
@@ -41,8 +43,30 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     error(400, "Invalid date format");
   }
 
-  const fromDate = parsedFrom ?? new Date(Date.now() - 30 * 86400000);
-  const toDate = parsedTo ?? new Date();
+  const preferences = await getOrCreatePreferences(locals.user.id);
+  const format = url.searchParams.get("format") ?? preferences.exportFormat ?? "pdf";
+
+  // The default window is CIVIL DAYS, like an explicit one. It used to be the
+  // rolling instant `now − 30×24h`, which the PDF header and the filename then
+  // labelled as a whole civil date: a London user exporting at 14:37 got a
+  // report headed "7 Oct" whose 7 Oct omitted the 08:00 dose, so the first
+  // labelled morning read as missed. Every export button omits from/to, so
+  // this was the only window a web user ever saw.
+  //
+  // The start is local midnight 30 days back. The PDF ends at today's local
+  // midnight (exclusive), i.e. the last 30 COMPLETE days: ending at `now`
+  // makes `clampEffectiveDays` floor the partial today while today's doses
+  // still count (a spurious Overuse line), and ending at tomorrow's midnight
+  // charges today's not-yet-due slots as Missed. The CSV is a data export
+  // with no expected-dose arithmetic, so it keeps ending at `now` and still
+  // carries today's doses, as it always has. A request naming only `from`
+  // keeps ending at `now` too: it asked for "from then on", not for the
+  // default window, and today's midnight would refuse a `from` of today.
+  const todayKey = isoDayKey(new Date(), tz);
+  const fromDate = parsedFrom ?? wallClockToInstant(shiftDayKey(todayKey, -30), "00:00", tz);
+  const toDate =
+    parsedTo ??
+    (format === "csv" || parsedFrom ? new Date() : wallClockToInstant(todayKey, "00:00", tz));
   if (fromDate >= toDate) {
     error(400, "'from' must be before 'to'");
   }
@@ -57,8 +81,6 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     error(400, "Date range must not exceed 1 year");
   }
 
-  const preferences = await getOrCreatePreferences(locals.user.id);
-  const format = url.searchParams.get("format") ?? preferences.exportFormat ?? "pdf";
   // The civil day is asked for, not read off the instant: `fromDate` is a
   // LOCAL midnight now, so `toISOString()` names the previous UTC date for
   // every user east of UTC. See the invariant on `wallClockToInstant`.

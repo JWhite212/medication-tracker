@@ -270,7 +270,9 @@ describe("DoseEditForm", () => {
   });
 
   it("ties a side-effects message to the chip group it is about", async () => {
-    const group = () => target.querySelector<HTMLElement>('[role="group"]')!;
+    // The picker's own fieldset is the chip group (it was a wrapper div that
+    // doubled the group, see the test below).
+    const group = () => target.querySelector<HTMLElement>("fieldset")!;
     expect(group().hasAttribute("aria-describedby")).toBe(false);
 
     await submit(failure(400, { editErrors: { sideEffects: ["Too many side effects"] } }));
@@ -281,6 +283,23 @@ describe("DoseEditForm", () => {
     // to the message itself; it is beside its group, so no form-level copy.
     expect(document.activeElement).toBe(field("sideEffects-error"));
     expect(formAlert()).toBeNull();
+  });
+
+  it("puts the side-effect chips in exactly one group, before and after an error", async () => {
+    // A role="group" wrapper around the picker's own fieldset made screen
+    // readers announce "Side effects, group, Side Effects, group" on the way in.
+    const chip = () =>
+      [...target.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Nausea")!;
+    const groupsAround = (el: Element) => {
+      let n = 0;
+      for (let at = el.parentElement; at; at = at.parentElement) {
+        if (at.matches('fieldset, [role="group"]')) n++;
+      }
+      return n;
+    };
+    expect(groupsAround(chip())).toBe(1);
+    await submit(failure(400, { editErrors: { sideEffects: ["Too many side effects"] } }));
+    expect(groupsAround(chip())).toBe(1);
   });
 
   it("draws its form-level message as an error Alert, still the form's one id-less alert", async () => {

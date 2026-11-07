@@ -6,8 +6,21 @@
   import { SEVERITY } from "$lib/utils/side-effect-severity";
   import { toneClass, toneOf, type StatusKey } from "$lib/utils/status-tone";
 
-  let { value = [], onchange }: { value: SideEffect[]; onchange: (effects: SideEffect[]) => void } =
-    $props();
+  let {
+    value = [],
+    onchange,
+    describedby,
+  }: {
+    value: SideEffect[];
+    onchange: (effects: SideEffect[]) => void;
+    /**
+     * The id of a message about the picker as a whole (DoseEditForm's field
+     * error), set on the picker's own fieldset. A caller that wrapped the
+     * picker in a second group to carry it made screen readers announce two
+     * nested "Side effects" groups.
+     */
+    describedby?: string;
+  } = $props();
 
   const commonEffects = [
     "Nausea",
@@ -102,7 +115,7 @@
 <!-- A fieldset, not a div with a span heading, so the chips, the text field and
      the severity buttons are announced as one "Side Effects" group. `min-w-0`
      undoes the fieldset's min-content width, which the div never had. -->
-<fieldset class="m-0 min-w-0 space-y-3 border-0 p-0">
+<fieldset class="m-0 min-w-0 space-y-3 border-0 p-0" aria-describedby={describedby}>
   <legend class="block text-sm font-medium">Side Effects</legend>
 
   <!-- Common effect chips -->

@@ -75,6 +75,8 @@ const call = (cookies: ReturnType<typeof makeCookies>) =>
     params: { provider: "github" },
     url: new URL("http://localhost/auth/callback/github?code=abc&state=st-1"),
     cookies,
+    // Every real RequestEvent carries locals; a visitor with no session.
+    locals: { session: null },
   } as never);
 
 const baseUser = {

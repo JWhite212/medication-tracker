@@ -1,5 +1,5 @@
 import { error, fail } from "@sveltejs/kit";
-import { eq, and, count, countDistinct, ne } from "drizzle-orm";
+import { eq, and, count, countDistinct, gt, ne } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { doseLogs, medications, sessions, auditLogs } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
@@ -48,7 +48,10 @@ export const load: PageServerLoad = async ({ locals }) => {
       .select({ value: count() })
       .from(medications)
       .where(and(eq(medications.userId, userId), eq(medications.isArchived, true))),
-    db.select({ value: count() }).from(sessions).where(eq(sessions.userId, userId)),
+    db
+      .select({ value: count() })
+      .from(sessions)
+      .where(and(eq(sessions.userId, userId), gt(sessions.expiresAt, new Date()))),
     db.select({ value: count() }).from(auditLogs).where(eq(auditLogs.userId, userId)),
     destructiveConfirmation(signedInFrom(locals)),
   ]);

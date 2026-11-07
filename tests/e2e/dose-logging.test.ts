@@ -1,20 +1,18 @@
 import { test, expect } from "@playwright/test";
 import { SEEDED_EMAIL } from "./helpers/auth";
-import { getUserIdByEmail, getInventoryCount, countDoseLogs } from "./helpers/db";
+import {
+  getUserIdByEmail,
+  getInventoryCount,
+  countDoseLogs,
+  getMedicationIdByName,
+} from "./helpers/db";
 
 const VITAMIN_D = "Vitamin D";
 
 async function getMedIdByName(userId: string, name: string): Promise<string> {
-  const { db } = await import("../../src/lib/server/db");
-  const { medications } = await import("../../src/lib/server/db/schema");
-  const { eq, and } = await import("drizzle-orm");
-  const [row] = await db
-    .select({ id: medications.id })
-    .from(medications)
-    .where(and(eq(medications.userId, userId), eq(medications.name, name)))
-    .limit(1);
-  if (!row) throw new Error(`No medication ${name} for user ${userId}`);
-  return row.id;
+  const id = await getMedicationIdByName(userId, name);
+  if (!id) throw new Error(`No medication ${name} for user ${userId}`);
+  return id;
 }
 
 test.describe("dose logging", () => {

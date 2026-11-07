@@ -35,7 +35,7 @@ export const load: PageServerLoad = async ({ cookies }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ request, cookies }) => {
+  default: async ({ request, cookies, locals }) => {
     const claims = claimsFrom(cookies);
     if (!claims) redirect(302, "/auth/login");
 
@@ -89,7 +89,14 @@ export const actions: Actions = {
 
     cookies.delete("pending_2fa", { path: "/" });
 
+    // End the session the browser arrived with, as the OAuth callback's
+    // `rotateSession` does. "Sign in again to confirm" on an account with a
+    // second factor finishes HERE rather than in the callback, and minting
+    // without ending the old session left it valid: a copied cookie kept
+    // working after the user had just re-authenticated. Invalidated only once
+    // the new session exists, so a failed insert never signs anyone out.
     const session = await lucia.createSession(claims.userId, { authenticatedAt: new Date() });
+    if (locals.session) await lucia.invalidateSession(locals.session.id);
     const sessionCookie = lucia.createSessionCookie(session.id);
     cookies.set(sessionCookie.name, sessionCookie.value, {
       path: ".",

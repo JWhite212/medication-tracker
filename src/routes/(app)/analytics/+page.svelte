@@ -10,7 +10,7 @@
   import Toggle from "$components/ui/Toggle.svelte";
   import { goto } from "$app/navigation";
   import { toneClass } from "$lib/utils/status-tone";
-  import type { DateFormat } from "$lib/utils/time";
+  import { formatUserDate, type DateFormat } from "$lib/utils/time";
 
   let { data } = $props();
 
@@ -37,6 +37,27 @@
   function periodLabel(days: number): string {
     return days === 365 ? "1 year" : `${days} days`;
   }
+
+  // A custom From/To window replaces the preset period for everything the
+  // queries measure, so it replaces it here too: the labels name the range,
+  // the heatmap spans it, and no preset Toggle claims to be selected. `range`
+  // is null (or absent, on a payload from before it existed) under a preset.
+  const range = $derived(data.range ?? null);
+
+  // `fromKey`/`toKey` are civil-date KEYS; formatting their UTC midnight in
+  // "UTC" renders that same date, through the user's date-format preference.
+  function keyLabel(key: string): string {
+    const [y, m, d] = key.split("-").map(Number);
+    return formatUserDate(
+      new Date(Date.UTC(y, m - 1, d)),
+      "UTC",
+      data.preferences.dateFormat as DateFormat,
+    );
+  }
+
+  const windowLabel = $derived(
+    range ? `${keyLabel(range.fromKey)} – ${keyLabel(range.toKey)}` : periodLabel(data.period),
+  );
 
   // keepFocus/noScroll for the same reason setMedFilter below has them: without
   // them every range change drops focus to the top of the document and scrolls
@@ -86,7 +107,10 @@
     <div class="border-glass-border bg-glass flex gap-1 rounded-lg border p-1 backdrop-blur-xl">
       {#each PERIODS as p (p.value)}
         <!-- aria-pressed comes from Toggle, which states the selection beyond its colour. -->
-        <Toggle pressed={data.period === p.value} onclick={() => setPeriod(p.value)}>
+        <Toggle
+          pressed={range === null && data.period === p.value}
+          onclick={() => setPeriod(p.value)}
+        >
           {p.label}
         </Toggle>
       {/each}
@@ -145,7 +169,7 @@
         {data.totalDoses}
       </p>
       <div class="mt-1 flex items-center justify-center gap-1.5">
-        <span class="text-text-secondary text-sm">Doses ({periodLabel(data.period)})</span>
+        <span class="text-text-secondary text-sm">Doses ({windowLabel})</span>
         {#if data.trends.doses.direction !== "flat"}
           <span class="text-xs {NEUTRAL_TEXT}">
             {data.trends.doses.direction === "up" ? "\u2191" : "\u2193"}{data.trends.doses.percent}%
@@ -166,10 +190,13 @@
   </div>
 
   <GlassCard>
-    <h2 class="mb-4 text-lg font-semibold">Activity (last {periodLabel(data.period)})</h2>
+    <h2 class="mb-4 text-lg font-semibold">
+      Activity ({range ? windowLabel : `last ${windowLabel}`})
+    </h2>
     <Heatmap
       data={data.dailyCounts}
-      days={data.period}
+      days={range ? range.days : data.period}
+      endKey={range?.toKey}
       timezone={data.user.timezone}
       dateFormat={data.preferences.dateFormat as DateFormat}
     />
@@ -177,7 +204,7 @@
 
   <GlassCard>
     <h2 class="mb-4 text-lg font-semibold">
-      Per-Medication Adherence ({periodLabel(data.period)})
+      Per-Medication Adherence ({windowLabel})
     </h2>
     {#if data.medStats.length > 0}
       <AdherenceChart stats={data.medStats} trends={data.trends.perMedication} />

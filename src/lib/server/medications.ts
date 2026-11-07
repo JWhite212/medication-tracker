@@ -320,11 +320,14 @@ export async function swapSortOrder(userId: string, medId1: string, medId2: stri
     if (i < 0 || j < 0) return false;
     [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
 
+    // Read after the locks. A moved row must bump `updatedAt`, or
+    // `/api/v1/sync` (`updatedAt > since`) never ships the new order.
+    const now = new Date();
     for (const [index, m] of ordered.entries()) {
       if (m.sortOrder === index) continue;
       await tx
         .update(medications)
-        .set({ sortOrder: index })
+        .set({ sortOrder: index, updatedAt: now })
         .where(and(eq(medications.id, m.id), eq(medications.userId, userId)));
     }
     return true;

@@ -159,6 +159,77 @@ describe("Sign Out", () => {
   });
 });
 
+describe("2FA enrolment survives a failed verify", () => {
+  // The router replaces `form` with each action's result. Setup's result is
+  // the only one that carries the QR and the secret, so a mistyped code
+  // ({ totpError } alone) used to drop the page back to Step 1, and running
+  // setup again stored a new secret the scanned entry could never match.
+  const QR = "data:image/png;base64,QRDATA";
+  const SECRET = "JBSWY3DPEHPK3PXP";
+  const security = (twoFactorEnabled = false) => ({
+    user: { ...user, twoFactorEnabled },
+    preferences,
+    sessions: [],
+    currentSessionId: "s1",
+    twoFactorEnabled,
+  });
+  const qr = (target: HTMLElement) =>
+    target.querySelector<HTMLImageElement>('img[alt="TOTP QR Code"]');
+  const codeInput = (target: HTMLElement) =>
+    target.querySelector<HTMLInputElement>('form[action="?/verifyTwoFactor"] input#verifyTotpCode');
+  const setupForm = (target: HTMLElement) =>
+    target.querySelector('form[action="?/setupTwoFactor"]');
+
+  it("keeps the QR, the manual secret and the code field after a wrong code", () => {
+    const target = mountPage(Security, security());
+    props.form = { totpSetup: { qrCode: QR, secret: SECRET } };
+    flushSync();
+    expect(qr(target)?.getAttribute("src")).toBe(QR);
+
+    props.form = { totpError: "Invalid code — try again" };
+    flushSync();
+    expect(qr(target)?.getAttribute("src"), "the QR must stay up for a retry").toBe(QR);
+    expect(textOf(target)).toContain(SECRET);
+    expect(codeInput(target)).not.toBeNull();
+    expect(setupForm(target), "Step 1 would issue a new secret").toBeNull();
+    // The failure still reads as the verify's and describes its field.
+    expect(alertTitled(target, "Invalid code — try again")?.getAttribute("role")).toBe("alert");
+    expect(codeInput(target)!.getAttribute("aria-describedby")).toContain("totp-error");
+
+    // A second miss (the malformed-code message) keeps it too.
+    props.form = { totpError: "Enter a 6-digit code" };
+    flushSync();
+    expect(qr(target)?.getAttribute("src")).toBe(QR);
+  });
+
+  it("lets the enrolment go once 2FA is enabled", () => {
+    const target = mountPage(Security, security());
+    props.form = { totpSetup: { qrCode: QR, secret: SECRET } };
+    flushSync();
+    props.form = { totpError: "Invalid code — try again" };
+    flushSync();
+    props.data = security(true);
+    props.form = { totpEnabled: true };
+    flushSync();
+    expect(qr(target)).toBeNull();
+    expect(textOf(target)).not.toContain(SECRET);
+    expect(target.querySelector('form[action="?/disableTwoFactor"]')).not.toBeNull();
+  });
+
+  it("does not resurrect an old enrolment after an unrelated result", () => {
+    const target = mountPage(Security, security());
+    props.form = { totpSetup: { qrCode: QR, secret: SECRET } };
+    flushSync();
+    props.form = { passwordSuccess: true };
+    flushSync();
+    expect(qr(target)).toBeNull();
+    props.form = { totpError: "Incorrect password — re-enter to enable 2FA" };
+    flushSync();
+    expect(qr(target), "a later setup failure is Step 1's, not the old QR's").toBeNull();
+    expect(setupForm(target)).not.toBeNull();
+  });
+});
+
 describe("push card and test confirmation", () => {
   let subscription: { endpoint: string } | null = null;
   const notif = () => ({

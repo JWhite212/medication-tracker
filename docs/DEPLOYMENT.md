@@ -73,7 +73,7 @@ Keep these in a password manager. You'll paste them into Vercel next.
    | Variable                       | Required         | Notes                                                      |
    | ------------------------------ | ---------------- | ---------------------------------------------------------- |
    | `DATABASE_URL`                 | Yes              | Pooled Neon URL with `?sslmode=require`                    |
-   | `ENCRYPTION_KEY`               | Yes (prod)       | `openssl rand -base64 48` output                           |
+   | `ENCRYPTION_KEY`               | Yes (all)        | `openssl rand -base64 48` output                           |
    | `CRON_SECRET`                  | Yes for cron     | Random 32+ char string                                     |
    | `PUBLIC_BASE_URL`              | Yes (prod)       | e.g. `https://your-app.vercel.app`                         |
    | `RESEND_API_KEY`               | For email        | From [resend.com](https://resend.com) dashboard            |

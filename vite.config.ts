@@ -21,22 +21,17 @@ export default defineConfig({
       // tests, not units, so including them here just inflates the
       // denominator with files we never intended to unit test.
       include: ["src/lib/**/*.{ts,svelte}"],
-      exclude: [
-        "src/lib/**/*.test.ts",
-        "src/lib/server/db/schema.ts",
-        "src/lib/server/db/index.ts",
-      ],
-      // Regression-only thresholds. After the auth-reauth + analytics
-      // + TOTP test additions actuals sit at ~31/37/25.9/39 across
-      // the four metrics in CI. Floor bumped on functions from 25 to
-      // 25.5 to lock in the new service-layer coverage with a small
-      // margin for CI variance. CI fails if any metric drops below
-      // these.
+      exclude: ["src/lib/server/db/schema.ts", "src/lib/server/db/index.ts"],
+      // Regression floors, a few points under the measured actuals
+      // (2026-11-06: 94.8 / 84.6 / 91.3 / 95.3 statements / branches /
+      // functions / lines). The old 30/25/25.5/30 sat 60 points below
+      // reality, so coverage could have collapsed without failing CI.
+      // CI fails if any metric drops below these.
       thresholds: {
-        statements: 30,
-        branches: 25,
-        functions: 25.5,
-        lines: 30,
+        statements: 90,
+        branches: 80,
+        functions: 87,
+        lines: 90,
       },
     },
   },

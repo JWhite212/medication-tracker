@@ -45,12 +45,16 @@ export const GET: RequestHandler = async ({ request }) => {
   // invisibly, because the loud symptom is the missing reminders. The sweeps
   // still propagate (a failed tick must be a failed tick, so the platform and
   // the dead-man switch both see it), but not before cleanup has had its turn.
+  //
+  // The two sweeps are independent of each other too: an overdue sweep that
+  // threw used to skip the low-inventory sweep for the whole tick.
   let sweepFailure: unknown = null;
-  try {
-    await checkOverdueMedications();
-    await checkLowInventoryMedications();
-  } catch (thrown) {
-    sweepFailure = thrown;
+  for (const sweep of [checkOverdueMedications, checkLowInventoryMedications]) {
+    try {
+      await sweep();
+    } catch (thrown) {
+      sweepFailure ??= thrown;
+    }
   }
 
   // Every policy, independently, never throwing — see server/retention.ts.

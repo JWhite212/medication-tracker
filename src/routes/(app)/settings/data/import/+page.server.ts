@@ -19,13 +19,6 @@ import type { Actions, PageServerLoad } from "./$types";
 // row, but a 50k-dose file still needs more than the platform default.
 export const config = { maxDuration: 60 };
 
-const PREVIEW_WINDOW_MS = 15 * 60 * 1000;
-const PREVIEW_MAX = 20;
-const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
-const ATTEMPT_MAX = 20;
-const COMMIT_WINDOW_MS = 60 * 60 * 1000;
-const COMMIT_MAX = 5;
-
 /** What the browser needs to render a preview. Deliberately not the
  * whole plan: that carries every source row, and shipping it to the
  * client then trusting it back would defeat the point of re-parsing on

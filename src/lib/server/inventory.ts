@@ -8,9 +8,7 @@ import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
 import { atOrBelowAlertThreshold } from "$lib/utils/low-stock";
 import { refillStatus, toneOf } from "$lib/utils/status-tone";
 // Types live in $lib/types so client components (RefillsCard) can
-// import without crossing the $lib/server boundary. Re-exported here
-// for backward-compatible callers.
-export type { RefillSeverity, RefillForecastEntry } from "$lib/types";
+// import without crossing the $lib/server boundary.
 import type { RefillSeverity, RefillForecastEntry } from "$lib/types";
 
 export const REFILL_THRESHOLDS = {

@@ -3,9 +3,6 @@ import { checkInteractions, isInteractionsEnabled } from "$lib/server/interactio
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
 import type { RequestHandler } from "@sveltejs/kit";
 
-const WINDOW_MS = 15 * 60 * 1000;
-const MAX_REQUESTS = 30;
-
 export const GET: RequestHandler = async ({ url, locals }) => {
   if (!locals.user) throw error(401);
   if (!isInteractionsEnabled()) return json({ warnings: [], enabled: false });

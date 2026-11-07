@@ -181,8 +181,12 @@ the same row and lose an audit row.
 
 ### `rate_limits`
 
-Sliding-window counter keyed by string (e.g., `login:<ip>` or
-`reset:<email>`). Reset time stored in `reset_at`.
+Fixed-window counter keyed by string, `<namespace>:<identity>` (e.g.
+`login-ip:<ip>` or `login-account:<email>`). Namespaces come only from
+the `LIMITS` table in `src/lib/server/auth/rate-limit-policy.ts`; nothing
+hand-writes a key. Reset time stored in `reset_at`. The table doubles as
+the single-use ledger for 2FA challenge tokens (`preauth:` rows), which is
+why the `rate-limits` retention policy deletes only expired rows.
 
 ### `push_subscriptions`
 
@@ -236,11 +240,74 @@ revoke-all-sessions). Each row carries a SHA-256-hashed token, a
 `purpose` discriminator, an expiry (5 min), and a nullable `used_at`
 so a token can only be redeemed once.
 
+### `inventory_events`
+
+Append-only stock ledger: one row per change to
+`medications.inventory_count`. `event_type` is one of `dose_taken`,
+`dose_deleted`, `dose_restored`, `dose_quantity_updated`,
+`manual_adjustment`, `refill` or `correction` (the `InventoryEventType`
+union in `schema.ts`); `quantity_change` is the signed delta, and
+`previous_count` / `new_count` snapshot the count either side of it
+(both NULL when the medication does not track inventory). The dose,
+refill and adjustment paths write rows through `recordInventoryEvent`
+(`src/lib/server/inventory-events.ts`); import inserts them in bulk
+(`src/lib/server/import/apply.ts`). The ledger
+reconciles with the count it records, not with what was physically in
+the bottle, so drift that predates `dose_logs.inventory_applied` is not
+back-correctable from it. Synced to native clients by `/api/v1/sync`.
+Cascade-deletes with the user or the medication.
+
+### `sync_tombstones`
+
+Deletion record for native-client sync. When a synced entity is deleted,
+a row (`entity_type`, `entity_id`, `deleted_at`) tells the next
+`/api/v1/sync` delta to remove the client's local copy. `entity_type`
+covers `medication`, `dose_log`, `medication_schedule` and
+`inventory_event`. Restoring a trashed dose deletes **every** tombstone
+for it, because the Mac app applies a delta's upserts before its
+tombstones and one surviving tombstone would delete the restored dose
+there for good. Cascade-deletes with the user.
+
+### `api_commands`
+
+Idempotency ledger for `/api/v1/commands`. Primary key
+`(user_id, idempotency_key)`; `result` holds the stored JSON result. A
+command reserves its row first, so a client retrying after a dropped
+response gets the stored result replayed instead of the mutation applied
+twice (`src/lib/server/api/commands.ts`). Cascade-deletes with the user.
+
 ## Migration workflow
 
-The project switched from `drizzle-kit push` to file-based
-`drizzle-kit migrate` in Phase 2. The legacy `push` script is kept
-for emergency situations only.
+There are two ways schema reaches a database, and production uses the
+first:
+
+- **`drizzle-kit push` (production).** `scripts/vercel-build.mjs` runs
+  `drizzle-kit push` on every production build (on by default; see
+  `MIGRATE_ON_BUILD` in that file). Push diffs `schema.ts` against the
+  live database directly, so it works whatever state the migration
+  journal is in. It is not a legacy path.
+- **`drizzle-kit migrate` (migration files).** Every schema change still
+  gets a generated, reviewed migration in `drizzle/`, which is the
+  history, the input to the PGlite test databases
+  (`tests/unit/helpers/pg-db.ts` applies them), and the way to bring up
+  a fresh local database.
+
+The generated SQL is still the place for a hand-written data migration,
+but **push applies DDL only**: it diffs the schema and never runs a
+migration file's `UPDATE`s. A backfill a deploy depends on must be safe to
+skip (every reader falls back, as `dose_logs.inventory_applied` does) or be
+applied by hand.
+
+> **The production migration journal can be empty.** Production schema
+> was historically pushed, not migrated, so
+> `drizzle.__drizzle_migrations` may have no rows even though every
+> table exists. `drizzle-kit migrate` and `scripts/migrate-once.mjs`
+> both decide what to apply from that journal: against an empty one
+> they replay from `0000` and fail on the first `CREATE TABLE` that
+> already exists. Check the journal before
+> running either against production
+> (`SELECT count(*) FROM drizzle.__drizzle_migrations`), and backfill it
+> first if it is empty.
 
 ```bash
 # 1. Edit src/lib/server/db/schema.ts
@@ -249,18 +316,18 @@ npm run db:generate
 
 # 3. Inspect the generated SQL in drizzle/<NNNN>_<name>.sql
 # 4. Append any data migrations (UPDATE statements) by hand if needed
-# 5. Apply the migration to the database
+# 5. Apply it locally (production applies it via push on deploy)
 npm run db:migrate
 ```
 
 Useful commands:
 
-| Command               | Purpose                                               |
-| --------------------- | ----------------------------------------------------- |
-| `npm run db:generate` | Diff schema → produce a new SQL migration file        |
-| `npm run db:migrate`  | Apply all pending migrations                          |
-| `npm run db:push`     | (Legacy) push schema directly without migration files |
-| `npm run db:studio`   | Open the Drizzle Studio web UI on localhost           |
+| Command               | Purpose                                            |
+| --------------------- | -------------------------------------------------- |
+| `npm run db:generate` | Diff schema → produce a new SQL migration file     |
+| `npm run db:migrate`  | Apply all pending migrations                       |
+| `npm run db:push`     | Push schema directly (what production deploys run) |
+| `npm run db:studio`   | Open the Drizzle Studio web UI on localhost        |
 
 ## Local setup
 

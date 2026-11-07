@@ -322,3 +322,85 @@ describe("the filter bar's and the pagination's controls are the shared Button",
     await expectAxeClean(ssrDocument(html), ["button-name", "link-name"]);
   });
 });
+
+describe("the medication filter offers archived medications", () => {
+  const MEDS = [
+    { id: "m1", name: "Ibuprofen", colour: "#ffffff" },
+    { id: "m2", name: "Sertraline", colour: "#000000", isArchived: true },
+  ];
+
+  function renderWithMeds(query: string, medication: string | null): string {
+    pageState.url = new URL(`/log${query}`, "https://medtracker.test");
+    return render(LogPage, {
+      props: {
+        data: {
+          user,
+          preferences,
+          doses: [DOSE],
+          medications: MEDS,
+          page: 1,
+          hasMore: false,
+          filters: { ...NO_FILTERS, medication },
+          timezone: "UTC",
+        },
+      },
+      context: doseWriteContext(),
+    }).body;
+  }
+
+  /** The medication select, from its opening tag to its close. */
+  const medicationSelect = (html: string) => {
+    const start = html.search(/<select\b[^>]*name="medication"/);
+    expect(start, "no medication select rendered").toBeGreaterThan(-1);
+    return html.slice(start, html.indexOf("</select>", start));
+  };
+
+  it("lists an archived medication in its own Archived group", () => {
+    const select = withoutComments(medicationSelect(renderWithMeds("", null)));
+
+    expect(select).toMatch(/<option\b[^>]*value="m1"[^>]*>Ibuprofen<\/option>/);
+    expect(select).toMatch(
+      /<optgroup\b[^>]*label="Archived"[^>]*>\s*<option\b[^>]*value="m2"[^>]*>Sertraline<\/option>\s*<\/optgroup>/,
+    );
+  });
+
+  it("shows an archived medication as the selected filter when the URL names it", () => {
+    const select = medicationSelect(renderWithMeds("?medication=m2", "m2"));
+
+    expect(select).toMatch(/<option\b[^>]*value="m2"[^>]*selected[^>]*>/);
+  });
+});
+
+describe("a page past the last one", () => {
+  it("is not the first-run empty state for a user who has doses", () => {
+    // Reached by the reload after deleting the only dose on the last page,
+    // an old bookmark, or a hand-typed ?page=999: page 1 still has doses, so
+    // "No dose history yet" and its "Log a dose" link would be false.
+    const html = withoutComments(renderAt(`/log?page=999`, { page: 999, doses: [] }));
+
+    expect(html).not.toContain("No dose history yet");
+    expect(html).toContain("No more doses");
+    const back = resolvedHref(html.match(/<a\b[^>]*>\s*Back to page 1\s*<\/a>/)?.[0]);
+    expect(back.pathname).toBe("/log");
+    expect(back.searchParams.has("page")).toBe(false);
+  });
+
+  it("links back to page 1 of the same filtered view, not the filtered empty state", () => {
+    const html = withoutComments(
+      renderAt(`/log?status=missed&page=3`, {
+        page: 3,
+        doses: [],
+        filters: { ...NO_FILTERS, status: "missed" },
+      }),
+    );
+    const afterForm = html.slice(html.indexOf("</form>"));
+
+    expect(afterForm).not.toContain("No doses match these filters");
+    expect(afterForm).toContain("No more doses");
+    const tag = afterForm.match(/<a\b[^>]*>\s*Back to page 1\s*<\/a>/)?.[0];
+    const back = resolvedHref(tag);
+    expect(back.pathname).toBe("/log");
+    expect(back.searchParams.get("status")).toBe("missed");
+    expect(back.searchParams.has("page")).toBe(false);
+  });
+});

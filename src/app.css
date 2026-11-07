@@ -231,6 +231,31 @@ main:has([data-edit-toolbar]) {
   }
 }
 
+/* The same reserve lifts the toast stack (Toast.svelte, `fixed bottom-4`)
+   clear of the toolbar while it exists. Left at its resting offset, an Undo
+   offer — which lasts up to ten minutes — sat on top of Done and More
+   options, so a keyboard user tabbing to Done focused a control the toast
+   hid (WCAG 2.2 2.4.11), and a tap there landed on the toast.
+   bottom = the reserve above (bar + <main>'s bottom padding + safe area)
+          + the stack's own resting gap (1rem, bottom-4 in Toast.svelte).
+   The selector starts at <body> because Toast is a sibling of <main>, so
+   `main:has(...)` cannot reach it. Unlayered, so it beats the utility.
+   COUPLING: same terms, same breakpoints as the scroll reserve;
+   toast-clears-edit-toolbar.svelte.test.ts holds the two together. */
+body:has([data-edit-toolbar]) [data-toast-stack] {
+  bottom: calc(7.5rem + 1rem + env(safe-area-inset-bottom) + 1rem);
+}
+@media (min-width: 48rem) {
+  body:has([data-edit-toolbar]) [data-toast-stack] {
+    bottom: calc(7.5rem + 1.5rem + env(safe-area-inset-bottom) + 1rem);
+  }
+}
+@media (min-width: 64rem) {
+  body:has([data-edit-toolbar]) [data-toast-stack] {
+    bottom: calc(7.5rem + 2rem + env(safe-area-inset-bottom) + 1rem);
+  }
+}
+
 /* padding-inline/bottom only. The `padding` shorthand here also reset
    padding-top, and because this rule is unlayered it beat Tailwind's
    `pt-18` on <main> — so compact mode on mobile pushed the top of every

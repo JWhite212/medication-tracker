@@ -34,6 +34,14 @@
   }
 
   function clear() {
+    // Clear filter is rendered only while something is selected, so clearing
+    // unmounts the button that was just pressed. With focus on it, focus fell
+    // to <body> with the popover still open (the caller's goto keeps focus,
+    // so nothing restored it). Hand it to the trigger first, which is always
+    // mounted -- the same return the Escape handler makes -- and only when
+    // focus was inside the popover, so a tap that focused nothing moves none.
+    const active = document.activeElement;
+    if (active !== null && active !== triggerEl && container?.contains(active)) triggerEl?.focus();
     selected = [];
     onchange(selected);
   }

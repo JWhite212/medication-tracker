@@ -214,6 +214,13 @@ export async function createMedicationWithSchedules(
  * Returns null when the medication is not owned by the user; throws
  * MedicationOwnershipError if the FK guard inside the transaction
  * fails (defence-in-depth — the caller should already filter).
+ *
+ * The audit diff's before-image is read inside the transaction, under the
+ * medication row lock, as its first statement (the lock order every dose and
+ * stock writer follows: the medication row first). It used to be an unlocked
+ * read taken before the transaction opened, so any write to the row that
+ * committed in between — a second save, the Mac app's edit, a dose log moving
+ * `inventoryCount` — was missing from, or misattributed in, the audit row.
  */
 export async function updateMedicationWithSchedules(
   userId: string,
@@ -221,11 +228,17 @@ export async function updateMedicationWithSchedules(
   input: MedicationInput,
   schedules: ScheduleInput[],
 ) {
-  const before = await getMedicationById(userId, id);
-  if (!before) return null;
   const scheduleRows = buildScheduleRows(userId, id, schedules);
 
   return dbTx.transaction(async (tx) => {
+    const [before] = await tx
+      .select()
+      .from(medications)
+      .where(and(eq(medications.id, id), eq(medications.userId, userId)))
+      .limit(1)
+      .for("update");
+    if (!before) return null;
+
     const [updated] = await tx
       .update(medications)
       .set({
@@ -265,7 +278,9 @@ export async function updateMedicationWithSchedules(
       await tx.insert(medicationSchedules).values(scheduleRows);
     }
 
-    const changes = computeChanges(before, updated);
+    // `updatedAt` is rewritten by every save, so diffing it made a no-op Save
+    // write an audit row (the same reason `updatePreferences` scopes its diff).
+    const changes = computeChanges(before, updated, { ignore: ["updatedAt"] });
     if (changes) {
       await tx.insert(auditLogs).values({
         id: createId(),
@@ -320,11 +335,14 @@ export async function swapSortOrder(userId: string, medId1: string, medId2: stri
     if (i < 0 || j < 0) return false;
     [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
 
+    // Read after the locks. A moved row must bump `updatedAt`, or
+    // `/api/v1/sync` (`updatedAt > since`) never ships the new order.
+    const now = new Date();
     for (const [index, m] of ordered.entries()) {
       if (m.sortOrder === index) continue;
       await tx
         .update(medications)
-        .set({ sortOrder: index })
+        .set({ sortOrder: index, updatedAt: now })
         .where(and(eq(medications.id, m.id), eq(medications.userId, userId)));
     }
     return true;

@@ -113,7 +113,9 @@ self.addEventListener("pushsubscriptionchange", ((event: PushSubscriptionChangeE
       // authenticates as the signed-in user. The old endpoint is left
       // for the server to reap: the next send gets a 410 and prunes it.
       // Swallow failures — if the session has expired there is no user
-      // to tell, and the device re-registers next time Settings opens.
+      // to tell. Settings → Notifications re-posts this browser's
+      // subscription every time it opens, which is when the device
+      // registers again.
       await fetch("/api/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

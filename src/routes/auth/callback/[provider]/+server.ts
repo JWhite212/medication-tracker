@@ -1,4 +1,4 @@
-import { redirect, error } from "@sveltejs/kit";
+import { redirect, error, type Cookies } from "@sveltejs/kit";
 import { timingSafeEqual } from "crypto";
 import { dev } from "$app/environment";
 import { getGoogle, getGitHub } from "$lib/server/auth/oauth";
@@ -9,7 +9,11 @@ import { eq, and } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { RequestHandler } from "./$types";
 import { signPreAuthToken } from "$lib/server/api/preauth";
-import { rememberReturnPath, takeReturnPath } from "$lib/server/auth/return-path";
+import {
+  RETURN_PATH_COOKIE,
+  rememberReturnPath,
+  takeReturnPath,
+} from "$lib/server/auth/return-path";
 
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -83,9 +87,53 @@ async function getGitHubUser(code: string): Promise<OAuthUserInfo> {
   };
 }
 
-export const GET: RequestHandler = async ({ params, url, cookies }) => {
+/**
+ * Mint the session this callback signs in with, ending the one the browser
+ * arrived with. A signed-in user reaches this route on purpose — "Sign in
+ * again to confirm" sends them here — and minting without ending the old
+ * session left it valid: a second row on /settings/security matching no
+ * device, and a copied cookie that kept working after the user had just
+ * re-authenticated. It ends for a different account too, because signing in
+ * as someone else in this browser is a sign-out of whoever was here. The old
+ * session is invalidated only once the new one exists, so a failed insert
+ * never leaves the user signed out.
+ */
+async function rotateSession(
+  cookies: Cookies,
+  previous: App.Locals["session"],
+  userId: string,
+): Promise<void> {
+  const session = await lucia.createSession(userId, { authenticatedAt: new Date() });
+  if (previous) await lucia.invalidateSession(previous.id);
+  const sessionCookie = lucia.createSessionCookie(session.id);
+  cookies.set(sessionCookie.name, sessionCookie.value, {
+    path: ".",
+    ...sessionCookie.attributes,
+  });
+}
+
+export const GET: RequestHandler = async ({ params, url, cookies, locals }) => {
   const provider = params.provider;
   const code = url.searchParams.get("code");
+
+  // The provider's error response (RFC 6749 §4.1.2.1): Cancel on the consent
+  // screen comes back as `?error=access_denied&state=…` with no code. Read as
+  // "no code", it used to start a fresh attempt and bounce straight back to
+  // the provider, so Cancel could never leave. End the attempt instead: its
+  // cookies are spent, and the user lands on sign-in with a reason. Nothing
+  // privileged happens here, so the state is not checked first.
+  const providerError = url.searchParams.get("error");
+  if (!code && providerError !== null) {
+    cookies.delete("oauth_state", { path: "/" });
+    cookies.delete("google_code_verifier", { path: "/" });
+    cookies.delete(RETURN_PATH_COOKIE, { path: "/" });
+    redirect(
+      302,
+      providerError === "access_denied"
+        ? "/auth/login?error=oauth_cancelled"
+        : "/auth/login?error=oauth_failed",
+    );
+  }
 
   if (!code) {
     // "Sign in again to confirm" passes the page to come back to.
@@ -177,14 +225,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       redirect(302, "/auth/2fa");
     }
 
-    const session = await lucia.createSession(existingOAuth.userId, {
-      authenticatedAt: new Date(),
-    });
-    const sessionCookie = lucia.createSessionCookie(session.id);
-    cookies.set(sessionCookie.name, sessionCookie.value, {
-      path: ".",
-      ...sessionCookie.attributes,
-    });
+    await rotateSession(cookies, locals.session, existingOAuth.userId);
     redirect(302, takeReturnPath(cookies) ?? "/dashboard");
   }
 
@@ -218,11 +259,6 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
 
   await db.insert(oauthAccounts).values({ provider, providerUserId: oauthUser.id, userId });
 
-  const session = await lucia.createSession(userId, { authenticatedAt: new Date() });
-  const sessionCookie = lucia.createSessionCookie(session.id);
-  cookies.set(sessionCookie.name, sessionCookie.value, {
-    path: ".",
-    ...sessionCookie.attributes,
-  });
+  await rotateSession(cookies, locals.session, userId);
   redirect(302, takeReturnPath(cookies) ?? "/dashboard");
 };

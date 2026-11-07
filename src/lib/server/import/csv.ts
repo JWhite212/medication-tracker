@@ -2,10 +2,11 @@
 //
 // This format is lossy by construction (see src/lib/server/export-csv.ts):
 // no IDs, no schedules, dosage fused into one cell, and timestamps
-// reduced to timezone-less local minutes. Everything this module does is
+// reduced to local minutes (with an explicit offset only where the local
+// minute happens twice — see parseTimeCell). Everything this module does is
 // a documented reconstruction of what the exporter threw away, and every
 // row it can't reconstruct becomes a warning rather than a silent drop.
-import { parseDateTimeLocal, isCalendarDay } from "$lib/utils/time";
+import { parseDateTimeLocal, isCalendarDay, wallClockToInstant } from "$lib/utils/time";
 import { IMPORT_MAX_MEDICATIONS, isImportableTime } from "$lib/utils/validation";
 import { stripBom } from "./detect";
 import { DOSE_CSV_HEADER } from "./detect";
@@ -149,6 +150,33 @@ export function parseClockTime(raw: string): { hours: number; minutes: number } 
 }
 
 /**
+ * Split the exporter's Time cell into its clock and an optional explicit
+ * offset.
+ *
+ * The exporter appends ` UTC±HH:MM` only to a dose whose local wall clock
+ * happens twice (the repeated hour of a fall-back day) and names the later
+ * instant — see `overlapOffsetSuffix` in export-csv.ts. A cell without the
+ * suffix is exactly the old format and is read exactly as before, so files
+ * exported before the suffix existed stay importable unchanged.
+ */
+export function parseTimeCell(
+  raw: string,
+): { hours: number; minutes: number; offsetMinutes: number | null } | null {
+  const cleaned = raw.replace(/[\u202f\u00a0\u2009]/g, " ").trim();
+  const suffix = /\s+UTC([+-])(\d{2}):(\d{2})$/i.exec(cleaned);
+  const clock = parseClockTime(suffix ? cleaned.slice(0, suffix.index) : cleaned);
+  if (!clock) return null;
+  if (!suffix) return { ...clock, offsetMinutes: null };
+
+  const offsetHours = Number(suffix[2]);
+  const offsetMins = Number(suffix[3]);
+  // ±14:00 is the widest offset any zone uses (Pacific/Kiritimati).
+  if (offsetMins > 59 || offsetHours * 60 + offsetMins > 14 * 60) return null;
+  const magnitude = offsetHours * 60 + offsetMins;
+  return { ...clock, offsetMinutes: suffix[1] === "-" ? -magnitude : magnitude };
+}
+
+/**
  * Split the exporter's fused `Dosage` cell (`${dosageAmount}${dosageUnit}`,
  * e.g. "500mg", "2.5ml") back into its parts. Returns sane defaults when
  * the cell is unparseable — a wrong-looking dosage on a stub medication
@@ -233,8 +261,9 @@ const HEADER_COLUMNS = DOSE_CSV_HEADER.split(",");
 
 /**
  * @param timezone IANA zone the file's local wall-clock times are read
- * in. The CSV carries no offset, so this is necessarily an assumption —
- * the UI states which zone is being used.
+ * in. The CSV carries no offset (except on the repeated hour of a fall-back
+ * day, where `parseTimeCell` reads one), so this is necessarily an
+ * assumption — the UI states which zone is being used.
  */
 export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult {
   // +1 so a file that is exactly at the cap still has room for its header.
@@ -310,7 +339,7 @@ export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult 
       return;
     }
 
-    const clock = parseClockTime(timeRaw);
+    const clock = parseTimeCell(timeRaw);
     if (!clock) {
       skipped++;
       skipReasons.add(`line ${lineNumber}: unreadable time "${timeRaw}"`);
@@ -324,7 +353,15 @@ export function parseDoseCsv(rawText: string, timezone: string): CsvParseResult 
     // over one bad row.
     let takenAt: Date;
     try {
-      takenAt = parseDateTimeLocal(stamp, timezone);
+      // An explicit offset names the instant outright; only a bare wall
+      // clock needs the import zone (and its earlier-of-two overlap policy).
+      takenAt =
+        clock.offsetMinutes === null
+          ? parseDateTimeLocal(stamp, timezone)
+          : new Date(
+              wallClockToInstant(dateRaw, stamp.slice(11), "UTC").getTime() -
+                clock.offsetMinutes * 60_000,
+            );
     } catch {
       skipped++;
       skipReasons.add(`line ${lineNumber}: unreadable date/time`);

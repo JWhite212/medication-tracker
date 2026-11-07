@@ -15,6 +15,7 @@ import type { getRefillForecast } from "$lib/server/inventory";
 import type { getMedicationOptions } from "$lib/server/medications";
 import type { MedicationSchedule } from "$lib/server/schedules";
 import { HEATMAP_PERIOD_BOUNDS } from "$lib/preferences/schema";
+import { inclusiveDayCount, isoDayKey } from "$lib/utils/time";
 
 /**
  * Everything the analytics page computes once its data is in hand.
@@ -128,9 +129,36 @@ export function resolveAnalyticsQuery(
 
 type Resolved<T extends (...args: never[]) => unknown> = Awaited<ReturnType<T>>;
 
+/**
+ * The custom From/To window as the page draws it: two civil-date keys and
+ * the number of dates between them, both ends counted. `null` whenever no
+ * custom range is in effect, i.e. a preset period owns the page.
+ *
+ * The keys are the dates the user picked. `dateParamSchema` coerces a bare
+ * `YYYY-MM-DD` to UTC midnight, so reading the key back in UTC returns
+ * exactly what was typed. They are KEYS (built by `isoDayKey`, never the
+ * date-format preference), because the heatmap compares them against the
+ * server's day keys; the page turns them into labels itself.
+ *
+ * What the queries do at the edges of that window is the analytics-window
+ * (W1) work and deliberately not decided here: this only stops the page
+ * labelling, heatmapping and toggling the preset period while the numbers
+ * describe a different window.
+ */
+export type AnalyticsRangeView = { fromKey: string; toKey: string; days: number };
+
+function customRangeView(customRange: DateRange | undefined): AnalyticsRangeView | null {
+  if (!customRange?.from || !customRange.to) return null;
+  const fromKey = isoDayKey(customRange.from, "UTC");
+  const toKey = isoDayKey(customRange.to, "UTC");
+  return { fromKey, toKey, days: inclusiveDayCount(fromKey, toKey) };
+}
+
 export type AnalyticsCompositionInputs = {
   timezone: string;
   period: number;
+  /** `resolveAnalyticsQuery`'s range: set only when a custom window applies. */
+  customRange: DateRange | undefined;
   fromParam: string | null;
   toParam: string | null;
   /** Undefined means "every medication", matching resolveMedicationFilter. */
@@ -171,6 +199,7 @@ export function composeAnalyticsPageData(input: AnalyticsCompositionInputs) {
   const {
     timezone,
     period,
+    customRange,
     fromParam,
     toParam,
     medicationIds,
@@ -276,6 +305,7 @@ export function composeAnalyticsPageData(input: AnalyticsCompositionInputs) {
     insights,
     streak,
     period,
+    range: customRangeView(customRange),
     totalDoses,
     avgAdherence,
     trends,

@@ -10,7 +10,6 @@ import { stampedSince } from "./helpers/session-stamp";
 // minting a session directly. The GitHub provider is used because its
 // exchange has no PKCE cookie, keeping the fixture minimal; the branch
 // under test is provider-agnostic.
-const state = {};
 
 vi.mock("$app/environment", () => ({ dev: true }));
 
@@ -42,9 +41,6 @@ vi.mock("$lib/server/auth/lucia", () => ({
 // and the user lookup no longer depend on which runs first.
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).dbMock);
 
-const inserts = () =>
-  fakeDb.attempted.filter((c) => c.op === "insert").map((c) => ({ values: c.payload }));
-
 const { GET } = await import("../../src/routes/auth/callback/[provider]/+server");
 
 function githubFetchStub() {
@@ -75,6 +71,8 @@ const call = (cookies: ReturnType<typeof makeCookies>) =>
     params: { provider: "github" },
     url: new URL("http://localhost/auth/callback/github?code=abc&state=st-1"),
     cookies,
+    // Every real RequestEvent carries locals; a visitor with no session.
+    locals: { session: null },
   } as never);
 
 const baseUser = {

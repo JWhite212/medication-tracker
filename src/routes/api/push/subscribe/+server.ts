@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { pushSubscriptionSchema } from "$lib/utils/validation";
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
+import { readJson } from "$lib/server/api/read-json";
 import type { RequestHandler } from "@sveltejs/kit";
 
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -14,7 +15,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   const { allowed } = await enforceLimit(LIMITS.pushSubscribe, userId);
   if (!allowed) throw error(429, "Too many requests");
 
-  const body = await request.json();
+  // A malformed body is the client's mistake: a 400, not a crash logged by
+  // handleError.
+  const body = await readJson(request);
   const parsed = pushSubscriptionSchema.safeParse(body);
   if (!parsed.success) throw error(400, "Invalid subscription");
 

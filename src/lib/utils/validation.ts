@@ -200,7 +200,10 @@ const sideEffectsField = z
 export const doseLogSchema = z
   .object({
     medicationId: z.string().min(1),
-    quantity: z.coerce.number().int().min(1).default(1),
+    // Same ceiling as every other dose door (edit, /api/v1): a dose this
+    // door accepted but the edit dialog refused could not even have its note
+    // changed until its quantity was lowered.
+    quantity: z.coerce.number().int().min(1).max(10).default(1),
     takenAt: z.string().datetime().optional(),
     // Log now: the ISO instant of the row the button sat on. The server
     // re-derives where a dose logged now would land and refuses unless it is

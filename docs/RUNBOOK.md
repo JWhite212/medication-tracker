@@ -79,7 +79,7 @@ vercel rollback <deployment-url>
 
 ### The trap: code rolls back, the database does not
 
-Production builds with `MIGRATE_ON_BUILD=true`, so every deploy runs
+Production builds migrate by default (`MIGRATE_ON_BUILD` unset or `true`), so every deploy runs
 `drizzle-kit push` against the live database _during the build_
 (`scripts/vercel-build.mjs`). Rolling the deployment back does **not**
 undo that.

@@ -17,6 +17,12 @@ import { reminderEvents } from "../../../src/lib/server/db/schema";
 
 const { checkOverdueMedications } = await import("../../../src/lib/server/reminders");
 
+// The overdue sweep clips slots to the medication's lifecycle, as the
+// dashboard does. `startedAt` defaults to now(), which under this file's
+// frozen clock is the moment of the test, so every slot earlier that day
+// would be clipped. Seed medications that already existed.
+const STARTED_BEFORE_THE_TEST = new Date("2026-01-01T00:00:00.000Z");
+
 async function keys(): Promise<string[]> {
   const rows = await pgDb.db.select().from(reminderEvents);
   return rows.map((r) => r.dedupeKey).sort();
@@ -36,7 +42,7 @@ afterEach(() => {
 
 describe("nag series", () => {
   it("mints exactly one key when no repeat is configured", async () => {
-    await pgDb.seedMedication({ id: "m1" });
+    await pgDb.seedMedication({ startedAt: STARTED_BEFORE_THE_TEST, id: "m1" });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "08:00" });
 
     vi.setSystemTime(new Date("2026-05-01T09:00:00.000Z"));
@@ -49,6 +55,7 @@ describe("nag series", () => {
 
   it("mints a second key once the repeat interval has elapsed", async () => {
     await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
       id: "m1",
       notifyRepeatEveryMinutes: 30,
       notifyMaxRepeats: 3,
@@ -67,7 +74,12 @@ describe("nag series", () => {
   });
 
   it("does not re-claim the same nag window twice", async () => {
-    await pgDb.seedMedication({ id: "m1", notifyRepeatEveryMinutes: 30, notifyMaxRepeats: 3 });
+    await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
+      id: "m1",
+      notifyRepeatEveryMinutes: 30,
+      notifyMaxRepeats: 3,
+    });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "08:00" });
 
     vi.setSystemTime(new Date("2026-05-01T08:35:00.000Z"));
@@ -81,7 +93,12 @@ describe("nag series", () => {
   it("stops at maxRepeats + 1 keys however long the dose goes unlogged", async () => {
     // The bound that makes this safe. #110 had no bound and produced one
     // reminder per interval forever.
-    await pgDb.seedMedication({ id: "m1", notifyRepeatEveryMinutes: 30, notifyMaxRepeats: 2 });
+    await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
+      id: "m1",
+      notifyRepeatEveryMinutes: 30,
+      notifyMaxRepeats: 2,
+    });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "08:00" });
 
     for (let h = 8; h <= 22; h++) {
@@ -95,7 +112,12 @@ describe("nag series", () => {
   });
 
   it("stops the series as soon as the dose is logged", async () => {
-    await pgDb.seedMedication({ id: "m1", notifyRepeatEveryMinutes: 30, notifyMaxRepeats: 3 });
+    await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
+      id: "m1",
+      notifyRepeatEveryMinutes: 30,
+      notifyMaxRepeats: 3,
+    });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "08:00" });
 
     vi.setSystemTime(new Date("2026-05-01T08:00:00.000Z"));
@@ -126,7 +148,12 @@ describe("nag series", () => {
     //
     // 5 minutes is below the web picker's 30-minute floor on purpose:
     // the column accepts any interval, so this must hold there too.
-    await pgDb.seedMedication({ id: "m1", notifyRepeatEveryMinutes: 5, notifyMaxRepeats: 3 });
+    await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
+      id: "m1",
+      notifyRepeatEveryMinutes: 5,
+      notifyMaxRepeats: 3,
+    });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "08:00" });
 
     vi.setSystemTime(new Date("2026-05-01T08:00:00.000Z"));
@@ -140,7 +167,12 @@ describe("nag series", () => {
   });
 
   it("a skip stops the series just as a taken dose does", async () => {
-    await pgDb.seedMedication({ id: "m1", notifyRepeatEveryMinutes: 30, notifyMaxRepeats: 3 });
+    await pgDb.seedMedication({
+      startedAt: STARTED_BEFORE_THE_TEST,
+      id: "m1",
+      notifyRepeatEveryMinutes: 30,
+      notifyMaxRepeats: 3,
+    });
     await pgDb.seedSchedule({ id: "s1", medicationId: "m1", timeOfDay: "08:00" });
 
     vi.setSystemTime(new Date("2026-05-01T08:00:00.000Z"));

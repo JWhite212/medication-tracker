@@ -85,6 +85,11 @@ Keep these in a password manager. You'll paste them into Vercel next.
    | `GITHUB_CLIENT_ID` / `_SECRET` | For GitHub OAuth | Optional                                                   |
    | `INTERACTIONS_ENABLED`         | Optional         | `true` to enable experimental drug-interaction checks      |
 
+   OAuth providers send the user back to an absolute callback built from
+   `PUBLIC_BASE_URL`. Register exactly `${PUBLIC_BASE_URL}/auth/callback/google`
+   in the Google console and `${PUBLIC_BASE_URL}/auth/callback/github` in the
+   GitHub OAuth app; any other value is refused by the provider.
+
 3. **Node runtime** — already pinned to `nodejs22.x` in
    `svelte.config.js`. No dashboard change needed.
 

@@ -158,6 +158,13 @@ export async function applyImport(userId: string, plan: ImportPlan): Promise<Imp
         notes: planned.source.notes,
         sideEffects: planned.source.sideEffects,
         status: planned.source.status,
+        // An imported dose took nothing from THIS account's stock: merge
+        // leaves a reused medication's count alone, and a created one
+        // carries the backup's count, already net of these doses. NULL
+        // would mean "predates the column", and deleteDose falls back to
+        // `quantity` for it, so every delete of an imported dose minted
+        // stock that never left the bottle.
+        inventoryApplied: 0,
       });
     }
     for (const batch of chunk(doseRows, INSERT_CHUNK)) {

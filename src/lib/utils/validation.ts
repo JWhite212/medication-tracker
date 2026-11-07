@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSupportedTimezone } from "$lib/utils/timezones";
 import { MAX_INTERVAL_HOURS } from "$lib/utils/schedule-rate";
 import { appearanceImportShape, appearancePayloadShape } from "$lib/appearance/schema";
 import {
@@ -317,11 +318,9 @@ export const doseEditSchema = z.object({
   sideEffects: sideEffectsField,
 });
 
-const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
-
 export const settingsSchema = z.object({
   name: z.string().min(1).max(100),
-  timezone: z.string().refine((tz) => validTimezones.has(tz), "Invalid timezone"),
+  timezone: z.string().refine(isSupportedTimezone, "Invalid timezone"),
 });
 
 export const passwordChangeSchema = z
@@ -515,6 +514,13 @@ export const upsertMedicationPayload = z.object({
 export const archivePayload = z.object({ medicationId: z.string() });
 
 export const reorderPayload = z.object({ medId1: z.string(), medId2: z.string() });
+
+/** The /medications ↑/↓ form. `direction` is closed: an unknown value used to
+ * fall through to "down" and move the medication. */
+export const medicationMoveSchema = z.object({
+  medicationId: z.string().min(1),
+  direction: z.enum(["up", "down"]),
+});
 
 export const updatePreferencesPayload = z.object({
   // Both halves are derived, so no preference is restated at this door and
@@ -721,7 +727,7 @@ export const importInventoryEventSchema = z.object({
  * rewrite the importer's identity. */
 const importProfileSchema = z.object({
   name: z.string().min(1).max(100),
-  timezone: z.string().refine((tz) => validTimezones.has(tz), "Invalid timezone"),
+  timezone: z.string().refine(isSupportedTimezone, "Invalid timezone"),
 });
 
 const importPreferencesSchema = z.object({

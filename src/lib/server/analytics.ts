@@ -1,4 +1,5 @@
 import { eq, and, gte, lte, sql, desc, inArray } from "drizzle-orm";
+import { isSupportedTimezone } from "$lib/utils/timezones";
 import { db } from "$lib/server/db";
 import { doseLogs, medications } from "$lib/server/db/schema";
 import {
@@ -61,10 +62,8 @@ export function expectedPerDayForSchedules(schedules: MedicationSchedule[]): num
   return perDay;
 }
 
-const validTimezones = new Set(Intl.supportedValuesOf("timeZone"));
-
 function safeTz(timezone: string): ReturnType<typeof sql.raw> {
-  const tz = validTimezones.has(timezone) ? timezone : "UTC";
+  const tz = isSupportedTimezone(timezone) ? timezone : "UTC";
   return sql.raw(`'${tz}'`);
 }
 
@@ -425,7 +424,7 @@ export async function getDailyAdherenceSeries(
   const toDate = filter?.to ?? new Date();
   const span = Math.max(1, Math.round((toDate.getTime() - fromDate.getTime()) / 86400000));
 
-  const tz = validTimezones.has(timezone) ? timezone : "UTC";
+  const tz = isSupportedTimezone(timezone) ? timezone : "UTC";
   // Day KEYS for the series, matched against the SQL `AT TIME ZONE`
   // grouping — isoDayKey, never preferences.dateFormat.
   const formatter = isoDayKeyFormatter(tz);
@@ -634,7 +633,7 @@ export async function getScheduleVariance(
   timezone: string = "UTC",
   filter?: AnalyticsFilter,
 ): Promise<{ avgMinutesOff: number; sampleSize: number } | null> {
-  const tz = validTimezones.has(timezone) ? timezone : "UTC";
+  const tz = isSupportedTimezone(timezone) ? timezone : "UTC";
 
   const rows = await db
     .select({

@@ -16,6 +16,9 @@ import {
 import { logAudit } from "$lib/server/audit";
 import type { Actions, PageServerLoad } from "./$types";
 
+const TWO_FACTOR_ALREADY_ON =
+  "Two-factor authentication is already on. Turn it off first to set up a new authenticator.";
+
 async function requiresPasswordReauth(
   userId: string,
   currentPassword: string,
@@ -113,6 +116,14 @@ export const actions: Actions = {
   setupTwoFactor: async ({ request, locals }) => {
     if (!locals.user) error(401, "Unauthorized");
 
+    // Setup issues a NEW secret, so it is only for an account without 2FA.
+    // Otherwise it was a code-free way around disableTwoFactor (which needs a
+    // code from the current factor): a stale tab's Set Up replaced the live
+    // secret while 2FA stayed on, and abandoning the QR locked the user out.
+    if (locals.user.twoFactorEnabled) {
+      return fail(400, { totpError: TWO_FACTOR_ALREADY_ON });
+    }
+
     const formData = await request.formData();
     const currentPassword = String(formData.get("currentPassword") ?? "");
 
@@ -123,7 +134,7 @@ export const actions: Actions = {
       });
 
     const secret = generateTOTPSecret();
-    await db
+    const issued = await db
       .update(users)
       .set({
         totpSecret: encryptTOTPSecret(secret),
@@ -134,7 +145,10 @@ export const actions: Actions = {
         // guard relaxed mid-flight.
         totpLastCounter: null,
       })
-      .where(eq(users.id, locals.user!.id));
+      // Re-checked in the write: the session's view can be a request old.
+      .where(and(eq(users.id, locals.user!.id), eq(users.twoFactorEnabled, false)))
+      .returning({ id: users.id });
+    if (issued.length === 0) return fail(400, { totpError: TWO_FACTOR_ALREADY_ON });
     const uri = getTOTPUri(secret, locals.user!.email);
     const qrCode = await generateQRDataUrl(uri);
     return { totpSetup: { qrCode, secret } };

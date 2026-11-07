@@ -33,6 +33,9 @@ const anon = { user: null, session: null };
 class FakeError extends Error {}
 
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unusedDb);
+// oauth.ts reads PUBLIC_BASE_URL for its absolute redirect URI, so the
+// route graph reaches the public env module, which has no runtime here.
+vi.mock("$env/dynamic/public", () => ({ env: {} }));
 vi.mock("@vercel/analytics/server", () => ({ track: never("track") }));
 vi.mock("$lib/server/medications", () => ({
   getActiveMedications: never("getActiveMedications"),

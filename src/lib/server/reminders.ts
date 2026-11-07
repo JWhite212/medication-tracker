@@ -55,6 +55,8 @@ export async function checkOverdueMedications() {
       daysOfWeek: medicationSchedules.daysOfWeek,
       medicationId: medications.id,
       medicationName: medications.name,
+      startedAt: medications.startedAt,
+      endedAt: medications.endedAt,
       userId: medications.userId,
       userEmail: users.email,
       userEmailVerified: users.emailVerified,

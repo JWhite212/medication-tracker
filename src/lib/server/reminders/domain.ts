@@ -30,7 +30,26 @@ export type OverdueRow = {
   daysOfWeek: number[] | null;
   userTimezone: string;
   lastEventAt: Date | null;
+  /** The medication's lifecycle, the same clip the dashboard applies in
+   * `projectMedicationSlots`: no slot before `startedAt`, none at or after
+   * `endedAt`. Absent or null means unbounded on that side. */
+  startedAt?: Date | null;
+  endedAt?: Date | null;
 };
+
+/**
+ * Whether a slot falls inside the medication's lifecycle. Without this the
+ * sweep reminded about slots the dashboard never shows: a medication added at
+ * 14:00 was "overdue" for that morning's 08:00, and one whose `endedAt` had
+ * passed (it arrives by import or /api/v1, not by archiving) reminded at
+ * every slot for as long as it stayed unarchived.
+ */
+function withinLifecycle(row: OverdueRow, slot: Date): boolean {
+  const t = slot.getTime();
+  if (row.startedAt && t < new Date(row.startedAt).getTime()) return false;
+  if (row.endedAt && t >= new Date(row.endedAt).getTime()) return false;
+  return true;
+}
 
 export type ReminderType = "overdue" | "low_inventory";
 
@@ -41,7 +60,8 @@ export function computeOverdueSlot(row: OverdueRow, now: Date): Date | null {
     const intervalMs = hours * 3600000;
     const lastMs = new Date(row.lastEventAt).getTime();
     if (now.getTime() - lastMs <= intervalMs) return null;
-    return new Date(lastMs + intervalMs);
+    const slot = new Date(lastMs + intervalMs);
+    return withinLifecycle(row, slot) ? slot : null;
   }
 
   if (row.scheduleKind === "fixed_time") {
@@ -66,6 +86,9 @@ export function computeOverdueSlot(row: OverdueRow, now: Date): Date | null {
 
       // Not yet due — try the previous day's occurrence.
       if (slotUtc.getTime() > now.getTime()) continue;
+
+      // Outside the medication's lifecycle: the dashboard has no such slot.
+      if (!withinLifecycle(row, slotUtc)) continue;
 
       // The 12-hour cap. A slot from before local midnight stops
       // reminding once it is CARRY_OVER_MS old. That is the same

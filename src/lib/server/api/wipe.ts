@@ -2,6 +2,7 @@ import { dbTx } from "$lib/server/db";
 import { doseLogTrash, doseLogs, medications, users } from "$lib/server/db/schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { logAudit } from "$lib/server/audit";
+import { medicationIdsLockedInOrder } from "$lib/server/medication-lock";
 
 // Bulk wipes used by both the web "Settings > Privacy" data-wipe actions
 // and the /api/v1/commands `wipe_dose_history` / `wipe_archived_medications`
@@ -16,8 +17,25 @@ import { logAudit } from "$lib/server/audit";
 // must never exist for a wipe that didn't actually happen (and vice versa),
 // and a command retry must never see a torn state where the epoch was
 // bumped without the corresponding rows actually being gone.
-export async function wipeDoseHistory(userId: string): Promise<{ deleted: number }> {
-  return dbTx.transaction(async (tx) => {
+//
+// Each wipe takes an optional `tx`. Without one it opens its own transaction
+// (the browser doors). The `/api/v1` doors pass the transaction their reauth
+// redeem already ran in, so the token is spent exactly when the wipe commits
+// and a wipe that rolls back leaves it redeemable for the retry.
+export type WipeTransaction = Parameters<Parameters<typeof dbTx.transaction>[0]>[0];
+
+function inTransaction<T>(
+  tx: WipeTransaction | undefined,
+  body: (tx: WipeTransaction) => Promise<T>,
+): Promise<T> {
+  return tx ? body(tx) : dbTx.transaction(body);
+}
+
+export async function wipeDoseHistory(
+  userId: string,
+  outer?: WipeTransaction,
+): Promise<{ deleted: number }> {
+  return inTransaction(outer, async (tx) => {
     // D7: every medication row first, in ascending id order like any
     // multi-row lock. Each delete and restore locks its medication before it
     // touches a dose or a trash row, so holding all of them makes this wipe
@@ -54,14 +72,22 @@ export async function wipeDoseHistory(userId: string): Promise<{ deleted: number
   });
 }
 
-export async function wipeArchivedMedications(userId: string): Promise<{ deleted: number }> {
-  return dbTx.transaction(async (tx) => {
+export async function wipeArchivedMedications(
+  userId: string,
+  outer?: WipeTransaction,
+): Promise<{ deleted: number }> {
+  return inTransaction(outer, async (tx) => {
     // Cascading FKs on dose_logs, medication_schedules and the dose trash
     // (the Undo copies of deleted doses) drop the dependent rows when the
-    // medication row goes.
+    // medication row goes. The rows are locked in ascending id order, like
+    // wipeDoseHistory's, or the two can deadlock (D7).
     const rows = await tx
       .delete(medications)
-      .where(and(eq(medications.userId, userId), eq(medications.isArchived, true)))
+      .where(
+        medicationIdsLockedInOrder(
+          and(eq(medications.userId, userId), eq(medications.isArchived, true))!,
+        ),
+      )
       .returning({ id: medications.id });
     const deleted = rows.length;
 

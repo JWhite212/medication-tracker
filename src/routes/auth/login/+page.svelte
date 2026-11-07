@@ -47,6 +47,18 @@
       >
         Verify the email with your provider and try again.
       </Alert>
+    {:else if data.oauthError === "oauth_cancelled"}
+      <Alert tone="needs-you" title="Sign-in was cancelled." class="mb-4">
+        Nothing was changed. Choose a way to sign in when you're ready.
+      </Alert>
+    {:else if data.oauthError === "oauth_failed"}
+      <Alert
+        tone="needs-you"
+        title="Your social-login provider didn't finish signing you in."
+        class="mb-4"
+      >
+        Nothing was changed. Try again, or sign in another way.
+      </Alert>
     {/if}
 
     {#if errors.form}

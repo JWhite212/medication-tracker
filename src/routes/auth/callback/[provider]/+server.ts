@@ -9,7 +9,11 @@ import { eq, and } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { RequestHandler } from "./$types";
 import { signPreAuthToken } from "$lib/server/api/preauth";
-import { rememberReturnPath, takeReturnPath } from "$lib/server/auth/return-path";
+import {
+  RETURN_PATH_COOKIE,
+  rememberReturnPath,
+  takeReturnPath,
+} from "$lib/server/auth/return-path";
 
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -111,6 +115,25 @@ async function rotateSession(
 export const GET: RequestHandler = async ({ params, url, cookies, locals }) => {
   const provider = params.provider;
   const code = url.searchParams.get("code");
+
+  // The provider's error response (RFC 6749 §4.1.2.1): Cancel on the consent
+  // screen comes back as `?error=access_denied&state=…` with no code. Read as
+  // "no code", it used to start a fresh attempt and bounce straight back to
+  // the provider, so Cancel could never leave. End the attempt instead: its
+  // cookies are spent, and the user lands on sign-in with a reason. Nothing
+  // privileged happens here, so the state is not checked first.
+  const providerError = url.searchParams.get("error");
+  if (!code && providerError !== null) {
+    cookies.delete("oauth_state", { path: "/" });
+    cookies.delete("google_code_verifier", { path: "/" });
+    cookies.delete(RETURN_PATH_COOKIE, { path: "/" });
+    redirect(
+      302,
+      providerError === "access_denied"
+        ? "/auth/login?error=oauth_cancelled"
+        : "/auth/login?error=oauth_failed",
+    );
+  }
 
   if (!code) {
     // "Sign in again to confirm" passes the page to come back to.

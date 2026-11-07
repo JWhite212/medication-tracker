@@ -8,7 +8,7 @@ import {
   medicationSchedules,
   syncTombstones,
 } from "$lib/server/db/schema";
-import { logAudit, computeChanges } from "./audit";
+import { logAudit, computeChanges, type ComputeChangesOptions } from "./audit";
 import { recordInventoryEvent } from "./inventory-events";
 import {
   dashboardWindow,
@@ -19,6 +19,14 @@ import {
 } from "$lib/utils/schedule";
 import type { DoseLogWithMedication, SideEffect } from "$lib/types";
 import { DOSE_UNDO_WINDOW_MS } from "$lib/utils/dose-undo";
+
+/** How a dose edit is diffed for its audit row: `updatedAt` is left out, and
+    the user's own words (note, side effects) are recorded as changed without
+    their content. Audit rows are synced and never purged. */
+const DOSE_AUDIT_DIFF: ComputeChangesOptions = {
+  ignore: ["updatedAt"],
+  redact: ["notes", "sideEffects"],
+};
 
 export class MedicationNotFoundError extends Error {
   constructor(medicationId: string) {
@@ -1100,7 +1108,11 @@ export async function updateDose(
 
     if (inventoryWrite) await inventoryWrite();
 
-    const changes = computeChanges(existing, u);
+    // `updatedAt` is rewritten by every save, so diffing it made a no-op Save
+    // write an audit row. The note and side effects are what the user wrote
+    // about how a dose went; the delete and restore rows carry no diff for
+    // that reason, so this row records only that they changed, never the text.
+    const changes = computeChanges(existing, u, DOSE_AUDIT_DIFF);
     if (changes) await logAudit(userId, "dose_log", doseId, "update", changes, tx);
 
     return u;

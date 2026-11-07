@@ -486,7 +486,17 @@ For each command, `(userId, id)` is the primary key into the `api_commands` ledg
    - **Throw** (validation error, domain error, `UnknownCommandError`) → the reservation row
      is deleted (safe, because every handler's domain function is all-or-nothing — nothing
      durable happened). Response: `{ id, ok: false, error: <e.message> }`. **This is
-     retryable** — resubmit the same `id` to retry.
+     retryable** — resubmit the same `id` to retry. `e.message` is passed through only for
+     the errors written for the client: a validation (`ZodError`) failure,
+     `UnknownCommandError`, `ReauthRequiredError`, and the domain refusals
+     `MedicationNotFoundError`, `MedicationOwnershipError`, `InvalidRefillQuantityError`,
+     `InvalidAdjustmentError`, `SlotAlreadyTakenError`, `SlotTargetChangedError` (the list
+     is `CLIENT_READABLE_ERRORS` in
+     `src/lib/server/api/commands.ts`). Any other throw (a dropped database connection, a
+     constraint violation, a bug) reads `{ id, ok: false, error: "command_failed" }`, same
+     shape, and the server writes one `api.commands` log line carrying the user id, the
+     command `type` and its `id`, never the payload. Until 2026-11-07 such a throw echoed its
+     own text, which for a query failure was the SQL statement and its bound values.
    - **Typed refusal** (`CommandRefusedError`, thrown before anything is written) → the
      reservation row is deleted, as for any throw. Response:
      `{ id, ok: false, error: <code>, message: <copy> }`, where `code` is a stable snake_case

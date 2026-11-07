@@ -10,6 +10,9 @@ export type MedicationSchedule = InferSelectModel<typeof medicationSchedules>;
 export class MedicationOwnershipError extends Error {
   constructor() {
     super("Medication not found or not owned by user");
+    // /api/v1's runCommands passes a refusal through to the client by
+    // `e.name`; without this it read "Error" and was redacted as a failure.
+    this.name = "MedicationOwnershipError";
   }
 }
 

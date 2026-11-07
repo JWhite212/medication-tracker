@@ -273,7 +273,7 @@ describe("runCommands", () => {
     expect(logDose).toHaveBeenCalledTimes(1);
     expect(deletes()).toEqual([1]);
     expect(updates()).toEqual([]);
-    expect(results).toEqual([{ id: "cmd-1", ok: false, error: "db write failed" }]);
+    expect(results).toEqual([{ id: "cmd-1", ok: false, error: "command_failed" }]);
   });
 
   it("result-write failure: reservation preserved, caller still gets its result, replay never re-dispatches", async () => {
@@ -432,7 +432,7 @@ describe("log_dose and edit_dose refuse a takenAt in the future", () => {
     ]);
   });
 
-  it("runCommands keeps reporting every other failure as error: e.message, with no message", async () => {
+  it("runCommands reports every other failure in error alone, with no message", async () => {
     fakeDb.seed(apiCommands, [{ idempotencyKey: "cmd-1" }]);
     logDose.mockRejectedValueOnce(new Error("db write failed"));
 
@@ -440,7 +440,123 @@ describe("log_dose and edit_dose refuse a takenAt in the future", () => {
       { id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1", takenAt: AT_GRACE } },
     ]);
 
-    expect(results).toEqual([{ id: "cmd-1", ok: false, error: "db write failed" }]);
+    expect(results).toEqual([{ id: "cmd-1", ok: false, error: "command_failed" }]);
+  });
+});
+
+// The route answers 200 whatever a command does, so SvelteKit's `handleError`
+// never sees a handler that crashed: this catch is the only place such a
+// failure can be observed, and the response is the only place it can leak.
+describe("runCommands: an unexpected failure is logged and never echoed", () => {
+  const NOTE = "private dose note text";
+  let consoleError: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    consoleError.mockRestore();
+  });
+
+  const logLines = () =>
+    consoleError.mock.calls.map((args: unknown[]) => JSON.parse(String(args[0])));
+
+  it("returns a fixed code, not the exception text, and writes one log line", async () => {
+    fakeDb.seed(apiCommands, [{ idempotencyKey: "cmd-1" }]);
+    logDose.mockRejectedValueOnce(new Error('relation "dose_logs" does not exist'));
+
+    const results = await runCommands("u1", [
+      { id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1", notes: NOTE } },
+    ]);
+
+    expect(results).toEqual([{ id: "cmd-1", ok: false, error: "command_failed" }]);
+    expect(JSON.stringify(results)).not.toContain("dose_logs");
+    // Still released, like any throw: the domain transaction rolled back.
+    expect(deletes()).toEqual([1]);
+
+    const lines = logLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      level: "error",
+      scope: "api.commands",
+      userId: "u1",
+      commandType: "log_dose",
+      commandId: "cmd-1",
+      error: 'relation "dose_logs" does not exist',
+    });
+    // The payload is the request body: it never reaches the log.
+    expect(JSON.stringify(lines)).not.toContain(NOTE);
+    expect(JSON.stringify(lines)).not.toContain("med-1");
+  });
+
+  it("keeps a query failure's bound parameters out of both the response and the log", async () => {
+    const { DrizzleQueryError } = await import("drizzle-orm/errors");
+    fakeDb.seed(apiCommands, [{ idempotencyKey: "cmd-1" }]);
+    logDose.mockRejectedValueOnce(
+      new DrizzleQueryError(
+        'insert into "dose_logs" ("notes") values ($1)',
+        [NOTE],
+        new Error("Connection terminated unexpectedly"),
+      ),
+    );
+
+    const results = await runCommands("u1", [
+      { id: "cmd-1", type: "log_dose", payload: { medicationId: "med-1", notes: NOTE } },
+    ]);
+
+    expect(results).toEqual([{ id: "cmd-1", ok: false, error: "command_failed" }]);
+    expect(JSON.stringify(results)).not.toContain("Failed query");
+
+    const lines = logLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      scope: "api.commands",
+      userId: "u1",
+      commandType: "log_dose",
+      commandId: "cmd-1",
+      error: "Connection terminated unexpectedly",
+    });
+    expect(JSON.stringify(lines)).not.toContain(NOTE);
+    expect(JSON.stringify(lines)).not.toContain("Failed query");
+  });
+
+  it("leaves the client-readable errors exactly as they were, and logs none of them", async () => {
+    // A domain not-found, declared by name as the real classes are (the
+    // doses module is mocked here, so its class is not importable).
+    class MedicationNotFoundError extends Error {
+      constructor() {
+        super("Medication med-1 not found for user");
+        this.name = "MedicationNotFoundError";
+      }
+    }
+    fakeDb.seed(apiCommands, [
+      { idempotencyKey: "a" },
+      { idempotencyKey: "b" },
+      { idempotencyKey: "c" },
+    ]);
+    logDose.mockRejectedValueOnce(new MedicationNotFoundError());
+
+    const results = await runCommands("u1", [
+      { id: "a", type: "log_dose", payload: { medicationId: "med-1" } },
+      { id: "b", type: "not_a_real_command", payload: {} },
+      { id: "c", type: "log_dose", payload: { quantity: "lots" } },
+    ]);
+
+    expect(results[0]).toEqual({
+      id: "a",
+      ok: false,
+      error: "Medication med-1 not found for user",
+    });
+    expect(results[1]).toEqual({
+      id: "b",
+      ok: false,
+      error: "Unknown command: not_a_real_command",
+    });
+    // A validation failure keeps zod's own message, which names the field.
+    expect(results[2]).toMatchObject({ id: "c", ok: false });
+    expect(results[2].error).toContain("medicationId");
+    expect(results[2].error).not.toBe("command_failed");
+    expect(consoleError).not.toHaveBeenCalled();
   });
 });
 

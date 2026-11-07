@@ -26,7 +26,11 @@ export interface ScheduleSlot {
   expectedTime: string; // ISO string
   kind: ScheduleKind;
   status: ScheduleSlotStatus;
-  /** `resolvedByDoseId ?? missedByDoseId ?? null`, kept for existing readers. */
+  /**
+   * `resolvedByDoseId ?? missedByDoseId ?? null`. Production reads neither
+   * this nor `computeScheduleSlots`; it is kept because the legacy-matcher
+   * differential in `schedule-matching-properties.test.ts` compares it.
+   */
   matchedDoseId: string | null;
   /** The taken or skipped dose that resolved this slot. Covers and toasts read this. */
   resolvedByDoseId: string | null;

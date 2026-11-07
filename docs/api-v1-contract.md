@@ -490,7 +490,8 @@ For each command, `(userId, id)` is the primary key into the `api_commands` ledg
      the errors written for the client: a validation (`ZodError`) failure,
      `UnknownCommandError`, `ReauthRequiredError`, and the domain refusals
      `MedicationNotFoundError`, `MedicationOwnershipError`, `InvalidRefillQuantityError`,
-     `InvalidAdjustmentError` (the list is `CLIENT_READABLE_ERRORS` in
+     `InvalidAdjustmentError`, `SlotAlreadyTakenError`, `SlotTargetChangedError` (the list
+     is `CLIENT_READABLE_ERRORS` in
      `src/lib/server/api/commands.ts`). Any other throw (a dropped database connection, a
      constraint violation, a bug) reads `{ id, ok: false, error: "command_failed" }`, same
      shape, and the server writes one `api.commands` log line carrying the user id, the

@@ -106,7 +106,7 @@ export const COMMAND_FAILED_ERROR = "command_failed";
  * twice (`doses.ts` and `inventory-events.ts`), and every one of these sets
  * `this.name` in its constructor.
  */
-const CLIENT_READABLE_ERRORS: ReadonlySet<string> = new Set([
+export const CLIENT_READABLE_ERRORS: ReadonlySet<string> = new Set([
   "ZodError",
   "UnknownCommandError",
   "ReauthRequiredError",

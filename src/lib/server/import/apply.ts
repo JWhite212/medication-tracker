@@ -32,6 +32,7 @@ import {
   users,
 } from "$lib/server/db/schema";
 import { logAudit } from "$lib/server/audit";
+import { medicationIdsLockedInOrder } from "$lib/server/medication-lock";
 import type { ImportPlan, ImportResult } from "./types";
 
 /** Postgres caps a statement at 65535 bound parameters. The widest row
@@ -54,8 +55,12 @@ export async function applyImport(userId: string, plan: ImportPlan): Promise<Imp
       // Cascading FKs on medication_schedules, dose_logs and
       // inventory_events drop every dependent row when the medication
       // goes, and dose_logs.medicationId is NOT NULL — so there is no
-      // dose that can outlive its medication.
-      await tx.delete(medications).where(eq(medications.userId, userId));
+      // dose that can outlive its medication. The rows are locked in
+      // ascending id order, like wipeDoseHistory's, or the two can
+      // deadlock (D7).
+      await tx
+        .delete(medications)
+        .where(medicationIdsLockedInOrder(eq(medications.userId, userId)));
     }
 
     // --- medications + schedules -------------------------------------
@@ -213,7 +218,11 @@ export async function applyImport(userId: string, plan: ImportPlan): Promise<Imp
     if (plan.profile) {
       await tx
         .update(users)
-        .set({ name: plan.profile.name, timezone: plan.profile.timezone, updatedAt: now })
+        .set({
+          ...(plan.profile.name !== null ? { name: plan.profile.name } : {}),
+          timezone: plan.profile.timezone,
+          updatedAt: now,
+        })
         .where(eq(users.id, userId));
     }
 

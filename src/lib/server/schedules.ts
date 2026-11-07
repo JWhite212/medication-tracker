@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { eq, and, asc } from "drizzle-orm";
-import { db, dbTx } from "$lib/server/db";
-import { medicationSchedules, medications } from "$lib/server/db/schema";
+import { db } from "$lib/server/db";
+import { medicationSchedules } from "$lib/server/db/schema";
 import type { ScheduleInput } from "$lib/utils/validation";
 import type { InferSelectModel } from "drizzle-orm";
 
@@ -54,9 +54,10 @@ export async function getSchedulesForMedication(
 }
 
 /**
- * Build the row payload used by both `replaceSchedulesForMedication`
- * (delete-then-insert) and `createMedicationWithSchedules` (insert
- * fresh under a brand-new medication id). Single source of truth for
+ * Build the row payload used by both `createMedicationWithSchedules`
+ * (insert fresh under a brand-new medication id) and
+ * `updateMedicationWithSchedules` (delete-then-insert inside its own
+ * transaction, in `medications.ts`). Single source of truth for
  * the per-kind field shape so a schema tweak (e.g. a new column on a
  * fixed-time row) only updates one place.
  */
@@ -78,42 +79,4 @@ export function buildScheduleRows(
         : null,
     sortOrder: idx,
   }));
-}
-
-// Delete-then-insert wrapped in a transaction (below) so a failed
-// insert rolls back the delete and the original schedule rows survive.
-export async function replaceSchedulesForMedication(
-  medicationId: string,
-  userId: string,
-  schedules: ScheduleInput[],
-): Promise<void> {
-  // Self-defending ownership check — callers already filter by userId,
-  // but verify here so a misuse can't write rows that point at another
-  // user's medication via the FK.
-  const [owner] = await db
-    .select({ id: medications.id })
-    .from(medications)
-    .where(and(eq(medications.id, medicationId), eq(medications.userId, userId)))
-    .limit(1);
-  if (!owner) throw new MedicationOwnershipError();
-
-  const rows = buildScheduleRows(userId, medicationId, schedules);
-
-  // Delete-then-insert in a single transaction — if the insert fails
-  // (e.g. constraint violation), the original schedule rows are
-  // restored on rollback.
-  await dbTx.transaction(async (tx) => {
-    await tx
-      .delete(medicationSchedules)
-      .where(
-        and(
-          eq(medicationSchedules.medicationId, medicationId),
-          eq(medicationSchedules.userId, userId),
-        ),
-      );
-
-    if (rows.length > 0) {
-      await tx.insert(medicationSchedules).values(rows);
-    }
-  });
 }

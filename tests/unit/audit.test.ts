@@ -5,7 +5,7 @@ import { describe, it, expect, expectTypeOf, vi } from "vitest";
 // returning [] — do not "upgrade" this to createFakeDb().
 vi.mock("$lib/server/db", async () => (await import("./helpers/fake-db")).unusedDb);
 
-import { computeChanges, logAudit } from "$lib/server/audit";
+import { computeChanges, logAudit, REDACTED } from "$lib/server/audit";
 import type { auditLogs } from "$lib/server/db/schema";
 
 describe("computeChanges", () => {
@@ -31,6 +31,38 @@ describe("computeChanges", () => {
       name: { from: "Old", to: "New" },
       dosage: { from: 200, to: 400 },
     });
+  });
+});
+
+describe("computeChanges options (opt-in)", () => {
+  it("leaves an ignored key out, so rows differing only there are no change", () => {
+    const before = { name: "Same", updatedAt: new Date("2026-01-01T00:00:00Z") };
+    const after = { name: "Same", updatedAt: new Date("2026-01-02T00:00:00Z") };
+    expect(computeChanges(before, after, { ignore: ["updatedAt"] })).toBeNull();
+    // Without the option the plain diff is unchanged for every other caller.
+    expect(computeChanges(before, after)).toEqual({
+      updatedAt: { from: before.updatedAt, to: after.updatedAt },
+    });
+  });
+
+  it("records a redacted key's change without its content", () => {
+    const changes = computeChanges(
+      { notes: null, sideEffects: [{ name: "a" }] },
+      { notes: "private text", sideEffects: null },
+      { redact: ["notes", "sideEffects"] },
+    );
+    expect(changes).toEqual({
+      notes: { from: null, to: REDACTED },
+      sideEffects: { from: REDACTED, to: null },
+    });
+    expect(JSON.stringify(changes)).not.toContain("private text");
+  });
+
+  it("still detects a redacted change between two set values", () => {
+    expect(computeChanges({ notes: "one" }, { notes: "two" }, { redact: ["notes"] })).toEqual({
+      notes: { from: REDACTED, to: REDACTED },
+    });
+    expect(computeChanges({ notes: "one" }, { notes: "one" }, { redact: ["notes"] })).toBeNull();
   });
 });
 

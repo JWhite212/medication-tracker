@@ -63,7 +63,7 @@
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.59.1",
     "vite": "^8.0.7",
-    "vitest": "^4.1.11"
+    "vitest": "^5.1.0"
   },
   "dependencies": {
     "@lucia-auth/adapter-drizzle": "^1.1.0",

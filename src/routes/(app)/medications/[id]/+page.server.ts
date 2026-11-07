@@ -1,6 +1,6 @@
 import { fail, redirect, error } from "@sveltejs/kit";
 import { z } from "zod";
-import { medicationSchema, schedulesSchema } from "$lib/utils/validation";
+import { parseMedicationForm } from "$lib/server/medication-form";
 import {
   getMedicationById,
   updateMedicationWithSchedules,
@@ -37,15 +37,6 @@ export const load: PageServerLoad = async ({ locals, params }) => {
   return { medication, schedules, inventoryHistory };
 };
 
-function parseSchedules(raw: unknown) {
-  if (typeof raw !== "string" || raw.length === 0) return undefined;
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
 export const actions: Actions = {
   update: async ({ request, locals, params }) => {
     // Form actions run BEFORE layout load functions, so the (app) group's
@@ -54,28 +45,14 @@ export const actions: Actions = {
     if (!locals.user) error(401, "Unauthorized");
 
     const formData = Object.fromEntries(await request.formData());
-    const parsed = medicationSchema.safeParse(formData);
-
-    if (!parsed.success) {
-      return fail(400, {
-        errors: parsed.error.flatten().fieldErrors,
-        values: formData,
-      });
-    }
-
-    const schedulesParsed = schedulesSchema.safeParse(parseSchedules(formData.schedules));
-    if (!schedulesParsed.success) {
-      return fail(400, {
-        errors: { schedules: ["Add at least one valid schedule row"] },
-        values: formData,
-      });
-    }
+    const form = parseMedicationForm(formData);
+    if (!form.ok) return form.failure;
 
     const result = await updateMedicationWithSchedules(
       locals.user!.id,
       params.id,
-      parsed.data,
-      schedulesParsed.data,
+      form.medication,
+      form.schedules,
     );
     if (!result) error(404, "Medication not found");
     redirect(302, "/medications");

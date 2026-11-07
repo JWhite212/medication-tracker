@@ -279,6 +279,38 @@ function zoneOffsetMsAt(instantMs: number, fmt: Intl.DateTimeFormat): number {
   );
 }
 
+/**
+ * The zone's UTC offset at `date` as `±HH:MM` (e.g. `+01:00`, `-03:30`).
+ *
+ * A machine-read field, assembled by hand rather than borrowed from a
+ * locale's `timeZoneName`, whose wording ("GMT+1", "BST") is CLDR data.
+ * Rounded to the minute: the only offsets with seconds are pre-1900 LMT
+ * values, and every consumer of this string is minute-precise.
+ */
+export function utcOffsetLabel(date: Date, timezone: string): string {
+  const offsetMinutes = Math.round(
+    zoneOffsetMsAt(date.getTime(), machineFormat("offset", timezone)) / 60_000,
+  );
+  const sign = offsetMinutes < 0 ? "-" : "+";
+  const abs = Math.abs(offsetMinutes);
+  return `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+}
+
+/**
+ * The wall clock of `date` in `timezone` as a fixed 24-hour `HH:mm:ss`.
+ *
+ * The time-of-day counterpart to {@link isoDayKey}, for files that must stay
+ * sortable and machine-readable whatever the account's 12h/24h preference
+ * (the audit-log CSV). Read from `formatToParts` with `hourCycle: "h23"`,
+ * never `hour12: false`, which can render midnight as hour 24.
+ */
+export function isoClockTime(date: Date, timezone: string): string {
+  const parts = machineFormat("offset", timezone).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    (parts.find((part) => part.type === type)?.value ?? "").padStart(2, "0");
+  return `${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
 const MS_PER_DAY = 86_400_000;
 
 /**

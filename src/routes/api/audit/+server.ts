@@ -55,7 +55,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   }
 
   const rows = await getAuditLogForExport(locals.user.id, fromDate, toDate);
-  const csv = buildAuditCsv(rows);
+  const csv = buildAuditCsv(rows, tz);
   // The civil day is asked for, not read off the instant: `fromDate` is a
   // LOCAL midnight now, so `toISOString()` names the previous UTC date for
   // every user east of UTC. See the invariant on `wallClockToInstant`.

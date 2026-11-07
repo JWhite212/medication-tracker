@@ -5,7 +5,6 @@ import { sessions } from "$lib/server/db/schema";
 // revokeSession must only report success when a session row was
 // actually invalidated. A missing/own/stale sessionId previously fell
 // through every guard and still returned { sessionRevoked: true }.
-const state = {};
 
 const invalidateSession = vi.fn(async (_id: string) => {});
 vi.mock("$lib/server/auth/lucia", () => ({

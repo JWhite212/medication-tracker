@@ -8,6 +8,7 @@
 import { error, json } from "@sveltejs/kit";
 import { buildFullExport } from "$lib/server/api/export";
 import { LIMITS, enforceLimit } from "$lib/server/auth/rate-limit";
+import { isoDayKey } from "$lib/utils/time";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -23,7 +24,10 @@ export const GET: RequestHandler = async ({ locals }) => {
   }
 
   const data = await buildFullExport(locals.user.id);
-  const date = new Date().toISOString().slice(0, 10);
+  // The user's civil date, like the dose and audit exports beside it, not the
+  // UTC date: `toISOString()` names yesterday for an Auckland user before
+  // midday. The /api/v1 door keeps its documented UTC filename.
+  const date = isoDayKey(new Date(), locals.user.timezone);
 
   return new Response(JSON.stringify(data), {
     headers: {

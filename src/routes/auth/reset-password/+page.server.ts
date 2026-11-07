@@ -10,11 +10,16 @@ import type { Actions, PageServerLoad } from "./$types";
 import { logWarn } from "$lib/server/log";
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-  if (locals.user) redirect(302, "/dashboard");
-
-  // If a token is present (email link lands here), forward to confirm page
+  // The emailed link lands here with `?token=`. Forward it to the confirm
+  // page BEFORE the signed-in check: a reset link opened in a browser that
+  // is already signed in (the common case on a phone) used to be sent to
+  // /dashboard with the token dropped, so the link silently did nothing.
+  // The confirm page validates the token itself and accepts signed-in users.
   const token = url.searchParams.get("token");
-  if (token) redirect(302, `/auth/reset-password/confirm?token=${token}`);
+  if (token) redirect(302, `/auth/reset-password/confirm?token=${encodeURIComponent(token)}`);
+
+  // Only the "request a reset link" form is pointless while signed in.
+  if (locals.user) redirect(302, "/dashboard");
 };
 
 export const actions: Actions = {

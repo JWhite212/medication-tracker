@@ -84,17 +84,28 @@ export function buildImportPlan(
   //
   // Replace keeps the file's own sortOrder instead. The export has no
   // ORDER BY, so its array order is arbitrary — renumbering by array
-  // position would scramble the ordering the user had set.
-  let nextSortOrder = snapshot.maxSortOrder + 1;
+  // position would scramble the ordering the user had set. Merge has the
+  // same problem, so it renumbers in the file's own sortOrder rather than
+  // in array order: the imported list keeps its relative order and is
+  // only offset above `maxSortOrder`. A tie keeps its array position
+  // (the source account had no order between them either), and the
+  // output array itself is left in file order.
+  const mergeSortOrder = new Map<number, number>();
+  if (!replacing) {
+    bundle.medications
+      .map((source, index) => ({ sortOrder: source.sortOrder, index }))
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.index - b.index)
+      .forEach(({ index }, rank) => mergeSortOrder.set(index, snapshot.maxSortOrder + 1 + rank));
+  }
 
-  const medications: PlannedMedication[] = bundle.medications.map((source) => {
+  const medications: PlannedMedication[] = bundle.medications.map((source, index) => {
     const ref = refFor(source.sourceId, source.name);
     const key = normaliseName(source.name);
     const backDated = source.startedAt ?? earliestDoseByRef.get(ref) ?? null;
     const withDates = {
       ...source,
       startedAt: backDated,
-      sortOrder: replacing ? source.sortOrder : nextSortOrder++,
+      sortOrder: replacing ? source.sortOrder : mergeSortOrder.get(index)!,
     };
 
     if (replacing) {
@@ -182,10 +193,22 @@ export function buildImportPlan(
   // it has to match on minutes or it would never dedupe at all.
   const precision: DosePrecision = bundle.format === "dose-csv" ? "minute" : "exact";
 
-  // Seeded from the account so a merge doesn't re-add rows the user
-  // already has; extended as we go so duplicates *within* one file are
-  // caught too.
-  const seenDoseKeys = new Set(replacing ? [] : snapshot.doseKeys);
+  // Two questions, answered separately:
+  //
+  //  - Is this dose already in the account? Answered by content, because
+  //    an account row shares no id with the file. Merge only — replace
+  //    has wiped the account, so nothing in the snapshot counts.
+  //  - Has this file already listed this dose? A JSON backup carries each
+  //    dose's id, so a row repeats only when its id repeats. Two distinct
+  //    doses can legitimately share a medication, instant, status and
+  //    quantity (both edited to 08:00 in the dose dialog, whose
+  //    datetime-local input zeroes the seconds), and keying the file on
+  //    content collapsed them, losing one for good on a replace. A row
+  //    with no id (every CSV row, or a hand-edited file) still dedupes on
+  //    content, against every row the file has listed so far.
+  const accountDoseKeys = replacing ? new Set<string>() : snapshot.doseKeys;
+  const fileDoseKeys = new Set<string>();
+  const fileDoseIds = new Set<string>();
 
   const doses: PlannedDose[] = bundle.doses.map((source) => {
     const ref = refFor(source.sourceMedicationId, source.medicationName ?? "");
@@ -207,7 +230,7 @@ export function buildImportPlan(
     const namespace = med.action === "reuse" ? med.existingId! : `new:${ref}`;
     const key = doseKey(namespace, source.takenAt, source.status, source.quantity, precision);
 
-    if (seenDoseKeys.has(key)) {
+    if (accountDoseKeys.has(key)) {
       return {
         source,
         action: "skip",
@@ -216,7 +239,19 @@ export function buildImportPlan(
       };
     }
 
-    seenDoseKeys.add(key);
+    const sourceId = source.sourceId ?? null;
+    const idKey = sourceId !== null ? `${namespace}|${sourceId}` : null;
+    if (idKey !== null ? fileDoseIds.has(idKey) : fileDoseKeys.has(key)) {
+      return {
+        source,
+        action: "skip",
+        medicationRef: ref,
+        reason: "Duplicate — it appears more than once in this file.",
+      };
+    }
+
+    if (idKey !== null) fileDoseIds.add(idKey);
+    fileDoseKeys.add(key);
     return { source, action: "create", medicationRef: ref, reason: null };
   });
 

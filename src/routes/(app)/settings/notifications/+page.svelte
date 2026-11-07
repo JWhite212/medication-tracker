@@ -1,5 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
+  import { untrack } from "svelte";
   import Alert from "$lib/components/ui/Alert.svelte";
   import Button from "$lib/components/ui/Button.svelte";
   import GlassCard from "$lib/components/ui/GlassCard.svelte";
@@ -15,8 +17,22 @@
   const STATE_TEXT = toneClass(toneOf("state"), "text");
 
   let pushSupported = $state(false);
+  // Whether this BROWSER holds a push subscription. It drives the
+  // Enable/Disable button, because Disable has to remove that subscription
+  // whatever the server thinks of it.
   let pushEnabled = $state(false);
   let pushLoading = $state(false);
+  // Whether the SERVER holds that subscription for this account, which is
+  // what decides whether reminders reach this device. The browser alone
+  // cannot say: a rotated endpoint whose re-registration failed (the
+  // service worker swallows that), or a subscription another account on this
+  // browser registered, both look identical from getSubscription().
+  //   "unknown"       nothing confirmed yet, or no subscription to confirm
+  //   "registered"    the server accepted this subscription for this account
+  //   "other-account" the server answered 409: another account owns it
+  //   "unconfirmed"   the request failed, so nothing is claimed either way
+  type Registration = "unknown" | "registered" | "other-account" | "unconfirmed";
+  let registration = $state<Registration>("unknown");
 
   // How long to wait for this device's service worker to report that it
   // actually displayed the test before assuming it was suppressed.
@@ -66,32 +82,72 @@
   // re-synced the DOM back to the original prop, so toggles felt
   // unresponsive. bind:checked makes the visible state the source of
   // truth for what the form submits.
-  let overdueEmail = $state(data.preferences.overdueEmailReminders);
-  let overduePush = $state(data.preferences.overduePushReminders);
-  let lowInvEmail = $state(data.preferences.lowInventoryEmailAlerts);
-  let lowInvPush = $state(data.preferences.lowInventoryPushAlerts);
+  //
+  // Re-seeded only when a stored value actually changes. The push toggle
+  // reloads the page data to refresh the delivery card, and a seed that read
+  // `data.preferences.*` directly would re-run on every reload and throw away
+  // checkbox edits the user has not saved yet. A $derived of a primitive does
+  // not notify when the new value is equal, so each writable $derived below
+  // recomputes only when its stored value moves.
+  const storedOverdueEmail = $derived(data.preferences.overdueEmailReminders);
+  const storedOverduePush = $derived(data.preferences.overduePushReminders);
+  const storedLowInvEmail = $derived(data.preferences.lowInventoryEmailAlerts);
+  const storedLowInvPush = $derived(data.preferences.lowInventoryPushAlerts);
+  let overdueEmail = $derived(storedOverdueEmail);
+  let overduePush = $derived(storedOverduePush);
+  let lowInvEmail = $derived(storedLowInvEmail);
+  let lowInvPush = $derived(storedLowInvPush);
 
+  // Read through a $derived for the same reason: the check below reloads the
+  // page data when it re-registers, and an effect keyed on `data` itself would
+  // then run the check again, forever. The check posts to the server, so the
+  // effect depends on the key alone: reading back `pushSupported` after
+  // writing it would schedule a second run, and with it a second POST.
+  const vapidPublicKey = $derived(data.vapidPublicKey);
   $effect(() => {
-    overdueEmail = data.preferences.overdueEmailReminders;
-    overduePush = data.preferences.overduePushReminders;
-    lowInvEmail = data.preferences.lowInventoryEmailAlerts;
-    lowInvPush = data.preferences.lowInventoryPushAlerts;
+    const supported = !!vapidPublicKey && "serviceWorker" in navigator && "PushManager" in window;
+    pushSupported = supported;
+    if (supported) untrack(() => checkPushStatus()).catch(() => {});
   });
 
-  $effect(() => {
-    pushSupported =
-      !!data.vapidPublicKey && "serviceWorker" in navigator && "PushManager" in window;
-    if (pushSupported) checkPushStatus().catch(() => {});
-  });
+  async function postSubscription(sub: PushSubscription): Promise<Registration> {
+    try {
+      const res = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      if (res.ok) return "registered";
+      return res.status === 409 ? "other-account" : "unconfirmed";
+    } catch {
+      return "unconfirmed";
+    }
+  }
 
+  // Reconciles this browser's subscription with the server. The subscribe
+  // route is an idempotent per-account upsert, so re-posting the existing
+  // subscription is how a device that dropped off the server (see the
+  // service worker's pushsubscriptionchange handler) registers again.
   async function checkPushStatus() {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
-    pushEnabled = sub !== null;
+    if (!sub) {
+      registration = "unknown";
+      pushEnabled = false;
+      return;
+    }
+    const result = await postSubscription(sub);
+    registration = result;
+    pushEnabled = true;
+    // The delivery card is server data: a re-registration may have changed it.
+    if (result === "registered") await invalidateAll();
   }
 
   async function togglePush() {
     pushLoading = true;
+    // Set once the server has accepted a change, so the delivery card (server
+    // data) is reloaded whichever way the rest of the toggle goes.
+    let changedOnServer = false;
     try {
       const reg = await navigator.serviceWorker.ready;
       if (pushEnabled) {
@@ -106,9 +162,11 @@
             showToast("Failed to disable push", "error");
             return;
           }
+          changedOnServer = true;
           await sub.unsubscribe();
         }
         pushEnabled = false;
+        registration = "unknown";
         showToast("Push notifications disabled", "success");
       } else {
         // Guarded by `pushSupported` (which requires a VAPID key) before
@@ -124,19 +182,34 @@
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(data.vapidPublicKey),
         });
-        const res = await fetch("/api/push/subscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(sub.toJSON()),
-        });
-        if (!res.ok) {
+        const result = await postSubscription(sub);
+        if (result !== "registered") {
           showToast("Failed to enable push", "error");
           return;
         }
+        changedOnServer = true;
         pushEnabled = true;
+        registration = "registered";
         showToast("Push notifications enabled", "success");
       }
+    } catch {
+      // A rejected subscribe (no push service, permission revoked mid-flight),
+      // an unreachable server or a failed unsubscribe used to escape this
+      // click handler as an unhandled rejection, with nothing on screen.
+      showToast("Couldn't update push notifications on this device", "error");
+      // Whatever half-happened, the button follows what the browser now
+      // holds. Nothing is re-posted: after a Disable whose browser step failed
+      // that would re-register the subscription the user just turned off, so
+      // the status claims nothing either way until the next visit checks.
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        pushEnabled = (await reg.pushManager.getSubscription()) !== null;
+      } catch {
+        // Leave the button as it was.
+      }
+      registration = "unconfirmed";
     } finally {
+      if (changedOnServer) await invalidateAll().catch(() => {});
       pushLoading = false;
     }
   }
@@ -320,8 +393,22 @@
           pendingLabel="Updating…">{pushEnabled ? "Disable" : "Enable"}</Button
         >
       </div>
-      {#if pushEnabled}
+      {#if pushEnabled && registration === "registered"}
         <p class="{STATE_TEXT} mt-3 text-xs">Push notifications are active on this device.</p>
+      {:else if pushEnabled && registration === "other-account"}
+        <Alert
+          tone="needs-you"
+          class="mt-3"
+          title="This browser's push subscription belongs to another account, so your reminders won't arrive here."
+        />
+      {:else if pushEnabled && registration === "unconfirmed"}
+        <Alert
+          tone="needs-you"
+          class="mt-3"
+          title="Couldn't confirm that this device is registered for push, so reminders may not arrive here."
+        >
+          Reload this page to try again.
+        </Alert>
       {/if}
     </GlassCard>
   {/if}

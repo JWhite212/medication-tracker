@@ -91,8 +91,8 @@ export async function checkOverdueMedications() {
   // Fetch the most recent HANDLED dose per medication in one grouped query
   // instead of running a correlated subquery per schedule row.
   //
-  // "Handled" means taken OR skipped. `getLastDoseTimes` in doses.ts already
-  // documents this as the anchor that drives overdue timing — "taken and
+  // "Handled" means taken OR skipped. `getLastDosePerMedication` in doses.ts
+  // already documents this as the anchor that drives overdue timing — "taken and
   // skipped advance the clock so the user can dismiss an overdue slot by
   // skipping it" — and the dashboard has always honoured it. This scan did
   // not, so skipping a dose cleared the dashboard badge and still sent a
@@ -345,9 +345,10 @@ export async function checkLowInventoryMedications() {
       // Determine whether push CAN actually fire (opt-in AND active
       // subscription) BEFORE the pre-claim gate. Treating opt-in alone
       // as sufficient would let us claim the row, send nothing, and
-      // complete as 'sent' — and because the dedupe key is (user,
-      // medication, inventoryCount), the user re-subscribing later
-      // would still hit the suppressed key for that count.
+      // complete as 'sent' — and because the dedupe key is scoped to the
+      // low-stock episode (user, medication, lowInventoryEpisodeAt), the
+      // user re-subscribing later would still hit the suppressed key for
+      // the rest of that episode, until stock recovers above the threshold.
       //
       // If hasPushSubscriptions itself throws, skip the iteration: no
       // row is claimed, and the next cron tick retries cleanly.

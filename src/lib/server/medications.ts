@@ -11,12 +11,22 @@ import { intervalDosesPerDay } from "$lib/utils/schedule-rate";
 import type { MedicationInput, ScheduleInput } from "$lib/utils/validation";
 import type { Medication, MedicationWithStats } from "$lib/types";
 
+/**
+ * The one display order for a user's medications: `sortOrder`, then creation
+ * time, then id. The tie-breaks are load-bearing, not cosmetic. Medications
+ * created before `createMedicationWithSchedules` assigned a position all hold
+ * the column default 0, and with `sortOrder` alone their order was whatever
+ * the planner returned — so ↑/↓ had no stable list to move within.
+ * `swapSortOrder` renumbers by exactly this order.
+ */
+const DISPLAY_ORDER = [medications.sortOrder, medications.createdAt, medications.id] as const;
+
 export async function getActiveMedications(userId: string) {
   return db
     .select()
     .from(medications)
     .where(and(eq(medications.userId, userId), eq(medications.isArchived, false)))
-    .orderBy(medications.sortOrder);
+    .orderBy(...DISPLAY_ORDER);
 }
 
 // Lean list of every medication (active first, then archived) for
@@ -175,6 +185,9 @@ export async function createMedicationWithSchedules(
         notifyOffsetMinutes: input.notifyOffsetMinutes ?? 0,
         notifyRepeatEveryMinutes: input.notifyRepeatEveryMinutes ?? null,
         notifyMaxRepeats: input.notifyMaxRepeats ?? 3,
+        // Append to the end of the user's list. Left at the column default,
+        // every medication created here shared position 0.
+        sortOrder: sql`(select coalesce(max(${medications.sortOrder}), -1) + 1 from ${medications} where ${medications.userId} = ${userId})`,
       })
       .returning();
 
@@ -268,24 +281,53 @@ export async function updateMedicationWithSchedules(
   });
 }
 
+/**
+ * Swap two medications' places in the user's list.
+ *
+ * Swapping the two rows' `sortOrder` values was not enough: medications that
+ * share a value (every one created before positions were assigned holds 0)
+ * swapped 0 for 0, so the move silently did nothing. Instead, under the
+ * medication locks, the user's whole list is put in display order, the two
+ * entries trade places, and each row is written its index. That also repairs
+ * existing ties the first time the user reorders, with no data migration.
+ *
+ * Locks follow the dose/stock lock order: the user's medication rows, in
+ * ascending id. Every write is scoped by `userId`. Returns whether the move
+ * happened (false when either id is not one of this user's medications).
+ */
 export async function swapSortOrder(userId: string, medId1: string, medId2: string) {
-  const [m1] = await db
-    .select({ sortOrder: medications.sortOrder })
-    .from(medications)
-    .where(and(eq(medications.id, medId1), eq(medications.userId, userId)))
-    .limit(1);
-  const [m2] = await db
-    .select({ sortOrder: medications.sortOrder })
-    .from(medications)
-    .where(and(eq(medications.id, medId2), eq(medications.userId, userId)))
-    .limit(1);
-  if (!m1 || !m2) return;
-  // Both updates commit or roll back together — a throw partway through
-  // (e.g. a dropped connection) must not leave a half-completed swap that
-  // a command retry could then corrupt further.
-  await dbTx.transaction(async (tx) => {
-    await tx.update(medications).set({ sortOrder: m2.sortOrder }).where(eq(medications.id, medId1));
-    await tx.update(medications).set({ sortOrder: m1.sortOrder }).where(eq(medications.id, medId2));
+  if (medId1 === medId2) return false;
+  return dbTx.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: medications.id,
+        sortOrder: medications.sortOrder,
+        createdAt: medications.createdAt,
+      })
+      .from(medications)
+      .where(eq(medications.userId, userId))
+      .orderBy(medications.id)
+      .for("update");
+
+    const ordered = [...rows].sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder ||
+        a.createdAt.getTime() - b.createdAt.getTime() ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+    const i = ordered.findIndex((m) => m.id === medId1);
+    const j = ordered.findIndex((m) => m.id === medId2);
+    if (i < 0 || j < 0) return false;
+    [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+
+    for (const [index, m] of ordered.entries()) {
+      if (m.sortOrder === index) continue;
+      await tx
+        .update(medications)
+        .set({ sortOrder: index })
+        .where(and(eq(medications.id, m.id), eq(medications.userId, userId)));
+    }
+    return true;
   });
 }
 

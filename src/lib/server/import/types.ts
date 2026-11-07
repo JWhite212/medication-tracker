@@ -221,7 +221,7 @@ export type AccountSnapshot = {
   inventoryEventKeys: Set<string>;
   existingDoseCount: number;
   /** Highest `sortOrder` in use. Imported medications are appended above
-   * it: `getActiveMedications` orders by `sortOrder` alone, so reusing
+   * it: `getActiveMedications` orders by `sortOrder` first, so reusing
    * the file's values would interleave imported rows into the user's
    * existing hand-ordered list. */
   maxSortOrder: number;

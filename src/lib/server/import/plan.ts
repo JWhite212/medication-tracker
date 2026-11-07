@@ -79,7 +79,7 @@ export function buildImportPlan(
   }
 
   // Merge appends imported medications above whatever the user already
-  // has: getActiveMedications orders by sortOrder alone, so reusing the
+  // has: getActiveMedications orders by sortOrder first, so reusing the
   // file's values would interleave them into a hand-ordered list.
   //
   // Replace keeps the file's own sortOrder instead. The export has no

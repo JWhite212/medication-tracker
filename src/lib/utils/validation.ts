@@ -515,6 +515,13 @@ export const archivePayload = z.object({ medicationId: z.string() });
 
 export const reorderPayload = z.object({ medId1: z.string(), medId2: z.string() });
 
+/** The /medications ↑/↓ form. `direction` is closed: an unknown value used to
+ * fall through to "down" and move the medication. */
+export const medicationMoveSchema = z.object({
+  medicationId: z.string().min(1),
+  direction: z.enum(["up", "down"]),
+});
+
 export const updatePreferencesPayload = z.object({
   // Both halves are derived, so no preference is restated at this door and
   // none can be left behind: the six appearance options come from the

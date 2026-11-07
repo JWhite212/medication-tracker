@@ -1,10 +1,12 @@
-import { error } from "@sveltejs/kit";
+import { error, fail } from "@sveltejs/kit";
 import { isSupportedTimezone } from "$lib/utils/timezones";
 import {
+  getActiveMedications,
   getMedicationsWithStats,
   getArchivedMedications,
   swapSortOrder,
 } from "$lib/server/medications";
+import { medicationMoveSchema } from "$lib/utils/validation";
 import { db } from "$lib/server/db";
 import { doseLogs } from "$lib/server/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
@@ -98,16 +100,22 @@ export const actions: Actions = {
     // anonymous POST reaches `locals.user!.id` and 500s.
     if (!locals.user) error(401, "Unauthorized");
 
-    const formData = await request.formData();
-    const medicationId = formData.get("medicationId") as string;
-    const direction = formData.get("direction") as string;
-    if (!medicationId || !direction) return;
+    const parsed = medicationMoveSchema.safeParse(Object.fromEntries(await request.formData()));
+    if (!parsed.success) return fail(400, { error: "Could not reorder medications." });
+    const { medicationId, direction } = parsed.data;
 
-    const meds = await getMedicationsWithStats(locals.user!.id);
+    // Every refusal below is a failure, never a bare return: the page reads
+    // a success as "moved" and announces the position, which for a medication
+    // archived or deleted in another tab read "moved to position 0 of N".
+    // The lean list is enough here; the page's own load re-reads the stats.
+    const meds = await getActiveMedications(locals.user.id);
     const idx = meds.findIndex((m) => m.id === medicationId);
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (idx < 0 || swapIdx < 0 || swapIdx >= meds.length) return;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= meds.length) {
+      return fail(409, { error: "That medication can't move that way any more." });
+    }
 
-    await swapSortOrder(locals.user!.id, meds[idx].id, meds[swapIdx].id);
+    const moved = await swapSortOrder(locals.user.id, meds[idx].id, meds[swapIdx].id);
+    if (!moved) return fail(409, { error: "That medication can't move that way any more." });
   },
 };

@@ -213,7 +213,11 @@ export async function applyImport(userId: string, plan: ImportPlan): Promise<Imp
     if (plan.profile) {
       await tx
         .update(users)
-        .set({ name: plan.profile.name, timezone: plan.profile.timezone, updatedAt: now })
+        .set({
+          ...(plan.profile.name !== null ? { name: plan.profile.name } : {}),
+          timezone: plan.profile.timezone,
+          updatedAt: now,
+        })
         .where(eq(users.id, userId));
     }
 

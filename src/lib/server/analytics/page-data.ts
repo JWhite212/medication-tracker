@@ -150,6 +150,22 @@ export type AnalyticsCompositionInputs = {
   refillForecast: Resolved<typeof getRefillForecast>;
 };
 
+/**
+ * The headline "average adherence": the mean over medications that expected
+ * at least one dose in the window. One that expected nothing (archived before
+ * the window, started after it, or as-needed) has no adherence to average —
+ * `calculateAdherence(x, 0)` scores it 0 — so counting it turned a perfect
+ * 100% into 50%, and a medication added mid-window manufactured an upward
+ * trend against a previous window it was not part of. `buildInsights` already
+ * ranks on the same `expectedTotal > 0` rule. With nothing expected at all the
+ * figure stays 0, as before.
+ */
+function averageAdherence(stats: readonly { adherence: number; expectedTotal: number }[]): number {
+  const counted = stats.filter((s) => s.expectedTotal > 0);
+  if (counted.length === 0) return 0;
+  return Math.round(counted.reduce((a, s) => a + s.adherence, 0) / counted.length);
+}
+
 /** Build the analytics page payload from already-fetched data. */
 export function composeAnalyticsPageData(input: AnalyticsCompositionInputs) {
   const {
@@ -204,14 +220,8 @@ export function composeAnalyticsPageData(input: AnalyticsCompositionInputs) {
   const totalDoses = dailyCounts.reduce((a, d) => a + d.count, 0);
   const prevTotalDoses = prevDailyCounts.reduce((a, d) => a + d.count, 0);
 
-  const avgAdherence =
-    medStats.length > 0
-      ? Math.round(medStats.reduce((a, s) => a + s.adherence, 0) / medStats.length)
-      : 0;
-  const prevAvgAdherence =
-    prevMedStats.length > 0
-      ? Math.round(prevMedStats.reduce((a, s) => a + s.adherence, 0) / prevMedStats.length)
-      : 0;
+  const avgAdherence = averageAdherence(medStats);
+  const prevAvgAdherence = averageAdherence(prevMedStats);
 
   const insights = buildInsights({
     totalDoses,

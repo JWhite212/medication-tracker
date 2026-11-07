@@ -29,6 +29,18 @@ export {
   buildLowInventoryDedupeKey,
 } from "./reminders/domain";
 
+/**
+ * One medication's failure must not cost every medication after it its
+ * reminder. Each loop iteration is isolated and logged; the sweep still
+ * throws once it has finished, so a tick with a failure is still a failed
+ * tick for the platform and the dead-man switch (see the cron route).
+ */
+function throwIfSweepFailed(sweep: string, failures: number, total: number): void {
+  if (failures > 0) {
+    throw new Error(`${sweep} sweep: ${failures} of ${total} medications failed`);
+  }
+}
+
 export async function checkOverdueMedications() {
   // SQL filter: include rows where at least one channel is enabled.
   // Per-channel gating happens inside the loop below so a user with
@@ -118,105 +130,120 @@ export async function checkOverdueMedications() {
   const now = new Date();
   const emailGloballyConfigured = isEmailConfigured();
 
+  let failures = 0;
   for (const scheduleRow of scheduleRows) {
-    const row = {
-      ...scheduleRow,
-      lastEventAt: lastEventByMedication.get(scheduleRow.medicationId) ?? null,
-    };
-    const slot = computeOverdueSlot(row, now);
-    if (!slot) continue;
+    try {
+      const row = {
+        ...scheduleRow,
+        lastEventAt: lastEventByMedication.get(scheduleRow.medicationId) ?? null,
+      };
+      const slot = computeOverdueSlot(row, now);
+      if (!slot) continue;
 
-    const nagIndex = computeNagIndex(
-      slot,
-      {
-        offsetMinutes: row.medNotifyOffsetMinutes,
-        repeatEveryMinutes: row.medNotifyRepeatEveryMinutes,
-        maxRepeats: row.medNotifyMaxRepeats,
-      },
-      now,
-    );
-    // null means the offset has not elapsed yet — the slot is due but the
-    // user asked to be told later.
-    if (nagIndex === null) continue;
+      const nagIndex = computeNagIndex(
+        slot,
+        {
+          offsetMinutes: row.medNotifyOffsetMinutes,
+          repeatEveryMinutes: row.medNotifyRepeatEveryMinutes,
+          maxRepeats: row.medNotifyMaxRepeats,
+        },
+        now,
+      );
+      // null means the offset has not elapsed yet — the slot is due but the
+      // user asked to be told later.
+      if (nagIndex === null) continue;
 
-    const channels = resolveChannels(
-      {
-        notificationsEnabled: row.medNotificationsEnabled,
-        notifyOverdueEmail: row.medNotifyOverdueEmail,
-        notifyOverduePush: row.medNotifyOverduePush,
-        notifyLowInventoryEmail: row.medNotifyLowInventoryEmail,
-        notifyLowInventoryPush: row.medNotifyLowInventoryPush,
-      },
-      {
-        overdueEmailReminders: row.userOverdueEmailReminders,
-        overduePushReminders: row.userOverduePushReminders,
-        lowInventoryEmailAlerts: row.userLowInventoryEmailAlerts,
-        lowInventoryPushAlerts: row.userLowInventoryPushAlerts,
-      },
-    );
+      const channels = resolveChannels(
+        {
+          notificationsEnabled: row.medNotificationsEnabled,
+          notifyOverdueEmail: row.medNotifyOverdueEmail,
+          notifyOverduePush: row.medNotifyOverduePush,
+          notifyLowInventoryEmail: row.medNotifyLowInventoryEmail,
+          notifyLowInventoryPush: row.medNotifyLowInventoryPush,
+        },
+        {
+          overdueEmailReminders: row.userOverdueEmailReminders,
+          overduePushReminders: row.userOverduePushReminders,
+          lowInventoryEmailAlerts: row.userLowInventoryEmailAlerts,
+          lowInventoryPushAlerts: row.userLowInventoryPushAlerts,
+        },
+      );
 
-    const dedupeKey = buildOverdueDedupeKey(
-      row.userId,
-      row.medicationId,
-      row.scheduleKind,
-      row.scheduleId,
-      slot,
-      nagIndex,
-    );
+      const dedupeKey = buildOverdueDedupeKey(
+        row.userId,
+        row.medicationId,
+        row.scheduleKind,
+        row.scheduleId,
+        slot,
+        nagIndex,
+      );
 
-    const emailConfigured =
-      channels.overdueEmail && emailGloballyConfigured && row.userEmailVerified;
-    // Both channels word this through `lastLoggedPhrase`, from the anchor and
-    // the same tick `now` that found the slot overdue: one clock per tick.
-    const lastEventAt = row.lastEventAt ? new Date(row.lastEventAt) : null;
+      const emailConfigured =
+        channels.overdueEmail && emailGloballyConfigured && row.userEmailVerified;
+      // Both channels word this through `lastLoggedPhrase`, from the anchor and
+      // the same tick `now` that found the slot overdue: one clock per tick.
+      const lastEventAt = row.lastEventAt ? new Date(row.lastEventAt) : null;
 
-    // Intent passes the raw push opt-in, NOT the post-probe value: the
-    // probe runs inside the callback below and may itself throw. Using
-    // the post-probe flag would let a probe-time DB blip resolve the row
-    // to status=sent with both channels not_configured, consuming the
-    // dedupe slot for that overdue window with nothing delivered.
-    await withReminderClaim(
-      {
-        userId: row.userId,
-        medicationId: row.medicationId,
-        reminderType: "overdue",
-        dedupeKey,
-      },
-      { email: emailConfigured, push: channels.overduePush },
-      async (out) => {
-        // Email first so a transient failure inside the push channel
-        // (e.g. the subscription lookup hitting a DB blip) doesn't
-        // poison an already-successful email send.
-        if (emailConfigured) {
-          out.email = await sendReminderEmail(
-            row.userEmail,
-            row.medicationName,
-            lastEventAt,
-            now,
-            row.userTimeSinceDaysFromHours,
-          );
-        }
-        // Push is configured when the user has opted in AND has an
-        // active subscription on at least one device.
-        let pushConfigured = false;
-        if (channels.overduePush) {
-          pushConfigured = await hasPushSubscriptions(row.userId);
-        }
-        if (pushConfigured) {
-          out.push = await sendPushNotification(row.userId, {
-            title: `${row.medicationName} overdue`,
-            body: lastLoggedPhrase(lastEventAt, now, row.userTimeSinceDaysFromHours),
-            url: "/dashboard",
-            tag: overdueTag(row.medicationId),
-            // Same tag as the previous nag, so the tray holds one entry
-            // per medication rather than N. That means each nag REPLACES
-            // the last, which is why the re-alert has to be explicit.
-            renotify: nagIndex > 0,
-          });
-        }
-      },
-    );
+      // Intent passes the raw push opt-in, NOT the post-probe value: the
+      // probe runs inside the callback below and may itself throw. Using
+      // the post-probe flag would let a probe-time DB blip resolve the row
+      // to status=sent with both channels not_configured, consuming the
+      // dedupe slot for that overdue window with nothing delivered.
+      await withReminderClaim(
+        {
+          userId: row.userId,
+          medicationId: row.medicationId,
+          reminderType: "overdue",
+          dedupeKey,
+        },
+        { email: emailConfigured, push: channels.overduePush },
+        async (out) => {
+          // Email first so a transient failure inside the push channel
+          // (e.g. the subscription lookup hitting a DB blip) doesn't
+          // poison an already-successful email send.
+          if (emailConfigured) {
+            out.email = await sendReminderEmail(
+              row.userEmail,
+              row.medicationName,
+              lastEventAt,
+              now,
+              row.userTimeSinceDaysFromHours,
+            );
+          }
+          // Push is configured when the user has opted in AND has an
+          // active subscription on at least one device.
+          let pushConfigured = false;
+          if (channels.overduePush) {
+            pushConfigured = await hasPushSubscriptions(row.userId);
+          }
+          if (pushConfigured) {
+            out.push = await sendPushNotification(row.userId, {
+              title: `${row.medicationName} overdue`,
+              body: lastLoggedPhrase(lastEventAt, now, row.userTimeSinceDaysFromHours),
+              url: "/dashboard",
+              tag: overdueTag(row.medicationId),
+              // Same tag as the previous nag, so the tray holds one entry
+              // per medication rather than N. That means each nag REPLACES
+              // the last, which is why the re-alert has to be explicit.
+              renotify: nagIndex > 0,
+            });
+          }
+        },
+      );
+    } catch (thrown) {
+      failures += 1;
+      logWarn(
+        "reminders.overdue failed for one medication",
+        {
+          scope: "reminders.overdue",
+          userId: scheduleRow.userId,
+          medicationId: scheduleRow.medicationId,
+        },
+        thrown,
+      );
+    }
   }
+  throwIfSweepFailed("overdue", failures, scheduleRows.length);
 }
 
 export async function checkLowInventoryMedications() {
@@ -297,155 +324,171 @@ export async function checkLowInventoryMedications() {
 
   const emailGloballyConfigured = isEmailConfigured();
 
+  let failures = 0;
   for (const med of lowMeds) {
-    const channels = resolveChannels(
-      {
-        notificationsEnabled: med.medNotificationsEnabled,
-        notifyOverdueEmail: med.medNotifyOverdueEmail,
-        notifyOverduePush: med.medNotifyOverduePush,
-        notifyLowInventoryEmail: med.medNotifyLowInventoryEmail,
-        notifyLowInventoryPush: med.medNotifyLowInventoryPush,
-      },
-      {
-        overdueEmailReminders: med.userOverdueEmailReminders,
-        overduePushReminders: med.userOverduePushReminders,
-        lowInventoryEmailAlerts: med.userLowInventoryEmailAlerts,
-        lowInventoryPushAlerts: med.userLowInventoryPushAlerts,
-      },
-    );
+    try {
+      const channels = resolveChannels(
+        {
+          notificationsEnabled: med.medNotificationsEnabled,
+          notifyOverdueEmail: med.medNotifyOverdueEmail,
+          notifyOverduePush: med.medNotifyOverduePush,
+          notifyLowInventoryEmail: med.medNotifyLowInventoryEmail,
+          notifyLowInventoryPush: med.medNotifyLowInventoryPush,
+        },
+        {
+          overdueEmailReminders: med.userOverdueEmailReminders,
+          overduePushReminders: med.userOverduePushReminders,
+          lowInventoryEmailAlerts: med.userLowInventoryEmailAlerts,
+          lowInventoryPushAlerts: med.userLowInventoryPushAlerts,
+        },
+      );
 
-    const emailWillFire =
-      channels.lowInventoryEmail && emailGloballyConfigured && med.userEmailVerified;
-    const pushOptIn = channels.lowInventoryPush;
+      const emailWillFire =
+        channels.lowInventoryEmail && emailGloballyConfigured && med.userEmailVerified;
+      const pushOptIn = channels.lowInventoryPush;
 
-    // Determine whether push CAN actually fire (opt-in AND active
-    // subscription) BEFORE the pre-claim gate. Treating opt-in alone
-    // as sufficient would let us claim the row, send nothing, and
-    // complete as 'sent' — and because the dedupe key is (user,
-    // medication, inventoryCount), the user re-subscribing later
-    // would still hit the suppressed key for that count.
-    //
-    // If hasPushSubscriptions itself throws, skip the iteration: no
-    // row is claimed, and the next cron tick retries cleanly.
-    //
-    // This gate is kept in the caller rather than in withReminderClaim
-    // because it is specific to this sweep: the overdue sweep's dedupe
-    // key includes the slot, so a stale suppression self-heals on the
-    // next slot, and it deliberately has no equivalent gate.
-    let pushWillFire = false;
-    if (pushOptIn) {
-      try {
-        pushWillFire = await hasPushSubscriptions(med.userId);
-      } catch (err) {
-        logWarn(
-          "low-inventory push probe failed",
-          { scope: "reminders.lowInventory", medicationId: med.medicationId, userId: med.userId },
-          err,
-        );
+      // Determine whether push CAN actually fire (opt-in AND active
+      // subscription) BEFORE the pre-claim gate. Treating opt-in alone
+      // as sufficient would let us claim the row, send nothing, and
+      // complete as 'sent' — and because the dedupe key is (user,
+      // medication, inventoryCount), the user re-subscribing later
+      // would still hit the suppressed key for that count.
+      //
+      // If hasPushSubscriptions itself throws, skip the iteration: no
+      // row is claimed, and the next cron tick retries cleanly.
+      //
+      // This gate is kept in the caller rather than in withReminderClaim
+      // because it is specific to this sweep: the overdue sweep's dedupe
+      // key includes the slot, so a stale suppression self-heals on the
+      // next slot, and it deliberately has no equivalent gate.
+      let pushWillFire = false;
+      if (pushOptIn) {
+        try {
+          pushWillFire = await hasPushSubscriptions(med.userId);
+        } catch (err) {
+          logWarn(
+            "low-inventory push probe failed",
+            { scope: "reminders.lowInventory", medicationId: med.medicationId, userId: med.userId },
+            err,
+          );
+          continue;
+        }
+      }
+
+      if (!emailWillFire && !pushWillFire) {
+        logWarn("low-inventory skipped — no enabled channel can fire", {
+          scope: "reminders.lowInventory",
+          medicationId: med.medicationId,
+          userId: med.userId,
+        });
         continue;
       }
-    }
 
-    if (!emailWillFire && !pushWillFire) {
-      logWarn("low-inventory skipped — no enabled channel can fire", {
-        scope: "reminders.lowInventory",
-        medicationId: med.medicationId,
-        userId: med.userId,
-      });
-      continue;
-    }
+      // Open the episode if this is the first alert of one.
+      //
+      // AFTER the channel gates deliberately: opening it above them would
+      // burn the episode for a user who can receive nothing, and under an
+      // episode-scoped key a burned episode is silent until the count
+      // recovers — not just until the count next moves, as it was when the
+      // key held the count.
+      //
+      // Compare-and-set on `isNull`, so two overlapping ticks agree on one
+      // episode instant instead of minting two keys and alerting twice. The
+      // loser re-reads rather than assuming its own instant.
+      //
+      // NO TEST CAN FAIL ON THAT GUARD, and it is kept deliberately: it only
+      // discriminates when two sweeps race, and PGlite is a single backend —
+      // the same reason CLAUDE.md records that `.for("update")` is
+      // unexercisable here. Deleting it survives the whole suite. It stays
+      // because the two schedulers (the Vercel cron and the every-30-minutes
+      // GitHub Action) genuinely can overlap, and because without it a
+      // projection that ever dropped the column would silently reset a live
+      // episode's nudge schedule instead of re-reading it.
+      // Truthiness, not `=== null`: a projection that ever omits the column
+      // yields `undefined`, which a strict null check waves through and which
+      // then reaches computeNagIndex as a missing Date.
+      let episodeAt = med.lowInventoryEpisodeAt;
+      if (!episodeAt) {
+        const [opened] = await db
+          .update(medications)
+          .set({ lowInventoryEpisodeAt: sweepStartedAt })
+          .where(
+            and(
+              eq(medications.id, med.medicationId),
+              eq(medications.userId, med.userId),
+              isNull(medications.lowInventoryEpisodeAt),
+            ),
+          )
+          .returning({ at: medications.lowInventoryEpisodeAt });
 
-    // Open the episode if this is the first alert of one.
-    //
-    // AFTER the channel gates deliberately: opening it above them would
-    // burn the episode for a user who can receive nothing, and under an
-    // episode-scoped key a burned episode is silent until the count
-    // recovers — not just until the count next moves, as it was when the
-    // key held the count.
-    //
-    // Compare-and-set on `isNull`, so two overlapping ticks agree on one
-    // episode instant instead of minting two keys and alerting twice. The
-    // loser re-reads rather than assuming its own instant.
-    //
-    // NO TEST CAN FAIL ON THAT GUARD, and it is kept deliberately: it only
-    // discriminates when two sweeps race, and PGlite is a single backend —
-    // the same reason CLAUDE.md records that `.for("update")` is
-    // unexercisable here. Deleting it survives the whole suite. It stays
-    // because the two schedulers (the Vercel cron and the every-30-minutes
-    // GitHub Action) genuinely can overlap, and because without it a
-    // projection that ever dropped the column would silently reset a live
-    // episode's nudge schedule instead of re-reading it.
-    // Truthiness, not `=== null`: a projection that ever omits the column
-    // yields `undefined`, which a strict null check waves through and which
-    // then reaches computeNagIndex as a missing Date.
-    let episodeAt = med.lowInventoryEpisodeAt;
-    if (!episodeAt) {
-      const [opened] = await db
-        .update(medications)
-        .set({ lowInventoryEpisodeAt: sweepStartedAt })
-        .where(
-          and(
-            eq(medications.id, med.medicationId),
-            eq(medications.userId, med.userId),
-            isNull(medications.lowInventoryEpisodeAt),
-          ),
-        )
-        .returning({ at: medications.lowInventoryEpisodeAt });
-
-      if (opened?.at) {
-        episodeAt = opened.at;
-      } else {
-        const [current] = await db
-          .select({ at: medications.lowInventoryEpisodeAt })
-          .from(medications)
-          .where(eq(medications.id, med.medicationId))
-          .limit(1);
-        // Another tick opened it between our select and our update. If it
-        // has since been closed (stock recovered in the gap) there is
-        // nothing to alert about; the next tick will re-open if needed.
-        if (!current?.at) continue;
-        episodeAt = current.at;
+        if (opened?.at) {
+          episodeAt = opened.at;
+        } else {
+          const [current] = await db
+            .select({ at: medications.lowInventoryEpisodeAt })
+            .from(medications)
+            .where(eq(medications.id, med.medicationId))
+            .limit(1);
+          // Another tick opened it between our select and our update. If it
+          // has since been closed (stock recovered in the gap) there is
+          // nothing to alert about; the next tick will re-open if needed.
+          if (!current?.at) continue;
+          episodeAt = current.at;
+        }
       }
+
+      // Which nudge of this episode is due, if any. Bounded by
+      // LOW_INVENTORY_NAG_POLICY, so an episode is at most three alerts and
+      // then silent until the count recovers above the threshold.
+      const nagIndex = computeNagIndex(episodeAt, LOW_INVENTORY_NAG_POLICY, sweepStartedAt);
+      if (nagIndex === null) continue;
+
+      const dedupeKey = buildLowInventoryDedupeKey(
+        med.userId,
+        med.medicationId,
+        episodeAt,
+        nagIndex,
+      );
+      await withReminderClaim(
+        {
+          userId: med.userId,
+          medicationId: med.medicationId,
+          reminderType: "low_inventory",
+          dedupeKey,
+        },
+        // Post-probe values, not raw opt-in: unlike the overdue sweep the
+        // probe already ran and succeeded before the claim, so pushWillFire
+        // is the accurate intent here.
+        { email: emailWillFire, push: pushWillFire },
+        async (out) => {
+          // Email first so a transient push failure can't poison an
+          // already-sent email.
+          if (emailWillFire) {
+            out.email = await sendLowInventoryEmail(
+              med.userEmail,
+              med.medicationName,
+              med.inventoryCount!,
+              med.inventoryAlertThreshold!,
+            );
+          }
+          if (pushWillFire) {
+            out.push = await sendPushNotification(med.userId, {
+              title: `Low inventory: ${med.medicationName}`,
+              body: `${med.inventoryCount} doses remaining (threshold ${med.inventoryAlertThreshold}).`,
+              url: "/medications",
+              tag: lowInventoryTag(med.medicationId),
+            });
+          }
+        },
+      );
+    } catch (thrown) {
+      failures += 1;
+      logWarn(
+        "reminders.low_inventory failed for one medication",
+        { scope: "reminders.low_inventory", userId: med.userId, medicationId: med.medicationId },
+        thrown,
+      );
     }
-
-    // Which nudge of this episode is due, if any. Bounded by
-    // LOW_INVENTORY_NAG_POLICY, so an episode is at most three alerts and
-    // then silent until the count recovers above the threshold.
-    const nagIndex = computeNagIndex(episodeAt, LOW_INVENTORY_NAG_POLICY, sweepStartedAt);
-    if (nagIndex === null) continue;
-
-    const dedupeKey = buildLowInventoryDedupeKey(med.userId, med.medicationId, episodeAt, nagIndex);
-    await withReminderClaim(
-      {
-        userId: med.userId,
-        medicationId: med.medicationId,
-        reminderType: "low_inventory",
-        dedupeKey,
-      },
-      // Post-probe values, not raw opt-in: unlike the overdue sweep the
-      // probe already ran and succeeded before the claim, so pushWillFire
-      // is the accurate intent here.
-      { email: emailWillFire, push: pushWillFire },
-      async (out) => {
-        // Email first so a transient push failure can't poison an
-        // already-sent email.
-        if (emailWillFire) {
-          out.email = await sendLowInventoryEmail(
-            med.userEmail,
-            med.medicationName,
-            med.inventoryCount!,
-            med.inventoryAlertThreshold!,
-          );
-        }
-        if (pushWillFire) {
-          out.push = await sendPushNotification(med.userId, {
-            title: `Low inventory: ${med.medicationName}`,
-            body: `${med.inventoryCount} doses remaining (threshold ${med.inventoryAlertThreshold}).`,
-            url: "/medications",
-            tag: lowInventoryTag(med.medicationId),
-          });
-        }
-      },
-    );
   }
+  throwIfSweepFailed("low-inventory", failures, lowMeds.length);
 }

@@ -206,7 +206,10 @@
      inner role won and interrupted whatever was being read. Successes and
      failures both come through here, so polite is the right register.
      data-toast-stack: focus inside it counts as lost (focus-after.ts), so an
-     Undo moves it back to the page before its button goes. -->
+     Undo moves it back to the page before its button goes. app.css also keys
+     on it to lift the stack clear of the dashboard's edit toolbar while one
+     exists, from this bottom-4 by the toolbar's scroll reserve
+     (toast-clears-edit-toolbar.svelte.test.ts). -->
 <div
   bind:this={stack}
   class="fixed right-4 bottom-4 z-50 flex flex-col gap-2"

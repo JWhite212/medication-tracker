@@ -43,9 +43,10 @@
      the padding and the border, with a little to spare), because app.css
      reserves that plus <main>'s bottom padding as the scroll container's
      scroll-padding-bottom while this toolbar exists, so a control Tab
-     scrolls into view is never hidden under it (WCAG 2.2 2.4.11). Change one
-     and change the other; edit-toolbar-scroll-reserve.svelte.test.ts holds
-     them together. -->
+     scrolls into view is never hidden under it (WCAG 2.2 2.4.11), and lifts
+     the toast stack by the same reserve so an Undo offer never covers Done.
+     Change one and change the other; edit-toolbar-scroll-reserve.svelte.test.ts
+     and toast-clears-edit-toolbar.svelte.test.ts hold them together. -->
 <div data-edit-toolbar class="sticky bottom-0 z-10 pb-[env(safe-area-inset-bottom)]">
   <div
     class="border-border-strong bg-surface-raised flex min-h-30 flex-wrap content-center items-center gap-2 rounded-lg border px-3 py-2 shadow-lg"

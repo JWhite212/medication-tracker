@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import Button from "$lib/components/ui/Button.svelte";
   import Toggle from "$lib/components/ui/Toggle.svelte";
   import Tooltip from "$lib/components/ui/Tooltip.svelte";
@@ -31,9 +32,47 @@
     fixedTimes = [...fixedTimes, "12:00"];
   }
 
-  function removeFixedTime(idx: number) {
+  // A stable key per row. Keyed by index, removing any row unmounted the LAST
+  // row's DOM and relabelled the survivors, so pressing the last Remove
+  // dropped focus to <body> and pressing another left focus on a button that
+  // now named a different time. Ids are minted lazily, so a list the parent
+  // replaces wholesale still gets one per row, and they are never reused, so
+  // no two rows can share a key. Nothing here reacts to the array itself.
+  const rowIds: number[] = [];
+  let nextRowId = 0;
+  function rowKey(idx: number): number {
+    return (rowIds[idx] ??= nextRowId++);
+  }
+
+  // Each row's Remove button, by row id. A plain record bound through a getter
+  // and a setter, as SideEffectPicker's are: binding to a member of a
+  // non-reactive object warns binding_property_non_reactive in dev.
+  const removeButtons: Record<number, HTMLButtonElement | HTMLAnchorElement | null> = {};
+
+  /**
+   * The only row left keeps its Remove, marked aria-disabled rather than
+   * disabled: a focused control that becomes `disabled` drops focus to <body>.
+   * aria-disabled does not stop a click, so this guard does.
+   */
+  async function removeFixedTime(idx: number) {
+    if (fixedTimes.length <= 1) return;
+    const pressed = removeButtons[rowKey(idx)];
+    // Focus moves only if the press took it away: with nothing focused at the
+    // tap (Safari focuses no button it taps) there is nothing to restore.
+    const hadFocus = pressed != null && document.activeElement === pressed;
+    // The next row's Remove, else the previous one's, chosen before the list
+    // changes because afterwards there is no "next" to ask about.
+    const neighbour = idx + 1 < fixedTimes.length ? rowKey(idx + 1) : rowKey(idx - 1);
+    rowIds.splice(idx, 1);
     fixedTimes = fixedTimes.filter((_, i) => i !== idx);
-    if (fixedTimes.length === 0) fixedTimes = ["08:00"];
+    await tick();
+    if (!hadFocus || pressed?.isConnected) return;
+    removeButtons[neighbour]?.focus();
+  }
+
+  /** Named by the time it removes, so a list of buttons tells them apart. */
+  function removeLabel(time: string, idx: number): string {
+    return time ? `Remove ${time}` : `Remove time ${idx + 1}`;
   }
 </script>
 
@@ -101,7 +140,10 @@
         />
       </span>
       <div class="space-y-2">
-        {#each fixedTimes as _time, idx (idx)}
+        {#each fixedTimes as time, idx (rowKey(idx))}
+          <!-- The row's own id, so a row being torn down clears its own ref
+               rather than whichever row now sits at its old index. -->
+          {@const id = rowKey(idx)}
           <div class="flex items-center gap-2">
             <input
               type="time"
@@ -113,8 +155,9 @@
                  again. It keeps its visible word rather than an icon. -->
             <Button
               size="sm"
-              disabled={fixedTimes.length <= 1}
-              aria-label="Remove this time"
+              ariaDisabled={fixedTimes.length <= 1}
+              bind:ref={() => removeButtons[id] ?? null, (el) => (removeButtons[id] = el)}
+              aria-label={removeLabel(time, idx)}
               onclick={() => removeFixedTime(idx)}>Remove</Button
             >
           </div>

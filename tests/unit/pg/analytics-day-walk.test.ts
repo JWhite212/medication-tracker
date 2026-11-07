@@ -19,11 +19,9 @@ const { getDailyAdherenceSeries } = await import("../../../src/lib/server/analyt
  * is that the JS day keys and the SQL grouping keys agree. A fixture handing
  * back canned rows cannot disagree with itself.
  *
- * NOT asserted here: which day the series ENDS on. That is decided by `span`
- * (`Math.round((to - from) / 86_400_000)`), so the series covers 14 points
- * before local noon and 15 after — a real defect, but a different one, owned
- * by the analytics-window work. Pinning it here would make this file fail for
- * a reason that has nothing to do with the walk.
+ * NOT asserted here: which day the series ENDS on. That is decided by `span`,
+ * not by the walk, and is pinned in `analytics-daily-series-per-medication.test.ts`
+ * (a preset series ends on today's key whatever the time of day).
  */
 
 beforeAll(() => {

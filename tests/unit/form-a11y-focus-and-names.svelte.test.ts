@@ -168,6 +168,16 @@ describe("KeyboardShortcuts' overlay", () => {
     expect(dialog()).toBeNull();
   });
 
+  it("stays open when a held ? auto-repeats right after opening it", async () => {
+    mountShortcuts();
+    await openOverlay();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "?", repeat: true, bubbles: true, cancelable: true }),
+    );
+    flushSync();
+    expect(dialog()).not.toBeNull();
+  });
+
   it("still closes with Escape while its Close button has focus", async () => {
     mountShortcuts();
     await openOverlay();

@@ -76,7 +76,9 @@
       // "?" closes its own overlay, as the overlay's own help row says. It has
       // to be answered here: opening the overlay focuses its Close button, so
       // the isControlFocused() guard below always swallowed it.
-      if (e.key === "?") {
+      // Not on an auto-repeat: holding "?" fires repeats right after the
+      // keydown that opened the overlay, and they would close it again.
+      if (e.key === "?" && !e.repeat) {
         e.preventDefault();
         showHelp = false;
         return;

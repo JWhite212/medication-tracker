@@ -1,5 +1,5 @@
 import { error, fail } from "@sveltejs/kit";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gt } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { users, sessions } from "$lib/server/db/schema";
 import { lucia } from "$lib/server/auth/lucia";
@@ -42,7 +42,10 @@ export const load: PageServerLoad = async ({ locals }) => {
   const userSessions = await db
     .select({ id: sessions.id, expiresAt: sessions.expiresAt })
     .from(sessions)
-    .where(eq(sessions.userId, locals.user!.id));
+    // Only sessions that can still sign someone in. An expired row is dead
+    // (validation refuses it) until retention reaps it, so listing it as
+    // "active" was false.
+    .where(and(eq(sessions.userId, locals.user!.id), gt(sessions.expiresAt, new Date())));
   return {
     user: locals.user!,
     sessions: userSessions,

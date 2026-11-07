@@ -1,6 +1,6 @@
 import { lt } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { passwordResetTokens, rateLimits } from "$lib/server/db/schema";
+import { passwordResetTokens, rateLimits, sessions } from "$lib/server/db/schema";
 import { purgeExpiredReminderEvents } from "$lib/server/reminders/retention";
 import { purgeExpiredTrash } from "$lib/server/doses";
 import { logError, logWarn } from "$lib/server/log";
@@ -56,6 +56,14 @@ export const RETENTION_POLICIES: readonly RetentionPolicy[] = [
     // rather than deleted, so this only reaps ones that were never redeemed.
     name: "password-reset-tokens",
     purge: (now) => db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, now)),
+  },
+  {
+    // Sessions past their expiry. Lucia deletes an expired session only when
+    // that same cookie comes back, so one on a device that never returns
+    // stayed in the table — and on Security's "Active sessions" list —
+    // forever. Validation already refuses it, so nothing that works is lost.
+    name: "expired-sessions",
+    purge: (now) => db.delete(sessions).where(lt(sessions.expiresAt, now)),
   },
   {
     name: "rate-limits",

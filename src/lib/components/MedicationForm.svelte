@@ -18,6 +18,10 @@
     deriveInitialFixedTimes,
     deriveInitialDaysOfWeek,
     deriveNotificationValue,
+    describeStoredSchedule,
+    isRepresentableByForm,
+    serialiseFormSchedules,
+    storedScheduleAsPosted,
     type ScheduleMode,
   } from "$lib/medications/medication-form-state";
   import type { FormErrors } from "$lib/medications/medication-form-errors";
@@ -72,34 +76,44 @@
   // stay marked invalid beside a message saying nothing was checked at all.
   let shownErrors = $derived<FormErrors>(actionError ? {} : errors);
 
+  // A schedule stored through /api/v1 or an import can be a shape this form
+  // does not model: fixed times on different days, or interval and fixed rows
+  // together. Seeding the editor from it and saving would rewrite it (every
+  // fixed row given the first row's days, interval rows dropped), so it is
+  // shown read-only and posted back exactly as stored, and the rest of the
+  // form stays editable. A schedule the form CAN represent is edited as before.
+  let lockedSchedules = $derived(
+    medication && !isRepresentableByForm(schedules) ? schedules : null,
+  );
+
   // Hidden-field derivations: the Zod schema validates these, so they
   // need to mirror the user's selection on every render.
-  let schedulesJson = $derived.by(() => {
-    if (scheduleMode === "prn") {
-      return JSON.stringify([{ scheduleKind: "prn" }]);
-    }
-    if (scheduleMode === "interval") {
-      const hrs = Number(intervalHours);
-      return JSON.stringify([
-        { scheduleKind: "interval", intervalHours: Number.isFinite(hrs) && hrs > 0 ? hrs : 0 },
-      ]);
-    }
-    return JSON.stringify(
-      fixedTimes
-        .filter((t) => /^\d{2}:\d{2}$/.test(t))
-        .map((t) => ({
-          scheduleKind: "fixed_time",
-          timeOfDay: t,
-          daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek : null,
-        })),
-    );
-  });
+  let schedulesJson = $derived(
+    JSON.stringify(
+      lockedSchedules
+        ? lockedSchedules.map(storedScheduleAsPosted)
+        : serialiseFormSchedules({ mode: scheduleMode, intervalHours, fixedTimes, daysOfWeek }),
+    ),
+  );
 
   // Legacy compatibility shim — keep medications.scheduleType /
   // scheduleIntervalHours populated for one PR cycle so a rollback
-  // still works against the new schedules table.
-  let legacyScheduleType = $derived(scheduleMode === "prn" ? "as_needed" : "scheduled");
-  let legacyIntervalHours = $derived(scheduleMode === "interval" ? intervalHours : "");
+  // still works against the new schedules table. A locked schedule keeps
+  // the legacy columns it already has.
+  let legacyScheduleType = $derived(
+    lockedSchedules && medication
+      ? medication.scheduleType
+      : scheduleMode === "prn"
+        ? "as_needed"
+        : "scheduled",
+  );
+  let legacyIntervalHours = $derived(
+    lockedSchedules && medication
+      ? (medication.scheduleIntervalHours ?? "")
+      : scheduleMode === "interval"
+        ? intervalHours
+        : "",
+  );
 
   // Drug-interaction probe. Debounced, gated on a saved-medication
   // edit (we don't run it for `medication !== undefined` because the
@@ -200,13 +214,35 @@
   <input type="hidden" name="colourSecondary" value={selectedColourSecondary ?? ""} />
   <input type="hidden" name="pattern" value={selectedPattern} />
 
-  <MedicationScheduleSection
-    bind:mode={scheduleMode}
-    bind:intervalHours
-    bind:fixedTimes
-    bind:daysOfWeek
-    errors={shownErrors}
-  />
+  {#if lockedSchedules}
+    <div data-locked-schedule>
+      <span class="mb-1 block text-sm font-medium">Schedule</span>
+      <ul class="text-text-primary mb-2 space-y-1 text-sm">
+        {#each lockedSchedules as row, idx (idx)}
+          <li>{describeStoredSchedule(row)}</li>
+        {/each}
+      </ul>
+      <Alert tone="neutral" title="This schedule is managed elsewhere">
+        It was set up in the Mac app or by an import, and this form can't edit it without changing
+        it. Saving keeps it exactly as it is.
+      </Alert>
+      {#if shownErrors["schedules"]?.[0]}<p
+          id="schedules-error"
+          class="text-danger-ink mt-1 text-sm"
+          role="alert"
+        >
+          {shownErrors["schedules"][0]}
+        </p>{/if}
+    </div>
+  {:else}
+    <MedicationScheduleSection
+      bind:mode={scheduleMode}
+      bind:intervalHours
+      bind:fixedTimes
+      bind:daysOfWeek
+      errors={shownErrors}
+    />
+  {/if}
 
   <input type="hidden" name="scheduleMode" value={scheduleMode} />
   <input type="hidden" name="schedules" value={schedulesJson} />

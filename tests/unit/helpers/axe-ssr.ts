@@ -15,15 +15,24 @@ export function ssrDocument(bodyHtml: string): Document {
  */
 export async function runAxe(doc: Document, rules: string[]): Promise<AxeResults> {
   const axe = (await import("axe-core")).default;
-  const g = globalThis as unknown as Record<string, unknown>;
-  const [prevWindow, prevDocument] = [g.window, g.document];
-  g.window = doc.defaultView;
-  g.document = doc;
+  // Defined, not assigned: under vitest 5's jsdom environment `window` and
+  // `document` are getter-only on the global, so a plain assignment throws.
+  // Own-property descriptors are saved and restored exactly, so a suite in
+  // either environment gets its global back as it was.
+  const saved = (["window", "document"] as const).map(
+    (key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const,
+  );
+  const put = (key: string, value: unknown) =>
+    Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+  put("window", doc.defaultView);
+  put("document", doc);
   try {
     return await axe.run(doc.body, { runOnly: { type: "rule", values: rules } });
   } finally {
-    g.window = prevWindow;
-    g.document = prevDocument;
+    for (const [key, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete (globalThis as Record<string, unknown>)[key];
+    }
   }
 }
 

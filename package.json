@@ -36,7 +36,7 @@
     "@sveltejs/adapter-vercel": "^6.3.4",
     "@sveltejs/kit": "^2.70.3",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
-    "@tailwindcss/vite": "~4.2.2",
+    "@tailwindcss/vite": "~4.3.5",
     "@types/pdfkit": "^0.17.7",
     "@types/qrcode": "^1.5.6",
     "@types/web-push": "^3.6.4",
@@ -51,17 +51,17 @@
     "jsdom": "^29.0.2",
     "lint-staged": "^17.6.0",
     "playwright": "^1.59.1",
-    "prettier": "~3.8.3",
+    "prettier": "~3.9.10",
     "prettier-plugin-svelte": "^4.1.1",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "sharp": "^0.35.5",
     "svelte": "^5.55.2",
     "svelte-check": "^4.7.8",
     "svelte-eslint-parser": "^1.6.0",
-    "tailwindcss": "~4.2.2",
+    "tailwindcss": "~4.3.5",
     "tsx": "^4.23.15",
     "typescript": "^6.0.2",
-    "typescript-eslint": "^8.59.1",
+    "typescript-eslint": "^8.72.1",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"
   },
@@ -74,7 +74,7 @@
     "@oslojs/otp": "^1.1.0",
     "@paralleldrive/cuid2": "^3.3.0",
     "@vercel/analytics": "^2.0.1",
-    "@vercel/speed-insights": "^2.0.0",
+    "@vercel/speed-insights": "^2.1.0",
     "arctic": "^3.7.0",
     "drizzle-orm": "^0.45.4",
     "jose": "^6.2.15",
@@ -83,6 +83,6 @@
     "qrcode": "^1.5.4",
     "resend": "^6.37.0",
     "web-push": "^3.6.7",
-    "zod": "~4.3.6"
+    "zod": "~4.6.7"
   }
 }
